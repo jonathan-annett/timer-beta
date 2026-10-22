@@ -1,0 +1,1524 @@
+/*!
+ * timer.css
+ * Copyright(c) 2023 Jonathan Annett
+ * MIT Licensed
+ */
+
+/*
+
+  Advanced Style Editing:
+  
+  [ Control ] + [ S ]                brings up style editor
+  
+  [ Control ] + [ Shift ]  + [ S  ]  restores defaults
+
+*/
+
+
+:root {
+    --color-main-background : black;
+    --color-main-font:#a0a0a0;
+
+
+    --color-remain-running : white;
+    --color-remain-running-impending : orange;
+    --color-remain-running-expired : red;
+
+    --color-remain-adjust-down : yellow;
+    --color-remain-adjust-up : cyan;
+
+    --color-remain-future : #202020;
+    --color-remain-future-paused : #202020;
+    
+
+    --color-remain-paused : darkgray;
+    --color-remain-paused-impending : rgba(255, 166, 0, 0.192);
+    --color-remain-paused-expired : maroon;
+
+    --color-remain-paused-blink : yellow;
+    --color-remain-paused-impending-blink : orange;
+    --color-remain-paused-expired-blink : red;
+
+    --color-remain-info-running : orange;
+    --color-remain-info-running-impending : orange;
+    --color-remain-info-running-expired : red;
+
+    --color-remain-info-paused : darkgray;
+    --color-remain-info-paused-impending : rgba(255, 166, 0, 0.192);
+    --color-remain-info-paused-expired : maroon;
+
+    --color-custom-message : white;
+    --color-custom-message-editing : yellow;
+    --color-custom-message-editing-reduced : rgba(39, 37, 36, 0.637);
+
+    --color-next-default-editing:lime;
+
+
+    --color-keyboard-help-text: #a0a0a0;
+    --color-keyboard-help-text--editing-custom :lime;
+
+    --color-button-background : #008CBA;
+    --color-button-font : white;
+    
+    --color-button2-background : #e7e7e7;
+    --color-button2-font : black;
+
+    --color-button-background-hover:lime;
+    --color-button-font-hover:black;
+    
+    --color-button-background-hover-set:purple;
+    --color-button-font-hover-set:black;
+
+    --color-button-background-hover-setting: yellow;
+    --color-button-font-hover-setting:black;
+
+    --color-progress-bar : #529f44f7;
+    --color-progress-bar-background : #34495e;
+
+    --color-future-start :  lime;
+
+    --color-drag-to-monitor-text: rgb(103, 110, 110);
+
+    --color-pip-background : var(--color-main-background);
+    --color-pip-running : white;
+    --color-pip-paused : rgba(169, 169, 169, 0.726);
+    --color-pip-impending : orange;
+    --color-pip-expired : red;
+    
+    
+
+}
+
+
+body {
+    
+    background-color:var(--color-main-background);
+    background:var(--color-main-background);
+    color:var(--color-main-font);
+    font-size:2.5vh;
+    font-family: 'Lucida', sans-serif;
+    overflow: hidden; 
+    user-select: none;                
+}
+
+ :backdrop { background-color:var(--color-main-background); background:var(--color-main-background);} 
+ ::backdrop { background-color:var(--color-main-background); background:var(--color-main-background);} 
+ :-ms-fullscreen { background-color:var(--color-main-background); background:var(--color-main-background);} 
+ :-moz-full-screen { background-color:var(--color-main-background); background:var(--color-main-background);} 
+ :-webkit-full-screen { background-color:var(--color-main-background); background:var(--color-main-background);} 
+ ::fullscreen { background-color:var(--color-main-background); background:var(--color-main-background);} 
+ :fullscreen { background-color:var(--color-main-background); background:var(--color-main-background);} 
+
+
+    .blink {
+        animation: blinker 1s infinite;
+    }
+      
+    @keyframes blinker {
+        from { opacity: 1.0; }
+        50% { opacity: 0.5; }
+        to { opacity: 1.0; }
+    }
+    
+
+/* the main countdown (remaining) display takes up 40% of the available height, and is centered verticaly and horizontally */
+#remain_disp {
+    
+    color:var(--color-remain-running);
+    
+    font-size: 20vw;
+    position : absolute;
+     
+    left: 0;
+    top : 25%;
+    height : 50vh;
+    width : 100vw;
+   
+    text-align: center;  
+    
+    margin : auto;
+    
+}
+
+ html.ws #link:after {
+    content : "  WS";
+    color : lime;
+    display: inline;
+ }
+/*
+ the time of day (now) - activated by keystroke "T"
+*/
+
+#now_disp {
+  position : absolute;
+  right :0;
+  top :0;
+  font-size : 4vh;
+}
+
+/*
+ the time of day (now) - activated by keystroke "T" is slightly larger in the remote screen
+ and is prefixed with "Current Time:"
+*/
+ 
+html.reduced #now_disp {
+     height: 8vh;
+}
+
+html.reduced #now_disp:before {
+     content:"Current Time: "; 
+     
+     vertical-align: middle;
+     font-size : 2vh;
+     line-height: 8vh;
+     height: 8vh;
+     color  :  #606060;
+}
+
+
+/* various display elements for main screen */
+#ends_disp:before,
+#started_disp:before,
+#duration_disp:after,
+#elapsed_disp:before,
+#extra_time_disp{
+      font-size:2vh;
+}
+
+ #wc_canvas2 {
+    position : absolute;
+    left     : 4px;
+  top : calc( 50% - 44px );
+    width    : 15vw;
+    height   : auto;
+ }
+ #wc_canvas3 {
+    position : absolute;
+    right    : 4px;
+   top : calc( 50% - 44px );
+    width    : 15vw;
+    height   : auto;
+ }
+ 
+
+
+#video-track, #video-auto {
+    font-size:2vh;
+    position : absolute;
+    left : 0;
+    bottom : 0;
+    width : auto;
+    display:none;
+}
+html.video-auto #video-auto {
+    left : 140px;
+    display : block;
+    color : red;
+}
+html.video-track #video-track {
+    display : block;
+    color : lime;
+}
+ 
+video.screenVideoElement {
+    display : none;
+}
+ 
+ html.video-start-fullscreen  #wc_canvas3  {
+    top	  : 0;
+	left	 : 0;
+	width	: 0;
+	height   : 0;
+	
+ }
+ 
+ html.video-start-fullscreen  #wc_canvas2,
+ html.video-live-fullscreen   #wc_canvas3 {
+	 
+	position : absolute;
+	left	 : 5vw;
+	top	  : 2vh;
+	width	: 90vw;
+	height   : auto;
+	z-index  : 999998;
+ }
+
+
+ html.video-live-fullscreen  div.buttons span,
+ html.video-live-fullscreen  div.buttons div,
+ html.video-live-fullscreen  #elapsed_disp,
+ html.video-live-fullscreen  #started_disp,
+ html.video-live-fullscreen  #ends_disp,
+ html.video-live-fullscreen  #duration_disp,
+ 
+ html.video-start-fullscreen  div.buttons span,
+ html.video-start-fullscreen  div.buttons div,
+ html.video-start-fullscreen  #elapsed_disp,
+ html.video-start-fullscreen  #started_disp,
+ html.video-start-fullscreen  #ends_disp,
+ html.video-start-fullscreen  #duration_disp {
+     
+     display : none;
+ } 
+
+html.video-start-fullscreen body.fullscreen  #wc_canvas2,
+html.video-live-fullscreen  body.fullscreen #wc_canvas3 {
+    position : absolute;
+    top	  : 0;
+    left	 : 0;
+    width	: 100vw;
+    height   : auto;
+    
+    z-index  : 999999;
+}
+
+button.flyoutPlayerBtn {
+    position : absolute;
+
+    bottom : 40px;
+    right  : 10px;
+    width  : 100px;
+    height : 40px;
+    
+}
+
+
+button.flyoutPlayerHideBtn {
+    position : absolute;
+
+    bottom : 40px;
+    right  : 120px;
+    width  : 100px;
+    height : 40px;
+    
+}
+
+
+button.flyoutPlayerCloseBtn {
+	position : absolute;
+
+	bottom : 40px;
+	right  : 230px;
+	width  : 100px;
+	height : 40px;
+	
+}
+
+
+
+#started_disp:before {
+     content:"started at "; 
+}
+
+html.future #started_disp:before {
+     content:"will start at ";
+     color:  var(--color-future-start);
+}
+
+
+#started_disp {
+  position : absolute;
+  left : 0;
+  top : calc( 80% + 44px );
+}
+
+/*
+html.reduced #started_disp {
+    display : block; 
+}
+*/
+
+#ends_disp:before {
+     content:"ends at "; 
+}
+
+#ends_disp {
+  position : absolute;
+  right :0;
+  top : calc( 80% + 44px);
+}
+
+/*
+html.reduced #ends_disp {
+    display : block; 
+}
+*/
+
+
+
+#elapsed_disp:before {
+    content:"elapsed "; 
+}
+
+html.future #elapsed_disp:before {
+    content:"standby ";
+    color: darkgray;
+    font-size : 4vh;
+}
+
+#elapsed_disp {
+  position : absolute;
+  left : 0;
+  top : calc( 80% - 8px);    
+}
+
+ 
+ 
+ html.future #elapsed_disp {
+  position : absolute;
+  left : 25vw;
+  width : 50vw;
+  text-align: center;
+  font-size : 4vh;
+  color: var(--color-future-start);
+  top : calc( 27% + 0px);
+}
+
+html.reduced.future #elapsed_disp {
+    display : block; 
+     color:  var(--color-future-start);
+}
+
+ 
+ 
+
+#messages_enabled {
+    display : none; 
+    position:absolute;
+    top:48px;
+    right :0;
+    font-size:10pt;
+    color:yellow;
+}
+
+#custom_message,
+#remain_info_message {
+    color: var(--color-remain-running-expired);
+    display : none; 
+    position:absolute;
+    width:100vw;
+    left :0;
+    text-align:center;
+    top: 15%;
+    font-size:10vh;
+}
+
+html.showmessages.reduced.impending #remain_info_message,
+html.showmessages.impending #remain_info_message {
+    color:var(--color-remain-info-running);
+}
+
+html.show_custom_message #custom_message,
+html.edit_custom_message #custom_message,
+html.reduced.show_custom_message #custom_message,
+
+html.showmessages #messages_enabled,
+html.showmessages #messages_enabled,
+html.showmessages.reduced.impending #remain_info_message,
+html.showmessages.impending #remain_info_message,
+html.showmessages.reduced.over #remain_info_message,
+html.showmessages.over #remain_info_message {
+    display:block;
+}
+html.show_custom_message.reduced.paused #remain_info_message,
+html.show_custom_message.paused #remain_info_message {
+    display:none;
+}
+ 
+html.reduced #video-track,
+html.reduced #video-auto,
+html.reduced #wc_canvas,
+html.reduced #webcam,
+html.reduced #wc_canvas2,
+html.reduced #wc_canvas3,
+html.reduced #messages_enabled {
+    display:none;
+    
+}
+
+ 
+html.show_custom_message.showmessages.impending #remain_info_message,
+html.show_custom_message.showmessages.over #remain_info_message ,
+html.edit_custom_message.showmessages.impending #remain_info_message,
+html.edit_custom_message.showmessages.over #remain_info_message {
+    top: 5%;
+}
+
+
+html.over #remain_disp {
+    color:var(--color-remain-running-expired);
+    
+}
+
+html.show_custom_message #custom_message {
+    color: var(--color-custom-message);
+}
+
+html.edit_custom_message #custom_message {
+    color: var(--color-custom-message-editing);
+}
+
+
+html.reduced.edit_custom_message #custom_message {
+    color: var(--color-custom-message-editing-reduced);
+    outline: 0px solid transparent;
+}
+
+
+html.reduced.edit_custom_message #custom_message::selection {
+    color: var(--color-custom-message-editing-reduced);
+    outline: 0px solid transparent;
+}
+
+
+
+html.impending #remain_disp {
+    color: var(--color-remain-running-impending);
+}
+
+#remain_disp.adjusting {
+    color:var(--color-remain-adjust-up);
+}
+
+#remain_disp.adjustingDown {
+    color:var(--color-remain-adjust-down);
+}
+
+html.reduced #remain_disp.adjusting   {
+     color: var(--color-remain-running);
+}
+
+html.reduced #remain_disp.adjustingDown  {
+     color:var(--color-remain-running);
+}
+
+html.reduced.over #remain_disp  {
+    color:var(--color-remain-running-expired);
+}
+
+html.reduced.impending #remain_disp,
+html.reduced.future.impending #remain_disp, 
+html.future.impending #remain_disp {
+    color:var(--color-remain-running-impending);
+}
+
+
+html.future #remain_disp {
+    color: var(--color-remain-future);
+}
+
+html.reduced.future #remain_disp {
+    color:var(--color-remain-future);
+}
+
+html.future.paused #remain_disp {
+    color: var(--color-remain-future-paused);
+}
+
+html.reduced.future.paused #remain_disp {
+    color:var(--color-remain-future-paused);
+}
+
+
+#key_disp {
+  position : absolute;
+  left :0;
+  top :90%;
+  width :100%;
+  text-align: center;  
+}
+
+
+#duration_disp {
+  position : absolute;
+  right :0;
+  top : calc( 80% - 8px);
+}
+
+#duration_disp:after {
+     content:" total"; 
+}
+
+
+#extra_time_disp {
+  position : absolute;
+  right :0;
+  top : calc( 80% + 20px);
+    
+}
+
+
+
+
+#disp_next_mins {
+  position : absolute;
+  right :0;
+  bottom :0;
+
+}
+
+html.editing #disp_next_mins {
+    
+    color: var(--color-next-default-editing);
+}
+
+#remain_disp_video_text {
+    background-color: var(--color-pip-background);
+    color : var(--color-pip-running);
+    display:none;
+}  
+
+#remain_disp_video_text:before {
+    content : "";
+}  
+
+html.impending.showmessages  #remain_disp_video_text {
+    color : var(--color-pip-impending);
+}  
+
+html.impending.showmessages  #remain_disp_video_text:before {
+    content : "One Minute Left";
+}  
+
+html.over  #remain_disp_video_text {
+    color : var(--color-pip-expired);
+}  
+html.over.showmessages #remain_disp_video_text:before {
+    content : "Time is Up";
+}  
+
+
+html.paused  #remain_disp_video_text {
+    color : var(--color-pip-paused);
+} 
+html.paused.showmessages   #remain_disp_video_text:before {
+    content : "(Paused)";
+} 
+  
+ 
+html.paused  #remain_disp_video_text {
+    color : var(--color-pip-paused);
+}  
+
+
+
+html.impending.showmessages #remain_info_message:before {
+    content : "Wrap up - last minute";
+}
+
+html.over.showmessages #remain_info_message:before {
+    content : "Time is Up";
+}
+
+
+
+
+html.paused #remain_info_message {
+    color: var(--color-remain-info-paused);
+    display : block;
+}
+
+html.paused.impending #remain_info_message {
+    color: var(--color-remain-info-paused-impending);
+    display : block;
+}
+
+html.paused.over #remain_info_message {
+    color: var(--color-remain-info-paused-expired);
+    display : block;
+}
+
+html.paused #remain_disp {
+    color: var(--color-remain-paused);;
+}
+
+html.impending.paused #remain_disp {
+    color: var(--color-remain-paused-impending);
+}
+
+html.over.paused #remain_disp {
+    color: var(--color-remain-paused-expired);
+}
+
+html.paused #ends_disp {
+    animation: blinker 1s infinite;
+    color: var(--color-remain-paused-blink);    
+}
+
+html.impending.paused #ends_disp {
+    animation: blinker 1s infinite;
+    color: var(--color-remain-paused-impending-blink);    
+}
+
+
+html.over.paused #ends_disp {
+    animation: blinker 1s infinite;
+    color: var(--color-remain-paused-expired-blink);    
+}
+
+
+html.over.showmessages.paused #remain_info_message:before,
+html.impending.showmessages.paused #remain_info_message:before,
+html.paused #remain_info_message:before {
+    content : "Paused (for ";
+}
+
+html.paused #remain_info_message:after {
+    content : ")";
+}
+
+html.reduced.paused #remain_info_message:before {
+    content : "";
+}
+
+html.reduced.paused #remain_info_message:after {
+    content : "";
+}
+
+
+/* keyboard help text*/
+#disp_next_mins:before {
+    content:"[←],[→] = fix a late/early start (seconds), [↓],[↑] = Nudge end time (seconds), [Space] = start countdown using "; 
+    color: var(--color-keyboard-help-text);
+}
+
+html.video-start-fullscreen  #disp_next_mins,
+html.video-live-fullscreen  #disp_next_mins {
+    color: var(--color-main-background);
+}
+
+
+html.video-start-fullscreen  #link,
+html.video-live-fullscreen  #link {
+   display:none;
+}
+
+html.video-live-fullscreen  #disp_next_mins:before{
+    content:"showing video preview fullscreen               "; 
+    color: var(--color-keyboard-help-text);
+}
+
+html.video-start-fullscreen  #disp_next_mins:before{
+	content:"video assist zoom mode (ctrl-v toggles)"; 
+	color: var(--color-keyboard-help-text);
+}
+
+
+/*keyboard help text displayed while control key is held down*/
+html.controlling #disp_next_mins:before {
+    content:"[←],[→] = fix a late/early start (minutes), [↓],[↑] = Nudge end time (minutes), [Enter] = catchup to real time. "; 
+    color: var(--color-keyboard-help-text);
+}
+
+/*keyboard help text displayed while typing in a minutes value*/
+html.editing #disp_next_mins:before {
+    content:  "[Enter] = save default countdown... or  [Space] = start countdown using "; 
+    color: var(--color-keyboard-help-text);
+}
+
+/*keyboard help text displayed while shift key is held down*/
+html.shifting #disp_next_mins:before {
+    content:  "[←],[→] = fix a late/early start (seconds), [↓],[↑] = Nudge start time (seconds), [Space] = change current countdown to... "; 
+}
+
+
+/*keyboard help text displayed while control and shift keys are held down*/
+html.shifting.controlling #disp_next_mins:before {
+    content:  "[←],[→] = fix a late/early start (minutes), [↓],[↑] = Nudge start time (minutes), [Enter] = catchup to real time. "; 
+}
+
+/*while editing the custom message, hide the minutes entry field by making it the same colour as the background*/
+html.edit_custom_message #disp_next_mins {
+    color: var(--color-main-background);
+}
+
+/*keyboard help text displayed while editing the custom message text*/
+html.edit_custom_message #disp_next_mins:before {
+   content : "Editing custom message...          [Enter] = Show On Remote Display.  ";
+   color:var(--color-keyboard-help-text--editing-custom);
+}
+
+/*change the colour of minutes entry field while the custom message is displayed*/
+html.show_custom_message #disp_next_mins {
+    color:yellow;
+}
+
+
+html.controlling #disp_next_mins{
+    color:var(--color-main-background);
+}
+
+.fs_only {
+   display : none;    
+} 
+
+body:fullscreen .fs_only  {
+    
+    display : block;  
+}
+
+ #link {
+     position :absolute;
+     bottom : 30px;
+     left : 0;
+ }
+
+
+div.buttons, 
+#now_disp,
+.mainDiv ,
+html.twoplus #link,
+html.reduced #link,
+#drag_to_monitor,
+html.reduced body  div  {
+    display : none;
+    cursor:none;
+}
+
+
+html.showbuttons div.buttons, 
+html.showtimenow #now_disp,
+#fs_help,
+#clock_main,
+.showbar .mainDiv ,
+.showbar .mainDiv > .progressDiv ,
+.showbar .mainDiv > .progressDiv > .progress,
+#remain_disp  {
+    display : block ;
+    
+}
+
+html.reduced div.buttons div {
+    display : inline-block ;
+    
+}
+ 
+html.portrait div.buttons {
+    display:none;
+}
+
+
+#fs_help {
+      position : absolute;
+      left :0;
+      bottom :0;
+}
+
+
+html.reduced #drag_to_monitor {
+
+
+  display:block; 
+  position: absolute;
+  bottom : 10px;
+  width : 100vw;
+  text-align:center;
+  color: var(--color-drag-to-monitor-text);
+  font-size:3vh;
+}
+
+body.fullscreen #drag_to_monitor,
+body:fullscreen #drag_to_monitor,
+body:fullscreen #fs_help {
+    
+    display : none;  
+}
+
+
+*{
+  margin: 0px;
+  padding: 0px;
+  box-sizing: border-box;
+}
+
+
+.mainDiv{
+  position: absolute;
+  top:80%;
+  left: 50%;
+  transform: translate(-50%, 0%);
+  width: 75vw;
+  max-width: 75%;
+  height: 200px;
+}
+
+
+.mainDiv > .progressDiv{
+  width: 100%;
+  height: 30px;
+  background: var(--color-progress-bar-background);
+}
+
+.mainDiv > .progressDiv > .progress{
+  width: 0%;
+  height: 30px;
+  background:  var(--color-progress-bar); 
+}
+
+
+html.impending .mainDiv > .progressDiv > .progress{
+  background: orange;
+}
+
+html.over .mainDiv > .progressDiv > .progress{
+    
+  background: var(--color-remain-running-expired);
+    
+}
+
+
+.mainDiv > .progressDiv > .progress > .adjust{
+  position:relative;
+  top : -15px;
+  height: 15px;
+  background: yellow;
+  z-index:25;
+}
+
+/*
+.mainDiv > h2{
+  font-family: sans-serif;
+  color: #2c3e50;
+}
+*/
+
+div.buttons  {
+  position : absolute;
+  top:    0;
+  left:   0;
+  height: 100px;
+  right:  180px;
+  background-color:var(--color-main-background);
+  opacity: 0.5;
+  z-index: 9999;
+}
+
+html.reduced div.buttons {
+    opacity:0;
+}
+
+html.reduced div.buttons:hover,
+div.buttons:hover  {
+  opacity:1;
+
+}
+
+div.buttons div.btn2, 
+div.buttons div.btn {
+   position:relative;
+   left :10px;
+   top:10px;
+   width:50px;
+ 
+   background-color:  var(--color-button-background);
+   border: none;
+   color:  var(--color-button-font);
+   padding: 13px 24px;
+   text-align: center;
+   text-decoration: none;
+   display: inline-block;
+   font-size: 16px;
+   margin: 4px 2px;
+   cursor: pointer;
+}
+
+#link,
+#link a {
+    cursor:pointer;
+    z-index:9999;
+}
+
+div.buttons div.btn2 {
+    
+   width:80px;
+   background-color:  var(--color-button2-background);
+   color: var(--color-button2-font);
+   padding: 13px 12px;
+   
+    
+}
+
+
+
+div.buttons div.btn:hover {
+  background-color:  var(--color-button-background-hover);
+  color: var(--color-button-font-hover);
+}
+
+html.shifting div.buttons div.btn:hover {
+  background-color: var(--color-button-background-hover-set);
+  color:var(--color-button-font-hover-set);
+}
+html.editing.shifting div.buttons div.btn:hover {
+
+
+  background-color: var(--color-button-background-hover-setting);
+  color: var(--color-button-font-hover-setting);
+}
+
+#btnresume {
+     display:none;
+}
+
+html.paused #btnresume {
+   display:inline-block;
+   animation: blinker 1s infinite;
+}
+
+html.overlay #btnfloat {
+    display:inline-block;
+    animation: blinker 1s infinite;
+ }
+ 
+ html.nooverlay  #btnfloat {
+    display:none;
+ }
+
+html.paused #btnpause {
+   display:none;
+}
+
+
+
+html #css_editor {
+    position : absolute;
+    top:60px;
+    left:40px;
+    right:40px;
+    bottom:40px;
+    z-index:9999;
+    font-size:16pt;
+}
+
+html.reduced #css_editor,
+html.reduced #css_editor div {
+    display : block;
+    cursor: text;
+}
+ 
+html.portrait #link, 
+html.portrait div.buttons {
+    display:none;
+}
+
+html.portrait #remain_disp {
+    font-size: 25vw;
+    top:40vh;
+}
+
+html.portrait  .mainDiv  {
+    top:80%;
+}
+
+
+html.portrait #duration_disp,
+html.portrait #elapsed_disp {
+  top : calc( 85% + 0px);    
+}
+
+html.portrait #started_disp,
+html.portrait #ends_disp {
+  top : calc( 85% + 40px);    
+}
+
+
+html.portrait #disp_next_mins:before{
+    content : "";
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SHARE PANEL
+═══════════════════════════════════════════════════════════════════════════ */
+
+.share-panel {
+  position: fixed;
+  top: 60px;
+  right: 16px;
+  width: 220px;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 8px;
+  z-index: 10001;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+  font-size: 13px;
+  color: #ddd;
+}
+
+.share-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 6px;
+  font-weight: bold;
+  border-bottom: 1px solid #333;
+  color: #fff;
+}
+
+.share-close-btn {
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+}
+
+.share-close-btn:hover { color: #fff; }
+
+.share-panel-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.share-room-code {
+  font-size: 22px;
+  font-weight: bold;
+  letter-spacing: 3px;
+  color: lime;
+  font-family: monospace;
+}
+
+#share-qr {
+  border: 4px solid #fff;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.share-status {
+  font-size: 11px;
+  color: #888;
+  text-align: center;
+}
+
+.share-link {
+  font-size: 10px;
+  color: #555;
+  word-break: break-all;
+  text-align: center;
+}
+
+.share-actions {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.share-actions button {
+  flex: 1;
+  padding: 6px 4px;
+  font-size: 11px;
+  background: #222;
+  border: 1px solid #444;
+  color: #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.share-actions button:hover { background: #333; color: #fff; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STREAM DECK EDITOR
+═══════════════════════════════════════════════════════════════════════════ */
+
+#deck-editor {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.deck-editor-inner {
+  background: #0d0d0d;
+  border: 1px solid #333;
+  border-radius: 10px;
+  width: min(960px, 96vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.deck-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #222;
+  background: #111;
+  font-weight: bold;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.deck-editor-header-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.deck-editor-header select,
+.deck-editor-header button {
+  padding: 5px 10px;
+  font-size: 12px;
+  background: #222;
+  border: 1px solid #444;
+  color: #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.deck-editor-header button:hover { background: #333; color: #fff; }
+
+#deck-save-btn { background: #0a3a0a; border-color: #2a6a2a; color: lime; }
+#deck-save-btn:hover { background: #0f4f0f; }
+
+#deck-editor-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 18px;
+  cursor: pointer;
+}
+#deck-editor-close:hover { color: #fff; }
+
+.deck-editor-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.deck-preview-area {
+  flex: 1;
+  padding: 20px;
+  overflow: auto;
+  border-right: 1px solid #222;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.deck-palette-area {
+  width: 280px;
+  flex-shrink: 0;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.deck-preview-label {
+  font-size: 11px;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* Key cells in preview grid */
+.deck-editor-key {
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  border: 2px solid #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.1s, transform 0.1s;
+  white-space: pre-line;
+  user-select: none;
+}
+
+.deck-editor-key:hover       { border-color: #666; transform: scale(1.05); }
+.deck-editor-key.drag-over   { border-color: lime; background: #003300 !important; }
+.deck-editor-key.selected    { border-color: #4af; box-shadow: 0 0 0 2px #4af4; }
+
+/* Palette */
+.deck-palette-group {
+  font-size: 10px;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 8px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid #222;
+}
+
+.deck-palette-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.deck-palette-chip {
+  padding: 5px 8px;
+  background: #1a1a2e;
+  border: 1px solid #333;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #ccc;
+  cursor: grab;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.deck-palette-chip:hover { border-color: #888; color: #fff; }
+.deck-palette-chip:active { cursor: grabbing; }
+
+/* Per-key options panel */
+.deck-key-options {
+  margin-top: 16px;
+  padding: 12px;
+  background: #111;
+  border: 1px solid #222;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.deck-key-options-title {
+  font-size: 11px;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.deck-key-options label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: #888;
+}
+
+.deck-key-options input[type="text"] {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  color: #ddd;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.deck-key-options input[type="color"] {
+  width: 100%;
+  height: 28px;
+  border: 1px solid #333;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+
+#deck-key-clear {
+  padding: 6px;
+  background: #2d0000;
+  border: 1px solid #5a0000;
+  color: #ff8888;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+#deck-key-clear:hover { background: #400; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOUCH STRIP (mobile only)
+═══════════════════════════════════════════════════════════════════════════ */
+
+#touch-strip {
+  display: none;  /* shown only via media query below */
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 72px;
+  background: rgba(0,0,0,0.92);
+  border-top: 1px solid #2a2a2a;
+  z-index: 9998;
+  gap: 4px;
+  padding: 8px;
+  align-items: stretch;
+}
+
+.touch-btn {
+  flex: 1;
+  min-height: 48px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: bold;
+  color: #ddd;
+  background: #1a1a2e;
+  border: 1px solid #333;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.touch-btn:active {
+  background: #0f3460;
+  transform: scale(0.94);
+  transition: transform 0.08s;
+}
+
+/* Bottom padding for timer display so strip doesn't cover it */
+@media (pointer: coarse) {
+  #touch-strip { display: flex; }
+  #remain_disp { padding-bottom: 80px; }
+  div.buttons  { display: none !important; }
+  html.reduced #touch-strip { display: none; }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOUCH PRESET BOTTOM SHEET
+═══════════════════════════════════════════════════════════════════════════ */
+
+#touch-preset-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+#touch-preset-sheet.visible .touch-sheet-content {
+  transform: translateY(0);
+}
+
+.touch-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+}
+
+.touch-sheet-content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  background: #111;
+  border-top: 1px solid #333;
+  border-radius: 16px 16px 0 0;
+  padding: 20px 16px 32px;
+  transform: translateY(100%);
+  transition: transform 0.22s ease-out;
+}
+
+.touch-sheet-title {
+  text-align: center;
+  font-size: 14px;
+  color: #888;
+  margin-bottom: 16px;
+}
+
+.touch-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.touch-sheet-preset {
+  padding: 16px 8px;
+  background: #1a1a2e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.touch-sheet-preset:active { background: #0f3460; }
+
+.touch-sheet-cancel {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: #888;
+  font-size: 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   QUICK-START OVERLAY (first load mobile)
+═══════════════════════════════════════════════════════════════════════════ */
+
+#quick-start-overlay {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 10003;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qs-inner {
+  width: min(480px, 94vw);
+  text-align: center;
+}
+
+.qs-title {
+  font-size: clamp(18px, 4vw, 28px);
+  color: #aaa;
+  margin-bottom: 24px;
+}
+
+.qs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.qs-preset {
+  padding: 20px 8px;
+  background: #1a1a2e;
+  border: 1px solid #333;
+  border-radius: 10px;
+  color: #fff;
+  font-size: clamp(12px, 2.5vw, 16px);
+  font-weight: bold;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.qs-preset:active { background: #0f3460; transform: scale(0.95); }
+
+.qs-skip {
+  background: none;
+  border: none;
+  color: #444;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 8px;
+  text-decoration: underline;
+}
+

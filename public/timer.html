@@ -1,0 +1,212 @@
+<html class="showbuttons">
+<!--
+/*!
+ * timer.html
+ * Copyright(c) 2023 Jonathan Annett
+ * MIT Licensed
+*/
+-->
+  <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+      <meta name="apple-mobile-web-app-capable" content="yes">
+      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+      <link rel="manifest" href="manifest.json">
+      <title>Presentation Timer</title>
+      <link rel="stylesheet" href="timer.css" id="style_1">
+  </head>
+  <body>
+      <script src="w3color.js"></script> 
+      <script src="fsapi.js"></script>
+      <script src="inettime.js"></script>
+      <script src="tsview.js"></script>
+      <script>var timerAPI = null; /* populated by streamdeck.js and/or relay.js */</script>
+      <script src="timeroverlaypip.js"></script>
+      <script src="elementcolors.js"></script>
+      <script src="timerapi.js"></script>
+      <script src="timer.js" defer></script>    
+      <script src="FileSaver.js" defer></script>    
+      <script src="dropPlayer.js" defer></script>
+      <script src="streamdeck.js" defer></script>
+      <script src="relay.js" defer></script>
+      <script src="touchcontrols.js" defer></script>
+      
+      <div class="buttons">
+          <span>&nbsp;&nbsp;Presets</span>
+          <div class="btn" data-keys=" ,1,0, ">
+              10
+          </div>
+          <div class="btn" data-keys=" ,2,0, ">
+              20
+          </div>
+          <div class="btn" data-keys=" ,3,0, ">
+              30
+          </div>
+          <div class="btn" data-keys=" ,4,5, ">
+              45
+          </div>
+          <div class="btn" data-keys=" ,6,0, ">
+              60
+          </div>
+          <div class="btn" data-keys=" ,9,0, ">
+             90
+          </div>
+          <div class="btn" data-keys=" ,1,2,0, ">
+              2h
+          </div>
+          <div class="btn" data-keys=" ,1,8,0, ">
+              3h
+          </div>
+          <div class="btn" data-keys=" ,0, ">
+              Up
+          </div>
+          <span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Live Adjust</span>
+          
+          <div class="btn btn2" data-keys="ArrowDown,ArrowDown,ArrowDown,ArrowDown,ArrowDown,ArrowDown,ArrowDown,ArrowDown,ArrowDown,ArrowDown,ArrowDown,ArrowDown,ArrowDown,ArrowDown,ArrowDown,Control,Enter,!Control">
+              -15&nbsp;sec
+          </div>
+          <div class="btn btn2" data-keys="ArrowUp,ArrowUp,ArrowUp,ArrowUp,ArrowUp,ArrowUp,ArrowUp,ArrowUp,ArrowUp,ArrowUp,ArrowUp,ArrowUp,ArrowUp,ArrowUp,ArrowUp,Control,Enter,!Control">
+              +15&nbsp;sec
+          </div>
+          
+          <div class="btn btn2" data-keys="Control,ArrowDown,!Control">
+              -1&nbsp;min
+          </div>
+          <div class="btn btn2" data-keys="Control,ArrowUp,!Control">
+              +1&nbsp;min
+          </div>
+          <div id="btnpause" class="btn btn2" data-keys="&quot;">
+              pause
+          </div>
+          <div id="btnresume" class="btn btn2" data-keys="&quot;">
+              resume
+          </div>
+          <div id="btnfloat" class="btn btn2" data-keys="o">
+            overlay
+         </div>
+          <div id="btnshare" class="btn btn2" id="btnshare">
+            share
+          </div>
+          <div id="btndeck" class="btn btn2" id="btndeck">
+            deck
+          </div>
+          
+      </div>
+<!--div class="buttonsmask"></div-->
+      <div id="clock_main">
+          <div class="xfs_only" id="started_disp"></div>
+          <div class="xfs_only" id="elapsed_disp"></div>
+          <div id="messages_enabled">messages enabled</div>
+          
+          <div id="remain_info_message"></div>
+          <div id="custom_message"></div>
+          <div id="remain_disp"></div>
+          <div id="duration_disp"></div>
+          <div id="ends_disp"></div>
+          <div id="extra_time_disp"></div>
+          <div id="now_disp"></div>
+      </div>
+       
+      <div class="xfs_only" id="disp_next_mins">mins</div>
+      
+      <video id="webcam" autoplay style="display: none;"></video>
+      <canvas id="wc_canvas" style="display: none; width : auto; height:1080px;"></canvas>
+      <canvas class="xfs_only" id="wc_canvas2" style="display:none;"></canvas>
+      <canvas class="xfs_only" id="wc_canvas3" style="display:none;"></canvas>
+  
+ 
+     
+      <div id="key_disp"></div>
+      <p id="link">open timer <a href="timer.html#" onclick="return openTimerWindow();">display</a> screen. <a href="https://github.com/jonathan-annett/timer">help</a></p>
+    
+      <div class="media_query_detect"></div>
+       <div class="mainDiv">
+          <div class="progressDiv">
+             <div class="progress">
+             </div>
+           </div>
+       </div>
+
+        <span id="remain_disp_video_text"></span>
+        <video id="remain_disp_video" muted autoplay></video>
+
+       <div id="drag_to_monitor">Drag window to appropriate monitor and press F to make it Fullscreen</div>
+       <div id="video-track">Video Assist</div>
+       <div id="video-auto">Auto Zoom</div>
+
+      <!-- Share / Remote panel -->
+      <div id="share-panel" class="share-panel" style="display:none">
+        <div class="share-panel-header">
+          <span>Remote Display</span>
+          <button id="share-close" class="share-close-btn">✕</button>
+        </div>
+        <div class="share-panel-body">
+          <div class="share-room-code" id="share-room-code">––––––</div>
+          <canvas id="share-qr" width="160" height="160"></canvas>
+          <div class="share-status" id="share-status">Connecting…</div>
+          <div class="share-link" id="share-link"></div>
+          <div class="share-actions">
+            <button id="share-copy-btn">Copy link</button>
+            <button id="share-stop-btn">Stop sharing</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stream Deck editor overlay -->
+      <div id="deck-editor" style="display:none">
+        <div class="deck-editor-inner">
+          <div class="deck-editor-header">
+            <span>Stream Deck Layout Editor</span>
+            <div class="deck-editor-header-right">
+              <select id="deck-model-select">
+                <option value="mini">Stream Deck Mini (6 keys)</option>
+                <option value="mk2" selected>Stream Deck MK.II (15 keys)</option>
+                <option value="xl">Stream Deck XL (32 keys)</option>
+              </select>
+              <button id="deck-export-btn">Export JSON</button>
+              <button id="deck-import-btn">Import JSON</button>
+              <button id="deck-reset-btn">Reset defaults</button>
+              <button id="deck-save-btn">Save</button>
+              <button id="deck-editor-close">✕</button>
+            </div>
+          </div>
+          <div class="deck-editor-body">
+            <div class="deck-preview-area">
+              <div class="deck-preview-label">Deck Preview — drag actions onto keys</div>
+              <div id="deck-grid"></div>
+            </div>
+            <div class="deck-palette-area">
+              <div class="deck-preview-label">Action Palette</div>
+              <div id="deck-palette"></div>
+              <div class="deck-key-options" id="deck-key-options" style="display:none">
+                <div class="deck-key-options-title">Selected key options</div>
+                <label>Label override<input type="text" id="deck-key-label" placeholder="(use default)"></label>
+                <label>Text colour<input type="color" id="deck-key-fg" value="#ffffff"></label>
+                <label>Background<input type="color" id="deck-key-bg" value="#1a1a2e"></label>
+                <button id="deck-key-clear">Clear key</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Touch control strip (mobile only, shown via CSS) -->
+      <div id="touch-strip">
+        <button class="touch-btn" id="touch-presets-btn">Presets ▾</button>
+        <button class="touch-btn" id="touch-start-btn">▶ Start</button>
+        <button class="touch-btn" id="touch-pause-btn">⏸ Pause</button>
+        <button class="touch-btn" id="touch-plus-btn">+1 min</button>
+        <button class="touch-btn" id="touch-minus-btn">-1 min</button>
+      </div>
+
+      <!-- Touch preset bottom sheet -->
+      <div id="touch-preset-sheet" style="display:none">
+        <div class="touch-sheet-backdrop" id="touch-sheet-backdrop"></div>
+        <div class="touch-sheet-content">
+          <div class="touch-sheet-title">Select duration</div>
+          <div class="touch-sheet-grid" id="touch-sheet-grid"></div>
+          <button class="touch-sheet-cancel" id="touch-sheet-cancel">Cancel</button>
+        </div>
+      </div>
+  </body>    
+</html>    

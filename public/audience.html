@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html class="reduced showbuttons">
+<!--
+ * audience.html
+ * Presentation Timer — read-only audience/remote display
+ * Connect via: audience.html?room=WORD-N
+ * MIT Licensed
+-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
+  <link rel="manifest" href="manifest.json">
+  <title>Presentation Timer</title>
+  <link rel="stylesheet" href="timer.css">
+  <style>
+    /* Audience-specific overrides */
+    #drag_to_monitor,
+    #link,
+    #key_disp,
+    div.buttons,
+    #video-track,
+    #video-auto {
+      display: none !important;
+    }
+    #audience-status {
+      position: fixed;
+      bottom: 8px;
+      right: 8px;
+      font-size: 1.2vh;
+      color: #444;
+      pointer-events: none;
+      z-index: 9999;
+    }
+    #audience-status.connecting { color: #666; }
+    #audience-status.live       { color: #1a1a1a; }
+    #audience-status.offline    { color: #aa2222; }
+    /* Fullscreen tap area */
+    body { cursor: none; }
+  </style>
+</head>
+<body>
+  <div id="remain_disp"></div>
+  <div id="remain_info_message"></div>
+  <div id="custom_message"></div>
+  <div id="now_disp"></div>
+  <div id="extra_time_disp"></div>
+
+  <div class="mainDiv">
+    <div class="progressDiv">
+      <div class="progress"></div>
+    </div>
+  </div>
+
+  <div id="audience-status" class="connecting">connecting…</div>
+
+  <script>
+  // Minimal audience viewer — receives setVariableValues from relay, updates DOM + CSS classes
+  (function () {
+    'use strict';
+
+    const params    = new URLSearchParams(location.search);
+    const roomCode  = params.get('room');
+    const RELAY_URL = window.TIMER_RELAY_URL ||
+      (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host;
+
+    const html      = document.documentElement;
+    const statusEl  = document.getElementById('audience-status');
+    const remainEl  = document.getElementById('remain_disp');
+    const infoEl    = document.getElementById('remain_info_message');
+    const msgEl     = document.getElementById('custom_message');
+    const nowEl     = document.getElementById('now_disp');
+    const extraEl   = document.getElementById('extra_time_disp');
+    const progress  = document.querySelector('.progress');
+
+    // ── Class helpers ────────────────────────────────────────────────────────
+    function setClass(cls)    { if (!html.classList.contains(cls)) html.classList.add(cls); }
+    function clearClass(cls)  { html.classList.remove(cls); }
+    function syncClass(cls, on) { on ? setClass(cls) : clearClass(cls); }
+
+    // ── Time-of-day clock (local) ────────────────────────────────────────────
+    setInterval(() => {
+      if (html.classList.contains('showtimenow') && nowEl) {
+        nowEl.textContent = new Date().toLocaleTimeString('en-GB', {
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+        });
+      }
+    }, 1000);
+
+    // ── Apply state from relay message ────────────────────────────────────────
+    function applyState(v) {
+      if (v.remain    !== undefined) remainEl.textContent = v.remain;
+      if (v.elapsed   !== undefined) {} // not displayed on audience view
+      if (v.paused    !== undefined && infoEl) {
+        infoEl.textContent = (v.pausing === true || v.pausing === 'true') ? 'Paused' : '';
+      }
+      if (v.pauses    !== undefined && extraEl) {
+        const acc = v.pauses;
+        extraEl.textContent = (acc && acc !== '0:00') ? '+ ' + acc + ' pauses' : '';
+      }
+
+      // CSS state classes
+      syncClass('paused',    v.pausing    === true || v.pausing    === 'true'  || v.pausing    === 1);
+      syncClass('over',      v.expired    === true || v.expired    === 'true'  || v.expired    === 1);
+      syncClass('impending', v.impending  === true || v.impending  === 'true'  || v.impending  === 1);
+      syncClass('showbar',   v.showbar    === '1'  || v.showbar    === true);
+      syncClass('showtimenow', v.showtimenow === '1' || v.showtimenow === true);
+      syncClass('showmessages', v.showmessages === '1' || v.showmessages === true);
+
+      // Progress bar
+      if (v.barpct !== undefined && progress) {
+        progress.style.width = v.barpct + '%';
+      }
+
+      // Custom message
+      if (v.custommsg !== undefined && msgEl) {
+        msgEl.textContent = v.custommsg;
+        syncClass('show_custom_message', !!v.custommsg);
+      }
+    }
+
+    // ── WebSocket relay viewer ────────────────────────────────────────────────
+    let ws, reconnectTimer;
+
+    function connect() {
+      if (!roomCode) {
+        statusEl.textContent = 'No room code — open via share link';
+        statusEl.className = 'offline';
+        return;
+      }
+
+      statusEl.textContent = 'connecting…';
+      statusEl.className = 'connecting';
+
+      ws = new WebSocket(`${RELAY_URL}/relay/${roomCode}?role=viewer`);
+
+      ws.onopen = () => {};
+
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'connected') {
+            statusEl.textContent = '';
+            statusEl.className = 'live';
+          } else if (msg.type === 'controller-offline') {
+            statusEl.textContent = 'presenter offline';
+            statusEl.className = 'offline';
+          } else if (msg.setVariableValues) {
+            applyState(msg.setVariableValues);
+          }
+        } catch (_) {}
+      };
+
+      ws.onclose = () => {
+        statusEl.textContent = 'reconnecting…';
+        statusEl.className = 'connecting';
+        reconnectTimer = setTimeout(connect, 2500);
+      };
+
+      ws.onerror = () => {};
+    }
+
+    // ── WebRTC upgrade (viewer side) ──────────────────────────────────────────
+    function tryWebRTC() {
+      if (typeof RTCPeerConnection === 'undefined') return;
+      const sigUrl = `${RELAY_URL}/signal/${roomCode}?role=viewer`;
+      const wsSig = new WebSocket(sigUrl);
+      let peer;
+
+      wsSig.onopen = () => {};
+
+      wsSig.onmessage = async (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'controller-joined') {
+            // Controller will send us an offer shortly — nothing to do yet
+          } else if (msg.type === 'offer') {
+            peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+            peer.ondatachannel = (e) => {
+              const ch = e.channel;
+              ch.onopen = () => {
+                // WebRTC open — suppress WS reconnect, WS relay still active as silent fallback
+                statusEl.className = 'live';
+              };
+              ch.onmessage = (e2) => {
+                try {
+                  const m = JSON.parse(e2.data);
+                  if (m.setVariableValues) applyState(m.setVariableValues);
+                } catch (_) {}
+              };
+            };
+            peer.onicecandidate = (e) => {
+              if (e.candidate && wsSig.readyState === WebSocket.OPEN) {
+                wsSig.send(JSON.stringify({ type: 'ice-candidate', candidate: e.candidate }));
+              }
+            };
+            await peer.setRemoteDescription(new RTCSessionDescription(msg));
+            const answer = await peer.createAnswer();
+            await peer.setLocalDescription(answer);
+            wsSig.send(JSON.stringify(peer.localDescription));
+          } else if (msg.type === 'ice-candidate' && peer) {
+            try { await peer.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch (_) {}
+          }
+        } catch (_) {}
+      };
+
+      wsSig.onerror = () => {};
+    }
+
+    // ── Boot ──────────────────────────────────────────────────────────────────
+    connect();
+    setTimeout(tryWebRTC, 1000); // attempt WebRTC upgrade after WS is stable
+
+    // Tap anywhere to request fullscreen on mobile
+    document.body.addEventListener('click', () => {
+      if (document.fullscreenEnabled && !document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    });
+
+  })();
+  </script>
+</body>
+</html>
