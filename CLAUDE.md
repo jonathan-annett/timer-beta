@@ -107,7 +107,9 @@ window.timerAPI = {
 
 This means loading order matters but both can coexist. `streamdeck.js` loads first (declared first in timer.html), so relay chains onto it. Both receive every `timerAPI.send()` call.
 
-**Outbound** (timer → integrations): `timerAPI.send({ setVariableValues: { remain, expired, impending, pausing, showbar, showtimenow, showmessages, endsAt, startedAt, ... } })`
+**Outbound** (timer → integrations): `timerAPI.send({ setVariableValues: { remain, expired, impending, pausing, adjusting_up, adjusting_down, custommsg, showbar, showtimenow, showmessages, endsAt, startedAt, ... } })`
+
+`custommsg` is the message currently on screen (`''` when none). Messages are set from several places (C key, `custommessage` command, `remote-json`, storage sync), so `timer.js` announces it from a single point: `announceCustomMessage()` runs each tick and sends only when the text changes. The `opened` command forces a resend. Don't add sends at the individual setters.
 
 **Inbound** (integrations → timer): call `processTimerApiMessage({ cmd, ... })` directly. The full command set is documented in `timerapi.js`. Key commands: `start`, `pause`, `undopause`, `adjust`, `nudge`, `catchup`, `custommessage`, `settimercolors`, `keys`.
 
@@ -232,6 +234,8 @@ Key images are rendered to an offscreen Canvas per key, then encoded per device 
 The in-app editor opens with the `D` key or the "deck" button. Layouts are stored in localStorage per model (`streamdeck_layout_mk2` etc.). Per-key overrides (label, fg colour, bg colour) are stored separately in `streamdeck_key_overrides`.
 
 **Countdown keys:** the `countdown` (whole time), `countdown_major` and `countdown_minor` actions are display-only. Major/minor show `mm`/`ss` under an hour (`01` `30`), `h`/`m` from an hour up (`1h` `25m`), and a `+` prefix in overtime. They are driven by the timer's `remain` text, which is parsed into `remainSec` and deliberately kept out of `deckState`. Only countdown keys whose visible text changed are repainted (`countdownCache`), so under an hour that is one key per second. The XL default layout puts the major/minor pair at the end of row 2.
+
+**Message keys:** the `message` action stores its text per key in `keyOverrides['<model>:<index>'].message`. Pressing shows it via the `custommessage` command, or clears it if that message is already showing. The key is lit while `currentMessage` (from `custommsg`) matches its text. `message_clear` clears any message and is lit while one is showing. The XL defaults include three message keys (`DEFAULT_OVERRIDES`) plus a clear key in row 2. The editor stops keystroke propagation from its fields so typing doesn't trigger the page-wide timer shortcuts. `applyKeyOptions()` must not call `selectKey()`, which rewrites the inputs and swallows spaces as they're typed.
 
 **Catch up and backlight keys:** `catch_up` is drawn dim unless `deckState.adjusting_up`/`adjusting_down` is set. `brightness_cycle` steps 100 → 50 → 25 → 10% and shows the level. Brightness is a feature report: gen2 `0x03 [0x08, pct]`, gen1 `0x05 [0x55, 0xaa, 0xd1, 0x01, pct]`. It is a device setting, so it is saved immediately rather than with the layout. The XL default layout puts both keys in the empty bottom-row slots.
 

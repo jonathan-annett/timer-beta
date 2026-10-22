@@ -296,9 +296,23 @@ custom_message.addEventListener('focus', function(){
   }
   
   
+  // The message currently on screen ('' when none). Messages are set from several places
+  // (C key, custommessage command, remote-json, storage sync), so it is announced from one point.
+  function currentCustomMessage() {
+	  return html.classList.contains("show_custom_message") ? custom_message.textContent.trim() : "";
+  }
+  var lastAnnouncedMessage = null;   // var: displayUpdate runs before later lines execute
+  function announceCustomMessage(force) {
+	  const msg = currentCustomMessage();
+	  if (!force && msg === lastAnnouncedMessage) return;
+	  lastAnnouncedMessage = msg;
+	  if (timerAPI) timerAPI.send({ setVariableValues: { custommsg: msg } });
+  }
+
   function displayUpdate() {
 	  
 	  let timeNow =  timeProvider.now() ; 
+	  announceCustomMessage();
 	  tabCount = getTabCount();
 	  let controllerCount = getTabCount(true);
 	  let pausing = false;

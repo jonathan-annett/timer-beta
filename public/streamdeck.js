@@ -81,7 +81,11 @@
     countdown:        { label: 'Timer',     group: 'Countdown', display: 'full',  cmd: null },
     countdown_major:  { label: 'Min / Hr',  group: 'Countdown', display: 'major', cmd: null },
     countdown_minor:  { label: 'Sec / Min', group: 'Countdown', display: 'minor', cmd: null },
-    custom_msg:       { label: 'Message',   group: 'Other',     cmd: () => _sendCmd({ cmd: 'keys', keys: ['c'] }) },
+    // Preset message: text is stored per key (keyOverrides[...].message). Press shows it on the
+    // presenter screen; press again (while it's showing) clears it.
+    message:          { label: 'Message',   group: 'Messages',  isMessage: true, cmd: i => toggleMessage(i) },
+    message_clear:    { label: 'Clear\nmessage', group: 'Messages', cmd: () => _sendCmd({ cmd: 'custommessage', text: '' }) },
+    custom_msg:       { label: 'Type\nmessage', group: 'Messages', cmd: () => _sendCmd({ cmd: 'keys', keys: ['c'] }) },
     empty:            { label: '',          group: 'Other',     cmd: null },
   };
 
@@ -96,10 +100,17 @@
     ],
     xl: [
       'preset_10','preset_20','preset_30','preset_45','preset_60','preset_90','preset_120','preset_180',
-      'empty','empty','empty','empty','empty','empty','countdown_major','countdown_minor',
+      'message','message','message','message_clear','empty','empty','countdown_major','countdown_minor',
       'start_restart','pause_resume','add_1min','sub_1min','add_15sec','sub_15sec','undo_pause','custom_msg',
       'toggle_bar','toggle_time','toggle_messages','toggle_presenter','catch_up','brightness_cycle','empty','empty',
     ],
+  };
+
+  // Default per-key settings (used when nothing is saved, and by Reset defaults)
+  const DEFAULT_OVERRIDES = {
+    'xl:8':  { message: 'Please wrap up' },
+    'xl:9':  { message: 'Speak up' },
+    'xl:10': { message: 'Time for questions' },
   };
 
   // ─── Runtime state ────────────────────────────────────────────────────────
@@ -114,6 +125,7 @@
 
   // Remaining time, from the timer's `remain` text ("M:SS" or "H:MM:SS"; counts up overtime
   // once `expired`). Kept out of deckState: only countdown keys repaint when it changes.
+  let currentMessage = '';   // message on the presenter screen ('' = none), from `custommsg`
   let remainSec = 0;
   let remainText = '';
   const countdownCache = new Map();   // key index -> text last drawn, to skip identical repaints
@@ -147,6 +159,10 @@
           }
           if (changed) countdownCache.clear();
           if (changed && device) scheduleRedrawAll();
+          if (typeof v.custommsg === 'string' && v.custommsg !== currentMessage) {
+            currentMessage = v.custommsg;
+            if (device && !changed) scheduleMessageKeys();
+          }
           if (typeof v.remain === 'string' && v.remain !== remainText) {
             remainText = v.remain;
             remainSec = parseRemain(v.remain);
@@ -180,7 +196,7 @@
     }
     try {
       const saved = localStorage.getItem('streamdeck_key_overrides');
-      keyOverrides = saved ? JSON.parse(saved) : {};
+      keyOverrides = saved ? JSON.parse(saved) : JSON.parse(JSON.stringify(DEFAULT_OVERRIDES));
     } catch (_) {
       keyOverrides = {};
     }
@@ -356,7 +372,7 @@
     const actionKey = layout[index];
     if (!actionKey || actionKey === 'empty') return;
     const action = ACTIONS[actionKey];
-    if (action && action.cmd) action.cmd();
+    if (action && action.cmd) action.cmd(index);
   }
 
   // ─── Key rendering ────────────────────────────────────────────────────────
@@ -398,6 +414,41 @@
     } finally {
       drawing = false;
     }
+  }
+
+  // ─── Message keys ─────────────────────────────────────────────────────────
+
+  const messageFor = i => ((keyOverrides[modelKey + ':' + i] || {}).message || '').trim();
+
+  function toggleMessage(index) {
+    const text = messageFor(index);
+    if (!text) return;   // no text set for this key yet
+    _sendCmd({ cmd: 'custommessage', text: currentMessage === text ? '' : text });
+  }
+
+  function scheduleMessageKeys() {
+    const layout = layouts[modelKey] || [];
+    layout.forEach((a, i) => { if (a === 'message' || a === 'message_clear') scheduleRedrawKey(i); });
+  }
+
+  // Word-wrap `text` into at most maxLines lines that fit maxWidth (ellipsis if it overflows).
+  function wrapLines(ctx, text, maxWidth, maxLines) {
+    const words = text.split(/\s+/).filter(Boolean), lines = [];
+    let line = '';
+    for (const w of words) {
+      const test = line ? line + ' ' + w : w;
+      if (ctx.measureText(test).width <= maxWidth || !line) { line = test; continue; }
+      lines.push(line); line = w;
+      if (lines.length === maxLines) break;
+    }
+    if (lines.length < maxLines && line) lines.push(line);
+    const used = lines.join(' ').split(/\s+/).length;
+    if (used < words.length || ctx.measureText(lines[lines.length - 1] || '').width > maxWidth) {
+      let last = lines[lines.length - 1] || '';
+      while (last.length > 1 && ctx.measureText(last + '…').width > maxWidth) last = last.slice(0, -1);
+      lines[lines.length - 1] = last + '…';
+    }
+    return lines;
   }
 
   // ─── Countdown keys ───────────────────────────────────────────────────────
@@ -452,6 +503,15 @@
     if (deckState.expired) { bg = '#2d0000'; fg = '#ff4444'; }
     else if (deckState.impending && actionKey !== 'empty') { bg = '#2d1a00'; fg = '#ff9900'; }
     if (actionKey === 'pause_resume' && deckState.pausing) { bg = '#2d1a00'; fg = '#ff9900'; }
+    if (action.isMessage) {
+      const text = messageFor(index);
+      if (text && currentMessage === text) { bg = override.bg || '#0b3d5c'; fg = override.fg || '#7fd4ff'; }
+      else if (!text) { fg = '#555555'; }
+    }
+    if (actionKey === 'message_clear') {
+      bg = currentMessage ? '#3d2a00' : '#0d0d0d';
+      fg = currentMessage ? '#ffcc33' : '#444444';
+    }
     if (actionKey === 'catch_up') {
       const adjusting = deckState.adjusting_up || deckState.adjusting_down;
       bg = adjusting ? (override.bg || '#003300') : '#0d0d0d';
@@ -476,7 +536,17 @@
       ctx.fillText(text, size / 2, size / 2 + 1);
     }
 
-    const rawLabel = action.display ? '' :
+    if (action.isMessage) {
+      const text = override.label || messageFor(index) || 'Message\n(no text)';
+      const fontSize = size < 90 ? 12 : 14;
+      ctx.font = `bold ${fontSize}px "Helvetica Neue", Arial, sans-serif`;
+      ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const lines = text.includes('\n') ? text.split('\n') : wrapLines(ctx, text, size * 0.9, 4);
+      const lineH = fontSize * 1.25, top = size / 2 - ((lines.length - 1) * lineH) / 2;
+      lines.forEach((l, i) => ctx.fillText(l, size / 2, top + i * lineH));
+    }
+
+    const rawLabel = (action.display || action.isMessage) ? '' :
       actionKey === 'brightness_cycle' ? (override.label || 'Backlight') + '\n' + brightness + '%' :
       override.label ||
       (action.toggleState && deckState[action.toggleState] && action.altLabel ? action.altLabel : action.label) || '';
@@ -653,7 +723,7 @@
       const overrideKey = editorModelKey + ':' + i;
       const ov = editorOverrides[overrideKey] || {};
       const action = ACTIONS[actionKey] || ACTIONS['empty'];
-      cell.textContent = ov.label || action.label || '';
+      cell.textContent = ov.label || (actionKey === 'message' && ov.message) || action.label || '';
       cell.style.background = ov.bg || '#1a1a2e';
       cell.style.color = ov.fg || '#ffffff';
       if (actionKey === 'empty') cell.style.opacity = '0.3';
@@ -668,7 +738,10 @@
         if (droppedAction) {
           editorLayouts[editorModelKey][i] = droppedAction;
           renderEditorGrid();
-          if (selectedKeyIndex === i) selectKey(i);
+          if (droppedAction === 'message') {
+            selectKey(i);
+            document.getElementById('deck-key-message')?.focus();
+          } else if (selectedKeyIndex === i) selectKey(i);
         }
       });
       grid.appendChild(cell);
@@ -723,6 +796,9 @@
     const overrideKey = editorModelKey + ':' + index;
     const ov = editorOverrides[overrideKey] || {};
     document.getElementById('deck-key-label').value = ov.label || '';
+    const isMsg = (editorLayouts[editorModelKey] || [])[index] === 'message';
+    document.getElementById('deck-key-message-row').style.display = isMsg ? '' : 'none';
+    document.getElementById('deck-key-message').value = ov.message || '';
     document.getElementById('deck-key-fg').value = ov.fg || '#ffffff';
     document.getElementById('deck-key-bg').value = ov.bg || '#1a1a2e';
   }
@@ -733,13 +809,20 @@
     const label = document.getElementById('deck-key-label').value.trim();
     const fg    = document.getElementById('deck-key-fg').value;
     const bg    = document.getElementById('deck-key-bg').value;
-    if (label || fg !== '#ffffff' || bg !== '#1a1a2e') {
-      editorOverrides[overrideKey] = { label: label || undefined, fg, bg };
+    const isMsg = (editorLayouts[editorModelKey] || [])[selectedKeyIndex] === 'message';
+    const message = isMsg ? document.getElementById('deck-key-message').value.trim() : '';
+    if (label || message || fg !== '#ffffff' || bg !== '#1a1a2e') {
+      const ov = { label: label || undefined, message: message || undefined };
+      if (fg !== '#ffffff') ov.fg = fg;
+      if (bg !== '#1a1a2e') ov.bg = bg;
+      editorOverrides[overrideKey] = ov;
     } else {
       delete editorOverrides[overrideKey];
     }
+    // Refresh the preview only. Don't call selectKey(): it rewrites the input fields,
+    // and writing back the trimmed value would swallow each space as it is typed.
     renderEditorGrid();
-    selectKey(selectedKeyIndex);
+    document.querySelector(`.deck-editor-key[data-index="${selectedKeyIndex}"]`)?.classList.add('selected');
   }
 
   function saveEditorChanges() {
@@ -754,6 +837,9 @@
     editorLayouts[editorModelKey] = [...DEFAULT_LAYOUTS[editorModelKey]];
     for (const k of Object.keys(editorOverrides)) {
       if (k.startsWith(editorModelKey + ':')) delete editorOverrides[k];
+    }
+    for (const [k, v] of Object.entries(DEFAULT_OVERRIDES)) {
+      if (k.startsWith(editorModelKey + ':')) editorOverrides[k] = { ...v };
     }
     renderEditorGrid();
     selectedKeyIndex = null;
@@ -826,7 +912,14 @@
       }
     });
     // Live preview of colour/label changes
-    ['deck-key-label','deck-key-fg','deck-key-bg'].forEach(id => {
+    // Typing in the editor's fields must not reach the timer's page-wide shortcuts
+    // (e.g. "Speak up" would otherwise trigger S, P and Space).
+    const editorEl = document.getElementById('deck-editor');
+    ['keydown', 'keyup', 'keypress'].forEach(type => editorEl?.addEventListener(type, e => {
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) e.stopPropagation();
+    }));
+    ['deck-key-label','deck-key-message','deck-key-fg','deck-key-bg'].forEach(id => {
       document.getElementById(id)?.addEventListener('input', applyKeyOptions);
     });
     // D key opens editor

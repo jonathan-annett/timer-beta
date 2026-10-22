@@ -1,4 +1,4 @@
-/* global timerAPI,onKey_Pause,onKey_UndoPause,catchUpNow*/
+/* global timerAPI,onKey_Pause,onKey_UndoPause,catchUpNow,announceCustomMessage*/
 
 function processTimerApiMessage(msg) {
     const { error,cmd, code } = msg ;
@@ -191,6 +191,7 @@ function processTimerApiMessage(msg) {
                     }
                 });
                 lastTimeText = "";
+                announceCustomMessage(true);
                 if (togglePIPMode) togglePIPMode.lastContent = "";
                 getTimerColors();
             }

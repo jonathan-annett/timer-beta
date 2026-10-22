@@ -85,6 +85,7 @@ In the editor you can drag actions from the palette onto keys, set per-key label
 - **Presets** and **controls**: start, pause, ±1 min, ±15 s, clear pauses.
 - **Countdown keys**: show the remaining time on the deck. *Min / Hr* and *Sec / Min* work as a pair: `01` `30` for 90 seconds, `1h` `25m` for 85 minutes, and `+00` `45` in overtime. *Timer* shows the whole time on one key.
 - **Display toggles**: bar, clock and messages.
+- **Messages**: drag a *Message* action onto a key, and its text field opens in the editor. Pressing the key shows that message on the presenter screen; pressing it again clears it. The key lights up while its message is showing. *Clear message* removes whatever is showing, and *Type message* opens the on-screen message box. The XL comes with three examples (*Please wrap up*, *Speak up*, *Time for questions*).
 - **Catch up**: lights up while the timer is running fast or slow after a nudge; press it to jump straight to the adjusted time.
 - **Backlight**: steps the deck's brightness 100 → 50 → 25 → 10% for dark venues. You can also set it in the editor, and it's remembered.
 
