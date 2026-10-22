@@ -225,7 +225,8 @@ custom_message.addEventListener('focus', function(){
   doc.addEventListener("contextmenu",function(e){ e.preventDefault();});
   addEventListener('storage',onLocalStorage);
   
-		   [].forEach.call(document.querySelectorAll('div.buttons div.btn'),function(el){
+		   // Only key-macro buttons; others (deck, share) have their own click handlers
+		   [].forEach.call(document.querySelectorAll('div.buttons div.btn[data-keys]'),function(el){
 			  el.addEventListener('pointerdown',keyMacroClick);
 		  });
 

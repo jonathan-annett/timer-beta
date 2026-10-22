@@ -260,7 +260,8 @@ The `audience.html` page supports tap-to-fullscreen (calls `requestFullscreen()`
 
 ## Known Remaining TODOs
 
-- **Stream Deck has no reachable "connect" action.** The `deck` button opens the editor overlay, which then covers the button bar, so `connectDeck()` (which needs a user gesture for the WebHID permission prompt) is never called. Add a Connect button inside the editor header. Also: the Elgato desktop app must be quit or it holds the device, and the key-image protocol in `streamdeck.js` is untested on real hardware.
+- **Stream Deck connection:** open the editor (`deck` button or `D`) and click **Connect deck**; WebHID needs a click for the permission prompt. Previously granted decks re-attach on page load and on USB plug-in (`navigator.hid` `connect`/`disconnect` events). The Elgato desktop app must be quit or it holds the device. The key-image protocol is untested on real hardware.
+- **Button bar convention:** `timer.js` binds key-macro clicks only to `div.buttons div.btn[data-keys]`. Buttons without `data-keys` (e.g. `deck`, `share`) must bind their own handlers.
 - **Static hosting:** `share` and `audience.html` need `relay-server.js` running. On a plain static host (e.g. the `/beta` deployment) they fail; everything else works.
 - `icon-192.png` and `icon-512.png` are referenced in `manifest.json` but not yet created. The PWA manifest will fail validation until they exist. Any solid black square PNG at the right dimensions will work.
 - `currentdevice.js` is still in `public/` but unused. It can be deleted.

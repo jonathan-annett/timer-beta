@@ -1522,3 +1522,14 @@ html.portrait #disp_next_mins:before{
   text-decoration: underline;
 }
 
+
+/* Stream Deck connection status (editor) */
+.deck-status-bar {
+  display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap;
+  padding: 6px 16px; border-bottom: 1px solid #222; background: #0b0b0b; font-size: 12px;
+}
+#deck-status { color: #888; }
+#deck-status[data-kind="ok"]    { color: lime; }
+#deck-status[data-kind="error"] { color: #ff6b6b; }
+.deck-status-hint { color: #444; }
+#deck-connect-btn { background: #0a2a4a; border-color: #2a5a8a; color: #9cf; }

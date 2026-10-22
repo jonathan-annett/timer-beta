@@ -84,10 +84,10 @@
           <div id="btnfloat" class="btn btn2" data-keys="o">
             overlay
          </div>
-          <div id="btnshare" class="btn btn2" id="btnshare">
+          <div id="btnshare" class="btn btn2">
             share
           </div>
-          <div id="btndeck" class="btn btn2" id="btndeck">
+          <div id="btndeck" class="btn btn2">
             deck
           </div>
           
@@ -163,6 +163,7 @@
                 <option value="mk2" selected>Stream Deck MK.II (15 keys)</option>
                 <option value="xl">Stream Deck XL (32 keys)</option>
               </select>
+              <button id="deck-connect-btn">Connect deck</button>
               <button id="deck-export-btn">Export JSON</button>
               <button id="deck-import-btn">Import JSON</button>
               <button id="deck-reset-btn">Reset defaults</button>
@@ -170,6 +171,8 @@
               <button id="deck-editor-close">✕</button>
             </div>
           </div>
+          <div class="deck-status-bar"><span id="deck-status" data-kind="idle">Not connected</span>
+            <span class="deck-status-hint">Desktop Chrome/Edge only. Quit the Elgato Stream Deck app first.</span></div>
           <div class="deck-editor-body">
             <div class="deck-preview-area">
               <div class="deck-preview-label">Deck Preview — drag actions onto keys</div>

@@ -161,24 +161,48 @@
 
   // ─── WebHID connection ────────────────────────────────────────────────────
 
+  // Must be called from a user gesture (click) — WebHID requires it for the permission prompt.
   async function connectDeck() {
     if (!navigator.hid) {
-      console.warn('StreamDeck: WebHID not supported in this browser');
+      _showDeckStatus('WebHID unavailable — use desktop Chrome or Edge over HTTPS', 'error');
       return;
     }
+    if (device) { _showDeckStatus('Connected: ' + MODELS[modelKey].name, 'ok'); return; }
+    let hid;
     try {
       const filters = DEVICE_IDS.map(d => ({ vendorId: d.vendorId, productId: d.productId }));
-      const [hid] = await navigator.hid.requestDevice({ filters });
-      if (!hid) return;
-      await hid.open();
-      modelKey = detectModel(hid);
-      device = hid;
-      device.addEventListener('inputreport', onKeyEvent);
-      _showDeckStatus('✓ ' + (MODELS[modelKey] || {}).name || 'Stream Deck');
-      scheduleRedrawAll();
-      console.log('StreamDeck: connected', modelKey);
+      [hid] = await navigator.hid.requestDevice({ filters });
     } catch (err) {
-      console.warn('StreamDeck: connection failed', err);
+      _showDeckStatus('Could not open the device picker: ' + err.message, 'error');
+      return;
+    }
+    if (!hid) { _showDeckStatus('No device selected', 'idle'); return; }
+    await attach(hid);
+  }
+
+  // Shared by manual connect and auto-reconnect.
+  async function attach(hid) {
+    try {
+      if (!hid.opened) await hid.open();
+    } catch (err) {
+      console.warn('StreamDeck: open failed', err);
+      _showDeckStatus('Device is busy — quit the Elgato Stream Deck app, then Connect again', 'error');
+      return false;
+    }
+    modelKey = detectModel(hid);
+    device = hid;
+    device.addEventListener('inputreport', onKeyEvent);
+    _showDeckStatus('Connected: ' + MODELS[modelKey].name, 'ok');
+    scheduleRedrawAll();
+    console.log('StreamDeck: connected', modelKey);
+    return true;
+  }
+
+  function onHidDisconnect(ev) {
+    if (device && ev.device === device) {
+      device.removeEventListener('inputreport', onKeyEvent);
+      device = null;
+      _showDeckStatus('Disconnected — plug it back in, or click Connect', 'idle');
     }
   }
 
@@ -338,15 +362,14 @@
 
   // ─── Status indicator ─────────────────────────────────────────────────────
 
-  function _showDeckStatus(text) {
-    const el = document.getElementById('key_disp');
-    if (el) {
-      el.dataset.deckStatus = text;
-      el._deckStatusTimer && clearTimeout(el._deckStatusTimer);
-      el._deckStatusTimer = setTimeout(() => { delete el.dataset.deckStatus; }, 4000);
-    }
+  // kind: 'ok' | 'error' | 'idle'
+  function _showDeckStatus(text, kind = 'idle') {
+    const status = document.getElementById('deck-status');
+    if (status) { status.textContent = text; status.dataset.kind = kind; }
+    const connectBtn = document.getElementById('deck-connect-btn');
+    if (connectBtn) connectBtn.textContent = device ? 'Connected ✓' : 'Connect deck';
     const btn = document.getElementById('btndeck');
-    if (btn) btn.textContent = text;
+    if (btn) btn.textContent = device ? 'deck ✓' : 'deck';
   }
 
   // ─── In-app visual editor ─────────────────────────────────────────────────
@@ -542,13 +565,10 @@
   // ─── Wire up editor UI events ─────────────────────────────────────────────
 
   function initEditorEvents() {
-    document.getElementById('btndeck')?.addEventListener('click', () => {
-      if (document.getElementById('deck-editor').style.display === 'none') {
-        openEditor();
-      } else {
-        if (!device) connectDeck();
-      }
-    });
+    // Button bar 'deck' opens the editor; connecting happens from inside it
+    // (the editor overlay covers the button bar, so it can't be a second click here).
+    document.getElementById('btndeck')?.addEventListener('click', openEditor);
+    document.getElementById('deck-connect-btn')?.addEventListener('click', connectDeck);
     document.getElementById('deck-editor-close')?.addEventListener('click', closeEditor);
     document.getElementById('deck-save-btn')?.addEventListener('click', saveEditorChanges);
     document.getElementById('deck-reset-btn')?.addEventListener('click', resetToDefaults);
@@ -596,23 +616,21 @@
     _installTimerAPI();
     initEditorEvents();
 
-    // Allow reconnect if previously granted permission
-    if (navigator.hid) {
-      navigator.hid.getDevices().then(devices => {
-        const match = devices.find(d =>
-          DEVICE_IDS.some(id => id.vendorId === d.vendorId && id.productId === d.productId)
-        );
-        if (match) {
-          match.open().then(() => {
-            modelKey = detectModel(match);
-            device = match;
-            device.addEventListener('inputreport', onKeyEvent);
-            _showDeckStatus('✓ ' + MODELS[modelKey].name);
-            scheduleRedrawAll();
-          }).catch(() => {});
-        }
-      });
+    if (!navigator.hid) {
+      _showDeckStatus('WebHID unavailable here — layouts can still be edited', 'idle');
+      return;
     }
+    _showDeckStatus('Not connected', 'idle');
+
+    // Re-attach a previously granted device on load, and when one is plugged back in.
+    // (No user gesture needed for devices already granted to this site.)
+    const isDeck = d => DEVICE_IDS.some(id => id.vendorId === d.vendorId && id.productId === d.productId);
+    navigator.hid.getDevices().then(devices => {
+      const match = devices.find(isDeck);
+      if (match) attach(match);
+    });
+    navigator.hid.addEventListener('connect', ev => { if (!device && isDeck(ev.device)) attach(ev.device); });
+    navigator.hid.addEventListener('disconnect', onHidDisconnect);
   }
 
   // Run after DOM is ready
