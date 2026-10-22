@@ -70,10 +70,13 @@
     add_15sec:        { label: '+15 sec',   group: 'Controls',  cmd: () => _sendCmd({ cmd: 'nudge',  addtime: true,  msecs: 15000 }) },
     sub_15sec:        { label: '-15 sec',   group: 'Controls',  cmd: () => _sendCmd({ cmd: 'nudge',  addtime: false, msecs: 15000 }) },
     undo_pause:       { label: 'Clear\nPause', group: 'Controls', cmd: () => _sendCmd({ cmd: 'undopause' }) },
+    // Lit only while the timer is easing to an adjusted end time (adjusting_up / adjusting_down)
+    catch_up:         { label: 'Catch\nup',  group: 'Controls',  cmd: () => _sendCmd({ cmd: 'catchup' }) },
     toggle_bar:       { label: 'Bar',       group: 'Display',   toggleState: 'showbar',      cmd: () => _sendCmd({ cmd: 'bar' }) },
     toggle_time:      { label: 'Clock',     group: 'Display',   toggleState: 'showtimenow',  cmd: () => _sendCmd({ cmd: 'time' }) },
     toggle_messages:  { label: 'Messages',  group: 'Display',   toggleState: 'showmessages', cmd: () => _sendCmd({ cmd: 'messages' }) },
     toggle_presenter: { label: 'Remote',    group: 'Display',   cmd: () => _sendCmd({ cmd: 'presenter' }) },
+    brightness_cycle: { label: 'Backlight', group: 'Display',   cmd: () => cycleBrightness() },
     // Display-only keys showing the remaining time (see countdownText). Pressing them does nothing.
     countdown:        { label: 'Timer',     group: 'Countdown', display: 'full',  cmd: null },
     countdown_major:  { label: 'Min / Hr',  group: 'Countdown', display: 'major', cmd: null },
@@ -95,7 +98,7 @@
       'preset_10','preset_20','preset_30','preset_45','preset_60','preset_90','preset_120','preset_180',
       'empty','empty','empty','empty','empty','empty','countdown_major','countdown_minor',
       'start_restart','pause_resume','add_1min','sub_1min','add_15sec','sub_15sec','undo_pause','custom_msg',
-      'toggle_bar','toggle_time','toggle_messages','toggle_presenter','empty','empty','empty','empty',
+      'toggle_bar','toggle_time','toggle_messages','toggle_presenter','catch_up','brightness_cycle','empty','empty',
     ],
   };
 
@@ -105,7 +108,7 @@
   // it changes every tick and isn't drawn on keys, so tracking it would repaint the
   // whole deck ~10x a second.
   let deckState = {
-    expired: false, impending: false,
+    expired: false, impending: false, adjusting_up: false, adjusting_down: false,
     pausing: false, showbar: false, showtimenow: false, showmessages: false,
   };
 
@@ -216,6 +219,43 @@
     await attach(hid);
   }
 
+  // ─── Backlight ────────────────────────────────────────────────────────────
+
+  const BRIGHTNESS_KEY = 'streamdeck_brightness';
+  const BRIGHTNESS_LEVELS = [100, 75, 50, 25, 10];   // editor choices
+  const BRIGHTNESS_CYCLE  = [100, 50, 25, 10];       // deck key steps (quick to reach in the dark)
+  let brightness = parseInt(localStorage.getItem(BRIGHTNESS_KEY), 10) || 100;
+
+  async function applyBrightness() {
+    if (!device || !deviceInfo) return;
+    try {
+      if (deviceInfo.protocol === 'gen2') {
+        const data = new Uint8Array(31); data.set([0x08, brightness]);
+        await device.sendFeatureReport(0x03, data);
+      } else {
+        const data = new Uint8Array(16); data.set([0x55, 0xaa, 0xd1, 0x01, brightness]);
+        await device.sendFeatureReport(0x05, data);
+      }
+    } catch (err) {
+      console.warn('StreamDeck: set brightness failed', err);
+    }
+  }
+
+  function setBrightness(pct) {
+    brightness = Math.max(1, Math.min(100, pct | 0));
+    localStorage.setItem(BRIGHTNESS_KEY, String(brightness));
+    const sel = document.getElementById('deck-brightness');
+    if (sel) sel.value = String(brightness);
+    applyBrightness();
+    scheduleRedrawAll();   // the Backlight key shows the current level
+  }
+
+  // Next lower step, wrapping from the dimmest back to 100%.
+  function cycleBrightness() {
+    const next = BRIGHTNESS_CYCLE.find(l => l < brightness);
+    setBrightness(next === undefined ? BRIGHTNESS_CYCLE[0] : next);
+  }
+
   // Shared by manual connect and auto-reconnect.
   async function attach(hid) {
     try {
@@ -231,6 +271,7 @@
     device = hid;
     device.addEventListener('inputreport', onKeyEvent);
     _showDeckStatus('Connected: ' + deviceInfo.name, 'ok');
+    applyBrightness();
     scheduleRedrawAll();
     console.log('StreamDeck: connected', modelKey);
     return true;
@@ -411,6 +452,11 @@
     if (deckState.expired) { bg = '#2d0000'; fg = '#ff4444'; }
     else if (deckState.impending && actionKey !== 'empty') { bg = '#2d1a00'; fg = '#ff9900'; }
     if (actionKey === 'pause_resume' && deckState.pausing) { bg = '#2d1a00'; fg = '#ff9900'; }
+    if (actionKey === 'catch_up') {
+      const adjusting = deckState.adjusting_up || deckState.adjusting_down;
+      bg = adjusting ? (override.bg || '#003300') : '#0d0d0d';
+      fg = adjusting ? (override.fg || '#33ff33') : '#444444';
+    }
 
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
@@ -430,7 +476,9 @@
       ctx.fillText(text, size / 2, size / 2 + 1);
     }
 
-    const rawLabel = action.display ? '' : override.label ||
+    const rawLabel = action.display ? '' :
+      actionKey === 'brightness_cycle' ? (override.label || 'Backlight') + '\n' + brightness + '%' :
+      override.label ||
       (action.toggleState && deckState[action.toggleState] && action.altLabel ? action.altLabel : action.label) || '';
 
     if (rawLabel) {
@@ -756,6 +804,12 @@
     document.getElementById('deck-save-btn')?.addEventListener('click', saveEditorChanges);
     document.getElementById('deck-reset-btn')?.addEventListener('click', resetToDefaults);
     document.getElementById('deck-export-btn')?.addEventListener('click', exportLayout);
+    const bsel = document.getElementById('deck-brightness');
+    if (bsel) {
+      if (!BRIGHTNESS_LEVELS.includes(brightness)) bsel.add(new Option(brightness + '%', String(brightness)));
+      bsel.value = String(brightness);
+      bsel.addEventListener('change', e => setBrightness(parseInt(e.target.value, 10)));
+    }
     document.getElementById('deck-import-btn')?.addEventListener('click', importLayout);
     document.getElementById('deck-model-select')?.addEventListener('change', e => {
       editorModelKey = e.target.value;

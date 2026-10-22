@@ -75,6 +75,9 @@
           <div class="btn btn2" data-keys="Control,ArrowUp,!Control">
               +1&nbsp;min
           </div>
+          <div id="btncatchup" class="btn btn2" data-keys="Control,Enter,!Control" title="Jump straight to the adjusted time (Ctrl+Enter)">
+              catch&nbsp;up
+          </div>
           <div id="btnpause" class="btn btn2" data-keys="&quot;">
               pause
           </div>
@@ -165,6 +168,12 @@
               </select>
               <button id="deck-connect-btn">Connect deck</button>
               <button id="deck-forget-btn" style="display:none">Forget deck</button>
+              <label class="deck-brightness-label">Backlight
+                <select id="deck-brightness">
+                  <option value="100">100%</option><option value="75">75%</option>
+                  <option value="50">50%</option><option value="25">25%</option><option value="10">10%</option>
+                </select>
+              </label>
               <button id="deck-export-btn">Export JSON</button>
               <button id="deck-import-btn">Import JSON</button>
               <button id="deck-reset-btn">Reset defaults</button>

@@ -41,7 +41,7 @@ That's all you need for most events. Everything below is optional.
 | Key | Action |
 |---|---|
 | **Ctrl+↑ / Ctrl+↓** | Add / remove 1 minute (applied immediately) |
-| **↑ / ↓** | Add / remove 1 second; press **Ctrl+Enter** to apply |
+| **↑ / ↓** | Add / remove 1 second. The timer runs fast or slow until it reaches the new time; **Ctrl+Enter** or the **catch up** button jumps straight there |
 | **Shift+↑ / Shift+↓** | Move the start time earlier / later (changes elapsed time, not the end) |
 | **← / →** | Shift the whole timer (start and end) by 1 second; with **Ctrl**, 1 minute |
 | **"** or numpad **/** | Pause / resume |
@@ -85,6 +85,8 @@ In the editor you can drag actions from the palette onto keys, set per-key label
 - **Presets** and **controls**: start, pause, ±1 min, ±15 s, clear pauses.
 - **Countdown keys**: show the remaining time on the deck. *Min / Hr* and *Sec / Min* work as a pair: `01` `30` for 90 seconds, `1h` `25m` for 85 minutes, and `+00` `45` in overtime. *Timer* shows the whole time on one key.
 - **Display toggles**: bar, clock and messages.
+- **Catch up**: lights up while the timer is running fast or slow after a nudge; press it to jump straight to the adjusted time.
+- **Backlight**: steps the deck's brightness 100 → 50 → 25 → 10% for dark venues. You can also set it in the editor, and it's remembered.
 
 **Disconnect** releases the deck and stops it reconnecting until you click Connect again. **Forget deck** removes the browser's permission entirely.
 

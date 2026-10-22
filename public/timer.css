@@ -1534,3 +1534,13 @@ html.portrait #disp_next_mins:before{
 .deck-status-hint { color: #444; }
 #deck-connect-btn { background: #0a2a4a; border-color: #2a5a8a; color: #9cf; }
 #deck-forget-btn { background: #2d0000; border-color: #5a0000; color: #ff8888; }
+
+/* Catch up button: only active while the timer is easing to an adjusted end time */
+#btncatchup { opacity: 0.3; pointer-events: none; }
+html.adjusting_time #btncatchup {
+  opacity: 1; pointer-events: auto;
+  color: lime; border-color: lime;
+  animation: catchup-pulse 1.2s ease-in-out infinite;
+}
+@keyframes catchup-pulse { 50% { box-shadow: 0 0 8px lime; } }
+.deck-brightness-label { font-size: 12px; color: #888; display: flex; gap: 4px; align-items: center; }

@@ -361,6 +361,7 @@ custom_message.addEventListener('focus', function(){
 			 endsAt -= 25;
 			 clearRemainClass("adjustingDown");
 			 setRemainClass("adjusting") ;
+			 setHtmlClass("adjusting_time");
 			 adjusting_delta = Number ( (endsAt -seekEndsAt) / oneSecond).toFixed(1);
 			 
 			 keyDisp.textContent = "speeding up to match actual time ("+remain_actual+")  "+adjusting_delta+" seconds offset";
@@ -375,6 +376,7 @@ custom_message.addEventListener('focus', function(){
 				  endsAt += 25;
 				  clearRemainClass("adjusting");
 				  setRemainClass("adjustingDown") ;
+				  setHtmlClass("adjusting_time");
 				  adjusting_delta = Number ( (endsAt -seekEndsAt) / oneSecond).toFixed(1)
 				  keyDisp.textContent = "slowing down to match actual time ("+remain_actual+")  "+adjusting_delta+" seconds offset";
 				  writeNumber("endsAt",endsAt);
@@ -383,6 +385,7 @@ custom_message.addEventListener('focus', function(){
 				  endsAt = seekEndsAt;
 				  clearRemainClass("adjusting") ;
 				  clearRemainClass("adjustingDown") ;
+				  clearHtmlClass("adjusting_time");
 				  remain_actual = undefined;
 				  keyDisp.textContent = tabCount === 1  ? "" : controllerCount > 1 ? "MULTIPLE CONTROLLERS TABS ARE OPEN. CLOSE ONE!" : pausedMsec === 0 ? "remote display active" : "countdown was paused at "+ local24HourTime (timeProvider.date(pausedAt));
 				  writeNumber("endsAt",endsAt);
@@ -1071,17 +1074,20 @@ function onKey_Shift_Space(ev) {
 }
 
 function onKey_Control_Space(ev) {
- 
-	const preserve_default = defaultDuration;
+	catchUpNow();
+}
 
+// "Catch up": jump straight to the adjusted end time instead of easing towards it.
+// Used by Ctrl+Enter, Ctrl+Space, the catch up button and the `catchup` API command.
+function catchUpNow() {
 	lastUpdateTick = 0;
 	endsAt = seekEndsAt;
 	clearRemainClass("adjusting") ;
 	clearRemainClass("adjustingDown") ;
+	clearHtmlClass("adjusting_time");
 	keyDisp.textContent = tabCount+" tabs open";
-	lastTimeText="";
+	lastTimeText="";   // force the next tick to re-send state (clears adjusting flags downstream)
 	writeNumber("endsAt",endsAt);
-
 }
 
 let videoFrameTimer;
@@ -1470,12 +1476,7 @@ function onDocKeyDown(ev){
 			case "Enter" : 
 				
 				if (controlling) {
-					  lastUpdateTick = 0;
-					  endsAt = seekEndsAt;
-					  clearRemainClass("adjusting") ;
-					  clearRemainClass("adjustingDown") ;
-					  keyDisp.textContent = tabCount+" tabs open";
-					  writeNumber("endsAt",endsAt);
+					  catchUpNow();
 				 } else {	  
 					saveEditedTime();
 				 }				

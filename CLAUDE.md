@@ -109,7 +109,9 @@ This means loading order matters but both can coexist. `streamdeck.js` loads fir
 
 **Outbound** (timer → integrations): `timerAPI.send({ setVariableValues: { remain, expired, impending, pausing, showbar, showtimenow, showmessages, endsAt, startedAt, ... } })`
 
-**Inbound** (integrations → timer): call `processTimerApiMessage({ cmd, ... })` directly. The full command set is documented in `timerapi.js`. Key commands: `start`, `pause`, `undopause`, `adjust`, `nudge`, `custommessage`, `settimercolors`, `keys`.
+**Inbound** (integrations → timer): call `processTimerApiMessage({ cmd, ... })` directly. The full command set is documented in `timerapi.js`. Key commands: `start`, `pause`, `undopause`, `adjust`, `nudge`, `catchup`, `custommessage`, `settimercolors`, `keys`.
+
+**Catch up:** ↑/↓ (and the `nudge` command) move `seekEndsAt`; each tick eases `endsAt` towards it by 25 ms, so the display runs fast or slow. `catchUpNow()` in `timer.js` snaps `endsAt = seekEndsAt`. It is shared by Ctrl+Enter, Ctrl+Space, the `catch up` button and the `catchup` command.
 
 ---
 
@@ -133,6 +135,7 @@ Timer visual state lives entirely in CSS classes on `<html>`. JS uses `setHtmlCl
 | `controlling` | Ctrl key held — changes arrow key behaviour |
 | `shifting` | Shift key held |
 | `editing` | User is typing a custom duration |
+| `adjusting_time` | Timer is easing towards an adjusted end time (enables the catch up button) |
 | `twoplus` | Two or more timer tabs open |
 | `portrait` / `landscape` | Orientation (set by currentdevice.js or resize handler) |
 | `overlay` | PiP overlay active |
@@ -170,6 +173,7 @@ All timer state persists in localStorage. These are the canonical keys:
 | `streamdeck_layout_xl` | JSON | Stream Deck XL button layout |
 | `streamdeck_key_overrides` | JSON | Per-key label/colour customisations |
 | `streamdeck_autoconnect` | `'0'` or absent | `'0'` after the user clicks Disconnect; suppresses auto-reconnect |
+| `streamdeck_brightness` | 1–100 | Stream Deck backlight %, applied on connect |
 | `tab_<id>` | timestamp ms | Heartbeat for multi-tab detection |
 | `controller_tab_<id>` | timestamp ms | Marks this tab as a controller |
 
@@ -228,6 +232,8 @@ Key images are rendered to an offscreen Canvas per key, then encoded per device 
 The in-app editor opens with the `D` key or the "deck" button. Layouts are stored in localStorage per model (`streamdeck_layout_mk2` etc.). Per-key overrides (label, fg colour, bg colour) are stored separately in `streamdeck_key_overrides`.
 
 **Countdown keys:** the `countdown` (whole time), `countdown_major` and `countdown_minor` actions are display-only. Major/minor show `mm`/`ss` under an hour (`01` `30`), `h`/`m` from an hour up (`1h` `25m`), and a `+` prefix in overtime. They are driven by the timer's `remain` text, which is parsed into `remainSec` and deliberately kept out of `deckState`. Only countdown keys whose visible text changed are repainted (`countdownCache`), so under an hour that is one key per second. The XL default layout puts the major/minor pair at the end of row 2.
+
+**Catch up and backlight keys:** `catch_up` is drawn dim unless `deckState.adjusting_up`/`adjusting_down` is set. `brightness_cycle` steps 100 → 50 → 25 → 10% and shows the level. Brightness is a feature report: gen2 `0x03 [0x08, pct]`, gen1 `0x05 [0x55, 0xaa, 0xd1, 0x01, pct]`. It is a device setting, so it is saved immediately rather than with the layout. The XL default layout puts both keys in the empty bottom-row slots.
 
 On page load, `streamdeck.js` calls `navigator.hid.getDevices()` to auto-reconnect to any previously-granted device without another permission prompt.
 

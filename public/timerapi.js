@@ -1,4 +1,4 @@
-/* global timerAPI,onKey_Pause,onKey_UndoPause*/
+/* global timerAPI,onKey_Pause,onKey_UndoPause,catchUpNow*/
 
 function processTimerApiMessage(msg) {
     const { error,cmd, code } = msg ;
@@ -56,6 +56,11 @@ function processTimerApiMessage(msg) {
                 }
 
             });
+            break;
+        }
+
+        case "catchup": {
+            catchUpNow();
             break;
         }
 
