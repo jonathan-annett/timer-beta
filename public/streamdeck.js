@@ -109,6 +109,9 @@
   let deviceInfo = null;     // matching DEVICE_IDS entry
   let modelKey = null;
   let prevKeys = [];         // last key states, for press edge detection
+  let pausedDevice = null;   // granted deck the user disconnected (kept for Forget / quick reconnect)
+  const AUTOCONNECT_KEY = 'streamdeck_autoconnect';  // '0' = user disconnected; don't auto-attach
+  const autoConnectAllowed = () => localStorage.getItem(AUTOCONNECT_KEY) !== '0';
   let layouts = {};          // { mini: [...actionKeys], mk2: [...], xl: [...] }
   let keyOverrides = {};     // { 'mk2:7': { label: 'Custom', fg: '#fff', bg: '#003' } }
   let dirtyKeys = new Set(); // keys needing redraw
@@ -180,6 +183,11 @@
       return;
     }
     if (device) { _showDeckStatus('Connected: ' + deviceInfo.name, 'ok'); return; }
+    localStorage.removeItem(AUTOCONNECT_KEY);            // explicit Connect re-enables auto-connect
+    if (pausedDevice) {                                  // still granted — no picker needed
+      const hid = pausedDevice; pausedDevice = null;
+      if (await attach(hid)) return;
+    }
     let hid;
     try {
       const filters = DEVICE_IDS.map(d => ({ vendorId: d.vendorId, productId: d.productId }));
@@ -213,11 +221,50 @@
   }
 
   function onHidDisconnect(ev) {
+    if (pausedDevice && ev.device === pausedDevice) { pausedDevice = null; _showDeckStatus('Not connected', 'idle'); }
     if (device && ev.device === device) {
       device.removeEventListener('inputreport', onKeyEvent);
       device = null; deviceInfo = null;
-      _showDeckStatus('Disconnected — plug it back in, or click Connect', 'idle');
+      _showDeckStatus('Unplugged — plug it back in, or click Connect', 'idle');
     }
+  }
+
+  // Release the deck: blank its keys, close it, and stop auto-reconnect until Connect is clicked.
+  async function disconnectDeck() {
+    if (!device) return;
+    localStorage.setItem(AUTOCONNECT_KEY, '0');
+    const hid = device;
+    dirtyKeys.clear();
+    while (drawing) await new Promise(r => setTimeout(r, 20));   // let any in-flight flush finish
+    await blankKeys();
+    hid.removeEventListener('inputreport', onKeyEvent);
+    device = null; deviceInfo = null;
+    try { await hid.close(); } catch (_) {}
+    pausedDevice = hid;
+    _showDeckStatus('Disconnected — click Connect to use it again', 'idle');
+  }
+
+  // Unpair: disconnect, then revoke this site's permission so the picker is needed again.
+  async function forgetDeck() {
+    if (device) await disconnectDeck();
+    const hid = pausedDevice;
+    pausedDevice = null;
+    localStorage.removeItem(AUTOCONNECT_KEY);
+    if (hid && typeof hid.forget === 'function') {
+      try { await hid.forget(); } catch (err) { console.warn('StreamDeck: forget failed', err); }
+      _showDeckStatus('Forgotten — Connect will ask for permission again', 'idle');
+    } else {
+      _showDeckStatus('Disconnected (this browser cannot revoke permission; remove it in site settings)', 'idle');
+    }
+  }
+
+  async function blankKeys() {
+    const model = MODELS[modelKey];
+    if (!device || !model) return;
+    const c = document.createElement('canvas');
+    c.width = c.height = model.keySize;
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, c.width, c.height);
+    for (let i = 0; i < model.keyCount; i++) await writeKeyImage(i, c);
   }
 
   function detectModel(hid) {
@@ -433,7 +480,9 @@
     const status = document.getElementById('deck-status');
     if (status) { status.textContent = text; status.dataset.kind = kind; }
     const connectBtn = document.getElementById('deck-connect-btn');
-    if (connectBtn) connectBtn.textContent = device ? 'Connected ✓' : 'Connect deck';
+    if (connectBtn) connectBtn.textContent = device ? 'Disconnect' : 'Connect deck';
+    const forgetBtn = document.getElementById('deck-forget-btn');
+    if (forgetBtn) forgetBtn.style.display = (device || pausedDevice) ? '' : 'none';
     const btn = document.getElementById('btndeck');
     if (btn) btn.textContent = device ? 'deck ✓' : 'deck';
   }
@@ -634,7 +683,10 @@
     // Button bar 'deck' opens the editor; connecting happens from inside it
     // (the editor overlay covers the button bar, so it can't be a second click here).
     document.getElementById('btndeck')?.addEventListener('click', openEditor);
-    document.getElementById('deck-connect-btn')?.addEventListener('click', connectDeck);
+    document.getElementById('deck-connect-btn')?.addEventListener('click', () => device ? disconnectDeck() : connectDeck());
+    document.getElementById('deck-forget-btn')?.addEventListener('click', () => {
+      if (confirm('Forget this Stream Deck? You will need to grant permission again to reconnect.')) forgetDeck();
+    });
     document.getElementById('deck-editor-close')?.addEventListener('click', closeEditor);
     document.getElementById('deck-save-btn')?.addEventListener('click', saveEditorChanges);
     document.getElementById('deck-reset-btn')?.addEventListener('click', resetToDefaults);
@@ -693,9 +745,15 @@
     const isDeck = d => DEVICE_IDS.some(id => id.vendorId === d.vendorId && id.productId === d.productId);
     navigator.hid.getDevices().then(devices => {
       const match = devices.find(isDeck);
-      if (match) attach(match);
+      if (!match) return;
+      if (autoConnectAllowed()) attach(match);
+      else { pausedDevice = match; _showDeckStatus('Disconnected — click Connect to use it again', 'idle'); }
     });
-    navigator.hid.addEventListener('connect', ev => { if (!device && isDeck(ev.device)) attach(ev.device); });
+    navigator.hid.addEventListener('connect', ev => {
+      if (device || !isDeck(ev.device)) return;
+      if (autoConnectAllowed()) attach(ev.device);
+      else { pausedDevice = ev.device; _showDeckStatus('Disconnected — click Connect to use it again', 'idle'); }
+    });
     navigator.hid.addEventListener('disconnect', onHidDisconnect);
   }
 

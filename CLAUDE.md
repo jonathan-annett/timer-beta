@@ -169,6 +169,7 @@ All timer state persists in localStorage. These are the canonical keys:
 | `streamdeck_layout_mk2` | JSON | Stream Deck MK.II button layout |
 | `streamdeck_layout_xl` | JSON | Stream Deck XL button layout |
 | `streamdeck_key_overrides` | JSON | Per-key label/colour customisations |
+| `streamdeck_autoconnect` | `'0'` or absent | `'0'` after the user clicks Disconnect; suppresses auto-reconnect |
 | `tab_<id>` | timestamp ms | Heartbeat for multi-tab detection |
 | `controller_tab_<id>` | timestamp ms | Marks this tab as a controller |
 
@@ -222,11 +223,13 @@ The latest `setVariableValues` snapshot is cached on the room object so new view
 
 Supported models: Mini (6 keys, 3×2), MK.II (15 keys, 5×3), XL (32 keys, 8×4).
 
-Key images are rendered to an offscreen Canvas per key, converted to BGR565 little-endian pixel data, and sent via HID reports in 1024-byte chunks. Only dirty keys are redrawn on each state change — not the full deck — to stay within USB bandwidth.
+Key images are rendered to an offscreen Canvas per key, then encoded per device generation: JPEG for gen2 (MK.2, original v2, XL), BMP for gen1 (Mini, original v1). They are sent as paged HID output reports. Only dirty keys are redrawn on each state change — not the full deck — to stay within USB bandwidth.
 
 The in-app editor opens with the `D` key or the "deck" button. Layouts are stored in localStorage per model (`streamdeck_layout_mk2` etc.). Per-key overrides (label, fg colour, bg colour) are stored separately in `streamdeck_key_overrides`.
 
 On page load, `streamdeck.js` calls `navigator.hid.getDevices()` to auto-reconnect to any previously-granted device without another permission prompt.
+
+In the editor, **Disconnect** blanks the keys, closes the device and sets `localStorage.streamdeck_autoconnect = '0'`. That stops auto-attach on reload and replug until **Connect** is clicked, which clears the flag and re-opens the still-granted device without the picker. **Forget deck** disconnects, then calls `HIDDevice.forget()` to revoke the site's permission.
 
 ---
 
@@ -265,8 +268,6 @@ The `audience.html` page supports tap-to-fullscreen (calls `requestFullscreen()`
 - **Static hosting:** `share` and `audience.html` need `relay-server.js` running. On a plain static host (e.g. the `/beta` deployment) they fail; everything else works.
 - `icon-192.png` and `icon-512.png` are referenced in `manifest.json` but not yet created. The PWA manifest will fail validation until they exist. Any solid black square PNG at the right dimensions will work.
 - `currentdevice.js` is still in `public/` but unused. It can be deleted.
-- The `btnshare` element in `timer.html` has a duplicate `id="btnshare"` attribute (harmless, but worth cleaning up).
-- The Stream Deck image protocol in `streamdeck.js` covers MK.II/XL/Mini gen2. Original gen1 Mini may need a slightly different header format — test if a gen1 device is encountered.
 - No authentication on the relay server. The room code is the only access control. Sufficient for typical use; add a token if the server will be public-facing and high-value.
 
 ---

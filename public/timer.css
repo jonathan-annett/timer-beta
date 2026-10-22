@@ -1533,3 +1533,4 @@ html.portrait #disp_next_mins:before{
 #deck-status[data-kind="error"] { color: #ff6b6b; }
 .deck-status-hint { color: #444; }
 #deck-connect-btn { background: #0a2a4a; border-color: #2a5a8a; color: #9cf; }
+#deck-forget-btn { background: #2d0000; border-color: #5a0000; color: #ff8888; }
