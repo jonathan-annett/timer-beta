@@ -18,17 +18,28 @@
     xl:   { name: 'Stream Deck XL',   cols: 8, rows: 4, keySize: 96,  keyCount: 32 },
   };
 
-  // USB vendor/product IDs for model detection
+  // USB product IDs (Elgato vendor 0x0fd9), per the published @elgato-stream-deck device list.
+  // protocol 'gen2': JPEG keys, 1024-byte reports, key states from input byte 3.
+  //          'gen1': BMP keys, key states from input byte 0 (original v1 and both Minis).
   const DEVICE_IDS = [
-    { vendorId: 0x0fd9, productId: 0x0063, model: 'mini' },
-    { vendorId: 0x0fd9, productId: 0x006d, model: 'mini' },
-    { vendorId: 0x0fd9, productId: 0x0080, model: 'mini' },
-    { vendorId: 0x0fd9, productId: 0x0060, model: 'mk2'  },
-    { vendorId: 0x0fd9, productId: 0x006c, model: 'mk2'  },
-    { vendorId: 0x0fd9, productId: 0x0090, model: 'mk2'  },
-    { vendorId: 0x0fd9, productId: 0x008f, model: 'xl'   },
-    { vendorId: 0x0fd9, productId: 0x00c6, model: 'xl'   },
-  ];
+    { productId: 0x0060, model: 'mk2',  protocol: 'gen1', name: 'Stream Deck (original)',    reportSize: 8191, pageBase: 1, mirrorCols: true },
+    { productId: 0x006d, model: 'mk2',  protocol: 'gen2', name: 'Stream Deck (original v2)' },
+    { productId: 0x0080, model: 'mk2',  protocol: 'gen2', name: 'Stream Deck MK.2' },
+    { productId: 0x00a5, model: 'mk2',  protocol: 'gen2', name: 'Stream Deck MK.2' },
+    { productId: 0x0063, model: 'mini', protocol: 'gen1', name: 'Stream Deck Mini',          reportSize: 1024, pageBase: 0 },
+    { productId: 0x0090, model: 'mini', protocol: 'gen1', name: 'Stream Deck Mini MK.2',     reportSize: 1024, pageBase: 0 },
+    { productId: 0x006c, model: 'xl',   protocol: 'gen2', name: 'Stream Deck XL' },
+    { productId: 0x008f, model: 'xl',   protocol: 'gen2', name: 'Stream Deck XL' },
+  ].map(d => ({ vendorId: 0x0fd9, ...d }));
+
+  // Key image orientation. gen2 (MK.2/XL) is rotated 180°. The gen1 values are
+  // best guesses — if images appear rotated or mirrored on a Mini / original,
+  // adjust here (degrees clockwise, plus optional horizontal mirror).
+  const ORIENTATION = {
+    gen2: { rotate: 180, mirror: false },
+    mini: { rotate: 90,  mirror: false },   // UNVERIFIED on hardware
+    gen1: { rotate: 180, mirror: false },   // original v1 — UNVERIFIED on hardware
+  };
 
   // ─── Action definitions ───────────────────────────────────────────────────
 
@@ -86,13 +97,18 @@
 
   // ─── Runtime state ────────────────────────────────────────────────────────
 
+  // Boolean flags that change how keys are drawn. `remain` is deliberately NOT here:
+  // it changes every tick and isn't drawn on keys, so tracking it would repaint the
+  // whole deck ~10x a second.
   let deckState = {
-    remain: '0:00', expired: false, impending: false,
+    expired: false, impending: false,
     pausing: false, showbar: false, showtimenow: false, showmessages: false,
   };
 
   let device = null;
+  let deviceInfo = null;     // matching DEVICE_IDS entry
   let modelKey = null;
+  let prevKeys = [];         // last key states, for press edge detection
   let layouts = {};          // { mini: [...actionKeys], mk2: [...], xl: [...] }
   let keyOverrides = {};     // { 'mk2:7': { label: 'Custom', fg: '#fff', bg: '#003' } }
   let dirtyKeys = new Set(); // keys needing redraw
@@ -109,13 +125,9 @@
           const v = msg.setVariableValues;
           let changed = false;
           for (const k of Object.keys(v)) {
+            if (!(k in deckState)) continue;
             const val = (typeof v[k] === 'string') ? (v[k] === '1' || v[k] === 'true') : !!v[k];
-            if (k in deckState) {
-              if (deckState[k] !== val) { deckState[k] = val; changed = true; }
-            }
-            if (k === 'remain' && deckState.remain !== v[k]) {
-              deckState.remain = v[k]; changed = true;
-            }
+            if (deckState[k] !== val) { deckState[k] = val; changed = true; }
           }
           if (changed && device) scheduleRedrawAll();
         }
@@ -167,7 +179,7 @@
       _showDeckStatus('WebHID unavailable — use desktop Chrome or Edge over HTTPS', 'error');
       return;
     }
-    if (device) { _showDeckStatus('Connected: ' + MODELS[modelKey].name, 'ok'); return; }
+    if (device) { _showDeckStatus('Connected: ' + deviceInfo.name, 'ok'); return; }
     let hid;
     try {
       const filters = DEVICE_IDS.map(d => ({ vendorId: d.vendorId, productId: d.productId }));
@@ -189,10 +201,12 @@
       _showDeckStatus('Device is busy — quit the Elgato Stream Deck app, then Connect again', 'error');
       return false;
     }
-    modelKey = detectModel(hid);
+    deviceInfo = detectModel(hid);
+    modelKey = deviceInfo.model;
+    prevKeys = [];
     device = hid;
     device.addEventListener('inputreport', onKeyEvent);
-    _showDeckStatus('Connected: ' + MODELS[modelKey].name, 'ok');
+    _showDeckStatus('Connected: ' + deviceInfo.name, 'ok');
     scheduleRedrawAll();
     console.log('StreamDeck: connected', modelKey);
     return true;
@@ -201,26 +215,34 @@
   function onHidDisconnect(ev) {
     if (device && ev.device === device) {
       device.removeEventListener('inputreport', onKeyEvent);
-      device = null;
+      device = null; deviceInfo = null;
       _showDeckStatus('Disconnected — plug it back in, or click Connect', 'idle');
     }
   }
 
   function detectModel(hid) {
-    const match = DEVICE_IDS.find(d => d.vendorId === hid.vendorId && d.productId === hid.productId);
-    return match ? match.model : 'mk2';
+    return DEVICE_IDS.find(d => d.vendorId === hid.vendorId && d.productId === hid.productId)
+      || { model: 'mk2', protocol: 'gen2', name: 'Stream Deck (unknown model)' };
+  }
+
+  // The original (v1) deck reports and addresses keys right-to-left within each row.
+  function physicalKeyIndex(i) {
+    if (!deviceInfo || !deviceInfo.mirrorCols) return i;
+    const cols = MODELS[modelKey].cols, col = i % cols;
+    return i - col + (cols - 1 - col);
   }
 
   function onKeyEvent(ev) {
-    const data = new Uint8Array(ev.data.buffer);
+    if (ev.reportId !== 0x01) return;
+    const data = new Uint8Array(ev.data.buffer, ev.data.byteOffset, ev.data.byteLength);
     const model = MODELS[modelKey];
     if (!model) return;
-    // Key state starts at byte 3 for most models; byte 1 for Mini
-    const offset = modelKey === 'mini' ? 1 : 3;
+    const offset = deviceInfo.protocol === 'gen2' ? 3 : 0;
     for (let i = 0; i < model.keyCount; i++) {
-      if (data[offset + i] === 1) {
-        onKeyPress(i);
-      }
+      const down = data[offset + i] === 1;
+      // Fire on press only (not while held, and not again when another key changes)
+      if (down && !prevKeys[i]) onKeyPress(physicalKeyIndex(i));
+      prevKeys[i] = down;
     }
   }
 
@@ -253,19 +275,25 @@
     }
   }
 
+  let drawing = false;
   async function flushDraw() {
     drawScheduled = false;
-    if (!device || !modelKey) return;
-    const model = MODELS[modelKey];
-    const layout = layouts[modelKey];
-    for (const index of dirtyKeys) {
-      if (index < model.keyCount) {
-        const actionKey = layout ? layout[index] : 'empty';
-        const pixels = renderKey(index, actionKey, model.keySize);
-        await writeKeyImage(index, pixels, model);
+    if (drawing) { drawScheduled = true; setTimeout(flushDraw, 30); return; } // one flush at a time
+    drawing = true;
+    try {
+      while (device && modelKey && dirtyKeys.size) {
+        const batch = [...dirtyKeys]; dirtyKeys.clear();   // keys dirtied mid-flush go in the next pass
+        const model = MODELS[modelKey];
+        const layout = layouts[modelKey];
+        for (const index of batch) {
+          if (!device || index >= model.keyCount) continue;
+          const actionKey = layout ? layout[index] : 'empty';
+          await writeKeyImage(index, renderKey(index, actionKey, model.keySize));
+        }
       }
+    } finally {
+      drawing = false;
     }
-    dirtyKeys.clear();
   }
 
   function renderKey(index, actionKey, size) {
@@ -317,47 +345,85 @@
       ctx.fillRect(0, size - 4, size, 4);
     }
 
-    return ctx.getImageData(0, 0, size, size).data;
+    return canvas;
   }
 
-  async function writeKeyImage(keyIndex, pixels, model) {
-    // Stream Deck image protocol: 16-bit BGR565 little-endian, sent in 1024-byte chunks
-    // Physical key order on MK.II / XL is left-to-right, top-to-bottom
-    const size = model.keySize;
-    const buf565 = new Uint8Array(size * size * 2);
-    for (let i = 0; i < size * size; i++) {
-      const r = pixels[i * 4];
-      const g = pixels[i * 4 + 1];
-      const b = pixels[i * 4 + 2];
-      const val = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
-      buf565[i * 2]     = val & 0xff;
-      buf565[i * 2 + 1] = (val >> 8) & 0xff;
-    }
+  // Rotate/mirror the key image into the orientation the device expects.
+  function orient(src) {
+    const o = deviceInfo.protocol === 'gen2' ? ORIENTATION.gen2
+            : modelKey === 'mini' ? ORIENTATION.mini : ORIENTATION.gen1;
+    const size = src.width;
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    ctx.translate(size / 2, size / 2);
+    ctx.rotate(o.rotate * Math.PI / 180);
+    if (o.mirror) ctx.scale(-1, 1);
+    ctx.drawImage(src, -size / 2, -size / 2);
+    return c;
+  }
 
-    const CHUNK = 1024;
-    const pageSize = modelKey === 'xl' ? 1024 : 1024;
-    let pageNum = 0;
-    let offset = 0;
-    while (offset < buf565.length) {
-      const chunk = buf565.slice(offset, offset + CHUNK);
-      const isLast = (offset + CHUNK) >= buf565.length;
-      const header = buildImageHeader(keyIndex, pageNum, chunk.length, isLast);
-      const report = new Uint8Array(header.length + chunk.length);
-      report.set(header); report.set(chunk, header.length);
-      try { await device.sendReport(0x02, report); } catch (_) {}
-      offset += CHUNK;
-      pageNum++;
+  async function writeKeyImage(logicalIndex, canvas) {
+    const keyIndex = physicalKeyIndex(logicalIndex);
+    const img = orient(canvas);
+    try {
+      if (deviceInfo.protocol === 'gen2') {
+        const blob = await new Promise(r => img.toBlob(r, 'image/jpeg', 0.95));
+        await sendGen2(keyIndex, new Uint8Array(await blob.arrayBuffer()));
+      } else {
+        await sendGen1(keyIndex, toBMP(img));
+      }
+    } catch (err) {
+      console.warn('StreamDeck: key image write failed', err);
     }
   }
 
-  function buildImageHeader(keyIndex, pageNum, payloadLen, isLast) {
-    // Header format varies slightly by model generation — this covers MK.II/XL/Mini gen2
-    return new Uint8Array([
-      0x02, 0x07, keyIndex,
-      isLast ? 0x01 : 0x00,
-      payloadLen & 0xff, (payloadLen >> 8) & 0xff,
-      pageNum & 0xff, (pageNum >> 8) & 0xff,
-    ]);
+  // gen2: report 0x02, 1024 bytes incl. report ID, 8-byte header, 1016-byte payload.
+  async function sendGen2(keyIndex, bytes) {
+    const DATA_LEN = 1023, HEADER = 7, PAYLOAD = DATA_LEN - HEADER;
+    for (let page = 0, pos = 0; pos < bytes.length; page++, pos += PAYLOAD) {
+      const chunk = bytes.subarray(pos, pos + PAYLOAD);
+      const isLast = pos + PAYLOAD >= bytes.length;
+      const data = new Uint8Array(DATA_LEN);              // zero-padded to the full report
+      data.set([0x07, keyIndex, isLast ? 1 : 0,
+                chunk.length & 0xff, chunk.length >> 8,
+                page & 0xff, page >> 8]);
+      data.set(chunk, HEADER);
+      await device.sendReport(0x02, data);
+    }
+  }
+
+  // gen1 (Mini, original v1): report 0x02, 16-byte header, BMP payload.
+  async function sendGen1(keyIndex, bytes) {
+    const DATA_LEN = deviceInfo.reportSize - 1, HEADER = 15, PAYLOAD = DATA_LEN - HEADER;
+    for (let page = 0, pos = 0; pos < bytes.length; page++, pos += PAYLOAD) {
+      const chunk = bytes.subarray(pos, pos + PAYLOAD);
+      const isLast = pos + PAYLOAD >= bytes.length;
+      const data = new Uint8Array(DATA_LEN);
+      data.set([0x01, page + deviceInfo.pageBase, 0x00, isLast ? 1 : 0, keyIndex + 1]);
+      data.set(chunk, HEADER);
+      await device.sendReport(0x02, data);
+    }
+  }
+
+  // 24-bit bottom-up BMP, as gen1 devices expect.
+  function toBMP(canvas) {
+    const w = canvas.width, h = canvas.height;
+    const px = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+    const rowBytes = Math.ceil(w * 3 / 4) * 4, imgBytes = rowBytes * h;
+    const buf = new Uint8Array(54 + imgBytes), dv = new DataView(buf.buffer);
+    buf[0] = 0x42; buf[1] = 0x4d;                          // 'BM'
+    dv.setUint32(2, buf.length, true); dv.setUint32(10, 54, true);
+    dv.setUint32(14, 40, true); dv.setInt32(18, w, true); dv.setInt32(22, h, true);
+    dv.setUint16(26, 1, true); dv.setUint16(28, 24, true); dv.setUint32(34, imgBytes, true);
+    dv.setInt32(38, 3780, true); dv.setInt32(42, 3780, true);
+    for (let y = 0; y < h; y++) {
+      const row = 54 + (h - 1 - y) * rowBytes;
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4, o = row + x * 3;
+        buf[o] = px[i + 2]; buf[o + 1] = px[i + 1]; buf[o + 2] = px[i];   // BGR
+      }
+    }
+    return buf;
   }
 
   // ─── Status indicator ─────────────────────────────────────────────────────

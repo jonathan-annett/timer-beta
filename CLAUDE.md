@@ -260,7 +260,7 @@ The `audience.html` page supports tap-to-fullscreen (calls `requestFullscreen()`
 
 ## Known Remaining TODOs
 
-- **Stream Deck connection:** open the editor (`deck` button or `D`) and click **Connect deck**; WebHID needs a click for the permission prompt. Previously granted decks re-attach on page load and on USB plug-in (`navigator.hid` `connect`/`disconnect` events). The Elgato desktop app must be quit or it holds the device. The key-image protocol is untested on real hardware.
+- **Stream Deck connection:** open the editor (`deck` button or `D`) and click **Connect deck**; WebHID needs a click for the permission prompt. Previously granted decks re-attach on page load and on USB plug-in (`navigator.hid` `connect`/`disconnect` events). The Elgato desktop app must be quit or it holds the device. Report framing has been verified against a mock device only, not real hardware. MK.2/XL (gen2) send JPEG rotated 180°; the Mini/original (gen1) send BMP and their orientation is a guess. If images look rotated or mirrored, adjust the `ORIENTATION` table at the top of `streamdeck.js`. The deck only repaints when a boolean flag in `deckState` changes; don't add per-tick values like `remain` to it.
 - **Button bar convention:** `timer.js` binds key-macro clicks only to `div.buttons div.btn[data-keys]`. Buttons without `data-keys` (e.g. `deck`, `share`) must bind their own handlers.
 - **Static hosting:** `share` and `audience.html` need `relay-server.js` running. On a plain static host (e.g. the `/beta` deployment) they fail; everything else works.
 - `icon-192.png` and `icon-512.png` are referenced in `manifest.json` but not yet created. The PWA manifest will fail validation until they exist. Any solid black square PNG at the right dimensions will work.
