@@ -100,7 +100,7 @@
     ],
     xl: [
       'preset_10','preset_20','preset_30','preset_45','preset_60','preset_90','preset_120','preset_180',
-      'message','message','message','message_clear','empty','empty','countdown_major','countdown_minor',
+      'message','message','message_clear','empty','empty','empty','countdown_major','countdown_minor',
       'start_restart','pause_resume','add_1min','sub_1min','add_15sec','sub_15sec','undo_pause','custom_msg',
       'toggle_bar','toggle_time','toggle_messages','toggle_presenter','catch_up','brightness_cycle','empty','empty',
     ],
@@ -109,8 +109,7 @@
   // Default per-key settings (used when nothing is saved, and by Reset defaults)
   const DEFAULT_OVERRIDES = {
     'xl:8':  { message: 'Please wrap up' },
-    'xl:9':  { message: 'Speak up' },
-    'xl:10': { message: 'Time for questions' },
+    'xl:9':  { message: 'Time for questions' },
   };
 
   // ─── Runtime state ────────────────────────────────────────────────────────
