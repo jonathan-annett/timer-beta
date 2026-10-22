@@ -74,6 +74,10 @@
     toggle_time:      { label: 'Clock',     group: 'Display',   toggleState: 'showtimenow',  cmd: () => _sendCmd({ cmd: 'time' }) },
     toggle_messages:  { label: 'Messages',  group: 'Display',   toggleState: 'showmessages', cmd: () => _sendCmd({ cmd: 'messages' }) },
     toggle_presenter: { label: 'Remote',    group: 'Display',   cmd: () => _sendCmd({ cmd: 'presenter' }) },
+    // Display-only keys showing the remaining time (see countdownText). Pressing them does nothing.
+    countdown:        { label: 'Timer',     group: 'Countdown', display: 'full',  cmd: null },
+    countdown_major:  { label: 'Min / Hr',  group: 'Countdown', display: 'major', cmd: null },
+    countdown_minor:  { label: 'Sec / Min', group: 'Countdown', display: 'minor', cmd: null },
     custom_msg:       { label: 'Message',   group: 'Other',     cmd: () => _sendCmd({ cmd: 'keys', keys: ['c'] }) },
     empty:            { label: '',          group: 'Other',     cmd: null },
   };
@@ -89,7 +93,7 @@
     ],
     xl: [
       'preset_10','preset_20','preset_30','preset_45','preset_60','preset_90','preset_120','preset_180',
-      'empty','empty','empty','empty','empty','empty','empty','empty',
+      'empty','empty','empty','empty','empty','empty','countdown_major','countdown_minor',
       'start_restart','pause_resume','add_1min','sub_1min','add_15sec','sub_15sec','undo_pause','custom_msg',
       'toggle_bar','toggle_time','toggle_messages','toggle_presenter','empty','empty','empty','empty',
     ],
@@ -104,6 +108,12 @@
     expired: false, impending: false,
     pausing: false, showbar: false, showtimenow: false, showmessages: false,
   };
+
+  // Remaining time, from the timer's `remain` text ("M:SS" or "H:MM:SS"; counts up overtime
+  // once `expired`). Kept out of deckState: only countdown keys repaint when it changes.
+  let remainSec = 0;
+  let remainText = '';
+  const countdownCache = new Map();   // key index -> text last drawn, to skip identical repaints
 
   let device = null;
   let deviceInfo = null;     // matching DEVICE_IDS entry
@@ -132,7 +142,13 @@
             const val = (typeof v[k] === 'string') ? (v[k] === '1' || v[k] === 'true') : !!v[k];
             if (deckState[k] !== val) { deckState[k] = val; changed = true; }
           }
+          if (changed) countdownCache.clear();
           if (changed && device) scheduleRedrawAll();
+          if (typeof v.remain === 'string' && v.remain !== remainText) {
+            remainText = v.remain;
+            remainSec = parseRemain(v.remain);
+            if (device && !changed) scheduleCountdownKeys();
+          }
         }
       }
     };
@@ -343,6 +359,44 @@
     }
   }
 
+  // ─── Countdown keys ───────────────────────────────────────────────────────
+
+  function parseRemain(str) {
+    const parts = str.replace(/^[-+]/, '').split(':').map(n => parseInt(n, 10) || 0);
+    return parts.reduce((acc, n) => acc * 60 + n, 0);
+  }
+
+  const pad2 = n => String(n).padStart(2, '0');
+
+  // Under an hour: major "01", minor "30" (mm / ss). From an hour: major "1h", minor "25m".
+  // Overtime (expired) is prefixed "+" on the major / full key.
+  function countdownText(kind) {
+    const pre = deckState.expired ? '+' : '';
+    const h = Math.floor(remainSec / 3600), m = Math.floor(remainSec % 3600 / 60), sec = remainSec % 60;
+    if (kind === 'full')  return pre + (remainText.replace(/^[-+]/, '') || '0:00');
+    if (kind === 'major') return pre + (h >= 1 ? h + 'h' : pad2(m));
+    return h >= 1 ? pad2(m) + 'm' : pad2(sec);
+  }
+
+  // Repaint only countdown keys whose visible text actually changed.
+  function scheduleCountdownKeys() {
+    const layout = layouts[modelKey];
+    if (!layout) return;
+    layout.forEach((actionKey, i) => {
+      const a = ACTIONS[actionKey];
+      if (!a || !a.display) return;
+      const text = countdownText(a.display);
+      if (countdownCache.get(i) !== text) scheduleRedrawKey(i);
+    });
+  }
+
+  // Largest bold font (up to maxPx) at which `text` fits within maxWidth.
+  function fitFont(ctx, text, maxWidth, maxPx) {
+    let px = maxPx;
+    do { ctx.font = `bold ${px}px "Helvetica Neue", Arial, sans-serif`; } while (ctx.measureText(text).width > maxWidth && --px > 8);
+    return px;
+  }
+
   function renderKey(index, actionKey, size) {
     const action = ACTIONS[actionKey] || ACTIONS['empty'];
     const overrideKey = modelKey + ':' + index;
@@ -365,7 +419,18 @@
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, size, size);
 
-    const rawLabel = override.label ||
+    if (action.display) {
+      if (!override.bg) { ctx.fillStyle = deckState.expired ? '#2d0000' : deckState.impending ? '#2d1a00' : '#000'; ctx.fillRect(0, 0, size, size); }
+      const text = countdownText(action.display);
+      countdownCache.set(index, text);
+      ctx.fillStyle = fg;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      fitFont(ctx, text, size * 0.86, Math.round(size * (action.display === 'full' ? 0.5 : 0.62)));
+      ctx.fillText(text, size / 2, size / 2 + 1);
+    }
+
+    const rawLabel = action.display ? '' : override.label ||
       (action.toggleState && deckState[action.toggleState] && action.altLabel ? action.altLabel : action.label) || '';
 
     if (rawLabel) {

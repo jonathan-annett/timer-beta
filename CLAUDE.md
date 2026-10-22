@@ -227,6 +227,8 @@ Key images are rendered to an offscreen Canvas per key, then encoded per device 
 
 The in-app editor opens with the `D` key or the "deck" button. Layouts are stored in localStorage per model (`streamdeck_layout_mk2` etc.). Per-key overrides (label, fg colour, bg colour) are stored separately in `streamdeck_key_overrides`.
 
+**Countdown keys:** the `countdown` (whole time), `countdown_major` and `countdown_minor` actions are display-only. Major/minor show `mm`/`ss` under an hour (`01` `30`), `h`/`m` from an hour up (`1h` `25m`), and a `+` prefix in overtime. They are driven by the timer's `remain` text, which is parsed into `remainSec` and deliberately kept out of `deckState`. Only countdown keys whose visible text changed are repainted (`countdownCache`), so under an hour that is one key per second. The XL default layout puts the major/minor pair at the end of row 2.
+
 On page load, `streamdeck.js` calls `navigator.hid.getDevices()` to auto-reconnect to any previously-granted device without another permission prompt.
 
 In the editor, **Disconnect** blanks the keys, closes the device and sets `localStorage.streamdeck_autoconnect = '0'`. That stops auto-attach on reload and replug until **Connect** is clicked, which clears the flag and re-opens the still-granted device without the picker. **Forget deck** disconnects, then calls `HIDDevice.forget()` to revoke the site's permission.
