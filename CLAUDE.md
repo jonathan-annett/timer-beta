@@ -325,4 +325,5 @@ The `audience.html` page supports tap-to-fullscreen (calls `requestFullscreen()`
 - **State out via `timerAPI.send`** — never read DOM or localStorage from integrations to get timer state; wait for it to be pushed.
 - **No build step** — this is vanilla JS. No bundler, no transpiler, no TypeScript. Keep it that way unless explicitly decided otherwise.
 - **localStorage as the inter-tab bus** — the presenter tab reads from storage events. If you add new display state that needs to reach the presenter tab, write it to localStorage and handle the `storage` event in the presenter tab's `onLocalStorage` handler in `timer.js`.
+- **Leave Cmd shortcuts to the browser** — `onDocKeyDown` returns early when `metaKey` is held, so Cmd+R/C/V/P/1–9 etc. work normally on a Mac. Any new keyboard shortcut handler must do the same (check `!e.metaKey`); the timer's own modifier is Ctrl.
 - **Chain `timerAPI`, never replace it** — any new integration module should wrap the existing `window.timerAPI` value, not overwrite it blindly.

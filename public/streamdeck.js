@@ -977,7 +977,7 @@
     });
     // D key opens editor
     document.addEventListener('keydown', e => {
-      if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.altKey) {
+      if ((e.key === 'd' || e.key === 'D') && !e.ctrlKey && !e.altKey && !e.metaKey) {
         // Controller only, and never while typing (custom message, inputs, editor fields)
         if (new URLSearchParams(location.search).has('presenter')) return;
         const t = e.target;

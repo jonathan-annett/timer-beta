@@ -1443,6 +1443,12 @@ function onKey_R ( ev ) {
 
 function onDocKeyDown(ev){
 
+	// Leave Cmd shortcuts (Mac) to the browser and OS: Cmd+R reload, Cmd+C/V copy/paste,
+	// Cmd+1-9 tabs, Cmd+P print, etc. Without this they also fired the plain-letter
+	// shortcuts (Cmd+R opened the remote window and blocked the reload). The timer's own
+	// modifier is Ctrl, which is still handled below.
+	if (ev.metaKey) return;
+
 	const checkModifiers = function(){
 		controlling = ev.ctrlKey;
 		html.classList[controlling?"add":"remove"]("controlling");
