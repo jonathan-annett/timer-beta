@@ -383,7 +383,12 @@
   function init() {
     document.getElementById('btnrunsheet')?.addEventListener('click', openEditor);
     commit();
-    setInterval(render, 1000);
+    // Heartbeat for the editor window, so it knows Next/Back will be handled. Written by
+    // every timer window running this code, whether in controller or presenter (P) mode.
+    const heartbeat = () => localStorage.setItem('runsheet_alive', String(Date.now()));
+    heartbeat();
+    setInterval(() => { heartbeat(); render(); }, 1000);
+    window.addEventListener('pagehide', () => localStorage.removeItem('runsheet_alive'));
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

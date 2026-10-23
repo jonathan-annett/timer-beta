@@ -188,6 +188,7 @@ All timer state persists in localStorage. These are the canonical keys:
 | `runsheet_state` | JSON | Show state `{active, index, currentId, finished, history, log, dayBase}`; written only by `runsheet.js` |
 | `runsheet_cmd` | JSON | Command from the editor (`next`, `back`, `goto`, `reset`, `active`); consumed and removed by `runsheet.js` |
 | `runsheet_live` | JSON | Status text for the editor, written by `runsheet.js` when it changes |
+| `runsheet_alive` | timestamp ms | Heartbeat from `runsheet.js` (every second, any mode incl. P); the editor's "timer isn't open" check |
 | `tab_<id>` | timestamp ms | Heartbeat for multi-tab detection |
 | `controller_tab_<id>` | timestamp ms | Marks this tab as a controller |
 

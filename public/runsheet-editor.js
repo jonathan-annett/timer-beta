@@ -57,13 +57,11 @@
   });
 
   // Is a timer (controller) window alive? It writes a heartbeat every second.
+  // Is a timer window running the run sheet? runsheet.js writes runsheet_alive every second.
+  // (Not the timer's controller_tab_ heartbeat: that stops when the timer window is switched
+  // to presenter mode with P, but the run sheet still runs there.)
   function controllerAlive() {
-    const now = Date.now() + (Number(localStorage.getItem('internetTimeError')) || 0);
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('controller_tab_') && now - Number(localStorage.getItem(k)) < 4000) return true;
-    }
-    return false;
+    return Date.now() - Number(localStorage.getItem('runsheet_alive') || 0) < 4000;
   }
 
   // ─── Planned times (mirrors runsheet.js) ──────────────────────────────────
