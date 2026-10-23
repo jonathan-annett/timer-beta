@@ -272,37 +272,7 @@ html.video-live-fullscreen  body.fullscreen #wc_canvas3 {
     z-index  : 999999;
 }
 
-button.flyoutPlayerBtn {
-    position : absolute;
-
-    bottom : 40px;
-    right  : 10px;
-    width  : 100px;
-    height : 40px;
-    
-}
-
-
-button.flyoutPlayerHideBtn {
-    position : absolute;
-
-    bottom : 40px;
-    right  : 120px;
-    width  : 100px;
-    height : 40px;
-    
-}
-
-
-button.flyoutPlayerCloseBtn {
-	position : absolute;
-
-	bottom : 40px;
-	right  : 230px;
-	width  : 100px;
-	height : 40px;
-	
-}
+/* (video player controls: styled by dropPlayer.js) */
 
 
 

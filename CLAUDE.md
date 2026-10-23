@@ -59,7 +59,7 @@ timer_build/
     ├── inettime.js         Internet time sync via worldtimeapi.org
     ├── timeroverlaypip.js  Picture-in-Picture overlay of countdown
     ├── tsview.js           Webcam/screen-capture timestamp viewer
-    ├── dropPlayer.js       Drag-and-drop video file player
+    ├── dropPlayer.js       Video player window + window.videoPlayer API (load/play/stop/rewind/setIdle); drop to load
     ├── elementcolors.js    CSS custom property colour helpers
     ├── w3color.js          Colour parsing library (third-party)
     ├── FileSaver.js        File save helper (third-party)
@@ -320,6 +320,10 @@ Separate from the relay/`share` audience display. Pieces: `remote-server.js` (st
 **Phone layout:** the simple view is sized entirely in `em`; `fitSimple()` in `remote-phone.js` sets html's font-size to the largest that fits the screen without scrolling (binary search; widths are checked per element because on a phone overflowing content widens the page itself, so `innerWidth` can't be trusted). It refits when the content changes shape, but not while an input has focus (keyboard up). At aspect ≥ 4:5 it's two columns (`.colA`/`.colB`). The deck view is `position: fixed`; `layoutDeck()` sizes square keys to fit and spreads the leftover space into the gaps (`--key`, `--col-gap`, `--row-gap`). Wider than 1.15:1 adds `body.side`: the top bar becomes a 52 px icon strip on the left (`.long`/`.short` labels). Full screen uses the Fullscreen API; where there's none (iPhone) the button shows Add to Home Screen instructions (the page has the apple-mobile-web-app meta tags).
 
 **Testing locally:** `node remote-server.js --cert cert.pem --key key.pem --origin https://…` with a self-signed cert, and the timer at `timer.html?remote=wss://localhost:8443/`. In headless Chromium, use `--no-proxy-server` and `ignore_https_errors`. Disabling `RTCPeerConnection` on the phone page forces the server fallback.
+
+## Video player
+
+`dropPlayer.js` writes a player page into a named pop-up (`video_player_window`) and drives its `<video>` from the timer window. Everything goes through `window.videoPlayer`: `load(url, {name, idle, controls, message, revoke})` cues a video, `play()` starts it and the timer (`start` with the clip's whole seconds, message `Video: <name>` unless `message` is given), `stop()` unloads and clears message and timer (also on `ended`), `rewind()` re-cues at 0 with the timer paused at the clip length (the pause is sent 60 ms after the start: paused at exactly N.000 s the display reads N+1), `setIdle('show'|'hide')` sets what's shown before playing (first frame, or black via opacity). `state()` and `onChange(fn)` report `{status: empty|cued|playing, name, idle, duration}`. Dropped files are blob URLs released when replaced or stopped. On-screen controls (`#video-controls`, styles injected by the script) appear only for `controls: true` loads (drops). The player page must not load external scripts (it's written with `document.write`; an external `<script src>` stalled the parser so nothing after it ran); it forwards keys to the timer with `postMessage` to `window.opener.location.origin` (its own `location` is about:blank). `window.videoStore` keeps `storeBlob`/`retrieveBlob` (IndexedDB `blobDB`). `localStorage.video_idle` holds the drop default.
 
 ## Mobile / Touch
 

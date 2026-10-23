@@ -139,6 +139,19 @@ In the editor you can drag actions from the palette onto keys, set per-key label
 
 ---
 
+## Videos
+
+Drag a video file onto the timer (or a link to one) to load it into a separate **player window**. Drag that window to the screen it should play on and press **F** for full screen. Controls appear at the bottom right of the timer:
+
+| | |
+|---|---|
+| **▶** | Play. The timer counts down the video's length and the message shows **Video:** and the file name. |
+| **■** | Stop and unload the video (clears the message and the timer). |
+| **⟲** | While playing: back to the start, ready to play again. |
+| **Before play: first frame / black** | What the player window shows before the video plays. Remembered for next time. |
+
+Keys pressed in the player window work as if pressed in the timer. Drop another video on either window to replace the current one.
+
 ## Remote display
 
 Click **share** to get a room code (e.g. `TIGER-7`), a QR code and a link. Anyone opening the link sees a read-only countdown on their phone, tablet or another computer, on any network. On the same Wi-Fi it switches to a direct peer-to-peer connection automatically.
