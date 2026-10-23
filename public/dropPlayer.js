@@ -46,12 +46,15 @@
   }
   function storedIdle() { try { return localStorage.getItem(IDLE_KEY) === 'hide' ? 'hide' : 'show'; } catch (_) { return 'show'; } }
 
+  // Names are shown without the file extension ("Video: Keynote intro", not "…intro.mp4")
+  const noExt = n => String(n || '').replace(/\.[A-Za-z0-9]{1,5}$/, '') || String(n || '');
+
   // A readable name from a URL (last path segment, without the query)
   function nameFromUrl(url) {
     try {
       const u = new URL(url, location.href);
       const last = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() || '');
-      return last || u.hostname || 'video';
+      return noExt(last) || u.hostname || 'video';
     } catch (_) { return 'video'; }
   }
 
@@ -239,7 +242,7 @@
   // A drop: video files load as a blob URL (released when replaced or stopped), links as is
   function loadDrop(dataTransfer) {
     const file = Array.from(dataTransfer.files || []).find(f => f.type.startsWith('video/'));
-    if (file) return load(URL.createObjectURL(file), { name: file.name, revoke: true, controls: true });
+    if (file) return load(URL.createObjectURL(file), { name: noExt(file.name), revoke: true, controls: true });
     const url = dataTransfer.getData('URL') || dataTransfer.getData('text/uri-list');
     if (url) return load(url.split('\n')[0].trim(), { controls: true });
     return false;
