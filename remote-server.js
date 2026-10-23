@@ -47,6 +47,9 @@ const KEY = arg('key') || process.env.TLS_KEY || (CRED_DIR && `${CRED_DIR}/privk
 const INSECURE = flag('insecure');
 const ORIGINS = (arg('origin') || process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 
+// Bumped when the protocol gains features; sent to timers in 'hosted' so they can tell an
+// out-of-date server (1 = control only; 2 = adds view-only keys and roles).
+const PROTOCOL = 2;
 const MAX_MESSAGE_BYTES = 16 * 1024;     // signalling + state messages are tiny
 const MAX_MSGS_PER_SEC = 40;             // per socket; extra messages are dropped
 const MAX_PHONES_PER_ROOM = 16;          // controllers + view-only displays
@@ -96,7 +99,7 @@ const server = INSECURE
 server.on('request', (req, res) => {
   // Plain HTTPS requests: a health check, and a page so you can accept a self-signed cert
   res.writeHead(200, { 'content-type': 'text/plain' });
-  res.end(`timer remote server ok (${rooms.size} rooms)\n`);
+  res.end(`timer remote server ok, protocol ${PROTOCOL} (view-only links, admin share) (${rooms.size} rooms)\n`);
 });
 
 const wss = new WebSocketServer({
@@ -150,7 +153,7 @@ wss.on('connection', ws => {
         if (room.host && room.host !== ws) room.host.close();          // newest timer window wins
         room.host = ws; room.hostGoneAt = null;
         role = 'host'; roomId = m.room;
-        send(ws, { type: 'hosted', room: m.room });
+        send(ws, { type: 'hosted', room: m.room, protocol: PROTOCOL });
         for (const [id, p] of room.phones) { send(ws, { type: 'peer-join', id, role: p.role }); send(p.ws, { type: 'host-online' }); }
         return;
       }

@@ -187,7 +187,7 @@ The QR code contains a secret key: anyone with the link can control the timer. *
 
 ### Pairing server
 
-Phone control needs `remote-server.js` running on a server you control. (View-only links need the current version: after updating, restart the service.) By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the phone panel.
+Phone control needs `remote-server.js` running on a server you control. View-only links need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 2* supports view-only links), and the timer's phone panel warns if the server is too old for them. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the phone panel.
 
 ```bash
 npm install

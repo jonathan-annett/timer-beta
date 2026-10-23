@@ -56,7 +56,9 @@
     $('note').textContent = note || '';
   }
   function showMode() {
-    if (waiting) return setBadge('off', 'timer offline', 'waiting for the timer… (if it made a new code, scan it)');
+    if (waiting) return setBadge('off', 'timer offline', role === 'view'
+      ? 'waiting for the timer… (if this never connects, the pairing server may need updating, or the timer made a new code)'
+      : 'waiting for the timer… (if it made a new code, scan it)');
     if (!ws || ws.readyState !== WebSocket.OPEN) return setBadge('off', 'reconnecting…');
     if (!hostOnline) return setBadge('off', 'timer offline', 'waiting for the timer…');
     if (peer && peer.mode === 'lan') setBadge('lan', '⚡ LAN direct');
@@ -655,7 +657,9 @@
 
   // Our timer answered with the link: deliver it to the other computer
   function onShareLink(m) {
-    if (!pending || m.req !== pending.req || typeof m.frag !== 'string') return;
+    if (!pending || m.req !== pending.req) return;
+    if (m.error === 'old-server') return fail('This timer’s pairing server is out of date, so view-only displays can’t connect. Update remote-server.js on the server, or choose A remote control.');
+    if (typeof m.frag !== 'string') return;
     clearTimeout(pending.timer);
     const p = pending, t = p.target;
     admStatus('Sending it to the other computer…');

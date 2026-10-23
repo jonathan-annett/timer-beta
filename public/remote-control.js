@@ -31,7 +31,7 @@
   const defaultServer = () => `wss://${location.hostname}:8443/`;
   if (params.get('remote')) localStorage.setItem(SERVER_KEY, params.get('remote'));   // ?remote=wss://host:port/
 
-  let ws = null, retryTimer = null, retryDelay = 1000, enabled = false, hosted = false;
+  let ws = null, retryTimer = null, retryDelay = 1000, enabled = false, hosted = false, serverProtocol = 0;
   const peers = new Map();          // phone id -> { peer, sent: {} }
   const state = {};                 // what phones see; filled from the timerAPI bus
   let pushTimer = null;
@@ -103,7 +103,11 @@
     sock.onmessage = ev => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
       switch (m.type) {
-        case 'hosted': hosted = true; setStatus('Ready — scan the code with a phone', 'ok'); break;
+        case 'hosted':
+          hosted = true;
+          serverProtocol = m.protocol || 1;   // servers from before view-only keys don't say
+          setStatus('Ready — scan the code with a phone', 'ok');
+          break;
         case 'peer-join': addPeer(m.id, m.role); break;
         case 'peer-leave': removePeer(m.id); break;
         case 'from': { const p = peers.get(m.id); if (p) p.peer.receive(m.msg); break; }
@@ -194,6 +198,10 @@
       // Control; for the displays it gets the view-only link.
       const mode = Object.prototype.hasOwnProperty.call(LINK_MODES, m.mode) ? m.mode : null;
       if (!mode) return;
+      if (mode !== 'control' && serverProtocol < 2) {     // an old pairing server refuses view-only keys
+        e.peer.send({ t: 'share-link', req: String(m.req || '').slice(0, 40), mode, error: 'old-server' });
+        return;
+      }
       e.peer.send({ t: 'share-link', req: String(m.req || '').slice(0, 40), mode, frag: shareFragment(mode) });
       const d = new Date();
       shareNote = `Phone ${e.n} passed the ${mode === 'control' ? 'control' : LINK_MODES[mode].label.toLowerCase() + ' display'} link to another computer at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -359,6 +367,7 @@
 #phone-panel .pp-modehint { font-size: 11px; color: #999; margin-bottom: 6px; }
 #phone-panel .pp-modehint b { color: #fff; }
 #phone-panel .pp-view { color: #9ab; }
+#phone-panel .pp-warn { color: #ff9a6a; }
 #adopt-notice { position: fixed; inset: 0; z-index: 2147483100; background: rgba(0,0,0,.85); display: flex;
   align-items: center; justify-content: center; font: 18px/1.4 "Helvetica Neue", Arial, sans-serif; color: #ddd; }
 #adopt-notice .an-box { background: #111; border: 1px solid #2a6a9a; border-radius: 12px; padding: 24px 28px; max-width: 560px; }
@@ -502,7 +511,11 @@
     const mode = linkMode();
     el.querySelectorAll('.pp-modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
     el.querySelector('.pp-modes').style.display = enabled ? '' : 'none';
-    el.querySelector('.pp-modehint').innerHTML = enabled ? LINK_MODES[mode].hint : '';
+    // View-only links need pairing server protocol 2; an older server rejects their key
+    const oldServer = hosted && serverProtocol < 2;
+    el.querySelector('.pp-modehint').innerHTML = !enabled ? '' : (oldServer && mode !== 'control')
+      ? '<span class="pp-warn">The pairing server is out of date and will refuse view-only links. Update remote-server.js on the server and restart it.</span>'
+      : LINK_MODES[mode].hint;
     el.querySelector('.pp-link').textContent = enabled ? phoneLink() : '';
     if (enabled) drawQR(phoneLink());
     const srv = el.querySelector('.pp-server');
