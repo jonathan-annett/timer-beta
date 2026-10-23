@@ -1,0 +1,27 @@
+{
+	"$schema": "../node_modules/@companion-module/base/assets/manifest.schema.json",
+	"type": "connection",
+	"id": "sophtwhere-presentationtimer",
+	"name": "sophtwhere-presentationtimer",
+	"shortname": "presentationtimer",
+	"description": "Presentation Timer (timer.sophtwhere.com): countdown timer for talks and events, controlled over its phone-remote link",
+	"version": "0.1.0",
+	"license": "MIT",
+	"repository": "git+https://github.com/jonathan-annett/timer-beta.git",
+	"bugs": "https://github.com/jonathan-annett/timer-beta/issues",
+	"maintainers": [
+		{
+			"name": "Jonathan Annett"
+		}
+	],
+	"runtime": {
+		"type": "node22",
+		"api": "nodejs-ipc",
+		"apiVersion": "0.0.0",
+		"entrypoint": "../dist/main.js"
+	},
+	"legacyIds": [],
+	"manufacturer": "Sophtwhere",
+	"products": ["Presentation Timer"],
+	"keywords": ["timer", "countdown", "presentation", "conference", "speaker timer", "run sheet"]
+}

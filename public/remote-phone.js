@@ -25,17 +25,18 @@
   const parse = frag => Object.fromEntries(new URLSearchParams(frag));
   let h = parse(location.hash.slice(1));
   try {
-    if ((h.r || h.room) && (h.a || h.k || h.key || h.v)) localStorage.setItem(SAVED_LINK, location.hash.slice(1));
+    if ((h.r || h.room) && (h.a || h.k || h.key || h.v || h.c)) localStorage.setItem(SAVED_LINK, location.hash.slice(1));
     else if (localStorage.getItem(SAVED_LINK)) h = parse(localStorage.getItem(SAVED_LINK));
   } catch (_) { /* private mode: links still work, they just aren't remembered */ }
   const cfg = {
     server: h.s || h.server || `wss://${location.hostname}:8443/`,
     room: h.r || h.room,
-    key: h.a || h.k || h.key || h.v,
+    key: h.a || h.k || h.key || h.c || h.v,
   };
   // admin (#a=…): control + every view + set up other computers; control (#k=…); view (#v=…).
   // The server confirms it on join, and the timer enforces it.
-  let role = h.a ? 'admin' : (h.k || h.key) ? 'control' : 'view';
+  // A Companion link (#c=…) opened in a browser works as a control link.
+  let role = h.a ? 'admin' : (h.k || h.key || h.c) ? 'control' : 'view';
   if (!cfg.room || !cfg.key) {
     $('blocked').hidden = false;
     $('blocked').textContent = 'Open this page by scanning the QR code in the timer’s “phone” panel.';
@@ -92,7 +93,7 @@
       switch (m.type) {
         case 'joined':
           hostOnline = m.hostOnline; waiting = false; retry = 1000;
-          if (m.role && m.role !== role && ['admin', 'control', 'view'].includes(m.role)) { role = m.role; applyRole(); }
+          { const r = m.role === 'companion' ? 'control' : m.role; if (r && r !== role && ['admin', 'control', 'view'].includes(r)) { role = r; applyRole(); } }
           newPeer();
           break;
         case 'down': if (peer) peer.receive(m.msg); break;

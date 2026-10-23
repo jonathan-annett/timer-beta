@@ -53,8 +53,9 @@
       p = { room: randomString(8, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'), key: randomString(24, KEYCHARS) };
       localStorage.removeItem(APPROVED_KEY);                   // a new code: every phone starts again
     }
-    if (!p.view || !p.admin) {                       // view-only and admin keys (older pairings get them)
+    if (!p.view || !p.admin || !p.comp) {            // view-only, admin and companion keys (older pairings get them)
       p.view = p.view || randomString(24, KEYCHARS);
+      p.comp = p.comp || randomString(24, KEYCHARS);
       p.admin = p.admin || randomString(24, KEYCHARS);
       localStorage.setItem(PAIR_KEY, JSON.stringify(p));
     }
@@ -68,13 +69,15 @@
     countdown: { label: 'Countdown', hint: '<b>View only</b>: a countdown display. Can’t control the timer.' },
     runsheet:  { label: 'Run sheet', hint: '<b>View only</b>: run sheet status, e.g. for a green room. Can’t control the timer.' },
     admin:     { label: 'Admin',     hint: '<b>Admin</b>: can control the timer, use every view, and set up other computers as remotes or displays. Keep this one to yourself.' },
+    companion: { label: 'Companion', hint: '<b>Bitfocus Companion</b> (or other automation): paste this link into the Companion connection’s settings. It gets every timer command and all the timer’s variables. It can’t set up other devices.' },
   };
   const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet'];   // what an admin phone can set another computer up as
-  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3 };   // pairing server needed for each link
+  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4 };   // pairing server needed for each link
   // 'editor' is the control link with m=runsheet: a computer opening it starts in the run sheet editor
   const linkFields = (p, mode) => mode === 'control' ? { r: p.room, k: p.key }
     : mode === 'editor' ? { r: p.room, k: p.key, m: 'runsheet' }
-    : mode === 'admin' ? { r: p.room, a: p.admin } : { r: p.room, v: p.view, m: mode };
+    : mode === 'admin' ? { r: p.room, a: p.admin }
+    : mode === 'companion' ? { r: p.room, c: p.comp } : { r: p.room, v: p.view, m: mode };
   // On a phone or tablet (the timer itself run on one), the panel is a simple sheet: a friend's
   // phone as a remote control or a countdown display. No run sheet or admin links there.
   const TOUCH = 'ontouchstart' in window;
@@ -117,7 +120,7 @@
     sock.onopen = () => {
       retryDelay = 1000;
       const p = pairing();
-      sock.send(JSON.stringify({ type: 'host', room: p.room, key: p.key, viewKey: p.view, adminKey: p.admin }));
+      sock.send(JSON.stringify({ type: 'host', room: p.room, key: p.key, viewKey: p.view, adminKey: p.admin, compKey: p.comp }));
     };
     sock.onmessage = ev => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
@@ -156,7 +159,8 @@
     removePeer(id);
     // 'view' only when the server says so; servers from before view-only keys send no role
     // (and reject view keys), so their phones joined with the control key.
-    const entry = { id, n: ++phoneCounter, role: role === 'view' || role === 'admin' ? role : 'control', sent: {}, peer: null, deck: false, faces: [],
+    const entry = { id, n: ++phoneCounter, role: ['view', 'admin', 'companion'].includes(role) ? role : 'control', sent: {}, peer: null, deck: false, faces: [],
+      varsSent: {},                              // companion peers: the raw bus variables already sent
       join: RemotePeer.joiner(), rsSub: false, rsSent: {}, upload: null,
       approved: !pinRequired(), pin: null, tries: 0, rejected: false };
     entry.peer = RemotePeer.create({
@@ -219,10 +223,12 @@
     }
     if (m.t === 'hello' || m.t === 'deck') deckFaces = null;   // outside a push: work them out afresh
     if (m.t === 'hello') {
-      e.sent = {}; e.faces = [];
+      e.sent = {}; e.faces = []; e.varsSent = {};
       pushTo(e, true);
       panelConnected();
-    } else if (e.role !== 'control' && e.role !== 'admin') {
+    } else if (e.role === 'companion' && m.t === 'api') {
+      apiFromCompanion(e, m);
+    } else if (e.role !== 'control' && e.role !== 'admin' && e.role !== 'companion') {
       return;                                  // view-only display: nothing else is accepted
     } else if (m.t === 'deck') {               // phone switched its virtual Stream Deck XL on/off
       e.deck = !!m.on; e.faces = [];
@@ -263,6 +269,36 @@
     } else if (m.t === 'vup-cancel') {
       if (e.upload && e.upload.up === m.up) dropUpload(e, null);
     }
+  }
+
+  // ─── Bitfocus Companion (role 'companion') ──────────────────────────────
+  // Automation gets the whole timer API, not the phones' allow-list: {t:'api', req, msg} runs
+  // processTimerApiMessage(msg) and answers {t:'api-result', req, result} (snapshot returns the
+  // timer state; most commands return nothing). Only `redirect` is refused: a Companion rig
+  // shouldn't be able to send the operator's browser elsewhere. It also receives the bus itself:
+  // every timerAPI setVariableValues field, as diffs ({t:'vars', full, v}), which is exactly
+  // Companion's own variable format (the bus was designed for it).
+  const API_DENY = new Set(['redirect']);
+  function apiFromCompanion(e, m) {
+    const req = typeof m.req === 'string' ? m.req.slice(0, 40) : undefined;
+    const msg = m.msg;
+    const reply = (extra) => e.peer.send(Object.assign({ t: 'api-result', req }, extra));
+    if (!msg || typeof msg !== 'object' || typeof msg.cmd !== 'string') return reply({ error: 'bad' });
+    if (API_DENY.has(msg.cmd)) return reply({ error: 'refused' });
+    if (typeof processTimerApiMessage !== 'function') return reply({ error: 'no-timer' });
+    let result;
+    try { result = processTimerApiMessage(msg); } catch (err) { return reply({ error: 'failed', detail: String(err && err.message || err).slice(0, 200) }); }
+    if (result !== undefined) { try { JSON.stringify(result); } catch (_) { result = undefined; } }
+    reply(result === undefined ? {} : { result });
+  }
+  const rawVars = {};                           // everything the bus has said, latest value per field
+  function pushVars(e, full) {
+    const diff = {};
+    let any = false;
+    for (const [k, v] of Object.entries(rawVars)) {
+      if (full || e.varsSent[k] !== v) { diff[k] = v; e.varsSent[k] = v; any = true; }
+    }
+    if (any || full) e.peer.send({ t: 'vars', full: !!full, v: diff });
   }
 
   // ─── Run sheet editing from another computer ─────────────────────────────
@@ -394,7 +430,7 @@
 
   function onPhoneBinary(id, buf) {
     const e = peers.get(id);
-    if (!e || (e.role !== 'control' && e.role !== 'admin') || !e.upload || !(buf instanceof ArrayBuffer) || buf.byteLength < 5) return;
+    if (!e || (e.role !== 'control' && e.role !== 'admin' && e.role !== 'companion') || !e.upload || !(buf instanceof ArrayBuffer) || buf.byteLength < 5) return;
     const u = e.upload;
     if (new DataView(buf).getUint32(0, true) !== u.up) return;
     const data = buf.slice(4);
@@ -504,6 +540,8 @@
         if (!v) return;
         let changed = false;
         for (const k of Object.keys(v)) {
+          const raw = v[k];
+          if ((typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean' || raw === null) && rawVars[k] !== raw) { rawVars[k] = raw; changed = true; }
           if (!MAP[k]) continue;
           const val = MAP[k][1](v[k]);
           if (state[MAP[k][0]] !== val) { state[MAP[k][0]] = val; changed = true; }
@@ -545,6 +583,7 @@
       if (full || e.sent[k] !== v) { diff[k] = v; e.sent[k] = v; any = true; }
     }
     if (any || full) e.peer.send({ t: 'state', full: !!full, s: diff });
+    if (e.role === 'companion') pushVars(e, full);
     if (e.deck && e.role !== 'view') pushDeck(e);
   }
 
@@ -580,6 +619,7 @@
   align-items: center; justify-content: center; gap: 16px; cursor: zoom-out; color: #aaa; font: 16px "Helvetica Neue", Arial, sans-serif; }
 #phone-qr-big canvas { border-radius: 8px; }
 #phone-panel .pp-link { font-size: 9px; color: #555; word-break: break-all; margin: 6px 0; max-height: 3.2em; overflow: hidden; }
+#phone-panel .pp-link.pp-paste { font-size: 11px; color: #bbb; max-height: none; user-select: text; cursor: text; background: #000; border: 1px solid #333; border-radius: 4px; padding: 6px; }
 #phone-panel .pp-row { display: flex; gap: 6px; margin-top: 6px; }
 #phone-panel button { flex: 1; padding: 5px 4px; font-size: 12px; background: #222; border: 1px solid #444; color: #ccc; border-radius: 4px; cursor: pointer; }
 #phone-panel button:hover { background: #333; color: #fff; }
@@ -666,7 +706,7 @@
       ${TOUCH ? '<div class="pp-intro">They scan this code with their phone. Choose what their phone becomes:</div>' : ''}
       <div class="pp-status"></div>
       <div class="pp-modes" role="group" aria-label="What the QR code is for">
-        <button data-mode="control">${TOUCH ? 'Remote control' : 'Control'}</button><button data-mode="countdown">${TOUCH ? 'Countdown display' : 'Countdown'}</button>${TOUCH ? '' : '<button data-mode="runsheet">Run sheet</button><button data-mode="admin">Admin</button>'}
+        <button data-mode="control">${TOUCH ? 'Remote control' : 'Control'}</button><button data-mode="countdown">${TOUCH ? 'Countdown display' : 'Countdown'}</button>${TOUCH ? '' : '<button data-mode="runsheet">Run sheet</button><button data-mode="admin">Admin</button><button data-mode="companion">Companion</button>'}
       </div>
       <div class="pp-modehint"></div>
       <div class="pp-qr"></div>
@@ -801,12 +841,13 @@
     // View-only links need pairing server protocol 2; an older server rejects their key
     const oldServer = hosted && serverProtocol < MIN_PROTOCOL[mode];
     el.querySelector('.pp-modehint').innerHTML = !enabled ? '' : oldServer
-      ? `<span class="pp-warn">The pairing server is out of date and will refuse ${mode === 'admin' ? 'admin' : 'view-only'} links. Update remote-server.js on the server and restart it.</span>`
+      ? `<span class="pp-warn">The pairing server is out of date and will refuse ${mode === 'admin' ? 'admin' : mode === 'companion' ? 'Companion' : 'view-only'} links. Update remote-server.js on the server and restart it.</span>`
       : TOUCH ? (mode === 'control'
           ? 'Their phone gets <b>Start</b>, <b>Pause</b>, ±1 min, presets and messages, a virtual Stream Deck, or a countdown display: they choose with ☰ View on their phone.'
           : '<b>View only</b>: a big countdown and messages on their phone. It can’t change the timer.')
       : LINK_MODES[mode].hint;
     el.querySelector('.pp-link').textContent = enabled ? phoneLink() : '';
+    el.querySelector('.pp-link').classList.toggle('pp-paste', mode === 'companion');   // meant to be copied, not scanned
     if (enabled) drawQR(phoneLink());
     el.querySelector('.pp-pin').style.display = enabled ? '' : 'none';
     el.querySelector('.pp-pin-box').checked = pinRequired();
@@ -814,14 +855,14 @@
     const rows = pending();
     const keep = {};
     pend.querySelectorAll('[data-id]').forEach(r => { keep[r.dataset.id] = r.querySelector('input').value; });
-    pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.role === 'view' ? 'A display' : 'A phone'} wants to connect.</b> Type the PIN it shows:
+    pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.role === 'view' ? 'A display' : e.role === 'companion' ? 'Companion' : 'A phone'} wants to connect.</b> Type the PIN it shows${e.role === 'companion' ? ' (in its connection log)' : ''}:
         <span class="pp-askrow"><input inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" placeholder="PIN" value="${keep[e.id] || ''}">
         <button data-act="ok">Let it in</button><button data-act="no">Refuse</button></span>${e.wrong ? '<div class="pp-warn">That’s not it. ' + (3 - e.tries) + ' more tr' + (e.tries === 2 ? 'y' : 'ies') + '.</div>' : ''}</div>`).join('');
     if (rows.length && !keep[rows[0].id]) { const i = pend.querySelector('input'); if (i && !TOUCH) i.focus(); }
     const srv = el.querySelector('.pp-server');
     if (force || document.activeElement !== srv) srv.value = serverUrl();
     el.querySelector('.pp-peers').innerHTML = !peers.size ? (enabled ? '<i>No phones connected</i>' : '') :
-      [...peers.values()].filter(e => !e.rejected).map(e => `<div>${e.role === 'view' ? 'Display' : 'Phone'} ${e.n} · ` +
+      [...peers.values()].filter(e => !e.rejected).map(e => `<div>${e.role === 'view' ? 'Display' : e.role === 'companion' ? 'Companion' : 'Phone'} ${e.n} · ` +
         (!e.approved ? '<span class="pp-warn">waiting for its PIN</span> · ' : '') +
         (e.role === 'view' ? '<span class="pp-view">view only</span> · ' : e.role === 'admin' ? '<span class="pp-admin">admin</span> · ' : '') +
         `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : '<b class="pp-srv">via server</b>'}</div>`).join('') +

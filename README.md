@@ -1,6 +1,6 @@
 # Presentation Timer (beta)
 
-A keyboard-driven countdown timer for talks, conferences and live events. One window is the operator's controller; a second window shows a clean countdown on the stage display. It can step through a run sheet, play videos on another screen, and work with a Stream Deck, a remote display over the network, phones and tablets (as remote controls or extra displays).
+A keyboard-driven countdown timer for talks, conferences and live events. One window is the operator's controller; a second window shows a clean countdown on the stage display. It can step through a run sheet, play videos on another screen, and work with a Stream Deck (directly or through Bitfocus Companion), a remote display over the network, phones and tablets (as remote controls or extra displays).
 
 **Try it:** https://timer.sophtwhere.com/beta/
 
@@ -192,6 +192,7 @@ Control the timer from a phone or tablet: start, pause, ±1 minute, catch up, pr
    - **Countdown**: a view-only countdown and message display. On a computer (a confidence monitor, a screen in another room) it looks exactly like the timer's presenter screen, and **F** toggles full screen; move the mouse to see its controls. On a phone or tablet it uses a touch-friendly layout that follows the timer's **B** (progress bar), **T** (time of day) and **M** (messages: the *Paused* notice) switches.
    - **Run sheet**: a view-only display of now, next, ahead/behind and the schedule, e.g. for a green room or backstage.
    - **Admin**: everything Control can do, every view, and setting up other computers (below). Keep this code for yourself: Control lets someone run the timer without being able to hand it to other devices.
+   - **Companion**: for Bitfocus Companion (below) and other automation. The panel shows a link to copy instead of a QR code.
 3. Scan it with the phone or tablet. The page opens and connects.
 
 Each kind of code has its own key, and the timer enforces what each can do, even if someone fiddles with the page: view-only devices can't send anything, and only admin phones can set up other computers. The phone panel lists each device as *Phone*, *Phone · admin* or *Display · view only*.
@@ -223,9 +224,18 @@ Buttons and deck keys buzz as soon as you press them (on phones that can vibrate
 
 The QR code contains a secret key: anyone with the link can control the timer, so the panel closes itself as soon as a phone connects (open it again with **phone** when you want to add another). For more protection tick **Require a PIN** under the code: each new phone then shows a 4-digit PIN, and it isn't let in until you type that PIN into the panel (three wrong tries refuse it). Phones you've let in stay approved until you make a new code. **New code** disconnects every phone and makes a new link. **Turn off** stops phone control. 
 
+### Bitfocus Companion
+
+[Bitfocus Companion](https://bitfocus.io/companion) (Stream Deck and other control surfaces, on any computer) can run the timer through a connection module in `companion/`. It joins the timer like a phone does, so Companion can be on another computer, or on the same one alongside the timer's own Stream Deck support. Companion gets every timer command as an action (start a countdown of any length with a message, pause, nudge, catch up, messages, display switches, run sheet Next/Back, video, keystrokes, raw API commands) and every value the timer publishes as a variable, with feedbacks for paused, under a minute, time up, message showing, behind schedule and so on. Companion can also drive the timer from its own data: a duration or message in a *Start a countdown* action can be a variable or expression from another connection.
+
+1. In the timer, click **phone** and choose **Companion**. Copy the link shown.
+2. In Companion, add a **Presentation Timer** connection and paste the link into its settings.
+
+It connects within a second or two. If **Require a PIN** is on, Companion's status shows a PIN to type into the panel; it's remembered afterwards. The module's own help (in Companion) lists the actions, variables, feedbacks and presets. It isn't in Companion's module store yet: build it from `companion/companion-module-sophtwhere-presentationtimer` (`npm install && npm run build`) and point Companion's **Developer modules path** at the `companion/` folder, or `npm run package` for a `.tgz` to import. It is written for Companion 5.1 and should work from 4.3 on.
+
 ### Pairing server
 
-Phone control needs `remote-server.js` running on a server you control. View-only links need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 3* supports view-only and admin links), and the timer's phone panel warns if the server is too old for the code you've selected. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the phone panel.
+Phone control needs `remote-server.js` running on a server you control. View-only, admin and Companion links need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 3* supports view-only and admin links, *4* adds Companion), and the timer's phone panel warns if the server is too old for the code you've selected. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the phone panel.
 
 ```bash
 npm install
