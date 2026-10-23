@@ -178,6 +178,7 @@
     return p.load(URL.createObjectURL(blob), {
       name: it.video.name, idle: it.videoIdle, controls: false, message: it.name,
       revoke: true, tag: it.id, onEnd: 'recue',
+      history: { kind: 'runsheet', key: it.video.key, size: it.video.size },
     });
   }
 

@@ -568,6 +568,7 @@
     const el = panel();
     el.hidden = !el.hidden;
     if (!el.hidden) {
+      document.dispatchEvent(new CustomEvent('timer-panel', { detail: 'phone' }));   // one panel at a time
       if (!enabled) enable();
       renderPanel(true);
     }
@@ -576,6 +577,7 @@
   function init() {
     installBus();
     document.getElementById('btnphone')?.addEventListener('click', togglePanel);
+    document.addEventListener('timer-panel', e => { const el = document.getElementById('phone-panel'); if (e.detail !== 'phone' && el) el.hidden = true; });
     if (localStorage.getItem(ENABLED_KEY) === '1') { panel(); enable(); }
     renderPanel();
   }

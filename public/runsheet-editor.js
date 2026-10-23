@@ -331,6 +331,8 @@
   function cleanUpVideos() {
     if (!window.videoStore) return;
     const used = new Set(sheet.items.filter(it => it.video).map(it => it.video.key));
+    // Videos in the timer's Recent videos list stay until they drop off it (video-library.js)
+    try { (JSON.parse(localStorage.getItem('video_history') || '[]') || []).forEach(e => { if (e && e.key) used.add(e.key); }); } catch (_) { /* ignore */ }
     window.videoStore.keys().then(keys => keys.forEach(k => {
       if (String(k).startsWith('rsvideo:') && !used.has(k)) window.videoStore.remove(k).catch(() => {});
     })).catch(() => {});

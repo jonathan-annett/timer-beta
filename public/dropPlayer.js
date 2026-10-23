@@ -14,7 +14,9 @@
  * the videoplay / videostop / videorewind commands):
  *   open()      open the player window (needs a click or key press)
  *   isOpen()
- *   load(url, {name, idle, controls, message, revoke, tag, onEnd})   cue a video
+ *   load(url, {name, idle, controls, message, revoke, tag, onEnd, history})   cue a video
+ *   loadFile(file, handle)  cue a file the operator dropped or browsed for (handle: a
+ *               FileSystemFileHandle or a promise of one, kept so the history can reopen it)
  *   play()      play the cued video; the timer counts down its length
  *   stop({quiet})  stop what's playing (or unload what's cued); unless quiet, clear the
  *               message and the timer
@@ -25,6 +27,9 @@
  *   onChange(fn)
  * onEnd: 'unload' (dropped videos: stop and clear) or 'recue' (run sheet: back to before-play,
  * timer 0:00, message kept; the operator presses Next when ready).
+ *
+ * history: what video-library.js needs to list the video once it has played
+ * ({kind:'file', file, handle} | {kind:'link', url} | {kind:'runsheet', key} | {kind:'recall', id}).
  *
  * Publishes video_status ('empty'|'cued'|'playing') and video_name on the timerAPI bus.
  * localStorage: video_idle ('show' | 'hide'), the "Before play" setting for dropped videos.
@@ -191,6 +196,7 @@
       revoke: !!opts.revoke,
       tag: opts.tag || null,
       onEnd: opts.onEnd === 'recue' ? 'recue' : 'unload',
+      history: opts.history || null,
     };
     el.pause();
     el.src = url;
@@ -220,6 +226,12 @@
       api({ cmd: 'start', msecs: wholeSeconds(remaining) });
       api({ cmd: 'custommessage', text: messageFor(s) });
       const p = s.el.play();
+      // Recent videos (video-library.js): noted when it actually plays
+      if (s.history && window.videoLibrary) {
+        let id = null;
+        try { id = window.videoLibrary.played(s.history, s.name, s.el.duration); } catch (_) { /* ignore */ }
+        if (id) s.history = { kind: 'recall', id };   // played again after a rewind: the same entry
+      }
       if (p && p.catch) p.catch(err => {
         if (err && err.name === 'NotAllowedError') {
           toast('The browser stopped the video playing with sound. Click once in the player window, then play again.');
@@ -304,11 +316,34 @@
 
   // A drop: video files load as a blob URL (released when replaced or stopped), links as is
   function loadDrop(dataTransfer) {
-    const file = Array.from(dataTransfer.files || []).find(f => f.type.startsWith('video/'));
-    if (file) return load(URL.createObjectURL(file), { name: noExt(file.name), revoke: true, controls: true });
+    const items = Array.from(dataTransfer.items || []);
+    const files = Array.from(dataTransfer.files || []);
+    const i = files.findIndex(f => f.type.startsWith('video/'));
+    if (i >= 0) {
+      // Chrome/Edge: a handle to the file itself, so Recent videos can reopen it later without a
+      // copy. It has to be asked for during the drop event.
+      const fileItems = items.filter(it => it.kind === 'file');
+      const item = fileItems[i];
+      let handle = null;
+      try { if (item && item.getAsFileSystemHandle) handle = item.getAsFileSystemHandle(); } catch (_) { handle = null; }
+      return loadFile(files[i], handle);
+    }
     const url = dataTransfer.getData('URL') || dataTransfer.getData('text/uri-list');
-    if (url) return load(url.split('\n')[0].trim(), { controls: true });
+    if (url) {
+      const u = url.split('\n')[0].trim();
+      // blob: and data: links only last as long as the page that made them: not listed
+      const keepable = /^https?:/i.test(u);
+      return load(u, { controls: true, history: keepable ? { kind: 'link', url: u } : null });
+    }
     return false;
+  }
+
+  // A file the operator dropped or browsed for: on-screen controls, and kept in Recent videos
+  function loadFile(file, handle) {
+    return load(URL.createObjectURL(file), {
+      name: noExt(file.name), revoke: true, controls: true,
+      history: { kind: 'file', file, handle: handle || null },
+    });
   }
 
   // ─── Drag and drop onto the timer ─────────────────────────────────────────
@@ -392,12 +427,7 @@ html.reduced #video-controls, html.reduced #video-toast { display: none; }`;
     el.querySelector('.vc-idle').textContent = 'Before play: ' + (cued && cued.idle === 'hide' ? 'black' : 'first frame');
   }
 
-  // The "video" button opens the player window (a click, so the browser allows it)
-  function wireButton() {
-    const b = document.getElementById('btnvideo');
-    if (b) b.addEventListener('click', () => { if (!open()) toast('Allow pop-up windows for this site to open the video player.'); else if (win) win.focus(); });
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireButton); else wireButton();
+  // The "video" button (opens this window and the video panel) is in video-library.js
 
-  window.videoPlayer = { open, isOpen, load, loadDrop, play, stop, rewind, unloadCued, setIdle, state, toast, onChange: fn => listeners.push(fn) };
+  window.videoPlayer = { open, isOpen, load, loadDrop, loadFile, noExt, play, stop, rewind, unloadCued, setIdle, state, toast, onChange: fn => listeners.push(fn) };
 })();

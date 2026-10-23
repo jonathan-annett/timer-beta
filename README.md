@@ -142,7 +142,7 @@ In the editor you can drag actions from the palette onto keys, set per-key label
 
 ## Videos
 
-Click **video** to open the separate **player window**, drag it to the screen it should play on and press **F** for full screen. Drag a video file onto the timer (or a link to one) to load it; controls appear at the bottom right of the timer:
+Click **video** to open the separate **player window** and the video panel. Drag the player window to the screen it should play on and press **F** for full screen. To load a video, click **Browse for a video…** in the panel, or drag a video file (or a link to one) onto the timer. Controls appear at the bottom right of the timer:
 
 | | |
 |---|---|
@@ -152,6 +152,12 @@ Click **video** to open the separate **player window**, drag it to the screen it
 | **Before play: first frame / black** | What the player window shows before the video plays. Remembered for next time. |
 
 Keys pressed in the player window work as if pressed in the timer. Drop another video on either window to replace the current one.
+
+### Recent videos
+
+Every video you play is listed under **Recent videos** in the video panel (click **video**): dropped and browsed files, links and run sheet videos, newest first, with when each was last played. Click **Cue** to load one into the player again, then **▶** to play it; **✕** removes one from the list, **Clear** empties it. The list is kept between sessions (the last 30 videos).
+
+In Chrome and Edge the timer remembers where a file is on your computer rather than copying it. The first time you cue one after reopening the browser, Chrome asks to let the page view the file. If the file has since been moved, renamed or deleted, browse for it again. Other browsers keep a copy of each file in the browser instead (up to 8 GB in all; the oldest copies go first). A video that wasn't kept is marked *not kept*: browse for it or drop it again to play it.
 
 ### Videos in the run sheet
 
