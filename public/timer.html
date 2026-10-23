@@ -33,6 +33,7 @@
       <script src="deck-face.js" defer></script>
       <script src="streamdeck.js" defer></script>
       <script src="relay.js" defer></script>
+      <script src="back-guard.js" defer></script>
       <script src="touchcontrols.js" defer></script>
       <script src="runsheet-core.js" defer></script>
       <script src="runsheet.js" defer></script>
@@ -260,7 +261,29 @@
         <div class="touch-sheet-backdrop" id="touch-sheet-backdrop"></div>
         <div class="touch-sheet-content">
           <div class="touch-sheet-title">Select duration</div>
-          <div class="touch-sheet-grid" id="touch-sheet-grid"></div>
+          <div class="touch-sheet-presets">
+            <div class="touch-sheet-grid" id="touch-sheet-grid"></div>
+            <div class="touch-sheet-row">
+              <button class="touch-sheet-custom" id="touch-sheet-custom">Other duration…</button>
+              <button class="touch-sheet-edit" id="touch-sheet-edit" hidden>Edit</button>
+            </div>
+          </div>
+          <div id="touch-pad">
+            <div class="touch-pad-display" id="touch-pad-display">0 min</div>
+            <div class="touch-pad-keys">
+              <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+              <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+              <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+              <button data-k=":" title="Hours : minutes">:</button><button data-k="0">0</button><button data-k="back" aria-label="Backspace">⌫</button>
+            </div>
+            <div class="touch-pad-hint">Minutes, or hours : minutes (1:30)</div>
+            <div class="touch-pad-actions">
+              <button id="touch-pad-start" class="go">▶ Start</button>
+              <button id="touch-pad-default">Set default</button>
+              <button id="touch-pad-save">Save preset</button>
+            </div>
+            <button class="touch-sheet-back" id="touch-pad-back-to-presets">‹ Presets</button>
+          </div>
           <button class="touch-sheet-cancel" id="touch-sheet-cancel">Cancel</button>
         </div>
       </div>

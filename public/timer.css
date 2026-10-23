@@ -1449,6 +1449,54 @@ html.portrait #disp_next_mins:before{
 }
 
 .touch-sheet-preset:active { background: #0f3460; }
+.touch-sheet-preset.custom { border-color: #3b5a8a; }
+.touch-sheet-preset.removable { background: #3a0d0d; border-color: #6a2a2a; color: #ff9a9a; }
+.touch-sheet-preset.removable::after { content: ' ✕'; }
+.touch-sheet-row { display: flex; gap: 8px; margin-bottom: 16px; }
+.touch-sheet-custom, .touch-sheet-edit, .touch-sheet-back {
+  padding: 12px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; color: #ddd; font-size: 14px;
+  cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.touch-sheet-custom { flex: 1; }
+.touch-sheet-edit { flex: 0 0 auto; min-width: 72px; color: #888; }
+.touch-sheet-edit[hidden] { display: none; }
+/* Keypad (shown instead of the presets) */
+#touch-pad { display: none; }
+#touch-preset-sheet.keypad .touch-sheet-presets { display: none; }
+#touch-preset-sheet.keypad #touch-pad { display: block; }
+.touch-pad-display { text-align: center; font-size: 32px; font-weight: bold; color: #fff; padding: 4px 0 12px; font-variant-numeric: tabular-nums; }
+.touch-pad-display.empty { color: #555; }
+.touch-pad-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 320px; margin: 0 auto; }
+.touch-pad-keys button { padding: 14px 0; font-size: 22px; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff;
+  cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; user-select: none; }
+.touch-pad-keys button:active { background: #0f3460; }
+.touch-pad-hint { text-align: center; color: #666; font-size: 12px; margin: 10px 0 12px; }
+.touch-pad-actions { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.touch-pad-actions button { padding: 14px 4px; font-size: 14px; font-weight: bold; background: #1a1a2e; border: 1px solid #333; border-radius: 8px; color: #fff;
+  cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.touch-pad-actions button.go { background: #0e3a12; border-color: #2a6a2a; color: #9cf59c; }
+.touch-pad-actions button:disabled { opacity: .35; }
+.touch-sheet-back { display: block; width: 100%; margin-bottom: 8px; color: #888; }
+/* Short screens (a phone held sideways): the sheet scrolls, and the keypad sits beside its
+   display and actions instead of above them */
+.touch-sheet-content { max-height: 100vh; max-height: 100dvh; overflow-y: auto; box-sizing: border-box; }
+@media (max-height: 560px) {
+  .touch-sheet-content { padding: 10px 16px 12px; }
+  .touch-sheet-title { margin-bottom: 8px; }
+  #touch-pad { display: none; grid-template-columns: 1fr 1fr; gap: 6px 16px; align-items: center; }
+  #touch-preset-sheet.keypad #touch-pad { display: grid; }
+  .touch-pad-keys { grid-row: 1 / 4; grid-column: 1; max-width: 360px; width: 100%; justify-self: end; gap: 5px; }
+  .touch-pad-keys button { padding: 6px 0; font-size: 20px; }
+  .touch-pad-display { grid-column: 2; font-size: 28px; padding: 0 0 4px; }
+  .touch-pad-hint { grid-column: 2; margin: 0 0 4px; }
+  .touch-pad-actions { grid-column: 2; grid-template-columns: 1fr; margin-bottom: 0; }
+  .touch-pad-actions button { padding: 9px 4px; }
+  .touch-sheet-back { grid-column: 1 / -1; margin: 6px 0 0; padding: 8px; }
+  .touch-sheet-cancel { padding: 8px; margin-top: 6px; }
+  .touch-sheet-preset { padding: 10px 8px; }
+  .touch-sheet-grid { gap: 6px; margin-bottom: 8px; }
+  .touch-sheet-row { margin-bottom: 8px; }
+  .touch-sheet-custom, .touch-sheet-edit { padding: 8px; }
+}
 
 .touch-sheet-cancel {
   display: block;

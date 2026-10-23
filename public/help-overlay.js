@@ -135,6 +135,9 @@ var HelpOverlay = (function () {
       }
     }, true);
 
+    // The browser's Back button closes the help where the page uses back-guard.js
+    if (typeof BackGuard !== 'undefined') BackGuard.register(() => { if (!isOpen()) return false; close(); return true; });
+
     return { open, close, toggle, isOpen };
   }
 

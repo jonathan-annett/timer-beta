@@ -96,28 +96,112 @@
   }
 
   // ─── Preset bottom sheet ──────────────────────────────────────────────────
+  // Built-in presets plus the user's own (localStorage touch_presets: minutes, sorted), and a
+  // keypad to type any duration: digits are minutes, ":" separates hours (1:30), as on the
+  // keyboard. From the keypad: Start (set the default and start), Set default, or Save as a
+  // preset. "Edit" shows ✕ on the custom presets to remove them.
+
+  const CUSTOM_KEY = 'touch_presets';
+  function customPresets() {
+    try {
+      const v = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]');
+      return Array.isArray(v) ? v.filter(m => Number.isInteger(m) && m > 0 && m <= 24 * 60) : [];
+    } catch (_) { return []; }
+  }
+  function saveCustom(list) {
+    try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)); } catch (_) { /* full / private */ }
+  }
+  const builtInMins = new Set(PRESETS.map(p => p.ms / 60000));
+  function addCustom(mins) {
+    if (builtInMins.has(mins)) return;              // already a button
+    const list = customPresets();
+    if (!list.includes(mins)) { list.push(mins); list.sort((a, b) => a - b); saveCustom(list); }
+  }
+  function removeCustom(mins) { saveCustom(customPresets().filter(m => m !== mins)); }
+  function minsLabel(mins) {
+    if (mins < 60) return mins + ' min';
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return m ? `${h} h ${String(m).padStart(2, '0')}` : h === 1 ? '1 hour' : h + ' hours';
+  }
+
+  function startWith(ms) {
+    if (typeof setDefaultDuration === 'function') setDefaultDuration(ms);
+    if (typeof restartTimer       === 'function') restartTimer();
+  }
+  function setDefault(ms) {
+    if (typeof setDefaultDuration === 'function') setDefaultDuration(ms);
+    if (window.timerAPI && typeof secToStr === 'function') timerAPI.send({ setVariableValues: { default: secToStr(ms / 1000) } });
+  }
+
+  let editing = false;
+  function renderPresetGrid() {
+    const grid = document.getElementById('touch-sheet-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    const all = PRESETS.map(p => ({ label: p.label, ms: p.ms, custom: false }))
+      .concat(customPresets().map(m => ({ label: minsLabel(m), ms: m * 60000, custom: true })));
+    all.forEach(({ label, ms, custom }) => {
+      const btn = document.createElement('button');
+      btn.className = 'touch-sheet-preset' + (custom ? ' custom' : '');
+      btn.textContent = label;
+      if (custom && editing) btn.classList.add('removable');
+      btn.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        if (custom && editing) { removeCustom(ms / 60000); renderPresetGrid(); return; }
+        if (editing) return;
+        closePresetSheet();
+        startWith(ms);
+      });
+      grid.appendChild(btn);
+    });
+    const edit = document.getElementById('touch-sheet-edit');
+    if (edit) {
+      edit.hidden = !customPresets().length && !editing;
+      edit.textContent = editing ? 'Done' : 'Edit';
+    }
+    const title = document.querySelector('#touch-preset-sheet .touch-sheet-title');
+    if (title) title.textContent = editing ? 'Tap a custom preset to remove it' : 'Select duration';
+  }
+
+  // Keypad: the typed text is minutes, or h:mm once ":" is pressed
+  let padText = '';
+  function padMs() {
+    const [a, b] = padText.split(':');
+    if (padText === '' || padText === ':') return 0;
+    const ms = padText.includes(':') ? (Number(a || 0) * 60 + Number(b || 0)) * 60000 : Number(a) * 60000;
+    return ms > 0 && ms <= 24 * 3600000 ? ms : 0;
+  }
+  function renderPad() {
+    const disp = document.getElementById('touch-pad-display');
+    if (!disp) return;
+    const ms = padMs();
+    disp.textContent = padText === '' ? '0 min' : padText.includes(':') ? padText + (padText.endsWith(':') ? '00' : '') + ' h' : padText + ' min';
+    disp.classList.toggle('empty', !ms);
+    ['touch-pad-start', 'touch-pad-default', 'touch-pad-save'].forEach(id => { const b = document.getElementById(id); if (b) b.disabled = !ms; });
+  }
+  function padKey(k) {
+    if (k === 'back') padText = padText.slice(0, -1);
+    else if (k === ':') { if (!padText.includes(':') && padText !== '') padText += ':'; }
+    else if (/^\d$/.test(k)) {
+      const [h, m] = padText.split(':');
+      if (padText.includes(':')) { if ((m || '').length < 2) padText += k; }
+      else if (h.length < 4 && !(h === '0' && k === '0')) padText = h === '0' ? k : padText + k;
+    }
+    renderPad();
+    if (navigator.vibrate) navigator.vibrate(10);
+  }
+  function showPad(on) {
+    const sheet = document.getElementById('touch-preset-sheet');
+    sheet.classList.toggle('keypad', on);
+    if (on) { padText = ''; renderPad(); }
+  }
 
   function openPresetSheet() {
     const sheet = document.getElementById('touch-preset-sheet');
     if (!sheet) return;
-
-    const grid = document.getElementById('touch-sheet-grid');
-    if (grid && !grid.dataset.built) {
-      grid.dataset.built = '1';
-      PRESETS.forEach(({ label, ms }) => {
-        const btn = document.createElement('button');
-        btn.className = 'touch-sheet-preset';
-        btn.textContent = label;
-        btn.addEventListener('pointerdown', e => {
-          e.preventDefault();
-          closePresetSheet();
-          if (typeof setDefaultDuration === 'function') setDefaultDuration(ms);
-          if (typeof restartTimer       === 'function') restartTimer();
-        });
-        grid.appendChild(btn);
-      });
-    }
-
+    editing = false;
+    showPad(false);
+    renderPresetGrid();
     sheet.style.display = 'flex';
     requestAnimationFrame(() => sheet.classList.add('visible'));
   }
@@ -130,11 +214,22 @@
   }
 
   function initPresetSheet() {
-    document.getElementById('touch-sheet-cancel')?.addEventListener('pointerdown', e => {
-      e.preventDefault(); closePresetSheet();
-    });
-    document.getElementById('touch-sheet-backdrop')?.addEventListener('pointerdown', e => {
-      e.preventDefault(); closePresetSheet();
+    const on = (id, fn) => document.getElementById(id)?.addEventListener('pointerdown', e => { e.preventDefault(); fn(); });
+    on('touch-sheet-cancel', closePresetSheet);
+    on('touch-sheet-backdrop', closePresetSheet);
+    on('touch-sheet-edit', () => { editing = !editing; renderPresetGrid(); });
+    on('touch-sheet-custom', () => { editing = false; showPad(true); });
+    on('touch-pad-back-to-presets', () => showPad(false));
+    document.querySelectorAll('#touch-pad button[data-k]').forEach(b => b.addEventListener('pointerdown', e => { e.preventDefault(); padKey(b.dataset.k); }));
+    on('touch-pad-start', () => { const ms = padMs(); if (ms) { closePresetSheet(); startWith(ms); } });
+    on('touch-pad-default', () => { const ms = padMs(); if (ms) { closePresetSheet(); setDefault(ms); } });
+    on('touch-pad-save', () => {
+      const ms = padMs();
+      if (!ms) return;
+      addCustom(ms / 60000);
+      setDefault(ms);
+      showPad(false);
+      renderPresetGrid();
     });
   }
 
@@ -233,7 +328,25 @@
 
   // ─── Boot ─────────────────────────────────────────────────────────────────
 
+  // The phone's Back button: closes the preset sheet or the quick-start overlay if open;
+  // otherwise it does nothing rather than leaving the timer (back-guard.js)
+  function initBackGuard() {
+    if (typeof BackGuard === 'undefined') return;
+    BackGuard.install();
+    BackGuard.register(() => {
+      const sheet = document.getElementById('touch-preset-sheet');
+      if (sheet && sheet.style.display !== 'none') {
+        if (sheet.classList.contains('keypad')) showPad(false); else closePresetSheet();
+        return true;
+      }
+      const qs = document.getElementById('quick-start-overlay');
+      if (qs) { qs.remove(); return true; }
+      return false;
+    });
+  }
+
   function init() {
+    initBackGuard();
     initStrip();
     initPresetSheet();
     initGestures();

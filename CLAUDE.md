@@ -41,7 +41,8 @@ timer_build/
     ├── streamdeck.js       Stream Deck WebHID integration + in-app editor
     ├── deck-face.js        Draws a deck key face onto a canvas (shared by streamdeck.js and the phone's virtual XL)
     ├── relay.js            WebSocket-first remote display client + WebRTC upgrade
-    ├── touchcontrols.js    Mobile gestures, touch strip, quick-start overlay
+    ├── touchcontrols.js    Mobile gestures, touch strip, preset sheet + keypad, quick-start overlay
+    ├── back-guard.js       Phone Back button: closes the open overlay, never leaves the page (timer touch + remote)
     ├── runsheet-core.js    Run sheet logic: parsing, normalising, CSV (pure, no DOM; node-testable)
     ├── runsheet.js         Run sheet controller: next/back/log, Page Up/Down, dashboard (timer window only)
     ├── runsheet.html       Run sheet editor window (opened with E)
@@ -212,6 +213,7 @@ All timer state persists in localStorage. These are the canonical keys:
 | `remote_server` | wss URL | Pairing server for phone control (default `wss://<host>:8443/`; also `?remote=` in the URL) |
 | `remote_pairing` | JSON | `{room, key, view, admin}` for phone control: room code, control, view-only and admin keys; "New code" replaces them all (revokes every phone and display) |
 | `remote_link_mode` | string | Which link the phone panel's QR code shows: `control`, `countdown` / `runsheet` (view only) or `admin` |
+| `touch_presets` | JSON | Phone timer page: the user's own presets, minutes, sorted (`touchcontrols.js`) |
 | `remote_confirm` | `'1'` or absent | Phone only: Restart and presets need a second tap |
 | `remote_enabled` | `'1'` or absent | Phone control on; reconnects automatically after a reload |
 | `tab_<id>` | timestamp ms | Heartbeat for multi-tab detection |
@@ -349,7 +351,8 @@ Separate from the relay/`share` audience display. Pieces: `remote-server.js` (st
 - No swipe gestures (removed: easy to trigger by accident, and the ±1 min buttons do the same)
 - Handles long-press on `#clock_main` (600ms) = pause/resume
 - Handles double-tap = start/restart
-- Builds the preset bottom sheet on demand
+- Builds the preset bottom sheet on demand: built-in `PRESETS` plus `localStorage.touch_presets` (minutes; `.custom` buttons), **Other duration…** switches the sheet to a keypad (`#touch-pad`, `#touch-preset-sheet.keypad`; digits = minutes, `:` = h:mm like the keyboard; Start / Set default / Save preset), **Edit** toggles removal of custom presets. Set default uses `setDefaultDuration` + a `default` announce on the bus, like `saveEditedTime`. On short screens (`max-height: 560px`) the keypad sits beside the display/actions and the sheet scrolls.
+- Installs `BackGuard` (back-guard.js: pushes a sentinel history entry and re-arms on every `popstate`; closers are tried newest first). Its closer backs out of the keypad, closes the sheet or the quick-start overlay; `HelpOverlay.install()` registers the help's own closer when `BackGuard` exists, so load `back-guard.js` before `help-overlay.js` and `touchcontrols.js`. `remote-phone.js` does the same for the view menu, message box and full-screen tip. With nothing open, Back does nothing (deliberately not pause/resume: an accidental press shouldn't change the timer).
 - Shows the quick-start overlay on first load if no timer state exists
 
 All gestures dispatch into the existing `onDocKeyDown`/`onDocKeyUp` keyboard handlers — `touchcontrols.js` has no timer logic of its own.

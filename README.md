@@ -236,7 +236,11 @@ Some venue and corporate networks only allow ports 80 and 443. On those, phones 
 
 ## Phones and tablets
 
-On a touch screen the controller shows a bottom bar: **Presets**, **Start**, **Pause**, **+1 min**, **−1 min** and **?** (this guide). The clock face also responds to two gestures:
+On a touch screen the controller shows a bottom bar: **Presets**, **Start**, **Pause**, **+1 min**, **−1 min** and **?** (this guide). **Presets** opens a sheet with the built-in durations and any you've added. **Other duration…** there is a keypad: type the minutes (or hours : minutes, e.g. `1:30`), then **▶ Start** to start it, **Set default** to make it the default without starting, or **Save preset** to add it to the sheet. Your own presets are kept on the phone; **Edit** lets you remove them.
+
+The phone's **Back** button closes whatever is open (the guide, the presets, a menu); when nothing is open it does nothing, so a stray press can't leave the timer during a talk. The same goes for the phone remote.
+
+The clock face also responds to two gestures:
 
 | Gesture | Action |
 |---|---|

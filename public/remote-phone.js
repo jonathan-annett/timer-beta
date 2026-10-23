@@ -511,6 +511,18 @@
     $('viewmenu').hidden = false;
   }
   // The README, as on the timer (help-overlay.js); ? or F1 open it too
+  // The phone's Back button closes whatever is open (menus, message box, tip) and otherwise does
+  // nothing, rather than leaving the remote (back-guard.js). The help registers itself below.
+  if (typeof BackGuard !== 'undefined') {
+    BackGuard.install();
+    BackGuard.register(() => {
+      for (const id of ['viewmenu', 'fstip', 'sheet']) {
+        const el = $(id);
+        if (el && !el.hidden) { el.hidden = true; if (id === 'sheet') $('sheetinput').blur(); return true; }
+      }
+      return false;
+    });
+  }
   const help = HelpOverlay.install({ section: 'phone-remote-control-experimental' });
   $('viewbtn').addEventListener('click', openViewMenu);
   $('viewcancel').addEventListener('click', () => { $('viewmenu').hidden = true; });
