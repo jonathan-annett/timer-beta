@@ -1639,7 +1639,10 @@ html.runsheet:not(.reduced) #custom_message {
 ═══════════════════════════════════════════════════════════════════════════ */
 
 #phone-panel {
-  position: fixed; top: 60px; right: 16px; width: 320px; z-index: 10001;
+  /* Below the button bar (which grows when zoomed buttons wrap), above everything else except the
+     full-screen QR and help; scrolls if the window is short */
+  position: fixed; top: calc(var(--buttons-bottom, 48px) + 8px); right: 16px; width: 320px; z-index: 2147481000;
+  max-height: calc(100vh - var(--buttons-bottom, 48px) - 16px); overflow-y: auto; box-sizing: border-box;
   background: #111; border: 1px solid #333; border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,.6);
   color: #ddd; font: 13px/1.4 "Helvetica Neue", Arial, sans-serif; padding: 10px 12px 12px; cursor: auto;
 }
@@ -1651,7 +1654,10 @@ html.runsheet:not(.reduced) #custom_message {
 #phone-panel .pp-status[data-kind="ok"] { color: #7fdc7f; }
 #phone-panel .pp-status[data-kind="error"] { color: #ff8080; }
 #phone-panel .pp-qr { display: flex; justify-content: center; min-height: 40px; color: #888; cursor: zoom-in; }
-#phone-panel .pp-qr canvas { display: block; border-radius: 4px; }   /* white quiet zone is part of the image */
+#phone-panel .pp-qr canvas { display: block; border-radius: 4px;
+  /* shrink (keeping it square) when the window is too short for the whole panel */
+  width: auto !important; height: auto !important; max-width: 100%;
+  max-height: max(120px, calc(100vh - var(--buttons-bottom, 48px) - 230px)); }   /* white quiet zone is part of the image */
 /* Topmost layer: above everything else on the page, including the video-assist canvases (999999) */
 #phone-qr-big { position: fixed; inset: 0; z-index: 2147483000; background: #000; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 16px; cursor: zoom-out; color: #aaa; font: 16px "Helvetica Neue", Arial, sans-serif; }
