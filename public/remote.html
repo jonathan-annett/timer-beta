@@ -42,6 +42,12 @@
     #note { margin-left: auto; text-align: right; }
     .top button { padding: 0.25em 0.7em; border-radius: 1em; white-space: nowrap; }
     .short { display: none; }
+    .top { flex-wrap: wrap; row-gap: 0.3em; }
+    /* Narrow phones: icon-only buttons so the bar fits on one line */
+    @media (max-width: 520px) {
+      .top button .long { display: none; } .top button .short { display: inline; }
+      body:not(.v-simple) #note { display: none; }
+    }
 
     /* ── Simple view ─────────────────────────────────────────────────────── */
     #remain { font-size: 5.25em; font-weight: bold; text-align: center; line-height: 1.1; margin: 0.15em 0 0.05em;
@@ -89,7 +95,7 @@
 
     /* ── Virtual Stream Deck XL (8 × 4 keys, drawn like the real deck's) ── */
     #deck { display: none; }
-    body.deckview #simple { display: none; }
+    body:not(.v-simple) #simple { display: none !important; }
     body.deckview { overflow: hidden; }
     body.deckview .top { font-size: 14px; }
     @media (min-width: 600px) and (min-height: 600px) { body.deckview .top { font-size: 18px; } }
@@ -118,6 +124,71 @@
     #deckhint { text-align: center; color: var(--dim); font-size: 14px; margin-top: 1em; }
     #deckhint:empty { display: none; }
 
+    #roletag { font-size: 0.8em; letter-spacing: .08em; color: #9ab; border: 1px solid #345; border-radius: 1em; padding: 0.1em 0.6em; white-space: nowrap; }
+    #roletag[hidden] { display: none; }
+    body.deckview.side #roletag { display: none; }
+
+    /* ── Display views (no controls): countdown, and run sheet status ────── */
+    #cd, #rsv { display: none; position: fixed; left: 0; right: 0; bottom: 0; top: var(--top-h, 48px);
+      padding: 0 max(3vw, env(safe-area-inset-right)) max(3vw, env(safe-area-inset-bottom)) max(3vw, env(safe-area-inset-left)); }
+    body.v-countdown #cd { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    body.v-runsheet #rsv { display: flex; flex-direction: column; }
+    body.v-countdown .top, body.v-runsheet .top { font-size: 14px; }
+    @media (min-width: 700px) and (min-height: 500px) { body.v-countdown .top, body.v-runsheet .top { font-size: 17px; } }
+    body.v-countdown .top { opacity: .55; }
+
+    #cdremain { font-weight: bold; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    body.impending #cdremain, body.impending #rsvremain { color: orange; }
+    body.over #cdremain, body.over #rsvremain { color: var(--late); }
+    body.paused #cdremain, body.paused #rsvremain { color: #777; }
+    #cdsub { color: var(--dim); font-size: 18px; min-height: 1.3em; margin-top: 0.2em; }
+    /* Words aren't split: a word too wide for the screen makes the text smaller instead */
+    #cdmsg { font-weight: bold; text-align: center; line-height: 1.15; color: #fff; margin-top: 12px; max-width: 100%; }
+    #cdmsg:empty { display: none; }
+
+    #rsv { font-size: var(--rs-font, 16px); }
+    #rsv .lbl { font-size: 0.65em; letter-spacing: .12em; color: var(--dim); text-transform: uppercase; }
+    .rsv-head { display: flex; align-items: baseline; gap: 1em; margin-bottom: 0.4em; }
+    #rsvtitle { flex: 1; font-size: 1.1em; color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #rsvclock { font-size: 1.6em; font-weight: bold; font-variant-numeric: tabular-nums; }
+    .rsv-main { display: grid; gap: 0.5em; }
+    .rsv-card { background: var(--card); border: 1px solid var(--line); border-radius: 0.5em; padding: 0.5em 0.7em; }
+    .rsv-row { display: flex; align-items: baseline; gap: 0.6em; }
+    .rsv-row .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    #rsvnow { font-size: 1.6em; font-weight: bold; }
+    #rsvremain { font-size: 2.2em; font-weight: bold; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    #rsvnext { font-size: 1.2em; color: #ddd; }
+    #rsvnexttime { font-size: 1.2em; color: var(--dim); font-variant-numeric: tabular-nums; }
+    #rsvstatus { font-size: 1.1em; padding: 0.35em 0.7em; border-radius: 0.5em; background: #161616; color: #ccc; }
+    #rsvstatus.behind { background: #3a0d0d; color: #ff8a8a; }
+    #rsvstatus.ahead { background: #0d2e0d; color: #8dff8d; }
+    #rsvstatus:empty { display: none; }
+    #rsvlist { flex: 1; min-height: 0; overflow-y: auto; margin-top: 0.6em; border-top: 1px solid var(--line);
+      -webkit-overflow-scrolling: touch; }
+    .rl { display: grid; grid-template-columns: 3.4em 1fr auto; gap: 0.6em; padding: 0.35em 0.3em; border-bottom: 1px solid #1a1a1a; align-items: baseline; }
+    .rl .t { color: var(--dim); font-variant-numeric: tabular-nums; }
+    .rl .d { color: var(--dim); font-size: 0.85em; text-align: right; white-space: nowrap; }
+    .rl.done { opacity: .45; }
+    .rl.now { background: #0e2a12; border-left: 0.25em solid #5fd35f; font-weight: bold; }
+    .rl.now .t { color: #9cf59c; }
+    .rl.next { background: #141a22; }
+    .rl.end { font-style: italic; color: #bbb; }
+    .rl-more { color: var(--dim); font-size: 0.85em; padding: 0.35em 0.3em; }
+    #rsvempty { color: var(--dim); text-align: center; margin-top: 20vh; font-size: 1.2em; }
+    /* Wide screens (a tablet on the green room wall): status on the left, schedule on the right */
+    @media (min-aspect-ratio: 5/4) {
+      body.v-runsheet #rsv { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+        grid-template-rows: auto 1fr; column-gap: 1.2em; }
+      .rsv-head { grid-column: 1 / -1; }
+      #rsvlist { margin-top: 0; grid-column: 2; grid-row: 2; border-top: 0; }
+      .rsv-main { grid-column: 1; grid-row: 2; align-content: start; }
+    }
+
+    /* View menu */
+    #viewmenu .box button { display: block; width: 100%; margin: 0.35em 0; text-align: left; padding: 0.8em 0.9em; }
+    #viewmenu .box button.on { background: #0b3d5c; border-color: #2a6a9a; }
+    #viewmenu .box button small { display: block; color: var(--dim); font-size: 0.8em; margin-top: 0.15em; }
+
     /* Message box for the deck's "Type message" key, and tips */
     .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.75); display: flex; align-items: center;
       justify-content: center; padding: 4vw; z-index: 10; font-size: 16px; }
@@ -133,12 +204,29 @@
   <div id="app" hidden>
     <div class="top">
       <span id="link-badge" class="off"><span class="long">connecting…</span><span class="short">•</span></span>
+      <span id="roletag" hidden title="This device can't control the timer">VIEW ONLY</span>
       <span id="note"></span>
       <button id="fsbtn" title="Full screen"><span class="long">⛶ Full screen</span><span class="short">⛶</span></button>
-      <button id="viewbtn" title="Switch between the simple controls and a virtual Stream Deck XL"><span class="long">▦ Deck</span><span class="short">▦</span></button>
+      <button id="viewbtn" title="Choose what this screen shows"><span class="long">☰ View</span><span class="short">☰</span></button>
     </div>
 
     <div id="deck"><div id="keys"></div><div id="deckhint"></div></div>
+
+    <!-- Countdown display (view only) -->
+    <div id="cd"><div id="cdremain">–:––</div><div id="cdsub"></div><div id="cdmsg"></div></div>
+
+    <!-- Run sheet status display (view only), e.g. for a green room -->
+    <div id="rsv">
+      <div class="rsv-head"><div id="rsvtitle"></div><div id="rsvclock"></div></div>
+      <div class="rsv-main">
+        <div class="rsv-card"><div class="lbl">Now</div>
+          <div class="rsv-row"><span class="name" id="rsvnow">—</span><span id="rsvremain"></span></div></div>
+        <div class="rsv-card"><div class="lbl">Next</div>
+          <div class="rsv-row"><span class="name" id="rsvnext">—</span><span id="rsvnexttime"></span></div></div>
+        <div id="rsvstatus"></div>
+      </div>
+      <div id="rsvlist"></div>
+    </div>
 
     <div id="simple">
       <div class="colA">
@@ -183,6 +271,13 @@
     <h3 style="margin-top:0">Message to the presenter</h3>
     <div class="send"><input id="sheetinput" maxlength="200" placeholder="e.g. Please wrap up" enterkeyhint="send"><button id="sheetsend">Send</button></div>
     <div class="grid g2"><button id="sheetclear">Clear message</button><button id="sheetcancel">Cancel</button></div>
+  </div></div>
+
+  <!-- View menu: the views this device may use -->
+  <div id="viewmenu" class="sheet" hidden><div class="box">
+    <h3 style="margin-top:0">Show on this screen</h3>
+    <div id="viewlist"></div>
+    <button id="viewcancel" style="text-align:center">Cancel</button>
   </div></div>
 
   <!-- Full screen where the browser can't do it (iPhone) -->

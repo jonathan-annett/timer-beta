@@ -8,7 +8,13 @@
  * the web server). "New code" revokes every phone. The pairing survives reloads so phones
  * reconnect by themselves.
  *
- * localStorage: remote_server (wss URL), remote_pairing ({room,key}), remote_enabled ('1').
+ * Two kinds of link (chosen in the panel before scanning): Control, with the room key, and
+ * View only (countdown or run sheet display), with a separate view key. The pairing server
+ * tells us which key a phone used (role 'control' / 'view'); a view-only phone can only ask
+ * for state, and anything else it sends is ignored here.
+ *
+ * localStorage: remote_server (wss URL), remote_pairing ({room,key,view}), remote_enabled ('1'),
+ * remote_link_mode ('control' | 'countdown' | 'runsheet': which link the QR code shows).
  * MIT Licensed
  */
 
@@ -40,23 +46,34 @@
   function pairing(renew) {
     let p = null;
     try { p = JSON.parse(localStorage.getItem(PAIR_KEY)); } catch (_) { /* regenerate */ }
+    const KEYCHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
     if (renew || !p || !p.room || !p.key) {
-      p = {
-        room: randomString(8, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'),
-        key: randomString(24, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'),
-      };
+      p = { room: randomString(8, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'), key: randomString(24, KEYCHARS) };
+    }
+    if (!p.view) {                                   // view-only key (pairings from before it existed get one)
+      p.view = randomString(24, KEYCHARS);
       localStorage.setItem(PAIR_KEY, JSON.stringify(p));
     }
     return p;
   }
+
+  // Which link the QR code shows: a controller, or a view-only display
+  const LINK_MODE_KEY = 'remote_link_mode';
+  const LINK_MODES = {
+    control:   { label: 'Control',   hint: 'Phones scanning this code can <b>control</b> the timer.' },
+    countdown: { label: 'Countdown', hint: '<b>View only</b>: a countdown display. Can’t control the timer.' },
+    runsheet:  { label: 'Run sheet', hint: '<b>View only</b>: run sheet status, e.g. for a green room. Can’t control the timer.' },
+  };
+  const linkMode = () => { const m = localStorage.getItem(LINK_MODE_KEY); return LINK_MODES[m] ? m : 'control'; };
   const serverUrl = () => localStorage.getItem(SERVER_KEY) || defaultServer();
-  function phoneLink() {
+  function phoneLink(mode = linkMode()) {
     const p = pairing();
     const u = new URL('remote.html', location.href);
     u.search = '';
     // Short names, and the server only when it isn't the default (the phone page works that
     // out from its own address): a shorter link makes a simpler, easier-to-scan QR code.
-    const h = { r: p.room, k: p.key };
+    // A view-only link carries only the view key, so it can never be turned into a controller.
+    const h = mode === 'control' ? { r: p.room, k: p.key } : { r: p.room, v: p.view, m: mode };
     if (serverUrl() !== defaultServer()) h.s = serverUrl();
     u.hash = new URLSearchParams(h).toString();
     return u.toString();
@@ -73,13 +90,13 @@
     sock.onopen = () => {
       retryDelay = 1000;
       const p = pairing();
-      sock.send(JSON.stringify({ type: 'host', room: p.room, key: p.key }));
+      sock.send(JSON.stringify({ type: 'host', room: p.room, key: p.key, viewKey: p.view }));
     };
     sock.onmessage = ev => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
       switch (m.type) {
         case 'hosted': hosted = true; setStatus('Ready — scan the code with a phone', 'ok'); break;
-        case 'peer-join': addPeer(m.id); break;
+        case 'peer-join': addPeer(m.id, m.role); break;
         case 'peer-leave': removePeer(m.id); break;
         case 'from': { const p = peers.get(m.id); if (p) p.peer.receive(m.msg); break; }
         case 'error':
@@ -104,9 +121,11 @@
     return msg => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'to', id, msg })); };
   }
 
-  function addPeer(id) {
+  function addPeer(id, role) {
     removePeer(id);
-    const entry = { n: ++phoneCounter, sent: {}, peer: null, deck: false, faces: [] };
+    // 'view' only when the server says so; servers from before view-only keys send no role
+    // (and reject view keys), so their phones joined with the control key.
+    const entry = { n: ++phoneCounter, role: role === 'view' ? 'view' : 'control', sent: {}, peer: null, deck: false, faces: [] };
     entry.peer = RemotePeer.create({
       initiator: true,
       relay: relayTo(id),
@@ -150,6 +169,8 @@
     if (m.t === 'hello') {
       e.sent = {}; e.faces = [];
       pushTo(e, true);
+    } else if (e.role !== 'control') {
+      return;                                  // view-only display: nothing else is accepted
     } else if (m.t === 'deck') {               // phone switched its virtual Stream Deck XL on/off
       e.deck = !!m.on; e.faces = [];
       pushTo(e, false);
@@ -171,6 +192,7 @@
     custommsg: ['msg', String], default: ['def', String],
     rs_active: ['rsOn', truthy], rs_current: ['rsNow', String], rs_next: ['rsNext', String],
     rs_can_back: ['rsBack', truthy], rs_status: ['rsStatus', String], rs_late: ['rsLate', v => (v === '' ? null : Number(v))],
+    rs_title: ['rsTitle', String], rs_text: ['rsText', String], rs_list: ['rsList', String],
   };
 
   function installBus() {
@@ -223,7 +245,7 @@
       if (full || e.sent[k] !== v) { diff[k] = v; e.sent[k] = v; any = true; }
     }
     if (any || full) e.peer.send({ t: 'state', full: !!full, s: diff });
-    if (e.deck) pushDeck(e);
+    if (e.deck && e.role === 'control') pushDeck(e);
   }
 
   // ─── Panel ───────────────────────────────────────────────────────────────
@@ -262,6 +284,15 @@
 #phone-panel button { flex: 1; padding: 5px 4px; font-size: 12px; background: #222; border: 1px solid #444; color: #ccc; border-radius: 4px; cursor: pointer; }
 #phone-panel button:hover { background: #333; color: #fff; }
 #phone-panel .pp-peers { margin-top: 8px; font-size: 12px; }
+#phone-panel .pp-modes { display: flex; gap: 0; margin: 2px 0 6px; }
+#phone-panel .pp-modes button { border-radius: 0; margin: 0; }
+#phone-panel .pp-modes button:first-child { border-radius: 4px 0 0 4px; }
+#phone-panel .pp-modes button:last-child { border-radius: 0 4px 4px 0; }
+#phone-panel .pp-modes button + button { border-left: 0; }
+#phone-panel .pp-modes button.on { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
+#phone-panel .pp-modehint { font-size: 11px; color: #999; margin-bottom: 6px; }
+#phone-panel .pp-modehint b { color: #fff; }
+#phone-panel .pp-view { color: #9ab; }
 #phone-panel .pp-lan { color: #7fdc7f; } #phone-panel .pp-srv { color: #ffcc33; }
 #phone-panel .pp-hint { font-size: 11px; color: #666; margin-top: 4px; }
 #phone-panel .pp-adv { margin-top: 8px; font-size: 12px; color: #888; }
@@ -290,6 +321,10 @@
     el.innerHTML = `
       <div class="pp-head"><b>Phone control</b> <span class="pp-exp">experimental</span><button class="pp-close" aria-label="Close">✕</button></div>
       <div class="pp-status"></div>
+      <div class="pp-modes" role="group" aria-label="What the QR code is for">
+        <button data-mode="control">Control</button><button data-mode="countdown">Countdown</button><button data-mode="runsheet">Run sheet</button>
+      </div>
+      <div class="pp-modehint"></div>
       <div class="pp-qr"></div>
       <div class="pp-link"></div>
       <div class="pp-row"><button class="pp-copy">Copy link</button><button class="pp-renew" title="Disconnect all phones and make a new code">New code</button><button class="pp-toggle"></button></div>
@@ -301,6 +336,10 @@
     document.body.appendChild(el);
     el.querySelector('.pp-close').addEventListener('click', () => { el.hidden = true; });
     el.querySelector('.pp-qr').addEventListener('click', showBigQR);
+    el.querySelectorAll('.pp-modes button').forEach(b => b.addEventListener('click', () => {
+      localStorage.setItem(LINK_MODE_KEY, b.dataset.mode);
+      renderPanel();
+    }));
     el.querySelector('.pp-copy').addEventListener('click', () => navigator.clipboard && navigator.clipboard.writeText(phoneLink()));
     el.querySelector('.pp-renew').addEventListener('click', () => {
       if (!confirm('Make a new code? Phones using the current one will be disconnected.')) return;
@@ -347,7 +386,8 @@
     ov.title = 'Click to close';
     ov.appendChild(qrCanvas(qrFor, Math.min(window.innerWidth, window.innerHeight) * 0.8));
     const cap = document.createElement('div');
-    cap.textContent = 'Scan with a phone to control the timer · click to close';
+    cap.textContent = (linkMode() === 'control' ? 'Scan with a phone to control the timer' :
+      'Scan for a view-only ' + (linkMode() === 'runsheet' ? 'run sheet' : 'countdown') + ' display') + ' · click to close';
     ov.appendChild(cap);
     const close = () => { ov.remove(); window.removeEventListener('keydown', onKey, true); };
     const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
@@ -386,12 +426,18 @@
     st.textContent = statusText; st.dataset.kind = statusKind;
     el.querySelector('.pp-toggle').textContent = enabled ? 'Turn off' : 'Turn on';
     el.querySelector('.pp-qr').style.display = enabled ? '' : 'none';
+    const mode = linkMode();
+    el.querySelectorAll('.pp-modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+    el.querySelector('.pp-modes').style.display = enabled ? '' : 'none';
+    el.querySelector('.pp-modehint').innerHTML = enabled ? LINK_MODES[mode].hint : '';
     el.querySelector('.pp-link').textContent = enabled ? phoneLink() : '';
     if (enabled) drawQR(phoneLink());
     const srv = el.querySelector('.pp-server');
     if (force || document.activeElement !== srv) srv.value = serverUrl();
     el.querySelector('.pp-peers').innerHTML = !peers.size ? (enabled ? '<i>No phones connected</i>' : '') :
-      [...peers.values()].map(e => `<div>Phone ${e.n} · ${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : '<b class="pp-srv">via server</b>'}</div>`).join('') +
+      [...peers.values()].map(e => `<div>${e.role === 'view' ? 'Display' : 'Phone'} ${e.n} · ` +
+        (e.role === 'view' ? '<span class="pp-view">view only</span> · ' : '') +
+        `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : '<b class="pp-srv">via server</b>'}</div>`).join('') +
       (lanCount < peers.size ? '<div class="pp-hint">"via server": not on the same network (or the Wi-Fi isolates devices).</div>' : '');
   }
 

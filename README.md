@@ -149,27 +149,37 @@ Click **share** to get a room code (e.g. `TIGER-7`), a QR code and a link. Anyon
 
 ## Phone remote control (experimental)
 
-Control the timer from a phone: start, pause, ±1 minute, catch up, presets, messages, and run sheet Back/Next. The phone shows the live countdown.
+Control the timer from a phone: start, pause, ±1 minute, catch up, presets, messages, and run sheet Back/Next. The phone shows the live countdown. Phones and tablets can also be **view-only displays**: a big countdown, or the run sheet status for a green room.
 
 1. Click **phone** in the timer's button bar. A panel shows a QR code.
-2. Scan it with the phone. The phone page opens and connects.
+2. Choose what the code is for:
+   - **Control**: the phone can control the timer.
+   - **Countdown**: a view-only countdown and message display.
+   - **Run sheet**: a view-only display of now, next, ahead/behind and the schedule, e.g. for a green room or backstage.
+3. Scan it with the phone or tablet. The page opens and connects.
+
+View-only devices get a different key from controllers, and the timer itself ignores anything they send, so they can't control it even if someone fiddles with the page. The phone panel lists each device as *Phone* or *Display · view only*.
 
 The badge at the top of the phone shows how it's connected:
 
 - **⚡ LAN direct:** phone and timer are on the same network, so they talk to each other directly.
 - **via server:** they can't reach each other directly (different networks, mobile data, or venue Wi-Fi that keeps devices apart). Everything still works through the pairing server. It's small messages only, about 100 bytes a second.
 
-**▦ Deck** (top right on the phone) switches to a virtual **Stream Deck XL**: the same 32 keys as the timer's XL layout, drawn the same way, including countdown, message and run sheet keys. Pressing a key does exactly what that key does on a real deck. Change the layout in the timer's deck editor (**D**, model *XL*), and the phone follows, even with no real deck connected. Turn the phone sideways for bigger keys: the keys fill the screen and the buttons move into a narrow strip down the side. **Type message** opens a message box on the phone. **Remote** is dimmed, because opening a presenter window needs a click on the timer computer. **☰ Simple** goes back to the normal controls; the phone remembers which you used last.
+**☰ View** (top right) chooses what the screen shows. A controller can use **Simple controls**, **Stream Deck XL**, **Countdown display** or **Run sheet display**; a view-only device only the two displays. The **Stream Deck XL** view is a virtual Stream Deck: the same 32 keys as the timer's XL layout, drawn the same way, including countdown, message and run sheet keys. Pressing a key does exactly what that key does on a real deck. Change the layout in the timer's deck editor (**D**, model *XL*), and the phone follows, even with no real deck connected. Turn the phone sideways for bigger keys: the keys fill the screen and the buttons move into a narrow strip down the side. **Type message** opens a message box on the phone. **Remote** is dimmed, because opening a presenter window needs a click on the timer computer. The phone remembers which view you used last.
+
+The **run sheet display** shows the time of day, what's on now with its countdown, what's next with its planned time, how far ahead or behind the show is, and the whole schedule with planned times. Items that have run are dimmed and show when they actually started. On a tablet held sideways the status is on the left and the schedule on the right.
 
 **⛶ Full screen** hides the browser bars (Android and tablets). Safari on iPhone can't do that for web pages; instead use **Share → Add to Home Screen** and open the remote from its icon. The simple controls size themselves to fit the screen without scrolling, and switch to two columns on a phone held sideways, a tablet or an almost square folding phone.
 
-In the simple controls, Restart and the presets need a second tap, so a stray touch can't restart a talk. Deck keys work on the first press, like a real deck. The phone screen stays on while the page is open. Several phones can connect at once.
+**For a multi-day event:** the timer keeps the same codes until someone presses **New code**, and each phone remembers the last link it opened. Install the remote as an app (**☰ View → Install as an app** on Android and in desktop Chrome/Edge; on iPhone, **Share → Add to Home Screen**) and it opens straight into the remote, full screen, already paired. If the timer computer is shut down overnight, phones show *timer offline* and reconnect by themselves when it's opened again the next day. After **New code**, every phone needs the new QR code.
+
+In the simple controls, Restart and the presets need a second tap, so a stray touch can't restart a talk. Deck keys work on the first press, like a real deck. The phone screen stays on while the page is open. Up to 16 phones and displays can connect at once.
 
 The QR code contains a secret key: anyone with the link can control the timer. **New code** disconnects every phone and makes a new link. **Turn off** stops phone control. The QR image needs internet access; otherwise use **Copy link**.
 
 ### Pairing server
 
-Phone control needs `remote-server.js` running on a server you control. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the phone panel.
+Phone control needs `remote-server.js` running on a server you control. (View-only links need the current version: after updating, restart the service.) By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the phone panel.
 
 ```bash
 npm install

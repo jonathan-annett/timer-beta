@@ -326,6 +326,32 @@
   // ─── Broadcast (Stream Deck, editor window) ───────────────────────────────
 
   let lastVars = '', lastLive = '';
+
+  // The schedule as compact JSON, for display-only phones (e.g. a green room screen):
+  // rows {n: name, p: planned clock, d: duration, s: 'done'|'now'|'next', a: actual start, e: 1 = finish row}.
+  // A few rows before the current one and up to 40 after, so a message stays small.
+  function scheduleList() {
+    if (!isActive()) return '';
+    const startedAt = new Map();
+    state.log.forEach(e => { if (e.id !== 'end') startedAt.set(e.id, e.actual); });
+    const endLog = state.finished ? state.log[state.log.length - 1] : null;
+    const cur = state.finished ? -1 : state.index, nj = state.finished ? -1 : nextIndex(state.index);
+    const rows = norm.items.map((it, i) => {
+      const isEnd = i === norm.endIdx;
+      const p = isEnd ? plannedFinishMs() : plannedStartMs(i);
+      const r = { n: String(it.name || '').slice(0, 80), p: p != null ? clockOf(p) : '' };
+      if (isEnd) r.e = 1; else r.d = C.formatDuration(it.eff);
+      if (i === cur) r.s = 'now';
+      else if (i === nj) r.s = 'next';
+      else if (startedAt.has(it.id) || (isEnd && endLog)) r.s = 'done';
+      const a = isEnd ? (endLog && endLog.actual) : startedAt.get(it.id);
+      if (a) r.a = clockOf(a);
+      return r;
+    });
+    if (!state.finished && nj < 0 && norm.endIdx >= 0 && rows[norm.endIdx]) rows[norm.endIdx].s = 'next';
+    const from = Math.max(0, (cur >= 0 ? cur : 0) - 3), to = Math.min(rows.length, from + 44);
+    return JSON.stringify({ rows: rows.slice(from, to), before: from, after: rows.length - to });
+  }
   function announce(force, info) {
     info = info || statusInfo();
     const nj = state.finished ? -1 : nextIndex(state.index);
@@ -338,6 +364,9 @@
       rs_can_back: state.history.length > 0 ? '1' : '0',
       rs_status: info.short,
       rs_late: info.late == null ? '' : String(Math.round(info.late)),
+      rs_title: isActive() ? (sheet.title || '') : '',
+      rs_text: info.text,
+      rs_list: scheduleList(),
     };
     const v = JSON.stringify(vars);
     if ((force || v !== lastVars) && window.timerAPI) {

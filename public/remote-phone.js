@@ -2,6 +2,10 @@
  * remote-phone.js  (EXPERIMENTAL)
  * Phone side of remote control: joins the timer's room on the pairing server, tries a
  * direct LAN link (RemotePeer), shows the timer's state and sends commands.
+ *
+ * Views: 'simple' (controls), 'deck' (virtual Stream Deck XL), 'countdown' and 'runsheet'
+ * (displays, no controls). A link with the view-only key (#v=…) can only show the displays;
+ * the timer ignores commands from it anyway (it knows the role from the pairing server).
  * MIT Licensed
  */
 
@@ -11,14 +15,25 @@
   'use strict';
 
   const $ = id => document.getElementById(id);
-  // Link: #r=<room>&k=<key>[&s=<server>]; the server defaults to wss://<this host>:8443/.
+  // Link: #r=<room>&k=<key> (control) or #r=<room>&v=<view key>&m=<countdown|runsheet>
+  // (view only), plus [&s=<server>]; the server defaults to wss://<this host>:8443/.
   // (Long names server/room/key from older links still work.)
-  const h = Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
+  // The last link opened is saved, so the page also works without one: from a bookmark, or as
+  // an installed app (whose start URL has no #fragment). Good for a multi-day event; the timer
+  // keeps its keys until someone presses New code.
+  const SAVED_LINK = 'remote_saved_link';
+  const parse = frag => Object.fromEntries(new URLSearchParams(frag));
+  let h = parse(location.hash.slice(1));
+  try {
+    if ((h.r || h.room) && (h.k || h.key || h.v)) localStorage.setItem(SAVED_LINK, location.hash.slice(1));
+    else if (localStorage.getItem(SAVED_LINK)) h = parse(localStorage.getItem(SAVED_LINK));
+  } catch (_) { /* private mode: links still work, they just aren't remembered */ }
   const cfg = {
     server: h.s || h.server || `wss://${location.hostname}:8443/`,
     room: h.r || h.room,
-    key: h.k || h.key,
+    key: h.k || h.key || h.v,
   };
+  let role = (h.k || h.key) ? 'control' : 'view';   // confirmed by the server on join
   if (!cfg.room || !cfg.key) {
     $('blocked').hidden = false;
     $('blocked').textContent = 'Open this page by scanning the QR code in the timer’s “phone” panel.';
@@ -26,7 +41,7 @@
   }
   $('app').hidden = false;
 
-  let ws = null, peer = null, retry = 1000, retryTimer = null, hostOnline = false, fatal = false;
+  let ws = null, peer = null, retry = 1000, retryTimer = null, hostOnline = false, fatal = false, waiting = false;
   const state = {};
 
   // ─── Connection ──────────────────────────────────────────────────────────
@@ -41,6 +56,7 @@
     $('note').textContent = note || '';
   }
   function showMode() {
+    if (waiting) return setBadge('off', 'timer offline', 'waiting for the timer… (if it made a new code, scan it)');
     if (!ws || ws.readyState !== WebSocket.OPEN) return setBadge('off', 'reconnecting…');
     if (!hostOnline) return setBadge('off', 'timer offline', 'waiting for the timer…');
     if (peer && peer.mode === 'lan') setBadge('lan', '⚡ LAN direct');
@@ -56,7 +72,7 @@
       onModeChange: showMode,
     });
     peer.send({ t: 'hello' });                  // goes through the server until the LAN link is up
-    if (view === 'deck') peer.send({ t: 'deck', on: true });
+    if (view === 'deck' && role === 'control') peer.send({ t: 'deck', on: true });
   }
 
   function connect() {
@@ -64,18 +80,24 @@
     if (fatal) return;
     try { ws = new WebSocket(cfg.server); } catch (_) { return schedule(); }
     const sock = ws;
-    sock.onopen = () => { retry = 1000; sock.send(JSON.stringify({ type: 'join', room: cfg.room, key: cfg.key })); };
+    sock.onopen = () => { sock.send(JSON.stringify({ type: 'join', room: cfg.room, key: cfg.key })); };
     sock.onmessage = ev => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
       switch (m.type) {
-        case 'joined': hostOnline = m.hostOnline; newPeer(); break;
+        case 'joined':
+          hostOnline = m.hostOnline; waiting = false; retry = 1000;
+          if (m.role === 'view' && role !== 'view') { role = 'view'; applyRole(); }
+          newPeer();
+          break;
         case 'down': if (peer) peer.receive(m.msg); break;
         case 'host-offline': hostOnline = false; if (peer) peer.close(); peer = null; break;
         case 'host-online': hostOnline = true; newPeer(); break;     // the timer reconnected: start a fresh link
         case 'error':
+          // The room is gone when the timer has been closed for a while (overnight, say) or the
+          // server restarted; it comes back with the same code when the timer reopens. So keep
+          // waiting, slowly. If the timer made a New code, this code never returns: scan again.
           if (m.reason === 'not-found' || m.reason === 'room-closed') {
-            fatal = true;
-            setBadge('off', 'expired', 'scan the QR code again');
+            waiting = true; retry = 15000;
           } else if (m.reason === 'room-full') {
             fatal = true; setBadge('off', 'too many phones');
           }
@@ -94,14 +116,14 @@
   }
   function schedule() {
     retryTimer = setTimeout(connect, retry);
-    retry = Math.min(retry * 2, 10000);
+    if (!waiting) retry = Math.min(retry * 2, 10000);
   }
 
   // Phones drop connections when the screen locks; reconnect straight away on return
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       requestWakeLock();
-      if (!ws || ws.readyState > WebSocket.OPEN) { retry = 1000; connect(); }
+      if (!ws || ws.readyState > WebSocket.OPEN) { if (!waiting) retry = 1000; connect(); }
     }
   });
 
@@ -148,6 +170,7 @@
       $('rsback').disabled = !state.rsBack;
       $('rsnextbtn').disabled = !state.rsNext;
     }
+    renderDisplays();
     scheduleFit();
   }
 
@@ -235,27 +258,10 @@
   // that change; we draw them with the same code as the real deck (deck-face.js). A press
   // sends just the key's number; the timer runs that key's action.
 
-  const VIEW_KEY = 'remote_view';
-  let view = 'simple';
-  try { view = localStorage.getItem(VIEW_KEY) === 'deck' ? 'deck' : 'simple'; } catch (_) { /* private mode */ }
   const faces = [];
   const canvases = [];
   const SHOW_ONLY = new Set(['countdown', 'countdown_major', 'countdown_minor', 'rs_status', 'empty']);   // display keys
   let keyCss = 40;
-
-  function setView(v) {
-    view = v;
-    try { localStorage.setItem(VIEW_KEY, v); } catch (_) { /* ignore */ }
-    document.body.classList.toggle('deckview', v === 'deck');
-    if (v !== 'deck') document.body.classList.remove('side');
-    $('viewbtn').querySelector('.long').textContent = v === 'deck' ? '☰ Simple' : '▦ Deck';
-    $('viewbtn').querySelector('.short').textContent = v === 'deck' ? '☰' : '▦';
-    if (v === 'deck') { document.documentElement.style.fontSize = ''; layoutDeck(); }
-    else scheduleFit(true);
-    if (peer) peer.send({ t: 'deck', on: v === 'deck' });
-  }
-  $('viewbtn').addEventListener('click', () => setView(view === 'deck' ? 'simple' : 'deck'));
-
   function buildKeys() {
     const box = $('keys');
     for (let i = 0; i < 32; i++) {
@@ -293,8 +299,7 @@
     root.style.setProperty('--row-gap', Math.max(0, Math.floor(rowGap)) + 'px');
     canvases.forEach((_, i) => drawKey(i));
   }
-  window.addEventListener('resize', layoutDeck);
-  window.addEventListener('orientationchange', () => setTimeout(layoutDeck, 250));   // some phones report the new size late
+  window.addEventListener('orientationchange', () => setTimeout(layout, 250));   // some phones report the new size late   // some phones report the new size late
 
   function drawKey(i) {
     const c = canvases[i], f = faces[i];
@@ -342,6 +347,196 @@
   $('sheetclear').addEventListener('click', () => { cmd('custommessage', { text: '' }); closeSheet(); });
   $('sheetcancel').addEventListener('click', closeSheet);
 
+  // ─── Views ───────────────────────────────────────────────────────────────
+
+  const VIEWS = {
+    simple:    { label: 'Simple controls',   desc: 'Start, pause, ±1 min, presets, messages' },
+    deck:      { label: 'Stream Deck XL',    desc: 'The timer’s XL key layout' },
+    countdown: { label: 'Countdown display', desc: 'Big countdown and message, no controls' },
+    runsheet:  { label: 'Run sheet display', desc: 'Now, next and the schedule, no controls' },
+  };
+  const allowedViews = () => role === 'control' ? Object.keys(VIEWS) : ['countdown', 'runsheet'];
+  const store = { get: k => { try { return localStorage.getItem(k); } catch (_) { return null; } },
+                  set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* private mode */ } } };
+  const viewKey = () => role === 'control' ? 'remote_view' : 'remote_view_display';
+
+  // First view: the one chosen in the timer's panel when this link is new (#m=…), otherwise the
+  // one this phone used last.
+  function initialView() {
+    let v = store.get(viewKey());
+    if (h.m && VIEWS[h.m] && store.get('remote_link_m') !== h.m + '|' + cfg.room) {
+      v = h.m; store.set('remote_link_m', h.m + '|' + cfg.room);
+    }
+    return allowedViews().includes(v) ? v : allowedViews()[0];
+  }
+  let view = initialView();
+
+  function setView(v) {
+    if (!allowedViews().includes(v)) v = allowedViews()[0];
+    view = v;
+    store.set(viewKey(), v);
+    const b = document.body;
+    Object.keys(VIEWS).forEach(k => b.classList.toggle('v-' + k, k === v));
+    b.classList.toggle('deckview', v === 'deck');
+    if (v !== 'deck') b.classList.remove('side');
+    document.documentElement.style.fontSize = '';
+    layout();
+    if (peer && role === 'control') peer.send({ t: 'deck', on: v === 'deck' });
+  }
+
+  function applyRole() {
+    $('roletag').hidden = role !== 'view';
+    setView(view);
+  }
+
+  function openViewMenu() {
+    const list = $('viewlist');
+    list.innerHTML = '';
+    for (const k of allowedViews()) {
+      const btn = document.createElement('button');
+      btn.className = k === view ? 'on' : '';
+      btn.innerHTML = `${VIEWS[k].label}<small>${VIEWS[k].desc}</small>`;
+      btn.addEventListener('click', () => { $('viewmenu').hidden = true; setView(k); });
+      list.appendChild(btn);
+    }
+    installOption(list);
+    $('viewmenu').hidden = false;
+  }
+  $('viewbtn').addEventListener('click', openViewMenu);
+  $('viewcancel').addEventListener('click', () => { $('viewmenu').hidden = true; });
+
+  // Lay out whichever view is showing
+  function layout() {
+    if (!document.body.classList.contains('side')) {
+      document.documentElement.style.setProperty('--top-h', Math.ceil(document.querySelector('.top').getBoundingClientRect().bottom + 6) + 'px');
+    }
+    if (view === 'deck') layoutDeck();
+    else if (view === 'simple') scheduleFit(true);
+    else if (view === 'countdown') fitCountdown();
+    else if (view === 'runsheet') layoutRunsheet();
+  }
+  window.addEventListener('resize', layout);
+
+  // ─── Countdown display ───────────────────────────────────────────────────
+  // The countdown as big as fits, with the message under it (sharing the height when there is one).
+
+  function fitText(el, maxW, maxH, hi) {
+    let lo = 8;
+    const ok = px => { el.style.fontSize = px + 'px'; return el.scrollWidth <= maxW + 1 && el.scrollHeight <= maxH + 1; };
+    if (!ok(lo)) return;
+    while (hi - lo > 1) { const mid = Math.floor((lo + hi) / 2); if (ok(mid)) lo = mid; else hi = mid; }
+    ok(lo);
+  }
+  function fitCountdown() {
+    if (view !== 'countdown') return;
+    const box = $('cd'), cs = getComputedStyle(box);
+    const W = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const H = box.clientHeight - parseFloat(cs.paddingBottom) - $('cdsub').offsetHeight - 8;
+    const msg = $('cdmsg').textContent;
+    const remainH = msg ? H * 0.58 : H;
+    $('cdmsg').style.maxWidth = W + 'px';
+    fitText($('cdremain'), W * 0.96, remainH, 1000);
+    if (msg) fitText($('cdmsg'), W, H - $('cdremain').offsetHeight - 16, 400);
+  }
+
+  // ─── Run sheet display ───────────────────────────────────────────────────
+
+  function layoutRunsheet() {
+    if (view !== 'runsheet') return;
+    // Text size from the screen: readable across a room on a tablet, still fits on a phone
+    const px = Math.max(13, Math.min(34, Math.min(innerWidth * 0.042, innerHeight * 0.04)));
+    document.documentElement.style.setProperty('--rs-font', px.toFixed(1) + 'px');
+    scrollToCurrent();
+  }
+  function scrollToCurrent() {
+    const row = $('rsvlist').querySelector('.rl.now') || $('rsvlist').querySelector('.rl.next');
+    if (row) $('rsvlist').scrollTop = Math.max(0, row.offsetTop - $('rsvlist').offsetTop - row.offsetHeight * 1.5);
+  }
+  const clockNow = () => { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+  setInterval(() => { if (view === 'runsheet') $('rsvclock').textContent = clockNow(); }, 5000);
+
+  let lastList = null, cdSig = '';
+  function renderDisplays() {
+    const remain = (state.over ? '+' : '') + (state.remain || '–:––');
+    const sub = state.paused ? 'Paused' : '';
+
+    // Countdown
+    $('cdremain').textContent = remain;
+    $('cdsub').textContent = sub;
+    $('cdmsg').textContent = state.msg || '';
+    const sig = remain.length + '|' + (state.msg || '') + '|' + sub;
+    if (sig !== cdSig) { cdSig = sig; fitCountdown(); }
+
+    // Run sheet
+    $('rsvclock').textContent = clockNow();
+    $('rsvtitle').textContent = state.rsTitle || (state.rsOn ? 'Run sheet' : '');
+    let list = null;
+    try { list = state.rsList ? JSON.parse(state.rsList) : null; } catch (_) { list = null; }
+    const rows = list && Array.isArray(list.rows) ? list.rows : [];
+    const nextRow = rows.find(r => r.s === 'next');
+    $('rsvnow').textContent = state.rsOn ? (state.rsNow || (rows.some(r => r.s === 'done') ? 'Show finished' : 'Not started')) : '—';
+    $('rsvremain').textContent = state.rsOn && state.rsNow ? remain : '';
+    $('rsvnext').textContent = state.rsOn ? (state.rsNext || '—') : '—';
+    $('rsvnexttime').textContent = nextRow && nextRow.p ? nextRow.p : '';
+    const late = state.rsLate;
+    const st = $('rsvstatus');
+    st.textContent = state.rsOn ? (state.rsText || '') : '';
+    st.className = late >= 30 ? 'behind' : late <= -30 ? 'ahead' : '';
+
+    if (state.rsList !== lastList) {
+      lastList = state.rsList;
+      const box = $('rsvlist');
+      box.innerHTML = '';
+      if (!state.rsOn || !rows.length) {
+        const e = document.createElement('div'); e.id = 'rsvempty';
+        e.textContent = 'No run sheet running on the timer';
+        box.appendChild(e);
+      } else {
+        const more = (n, txt) => { if (n > 0) { const d = document.createElement('div'); d.className = 'rl-more'; d.textContent = `… ${n} ${txt}`; box.appendChild(d); } };
+        more(list.before, 'earlier');
+        for (const r of rows) {
+          const d = document.createElement('div');
+          d.className = 'rl' + (r.s ? ' ' + r.s : '') + (r.e ? ' end' : '');
+          const t = document.createElement('span'); t.className = 't'; t.textContent = r.p || '';
+          const n = document.createElement('span'); n.className = 'n'; n.textContent = r.n || '';
+          const x = document.createElement('span'); x.className = 'd';
+          x.textContent = r.s === 'done' && r.a ? 'started ' + r.a : (r.e ? 'finish' : (r.d || ''));
+          d.append(t, n, x);
+          box.appendChild(d);
+        }
+        more(list.after, 'more');
+      }
+      if (view === 'runsheet') scrollToCurrent();
+    }
+  }
+
+  // ─── Install as an app ───────────────────────────────────────────────────
+  // remote.webmanifest makes the page installable (Android, desktop Chrome/Edge). The app opens
+  // remote.html with no link and uses the saved one. Not on iPhone/iPad: Safari would take the
+  // manifest's start URL for Add to Home Screen, and a Home Screen app there has its own storage
+  // (no saved link), whereas without a manifest it keeps the full link, keys included.
+  const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (!iOS) {
+    const ln = document.createElement('link');
+    ln.rel = 'manifest'; ln.href = 'remote.webmanifest';
+    document.head.appendChild(ln);
+  }
+  let installPrompt = null;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; });
+  window.addEventListener('appinstalled', () => { installPrompt = null; });
+  function installOption(list) {
+    if (standalone) return;
+    const btn = document.createElement('button');
+    if (installPrompt) {
+      btn.innerHTML = 'Install as an app<small>Opens straight into this remote, full screen, already paired</small>';
+      btn.addEventListener('click', () => { $('viewmenu').hidden = true; installPrompt.prompt(); installPrompt = null; });
+    } else if (iOS) {
+      btn.innerHTML = 'Add to Home Screen<small>Share ⎋ → Add to Home Screen: opens without browser bars, already paired</small>';
+      btn.addEventListener('click', () => { $('viewmenu').hidden = true; $('fstip').hidden = false; });
+    } else return;
+    list.appendChild(btn);
+  }
+
   // ─── Full screen ─────────────────────────────────────────────────────────
   // Android and tablets: the Fullscreen API. iPhone Safari has none for pages, so explain
   // Add to Home Screen instead (the page has the meta tags to open without browser bars).
@@ -366,12 +561,12 @@
   $('fstipok').addEventListener('click', () => { $('fstip').hidden = true; });
   ['fullscreenchange', 'webkitfullscreenchange'].forEach(t => document.addEventListener(t, () => {
     showFsButton();
-    setTimeout(() => { layoutDeck(); scheduleFit(true); }, 100);
+    setTimeout(layout, 100);
   }));
   showFsButton();
 
   buildKeys();
-  setView(view);
+  applyRole();
 
   // ─── Boot ────────────────────────────────────────────────────────────────
 

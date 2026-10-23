@@ -6,6 +6,8 @@
  * Runs on its own port (default 8443) with your TLS certificate, so the timer can stay on
  * a static host. It only:
  *   - pairs a timer ("host") with phones using a room code + secret key (from the QR code),
+ *     or a second, view-only key: phones joining with it are reported to the timer as
+ *     role 'view', and the timer ignores every command from them,
  *   - forwards WebRTC signalling so phone and timer can try a direct LAN connection, and
  *   - relays the (small) control/state messages when a direct connection isn't possible.
  * It never looks inside the messages it forwards.
@@ -47,7 +49,7 @@ const ORIGINS = (arg('origin') || process.env.ALLOWED_ORIGINS || '').split(',').
 
 const MAX_MESSAGE_BYTES = 16 * 1024;     // signalling + state messages are tiny
 const MAX_MSGS_PER_SEC = 40;             // per socket; extra messages are dropped
-const MAX_PHONES_PER_ROOM = 8;
+const MAX_PHONES_PER_ROOM = 16;          // controllers + view-only displays
 const HOST_GRACE_MS = 2 * 60 * 1000;     // keep a room while its timer reconnects
 const PING_MS = 25 * 1000;
 
@@ -59,7 +61,8 @@ if (!ORIGINS.length) console.warn('[remote] WARNING: no --origin given, so any w
 
 // ─── Rooms ────────────────────────────────────────────────────────────────────
 
-// room id -> { keyHash, host: ws|null, phones: Map<id, ws>, hostGoneAt }
+// room id -> { keyHash, viewHash, host: ws|null, phones: Map<id, {ws, role}>, hostGoneAt }
+// role: 'control' (joined with the room key) or 'view' (joined with the view-only key)
 const rooms = new Map();
 const hash = s => crypto.createHash('sha256').update(String(s)).digest('hex');
 const safeEqual = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -73,7 +76,7 @@ function send(ws, obj) {
 function dropRoom(id) {
   const room = rooms.get(id);
   if (!room) return;
-  for (const p of room.phones.values()) { send(p, { type: 'error', reason: 'room-closed' }); p.close(); }
+  for (const p of room.phones.values()) { send(p.ws, { type: 'error', reason: 'room-closed' }); p.ws.close(); }
   rooms.delete(id);
 }
 
@@ -135,24 +138,35 @@ wss.on('connection', ws => {
       if (m.type === 'host') {
         let room = rooms.get(m.room);
         if (room && !safeEqual(room.keyHash, keyHash)) { send(ws, { type: 'error', reason: 'room-taken' }); return ws.close(); }
-        if (!room) { room = { keyHash, host: null, phones: new Map(), hostGoneAt: null }; rooms.set(m.room, room); }
+        if (!room) { room = { keyHash, viewHash: null, host: null, phones: new Map(), hostGoneAt: null }; rooms.set(m.room, room); }
+        // The view-only key may change (the timer made a new one): displays using the old one are dropped
+        const viewHash = validKey(m.viewKey) ? hash(m.viewKey) : null;
+        if (room.viewHash && room.viewHash !== viewHash) {
+          for (const [id, p] of room.phones) {
+            if (p.role === 'view') { send(p.ws, { type: 'error', reason: 'room-closed' }); p.ws.close(); room.phones.delete(id); }
+          }
+        }
+        room.viewHash = viewHash;
         if (room.host && room.host !== ws) room.host.close();          // newest timer window wins
         room.host = ws; room.hostGoneAt = null;
         role = 'host'; roomId = m.room;
         send(ws, { type: 'hosted', room: m.room });
-        for (const [id, p] of room.phones) { send(ws, { type: 'peer-join', id }); send(p, { type: 'host-online' }); }
+        for (const [id, p] of room.phones) { send(ws, { type: 'peer-join', id, role: p.role }); send(p.ws, { type: 'host-online' }); }
         return;
       }
 
       if (m.type === 'join') {
         const room = rooms.get(m.room);
-        if (!room || !safeEqual(room.keyHash, keyHash)) { send(ws, { type: 'error', reason: 'not-found' }); return ws.close(); }
+        // Which key decides the role. The timer is told, and enforces it.
+        const phoneRole = !room ? null : safeEqual(room.keyHash, keyHash) ? 'control'
+                        : room.viewHash && safeEqual(room.viewHash, keyHash) ? 'view' : null;
+        if (!phoneRole) { send(ws, { type: 'error', reason: 'not-found' }); return ws.close(); }
         if (room.phones.size >= MAX_PHONES_PER_ROOM) { send(ws, { type: 'error', reason: 'room-full' }); return ws.close(); }
         phoneId = crypto.randomBytes(6).toString('hex');
-        room.phones.set(phoneId, ws);
+        room.phones.set(phoneId, { ws, role: phoneRole });
         role = 'phone'; roomId = m.room;
-        send(ws, { type: 'joined', id: phoneId, hostOnline: !!room.host });
-        send(room.host, { type: 'peer-join', id: phoneId });
+        send(ws, { type: 'joined', id: phoneId, hostOnline: !!room.host, role: phoneRole });
+        send(room.host, { type: 'peer-join', id: phoneId, role: phoneRole });
         return;
       }
       send(ws, { type: 'error', reason: 'bad-request' });
@@ -162,8 +176,9 @@ wss.on('connection', ws => {
     const room = rooms.get(roomId);
     if (!room) return;
     if (role === 'host' && m.type === 'to') {
-      send(room.phones.get(m.id), { type: 'down', msg: m.msg });
-    } else if (role === 'phone' && m.type === 'up') {
+      const p = room.phones.get(m.id);
+      if (p) send(p.ws, { type: 'down', msg: m.msg });
+    } else if (role === 'phone' && m.type === 'up' && room.phones.get(phoneId)) {
       send(room.host, { type: 'from', id: phoneId, msg: m.msg });
     }
   });
@@ -173,8 +188,8 @@ wss.on('connection', ws => {
     if (!room) return;
     if (role === 'host' && room.host === ws) {
       room.host = null; room.hostGoneAt = Date.now();
-      for (const p of room.phones.values()) send(p, { type: 'host-offline' });
-    } else if (role === 'phone') {
+      for (const p of room.phones.values()) send(p.ws, { type: 'host-offline' });
+    } else if (role === 'phone' && room.phones.has(phoneId)) {
       room.phones.delete(phoneId);
       send(room.host, { type: 'peer-leave', id: phoneId });
     }
