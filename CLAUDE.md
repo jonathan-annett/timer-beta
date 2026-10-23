@@ -182,7 +182,7 @@ All timer state persists in localStorage. These are the canonical keys:
 | `showtimenow` | 0 or 1 | Clock display toggle state |
 | `showmessages` | 0 or 1 | Messages toggle state |
 | `custom_message` | string | Current custom message text |
-| `custom_css` | string | User-edited CSS (from Ctrl+S editor) |
+| `custom_css` | string | The user's Ctrl+S style changes: only rules that differ from `timer.css`, applied in `#custom_css_sheet` after it (see `cssChanges()` in `timer.js`; older full-copy saves are migrated on load) |
 | `remainDisp` | string | Last rendered remaining time (read by presenter tab) |
 | `remainDispClass` | string | Current html className (read by presenter tab) |
 | `barpct` | string | Current progress bar percentage |
@@ -354,4 +354,5 @@ The `audience.html` page supports tap-to-fullscreen (calls `requestFullscreen()`
 - **No build step** — this is vanilla JS. No bundler, no transpiler, no TypeScript. Keep it that way unless explicitly decided otherwise.
 - **localStorage as the inter-tab bus** — the presenter tab reads from storage events. If you add new display state that needs to reach the presenter tab, write it to localStorage and handle the `storage` event in the presenter tab's `onLocalStorage` handler in `timer.js`.
 - **Leave Cmd shortcuts to the browser** — `onDocKeyDown` returns early when `metaKey` is held, so Cmd+R/C/V/P/1–9 etc. work normally on a Mac. Any new keyboard shortcut handler must do the same (check `!e.metaKey`); the timer's own modifier is Ctrl.
+- **Custom CSS is a layer, not a copy** — the Ctrl+S editor shows `timer.css` plus the user's rules but saves only rules that differ, so `timer.css` changes still reach users with custom styles. Removing a property from a built-in rule doesn't take effect (the built-in rule still applies); override it instead. `OLD_CSS_RULES` fingerprints past built-in rules for migrating old full-copy saves; it's frozen and needn't be updated.
 - **Chain `timerAPI`, never replace it** — any new integration module should wrap the existing `window.timerAPI` value, not overwrite it blindly.

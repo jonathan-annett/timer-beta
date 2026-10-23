@@ -77,7 +77,7 @@ At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. O
 | **Page Down / Page Up** | Run sheet mode: next item / back. Otherwise, in PowerPoint mode, Page Down restarts the timer |
 | **^** | PowerPoint mode: a clicker's **Page Down** restarts the timer |
 | **D** | Stream Deck layout editor |
-| **Ctrl+S** | Edit the timer's styles (CSS); **Ctrl+Shift+S** resets them |
+| **Ctrl+S** | Edit the timer's styles (CSS); **Ctrl+S** again saves. Only the rules you add or change are saved, so updates to the timer still come through. **Ctrl+Shift+S** resets them |
 
 ### Clock accuracy
 

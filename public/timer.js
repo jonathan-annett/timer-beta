@@ -565,6 +565,48 @@ custom_message.addEventListener('focus', function(){
   }
 
 
+ // Custom styles (Ctrl+S) are stored as only the rules that differ from timer.css and
+ // applied in a second <style> after it, so later changes to timer.css still show up.
+ // Older saves held a full copy of the stylesheet; cssChanges() reduces those to the
+ // rules the user actually changed. Rules are compared whole (selector + body), with
+ // comments and whitespace ignored; an @media block counts as one rule.
+ function cssRules(text) {
+	text = String(text || '').replace(/\/\*[\s\S]*?\*\//g, '');
+	let rules = [], depth = 0, start = 0, quote = null;
+	for (let i = 0; i < text.length; i++) {
+		let c = text[i];
+		if (quote) { if (c === '\\') i++; else if (c === quote) quote = null; continue; }
+		if (c === '"' || c === "'") quote = c;
+		else if (c === '{') depth++;
+		else if (c === '}' && depth > 0) { if (--depth === 0) { rules.push(text.slice(start, i + 1).trim()); start = i + 1; } }
+		else if (c === ';' && depth === 0) { rules.push(text.slice(start, i + 1).trim()); start = i + 1; }
+	}
+	let tail = text.slice(start).trim();
+	if (tail) rules.push(tail);              // unfinished rule: keep it rather than lose the user's text
+	return rules.filter(Boolean);
+ }
+ function cssKey(rule) {
+	return rule.replace(/\s+/g, ' ').replace(/\s*([{};:,>])\s*/g, '$1').replace(/;}/g, '}').trim();
+ }
+ // Fingerprints of rules from earlier versions of timer.css that are no longer in it.
+ // An old full-copy save contains those too; they aren't the user's changes, so they're
+ // dropped when it's migrated. (Frozen: saves made since only hold the user's own rules.)
+ var OLD_CSS_RULES = new Set('nm9oya qbd2xn 1j28aw0 mb8of6 thaf6w 1eo9p2e 71s233 1ohjuuu em3r5y j5cwrb 1wbm885 142qs1w 41wns0 8vdgfv 1re3f0j lq9vls 16d1xn0 c5skai 1qvag27 1ldh3ms 14nivp9 fnqtbc drywac qar14i 3mabxy 1jfjvuu 11yq2v1 1ipvmmf 10axqve 1wvblxe 1ahj05v i4f3zl 1m1k1x4 q9y9vn'.split(' '));
+ function cssHash(s) {
+	let x = 0x811c9dc5;
+	for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 0x01000193) >>> 0; }
+	return x.toString(36);
+ }
+ function cssChanges(edited, base) {
+	let known = new Set(cssRules(base).map(cssKey));
+	return cssRules(edited).filter(function (r) {
+		let k = cssKey(r);
+		return !known.has(k) && !OLD_CSS_RULES.has(cssHash(k));
+	}).join('\n\n');
+ }
+ var CUSTOM_CSS_MARK = '/* ── Your changes. Everything above is the built-in timer.css. Only rules you add or\n' +
+	'   change (here or above) are saved, and they apply on top of timer.css. Ctrl+Shift+S resets. ── */';
+
  function replaceStylesheet(el,cb) {
 	 
 	 let src = el.href;
@@ -577,33 +619,47 @@ custom_message.addEventListener('focus', function(){
 				let editor,editorPre;
 				let sheet = document.createElement('style');
 				sheet.innerHTML = css;
+				// The user's changes go in their own sheet after the built-in one
+				let custom = document.createElement('style');
+				custom.id = 'custom_css_sheet';
+				let setCustom = function (text) {
+					custom.textContent = text || '';
+					if (text) localStorage.setItem("custom_css", text);
+					else localStorage.removeItem("custom_css");
+				};
 				let storedCss = localStorage.getItem("custom_css");
 				if (storedCss) {
-					sheet.innerHTML = storedCss;
+					let changes = cssChanges(storedCss, css);
+					if (changes !== storedCss) setCustom(changes);   // migrate an old full-copy save
+					else custom.textContent = changes;
 				}
 				document.body.appendChild(sheet);
+				document.body.appendChild(custom);
 				el.parentNode.removeChild(el);
 				if (cb) {
 					cb(Object.defineProperties({},{
 						sheet : {value: sheet},
+						// Only the user's changes; the built-in sheet is never stored
 						css : { 
 							set : function(newCss){
-								sheet.innerHTML = newCss;
+								custom.textContent = cssChanges(newCss, css);
 							},
 							get : function () {
-								return sheet.innerHTML;
+								return custom.textContent;
 							}
 						},
 						reset : {value : function(){
-							sheet.innerHTML = css;
-							localStorage.removeItem("custom_css");
+							if (editor) {                  // discard the open editor rather than save it
+								editorPre.parentNode.removeChild(editorPre);
+								editor = undefined;
+							}
+							setCustom('');
 						}},
 						editToggle : {
 							
 							value : function(){
 							if (editor) {
-								sheet.innerHTML = editor.getValue();
-								localStorage.setItem("custom_css",sheet.innerHTML);
+								setCustom(cssChanges(editor.getValue(), css));
 								editorPre.parentNode.removeChild(editorPre);
 								editor=undefined;
 							} else {
@@ -617,9 +673,10 @@ custom_message.addEventListener('focus', function(){
 										  editor = ace.edit("css_editor");
 										  editor.setTheme("ace/theme/chrome");
 										  editor.session.setMode("ace/mode/css");
-										  editor.setValue(sheet.innerHTML);
-										  editor.focus();							
-										  editor.gotoLine(1);
+									  let mine = custom.textContent;
+									  editor.setValue(css.replace(/\s+$/, '') + '\n\n' + CUSTOM_CSS_MARK + '\n\n' + (mine ? mine + '\n' : ''), 1);
+									  editor.focus();
+									  editor.gotoLine(mine ? editor.session.getLength() : 1);
 									  },10);
 								};
 								
