@@ -29,6 +29,7 @@
   if (typeof RemotePeer === 'undefined') return;
 
   const SERVER_KEY = 'remote_server', PAIR_KEY = 'remote_pairing', ENABLED_KEY = 'remote_enabled';
+  const PIN_KEY = 'remote_pin', APPROVED_KEY = 'remote_approved';   // "Require a PIN" and the phones approved under it
   const defaultServer = () => `wss://${location.hostname}:8443/`;
   if (params.get('remote')) localStorage.setItem(SERVER_KEY, params.get('remote'));   // ?remote=wss://host:port/
 
@@ -50,6 +51,7 @@
     const KEYCHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
     if (renew || !p || !p.room || !p.key) {
       p = { room: randomString(8, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'), key: randomString(24, KEYCHARS) };
+      localStorage.removeItem(APPROVED_KEY);                   // a new code: every phone starts again
     }
     if (!p.view || !p.admin) {                       // view-only and admin keys (older pairings get them)
       p.view = p.view || randomString(24, KEYCHARS);
@@ -153,7 +155,8 @@
     // 'view' only when the server says so; servers from before view-only keys send no role
     // (and reject view keys), so their phones joined with the control key.
     const entry = { id, n: ++phoneCounter, role: role === 'view' || role === 'admin' ? role : 'control', sent: {}, peer: null, deck: false, faces: [],
-      join: RemotePeer.joiner(), rsSub: false, rsSent: {}, upload: null };
+      join: RemotePeer.joiner(), rsSub: false, rsSent: {}, upload: null,
+      approved: !pinRequired(), pin: null, tries: 0, rejected: false };
     entry.peer = RemotePeer.create({
       initiator: true,
       relay: relayTo(id),
@@ -195,11 +198,28 @@
 
   function onPhoneMessage(id, m, via) {
     const e = peers.get(id);
-    if (!e || !m || typeof m !== 'object') return;
+    if (!e || !m || typeof m !== 'object' || e.rejected) return;
+    // "Require a PIN": a phone is accepted only once the operator types the PIN it shows (or it
+    // brings back the token it was given when approved before, under this code). Until then
+    // nothing is sent to it and nothing else from it is acted on.
+    if (!e.approved) {
+      if (m.t === 'hello' && typeof m.token === 'string' && approvedTokens().includes(m.token)) {
+        e.approved = true;
+      } else if (m.t === 'hello') {
+        e.peer.send({ t: 'pin-required' });
+        return;
+      } else if (m.t === 'pin' && typeof m.code === 'string' && /^\d{4}$/.test(m.code)) {
+        e.pin = m.code;
+        openPanel();                             // the operator has to see the request
+        renderPanel();
+        return;
+      } else return;
+    }
     if (m.t === 'hello' || m.t === 'deck') deckFaces = null;   // outside a push: work them out afresh
     if (m.t === 'hello') {
       e.sent = {}; e.faces = [];
       pushTo(e, true);
+      panelConnected();
     } else if (e.role !== 'control' && e.role !== 'admin') {
       return;                                  // view-only display: nothing else is accepted
     } else if (m.t === 'deck') {               // phone switched its virtual Stream Deck XL on/off
@@ -281,7 +301,7 @@
     rsPush(e, true);
     if (!rsTimer) rsTimer = setInterval(() => {
       let n = 0;
-      for (const p of peers.values()) if (p.rsSub) { rsPush(p, false); n++; }
+      for (const p of peers.values()) if (p.rsSub && p.approved) { rsPush(p, false); n++; }
       if (!n) { clearInterval(rsTimer); rsTimer = null; }
     }, 700);
   }
@@ -497,7 +517,7 @@
     pushTimer = setTimeout(() => {          // coalesce bursts into one small message
       pushTimer = null;
       deckFaces = null;
-      for (const e of peers.values()) pushTo(e, false);
+      for (const e of peers.values()) if (e.approved) pushTo(e, false);
     }, 60);
   }
 
@@ -561,6 +581,16 @@
 #phone-panel button { flex: 1; padding: 5px 4px; font-size: 12px; background: #222; border: 1px solid #444; color: #ccc; border-radius: 4px; cursor: pointer; }
 #phone-panel button:hover { background: #333; color: #fff; }
 #phone-panel .pp-peers { margin-top: 8px; font-size: 12px; }
+#phone-panel .pp-pin { display: block; font-size: 12px; color: #bbb; margin: 6px 0 2px; cursor: pointer; }
+#phone-panel .pp-pin input { vertical-align: middle; margin: 0 4px 0 0; }
+#phone-panel .pp-ask { background: #2a2200; border: 1px solid #665200; border-radius: 6px; padding: 8px; margin: 6px 0; font-size: 13px; color: #ffe08a; }
+#phone-panel .pp-askrow { display: flex; gap: 6px; margin-top: 6px; }
+#phone-panel .pp-askrow input { width: 5em; flex: none; font: 18px "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; text-align: center;
+  background: #111; color: #fff; border: 1px solid #665200; border-radius: 4px; padding: 4px; }
+#phone-panel .pp-askrow button { flex: 1; }
+#phone-panel.pp-touch .pp-pin { font-size: 14px; margin: 8px 0 4px; }
+#phone-panel.pp-touch .pp-ask { font-size: 15px; }
+#phone-panel.pp-touch .pp-askrow input { font-size: 24px; width: 4.2em; }
 /* On a phone/tablet: a bottom sheet (the button bar isn't shown there) */
 #phone-panel.pp-touch { top: auto; right: 0; left: 0; bottom: 0; width: auto; max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px);
   border-radius: 16px 16px 0 0; padding: 14px 16px calc(16px + env(safe-area-inset-bottom)); font-size: 15px; z-index: 2147481500; }
@@ -638,6 +668,8 @@
       <div class="pp-modehint"></div>
       <div class="pp-qr"></div>
       <div class="pp-link"></div>
+      <label class="pp-pin"><input type="checkbox" class="pp-pin-box"> Require a PIN <span class="pp-hint">— a new phone shows a 4-digit PIN; type it here to let it in</span></label>
+      <div class="pp-pending"></div>
       <div class="pp-row"><button class="pp-copy">Copy link</button><button class="pp-renew" title="Disconnect all phones and make a new code">New code</button><button class="pp-toggle"></button></div>
       <div class="pp-peers"></div>
       <details class="pp-adv"${TOUCH ? ' hidden' : ''}><summary>Server</summary>
@@ -646,6 +678,27 @@
       </details>`;
     document.body.appendChild(el);
     el.querySelector('.pp-close').addEventListener('click', () => { el.hidden = true; });
+    el.querySelector('.pp-pin-box').addEventListener('change', ev => {
+      if (ev.target.checked) localStorage.setItem(PIN_KEY, '1');
+      else {
+        localStorage.removeItem(PIN_KEY);
+        for (const e of peers.values()) if (!e.approved && !e.rejected) { e.approved = true; e.pin = null; e.peer.send({ t: 'pin-ok' }); }
+      }
+      renderPanel();
+    });
+    el.querySelector('.pp-pending').addEventListener('click', ev => {
+      const b = ev.target.closest('button[data-act]');
+      if (!b) return;
+      const row = b.closest('[data-id]');
+      const e = peers.get(row.dataset.id);
+      if (b.dataset.act === 'ok') approvePeer(e, row.querySelector('input').value.trim());
+      else rejectPeer(e);
+    });
+    el.querySelector('.pp-pending').addEventListener('keydown', ev => {
+      if (ev.key !== 'Enter' || ev.target.tagName !== 'INPUT') return;
+      const row = ev.target.closest('[data-id]');
+      approvePeer(peers.get(row.dataset.id), ev.target.value.trim());
+    });
     el.querySelector('.pp-qr').addEventListener('click', showBigQR);
     el.querySelectorAll('.pp-modes button').forEach(b => b.addEventListener('click', () => {
       localStorage.setItem(LINK_MODE_KEY, b.dataset.mode);
@@ -752,14 +805,63 @@
       : LINK_MODES[mode].hint;
     el.querySelector('.pp-link').textContent = enabled ? phoneLink() : '';
     if (enabled) drawQR(phoneLink());
+    el.querySelector('.pp-pin').style.display = enabled ? '' : 'none';
+    el.querySelector('.pp-pin-box').checked = pinRequired();
+    const pend = el.querySelector('.pp-pending');
+    const rows = pending();
+    const keep = {};
+    pend.querySelectorAll('[data-id]').forEach(r => { keep[r.dataset.id] = r.querySelector('input').value; });
+    pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.role === 'view' ? 'A display' : 'A phone'} wants to connect.</b> Type the PIN it shows:
+        <span class="pp-askrow"><input inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" placeholder="PIN" value="${keep[e.id] || ''}">
+        <button data-act="ok">Let it in</button><button data-act="no">Refuse</button></span>${e.wrong ? '<div class="pp-warn">That’s not it. ' + (3 - e.tries) + ' more tr' + (e.tries === 2 ? 'y' : 'ies') + '.</div>' : ''}</div>`).join('');
+    if (rows.length && !keep[rows[0].id]) { const i = pend.querySelector('input'); if (i && !TOUCH) i.focus(); }
     const srv = el.querySelector('.pp-server');
     if (force || document.activeElement !== srv) srv.value = serverUrl();
     el.querySelector('.pp-peers').innerHTML = !peers.size ? (enabled ? '<i>No phones connected</i>' : '') :
-      [...peers.values()].map(e => `<div>${e.role === 'view' ? 'Display' : 'Phone'} ${e.n} · ` +
+      [...peers.values()].filter(e => !e.rejected).map(e => `<div>${e.role === 'view' ? 'Display' : 'Phone'} ${e.n} · ` +
+        (!e.approved ? '<span class="pp-warn">waiting for its PIN</span> · ' : '') +
         (e.role === 'view' ? '<span class="pp-view">view only</span> · ' : e.role === 'admin' ? '<span class="pp-admin">admin</span> · ' : '') +
         `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : '<b class="pp-srv">via server</b>'}</div>`).join('') +
       (lanCount < peers.size ? '<div class="pp-hint">"via server": not on the same network (or the Wi-Fi isolates devices).</div>' : '') +
       (shareNote ? `<div class="pp-hint">${shareNote}</div>` : '');
+  }
+
+  // ─── Require a PIN ───────────────────────────────────────────────────────
+
+  const pinRequired = () => localStorage.getItem(PIN_KEY) === '1';
+  function approvedTokens() {
+    try { const v = JSON.parse(localStorage.getItem(APPROVED_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (_) { return []; }
+  }
+  const pending = () => [...peers.values()].filter(e => !e.approved && e.pin && !e.rejected);
+  function approvePeer(e, entered) {
+    if (!e || e.approved || e.rejected) return;
+    if (entered !== e.pin) {
+      e.tries++;
+      if (e.tries >= 3) { rejectPeer(e); return; }
+      e.wrong = true; renderPanel(); return;
+    }
+    const token = randomString(24, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789');
+    localStorage.setItem(APPROVED_KEY, JSON.stringify(approvedTokens().concat(token).slice(-64)));
+    e.approved = true; e.pin = null; e.wrong = false;
+    e.peer.send({ t: 'pin-ok', token });       // the phone says hello again and gets its state
+    renderPanel();
+  }
+  function rejectPeer(e) {
+    if (!e) return;
+    e.rejected = true; e.pin = null;
+    try { e.peer.send({ t: 'pin-rejected' }); } catch (_) { /* gone */ }
+    renderPanel();
+  }
+
+  // Once a phone is connected (and approved), the code is put away: it needn't stay on screen
+  // for anyone walking past to scan. Opened again with the phone button when wanted.
+  function panelConnected() {
+    const el = document.getElementById('phone-panel');
+    if (!el || el.hidden || pending().length) return;
+    const big = document.getElementById('phone-qr-big');
+    if (big) big.remove();
+    el.hidden = true;
+    renderPanel();
   }
 
   // ─── On / off ────────────────────────────────────────────────────────────

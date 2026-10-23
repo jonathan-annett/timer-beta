@@ -374,6 +374,14 @@
     <button id="viewcancel" style="text-align:center">Cancel</button>
   </div></div>
 
+  <!-- The timer wants a PIN before letting this phone in -->
+  <div id="pinwait" class="sheet" hidden><div class="box" style="text-align:center">
+    <h3 style="margin-top:0">PIN</h3>
+    <div id="pincode" style="font-size:3.2em;font-weight:bold;letter-spacing:.2em;font-variant-numeric:tabular-nums;margin:.1em 0 .2em"></div>
+    <p id="pinmsg" style="color:var(--dim)"></p>
+    <button id="pinretry" style="width:100%" hidden>Try again</button>
+  </div></div>
+
   <!-- Full screen where the browser can't do it (iPhone) -->
   <div id="fstip" class="sheet" hidden><div class="box">
     <h3 style="margin-top:0">Full screen on iPhone</h3>

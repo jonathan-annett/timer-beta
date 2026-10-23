@@ -79,7 +79,9 @@
     const more = document.getElementById('touch-more-sheet');
     const openMore = () => { if (!more) return; more.style.display = 'flex'; requestAnimationFrame(() => more.classList.add('visible')); };
     const closeMore = () => { if (!more) return; more.classList.remove('visible'); setTimeout(() => { more.style.display = 'none'; }, 220); };
-    const onTap = (id, fn) => document.getElementById(id)?.addEventListener('pointerdown', e => { e.preventDefault(); fn(); });
+    // On click, not pointerdown: what these open appears under the finger, and the click that
+    // follows a pointerdown would land on it (the phone panel's QR code, say)
+    const onTap = (id, fn) => document.getElementById(id)?.addEventListener('click', e => { e.preventDefault(); fn(); });
     onTap('touch-more-btn', openMore);
     onTap('touch-more-cancel', closeMore);
     onTap('touch-more-backdrop', closeMore);

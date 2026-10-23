@@ -219,7 +219,7 @@ The phone gets the link from this timer and passes it to the other computer, whi
 
 Buttons and deck keys buzz as soon as you press them (on phones that can vibrate) and act when you lift your finger. Slide off the button before lifting to cancel the press. If you'd rather Restart and the presets need a second tap within 2 seconds, so a stray touch can't restart a talk, turn on **Second tap** in the ☰ View menu (each phone remembers its own setting; off by default). The phone screen stays on while the page is open. Up to 16 phones and displays can connect at once.
 
-The QR code contains a secret key: anyone with the link can control the timer. **New code** disconnects every phone and makes a new link. **Turn off** stops phone control. 
+The QR code contains a secret key: anyone with the link can control the timer, so the panel closes itself as soon as a phone connects (open it again with **phone** when you want to add another). For more protection tick **Require a PIN** under the code: each new phone then shows a 4-digit PIN, and it isn't let in until you type that PIN into the panel (three wrong tries refuse it). Phones you've let in stay approved until you make a new code. **New code** disconnects every phone and makes a new link. **Turn off** stops phone control. 
 
 ### Pairing server
 

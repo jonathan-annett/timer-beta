@@ -76,7 +76,7 @@
       onMessage,
       onModeChange: showMode,
     });
-    peer.send({ t: 'hello' });                  // goes through the server until the LAN link is up
+    peer.send({ t: 'hello', token: store.get(tokenKey()) || undefined });   // via the server until the LAN link is up
     if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true });
     if (editorMode()) peer.send({ t: 'rs-sub', on: true });
   }
@@ -140,11 +140,45 @@
     catch (_) { /* not allowed right now */ }
   }
 
+  // ─── Require a PIN ───────────────────────────────────────────────────────
+  // The timer may want the person at it to let this phone in: we show a 4-digit PIN, they type
+  // it there. Once approved we get a token, kept per room, so reconnecting needs no new PIN.
+
+  // A new link opened over this page (a rescan in the same tab) is a fresh start
+  window.addEventListener('hashchange', () => location.reload());
+
+  const tokenKey = () => 'remote_token_' + cfg.room;
+  let pinCode = null;
+  function onPin(m) {
+    const box = $('pinwait');
+    if (m.t === 'pin-required') {
+      if (!pinCode) pinCode = String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+      $('pincode').textContent = pinCode;
+      $('pinmsg').textContent = 'The timer is asking who this is. Tell the person at the timer this PIN; it connects once they type it in.';
+      $('pinretry').hidden = true;
+      box.hidden = false;
+      if (peer) peer.send({ t: 'pin', code: pinCode });
+    } else if (m.t === 'pin-ok') {
+      if (typeof m.token === 'string') store.set(tokenKey(), m.token);
+      pinCode = null;
+      box.hidden = true;
+      if (peer) { peer.send({ t: 'hello', token: store.get(tokenKey()) || undefined }); if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true }); if (editorMode()) peer.send({ t: 'rs-sub', on: true }); }
+    } else if (m.t === 'pin-rejected') {
+      pinCode = null;
+      $('pincode').textContent = '';
+      $('pinmsg').textContent = 'The timer didn’t let this phone in.';
+      $('pinretry').hidden = false;
+      box.hidden = false;
+    }
+  }
+  $('pinretry').addEventListener('click', () => location.reload());
+
   // ─── State from the timer ────────────────────────────────────────────────
 
   const joinPart = RemotePeer.joiner();
   function onMessage(m) {
     if (m && m.t === 'part') { const whole = joinPart(m); if (whole) onMessage(whole); return; }
+    if (m && (m.t === 'pin-required' || m.t === 'pin-ok' || m.t === 'pin-rejected')) return onPin(m);
     if (m && m.t === 'deck') return onDeck(m);
     if (m && m.t === 'share-link') return onShareLink(m);
     if (m && typeof m.t === 'string' && /^(rs-|vup-)/.test(m.t)) return onEditorMessage(m);
