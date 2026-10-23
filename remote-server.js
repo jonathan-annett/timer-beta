@@ -215,5 +215,19 @@ server.listen(PORT, () => {
               (ORIGINS.length ? `, origins: ${ORIGINS.join(', ')}` : ''));
 });
 
-process.on('SIGTERM', () => server.close(() => process.exit(0)));
-process.on('SIGINT', () => server.close(() => process.exit(0)));
+// Shut down promptly (systemctl stop/restart, certificate renewal). server.close() alone waits for
+// every open connection to end, and phones and timers keep theirs open, so the process never
+// exited by itself: systemd waited its 90 s stop timeout and then killed it. Close the sockets
+// ("going away"; phones and timers reconnect by themselves) and don't wait more than 2 s.
+function shutdown(sig) {
+  console.log(`[remote] ${sig}: closing ${wss.clients.size} connections`);
+  for (const ws of wss.clients) { try { ws.close(1001, 'server restarting'); } catch (_) { /* already gone */ } }
+  wss.close();
+  server.close(() => process.exit(0));
+  setTimeout(() => {
+    for (const ws of wss.clients) ws.terminate();
+    process.exit(0);
+  }, 2000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

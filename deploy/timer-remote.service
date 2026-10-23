@@ -32,6 +32,8 @@ LoadCredential=fullchain.pem:/etc/letsencrypt/live/timer.sophtwhere.com/fullchai
 LoadCredential=privkey.pem:/etc/letsencrypt/live/timer.sophtwhere.com/privkey.pem
 ExecStart=/usr/bin/node remote-server.js --port 8443 --origin https://timer.sophtwhere.com
 Restart=on-failure
+# The server closes its connections and exits within 2 s of a stop; don't wait longer than this
+TimeoutStopSec=5
 RestartSec=5
 
 # Hardening (it only needs its own folder and the network)
