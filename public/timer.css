@@ -1652,7 +1652,8 @@ html.runsheet:not(.reduced) #custom_message {
 #phone-panel .pp-status[data-kind="error"] { color: #ff8080; }
 #phone-panel .pp-qr { display: flex; justify-content: center; min-height: 40px; color: #888; cursor: zoom-in; }
 #phone-panel .pp-qr canvas { display: block; border-radius: 4px; }   /* white quiet zone is part of the image */
-#phone-qr-big { position: fixed; inset: 0; z-index: 10060; background: rgba(0,0,0,.85); display: flex; flex-direction: column;
+/* Topmost layer: above everything else on the page, including the video-assist canvases (999999) */
+#phone-qr-big { position: fixed; inset: 0; z-index: 2147483000; background: #000; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 16px; cursor: zoom-out; color: #aaa; font: 16px "Helvetica Neue", Arial, sans-serif; }
 #phone-qr-big canvas { border-radius: 8px; }
 #phone-panel .pp-link { font-size: 9px; color: #555; word-break: break-all; margin: 6px 0; max-height: 3.2em; overflow: hidden; }

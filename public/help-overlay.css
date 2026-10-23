@@ -4,7 +4,7 @@
  */
 
 #help {
-  position: fixed; inset: 0; z-index: 10050;                 /* above the button bar (9999) and deck editor */
+  position: fixed; inset: 0; z-index: 2147482000;            /* above everything incl. video-assist canvases (999999); below the full-screen QR */
   display: flex; justify-content: center;
   background: rgba(0, 0, 0, .6);
   font: max(1.1vw, 1.7vh)/1.55 "Helvetica Neue", Arial, sans-serif;
