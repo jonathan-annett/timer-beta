@@ -59,12 +59,28 @@ var HelpOverlay = (function () {
           const text = await r.text();
           if (!/^\s*#/.test(text)) continue;                               // e.g. a host's HTML 404 page
           body.innerHTML = MarkdownLite.render(text, { linkBase: REPO + '/blob/main/' });
+          unlinkSelf();
           return true;
         } catch (_) { /* offline or blocked: try the next source */ }
       }
       body.innerHTML = `<p class="help-status">Couldn't load the help here. Read it on GitHub: ` +
         `<a href="${REPO}#readme" target="_blank" rel="noopener">${REPO}</a></p>`;
       return false;
+    }
+
+    // Links to this site's own pages (e.g. the README's "Try it" link to the timer) are shown as
+    // plain text: you're already in it, and on the phone remote it would open a second timer.
+    function unlinkSelf() {
+      body.querySelectorAll('a[href]').forEach(a => {
+        const href = a.getAttribute('href');
+        if (!href || href[0] === '#') return;
+        let u;
+        try { u = new URL(href, location.href); } catch (_) { return; }
+        if (u.origin !== location.origin) return;
+        const span = document.createElement('span');
+        span.textContent = a.textContent;
+        a.replaceWith(span);
+      });
     }
 
     function jumpTo(id) {
