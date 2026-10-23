@@ -244,6 +244,14 @@
         status.textContent = '';
       }
       tr.querySelectorAll('button.go').forEach(b => { b.disabled = !active; });
+      // Order is fixed up to and including the item running now, and nothing moves above it:
+      // the dashboard, the phones and the log all follow the live order. To stop an item,
+      // delete it instead.
+      const lock = moveLock(i);
+      const up = tr.querySelector('button[data-act=up]'), down = tr.querySelector('button[data-act=down]');
+      up.disabled = !!lock || i === 0; down.disabled = lock === 'ran' || lock === 'now' || i === norm.items.length - 1;
+      up.title = lock ? LOCK_TEXT[lock] : 'Move up';
+      down.title = lock === 'ran' || lock === 'now' ? LOCK_TEXT[lock] : 'Move down';
     });
 
     // Transport
@@ -264,6 +272,21 @@
     $('now-next').innerHTML = parts.join(' &nbsp;·&nbsp; ');
 
     renderLog();
+  }
+
+  // Why item i can't move: 'ran' (already run), 'now' (running), 'next' (can't go above the
+  // running item), or null
+  const LOCK_TEXT = { ran: 'This item has already run; the order up to now is fixed', now: 'This item is running now',
+    next: 'Can’t move an item above the one running now; delete it instead' };
+  function moveLock(i) {
+    if (!state.active || !norm.items.length) return null;
+    if (state.finished) return 'ran';
+    const cur = state.index >= 0 && state.currentId ? norm.items.findIndex(it => it.id === state.currentId) : -1;
+    if (cur < 0) return null;
+    if (i < cur) return 'ran';
+    if (i === cur) return 'now';
+    if (i === cur + 1) return 'next';
+    return null;
   }
 
   function renderLive() {
@@ -496,10 +519,10 @@
         send('goto', { id });
         break;
       case 'up':
-        if (i > 0) { [sheet.items[i - 1], sheet.items[i]] = [sheet.items[i], sheet.items[i - 1]]; saveSheet(); }
+        if (i > 0 && !moveLock(i)) { [sheet.items[i - 1], sheet.items[i]] = [sheet.items[i], sheet.items[i - 1]]; saveSheet(); }
         break;
       case 'down':
-        if (i < sheet.items.length - 1) { [sheet.items[i + 1], sheet.items[i]] = [sheet.items[i], sheet.items[i + 1]]; saveSheet(); }
+        if (i < sheet.items.length - 1 && !['ran', 'now'].includes(moveLock(i))) { [sheet.items[i + 1], sheet.items[i]] = [sheet.items[i], sheet.items[i + 1]]; saveSheet(); }
         break;
       case 'del':
         if (id === state.currentId && !state.finished && !confirm('This item is running now. Delete it anyway?')) return;

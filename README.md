@@ -105,6 +105,8 @@ Load the show's running order and step through it with a presentation clicker, t
 | **Space** | Restarts the current item's countdown, as usual. |
 | **▶** on a row in the editor | Jumps straight to that item (Back undoes it). |
 
+While the show is running, the order up to and including the current item is fixed, and an upcoming item can't be moved above the one running now (the ↑/↓ buttons grey out). The live dashboard, phones and log all follow that order. To stop an item happening, delete it; items further down can still be reordered.
+
 **Two screens are enough:** put the timer on the stage display and press **P** so it shows only the countdown and message. Then keep the run sheet editor on your own screen and run the show from it, the clicker or the Stream Deck. The editor shows now/next, the log and ahead/behind.
 
 The timer screen shows a three-line dashboard: **previous** (when it started and how long it ran), **now**, and **next** (its planned time). Below that is the schedule status, e.g. *Running 2:30 behind · finish ≈ 17:04*. Each item keeps its full planned duration even when the show is late; the status tells you how much to trim.

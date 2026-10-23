@@ -297,6 +297,8 @@ Files: `runsheet-core.js` (pure logic, shared), `runsheet.js` (controller window
 
 **Next/Back:** every Next or goto pushes `{timer: processTimerApiMessage({cmd:'snapshot'}), index, currentId, finished, logLen, dayBase}` onto `state.history`, logs the actual start, then sends `default`, `start` and `custommessage` (item name). Back pops and sends `restore`, which calls `restoreTimerState()` in `timer.js` and restores the message. Snapshots hold absolute timestamps, so the restored countdown carries on as if the Next never happened. Items keep their full planned duration even when the show is late (deliberate). The current item is tracked by id, so it survives row edits.
 
+**Reordering while running:** the editor's `moveLock(i)` returns `ran` (before the current item, or the show finished), `now` (the current item) or `next` (the item right after it, which may move down but not up); `renderStatus()` disables ↑/↓ accordingly and the click handler re-checks, so the order up to the live item never changes under the dashboard, the phones or the log. Delete an item instead.
+
 **Ahead/behind:** for the current item, projected end = max(now, timer's end incl. pause time) compared with its planned end. Before the start it's a late start against the first planned time; after the finish it's the actual finish against the planned finish. Within ±30 s counts as on time.
 
 **Keys:** Page Down/Up are caught in the capture phase only in run sheet mode, so outside it they still reach `timer.js` (PowerPoint mode). The editor window handles them too, so a clicker focused on it still works. **E** opens the editor (not while typing).
