@@ -170,7 +170,7 @@ During the show:
 - When it finishes, the run sheet stays on that item (timer 0:00) until you press **Next**.
 - **Back** stops it and loads it again, ready to replay.
 
-The player window has to be open (click **video** once before the show); if it isn't when a video is coming up, the dashboard says so. There are no on-screen controls for run sheet videos: use the Stream Deck.
+The player window has to be open (click **video** once before the show); if it isn't when a video is coming up, the dashboard says so. While a run sheet video plays, the controls at the bottom right of the timer show **⟲** (rewind) and **■** (stop); once it has been rewound or has finished, **▶** plays it again. The Stream Deck keys do the same. The next item's video, waiting in the player, gets no controls: **Next** plays it.
 
 ## Remote display
 

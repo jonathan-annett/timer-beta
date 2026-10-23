@@ -219,6 +219,7 @@
     if (playing) { release(playing); playing = null; }
     playing = cued; cued = null;
     const s = playing;
+    s.rewound = false;
     arrange();
     whenReady(s.el, () => {
       if (playing !== s) return;
@@ -277,6 +278,7 @@
     s.el.pause();
     s.el.currentTime = 0;
     cued = s; playing = null;
+    s.rewound = true;                       // on-screen ▶ for it, even from the run sheet
     arrange();
     whenReady(s.el, () => {
       api({ cmd: 'start', msecs: wholeSeconds(s.el.duration) });
@@ -296,7 +298,7 @@
       // cued, which then shows instead); the timer shows 0:00, the message stays.
       playing = null;
       if (cued) release(s);
-      else { s.el.currentTime = 0; cued = s; }
+      else { s.el.currentTime = 0; cued = s; s.rewound = true; }
       api({ cmd: 'start', msecs: 0 });
       api({ cmd: 'pause' });
       arrange();
@@ -411,19 +413,21 @@ html.reduced #video-controls, html.reduced #video-toast { display: none; }`;
     return bar;
   }
 
-  // Controls show for dropped videos only (run sheet videos are run from the sheet and the deck)
+  // Dropped videos: all the controls. Run sheet videos: stop and rewind while one plays, and play
+  // once it's been rewound or has ended; nothing for the next item's video waiting in the player
+  // (Next plays that one, and ▶ or ■ here would act on it out of turn).
   function renderControls() {
     const s = playing || cued;
-    const show = !!s && s.controls;
+    const show = !!s && (s.controls || !!playing || !!s.rewound);
     if (!show && !bar) return;
     const el = controlsEl();
     el.hidden = !show;
     if (!show) return;
-    el.querySelector('.vc-name').textContent = 'Video: ' + s.name;
+    el.querySelector('.vc-name').textContent = messageFor(s);
     el.querySelector('.vc-name').title = s.name;
     el.querySelector('.vc-play').hidden = !!playing;
     el.querySelector('.vc-rewind').hidden = !playing;
-    el.querySelector('.vc-idle').hidden = !!playing;
+    el.querySelector('.vc-idle').hidden = !!playing || !s.controls;   // run sheet: set per item in the sheet
     el.querySelector('.vc-idle').textContent = 'Before play: ' + (cued && cued.idle === 'hide' ? 'black' : 'first frame');
   }
 
