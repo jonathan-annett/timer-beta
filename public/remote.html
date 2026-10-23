@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+ * remote.html  (EXPERIMENTAL)
+ * Phone remote control for the Presentation Timer. Opened from the QR code in the timer's
+ * "phone" panel; the link's #fragment carries the server, room and key.
+ * MIT Licensed
+-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Timer remote</title>
+  <style>
+    :root { --bg:#000; --card:#121212; --line:#262626; --text:#e8e8e8; --dim:#8a8a8a;
+            --ok:#5fd35f; --warn:#ffcc33; --late:#ff6b6b; --blue:#4aa8ff; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; background: var(--bg); color: var(--text);
+      font: 4vw/1.35 "Helvetica Neue", Arial, sans-serif; }
+    @media (min-width: 600px) { html, body { font-size: 24px; } }   /* tablets: don't grow forever */
+    body { padding: max(3vw, env(safe-area-inset-top)) 3vw max(4vw, env(safe-area-inset-bottom)); user-select: none; }
+    button { font: inherit; color: var(--text); background: #1e1e1e; border: 1px solid #333; border-radius: 0.6em;
+      padding: 0.75em 0.4em; touch-action: manipulation; }
+    button:active { background: #333; }
+    button:disabled { opacity: .35; }
+    .top { display: flex; align-items: center; gap: 0.5em; font-size: 0.8em; color: var(--dim); }
+    #link-badge { padding: 0.15em 0.6em; border-radius: 1em; border: 1px solid #333; }
+    #link-badge.lan { color: var(--ok); border-color: #2a5a2a; }
+    #link-badge.server { color: var(--warn); border-color: #5a4a10; }
+    #link-badge.off { color: var(--late); border-color: #5a2020; }
+    #note { margin-left: auto; text-align: right; }
+
+    #remain { font-size: 21vw; font-weight: bold; text-align: center; line-height: 1.1; margin: 0.15em 0 0.05em;
+      font-variant-numeric: tabular-nums; }
+    @media (min-width: 600px) { #remain { font-size: 6em; } }
+    body.impending #remain { color: orange; }
+    body.over #remain { color: var(--late); }
+    body.paused #remain { color: #777; }
+    #substate { text-align: center; color: var(--dim); min-height: 1.4em; font-size: 0.9em; }
+
+    .msg { display: flex; align-items: center; gap: 0.5em; background: var(--card); border: 1px solid var(--line);
+      border-radius: 0.6em; padding: 0.5em 0.7em; margin: 0.6em 0; }
+    .msg span { flex: 1; overflow-wrap: anywhere; }
+    .msg button { padding: 0.3em 0.8em; }
+    .msg.empty span { color: var(--dim); font-style: italic; }
+
+    .rs { background: var(--card); border: 1px solid var(--line); border-radius: 0.6em; padding: 0.6em 0.7em; margin: 0.6em 0; }
+    .rs[hidden] { display: none; }
+    .rs .lbl { font-size: 0.7em; letter-spacing: .1em; color: var(--dim); text-transform: uppercase; }
+    .rs .now { font-weight: bold; font-size: 1.1em; }
+    .rs .nxt { color: #bbb; }
+    .rs .status { font-size: 0.85em; margin-top: 0.2em; color: var(--dim); }
+    .rs .status.behind { color: var(--late); } .rs .status.ahead { color: var(--ok); }
+
+    .grid { display: grid; gap: 0.5em; margin: 0.5em 0; }
+    .g2 { grid-template-columns: 1fr 1fr; } .g3 { grid-template-columns: 1fr 1fr 1fr; }
+    .big { font-size: 1.15em; padding: 0.9em 0.4em; font-weight: bold; }
+    .go { background: #0e3a12; border-color: #2a6a2a; color: #9cf59c; }
+    .armed { background: #4a3500 !important; border-color: var(--warn) !important; color: #fff !important; }
+    #catchup.on { background: #0e3a12; border-color: #2a6a2a; color: #9cf59c; }
+    .presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4em; margin: 0.5em 0; }
+    .presets button { padding: 0.6em 0.2em; }
+    .send { display: flex; gap: 0.5em; margin: 0.6em 0; }
+    .send input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: #111; border: 1px solid #333;
+      border-radius: 0.6em; padding: 0.6em; }
+    h3 { font-size: 0.75em; letter-spacing: .1em; color: var(--dim); text-transform: uppercase; margin: 1em 0 0.3em; font-weight: normal; }
+    #blocked { text-align: center; color: var(--dim); padding: 30vh 6vw 0; }
+    #blocked[hidden], #app[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <div id="blocked" hidden></div>
+  <div id="app" hidden>
+    <div class="top"><span id="link-badge" class="off">connecting…</span><span id="note"></span></div>
+
+    <div id="remain">–:––</div>
+    <div id="substate"></div>
+
+    <div class="msg empty" id="msgbox"><span id="msgtext">No message on screen</span><button id="msgclear" disabled>Clear</button></div>
+
+    <div class="rs" id="rs" hidden>
+      <div class="lbl">Now</div><div class="now" id="rsnow"></div>
+      <div class="lbl" style="margin-top:0.3em">Next</div><div class="nxt" id="rsnext"></div>
+      <div class="status" id="rsstatus"></div>
+      <div class="grid g2" style="margin-top:0.5em">
+        <button class="big" id="rsback">◀ Back</button>
+        <button class="big go" id="rsnextbtn">Next ▶</button>
+      </div>
+    </div>
+
+    <div class="grid g2">
+      <button class="big" id="restart" data-confirm>Restart</button>
+      <button class="big" id="pause">Pause</button>
+    </div>
+    <div class="grid g3">
+      <button id="minus">−1 min</button>
+      <button id="catchup" disabled>Catch up</button>
+      <button id="plus">+1 min</button>
+    </div>
+
+    <h3>Start a new countdown</h3>
+    <div class="presets" id="presets"></div>
+
+    <h3>Message to the presenter</h3>
+    <div class="send"><input id="msginput" maxlength="200" placeholder="e.g. Please wrap up" enterkeyhint="send"><button id="msgsend">Send</button></div>
+  </div>
+
+  <script src="remote-peer.js"></script>
+  <script src="remote-phone.js"></script>
+</body>
+</html>

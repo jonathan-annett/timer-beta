@@ -29,6 +29,8 @@ Visual state is driven entirely by CSS classes on `<html>`. No JS touches colour
 ```
 timer_build/
 ├── relay-server.js        Express app — entry point for deployment
+├── remote-server.js       EXPERIMENTAL phone-control pairing server (wss, port 8443; standalone)
+├── deploy/                systemd unit + certbot hook for remote-server.js
 ├── package.json           Dependencies: express, ws
 └── public/                Served as static files
     ├── timer.html          Controller page
@@ -46,6 +48,10 @@ timer_build/
     ├── markdown-lite.js    Tiny Markdown renderer for the README help overlay (node-testable)
     ├── help-overlay.js     README overlay (? / F1 / help link) for the timer main screen and the editor
     ├── help-overlay.css    Its styles (viewport/em-sized)
+    ├── remote-control.js   EXPERIMENTAL phone control, timer side (phone button/panel, allow-list)
+    ├── remote-peer.js      LAN-only WebRTC link with server fallback (shared by timer and phone)
+    ├── remote.html         Phone control page (opened from the QR code)
+    ├── remote-phone.js     Its logic
     ├── fsapi.js            Fullscreen API abstraction (cross-browser)
     ├── inettime.js         Internet time sync via worldtimeapi.org
     ├── timeroverlaypip.js  Picture-in-Picture overlay of countdown
@@ -192,6 +198,9 @@ All timer state persists in localStorage. These are the canonical keys:
 | `runsheet_cmd` | JSON | Command from the editor (`next`, `back`, `goto`, `reset`, `active`); consumed and removed by `runsheet.js` |
 | `runsheet_live` | JSON | Status text for the editor, written by `runsheet.js` when it changes |
 | `runsheet_alive` | timestamp ms | Heartbeat from `runsheet.js` (every second, any mode incl. P); the editor's "timer isn't open" check |
+| `remote_server` | wss URL | Pairing server for phone control (default `wss://<host>:8443/`; also `?remote=` in the URL) |
+| `remote_pairing` | JSON | `{room, key}` for phone control; "New code" replaces it (revokes phones) |
+| `remote_enabled` | `'1'` or absent | Phone control on; reconnects automatically after a reload |
 | `tab_<id>` | timestamp ms | Heartbeat for multi-tab detection |
 | `controller_tab_<id>` | timestamp ms | Marks this tab as a controller |
 
@@ -280,6 +289,20 @@ Files: `runsheet-core.js` (pure logic, shared), `runsheet.js` (controller window
 **Layout:** on the controller in run sheet mode the dashboard takes the top-left half and the controller's copy of the message moves to the top right (`html.runsheet:not(.reduced) #custom_message`). The presenter view is unchanged.
 
 **Tests:** `runsheet-core.js` exports via `module.exports` when loaded in node. The pure functions are easy to unit-test there.
+
+## Phone Remote Control (experimental)
+
+Separate from the relay/`share` audience display. Pieces: `remote-server.js` (standalone pairing server, wss on 8443, TLS from `--cert/--key` or systemd `$CREDENTIALS_DIRECTORY`), `remote-control.js` (timer), `remote.html` + `remote-phone.js` (phone), `remote-peer.js` (shared).
+
+**Pairing:** the timer makes a room code and a 24-char secret key (`remote_pairing`). The phone link is `remote.html#server=…&room=…&key=…`; the fragment never reaches the web server. The server stores only a SHA-256 of the key, rejects joins with the wrong key, and won't let another key take over a room. It checks `Origin` against `--origin`. Limits: 16 KB per message, 40 messages/s per socket, 8 phones per room. Rooms survive a timer reconnect for 2 minutes. Every socket has an `error` handler; without it an oversized frame crashed the whole server.
+
+**Server protocol** (the server never inspects payloads): host `{type:'host',room,key}` → `hosted`; phone `{type:'join',room,key}` → `joined{id,hostOnline}`, and the host gets `peer-join{id}`. Then host `{type:'to',id,msg}` ↔ phone `down{msg}`, phone `{type:'up',msg}` ↔ host `from{id,msg}`. Also `peer-leave`, `host-offline` and `host-online`; on `host-online` the phone starts a fresh link.
+
+**Link (`remote-peer.js`):** a WebRTC data channel with **no STUN/TURN** (`iceServers: []`), so it can only connect when the phone can reach the timer's machine on the LAN; success is the same-LAN test. The timer is the initiator. Payloads are `{k:'sig', sdp|ice}` for signalling and `{k:'data', d}` for fallback data, both via the server. It gives up after 7 s or when the connection fails/closes, and `send()` then uses the server. It works with browsers' default mDNS-hidden host candidates.
+
+**Messages:** timer → phone `{t:'state', full, s:{remain, over, impending, paused, adjUp, adjDown, msg, def, rsOn, rsNow, rsNext, rsBack, rsStatus, rsLate}}`. These are diffs per phone, coalesced over 60 ms, and built from the `timerAPI` bus (`remote-control.js` chains `timerAPI` and calls `opened` when enabled to fill its state). Phone → timer: `{t:'hello'}` (requests a full state) and `{t:'cmd', cmd, …}`. **Commands go through the `ALLOWED` map in `remote-control.js` only** (restart, start, pause, undopause, adjust, catchup, custommessage ≤200 chars, runsheetnext/prev), with values range-checked. Never forward arbitrary API commands from phones: the API includes `redirect` and `keys`.
+
+**Testing locally:** `node remote-server.js --cert cert.pem --key key.pem --origin https://…` with a self-signed cert, and the timer at `timer.html?remote=wss://localhost:8443/`. In headless Chromium, use `--no-proxy-server` and `ignore_https_errors`. Disabling `RTCPeerConnection` on the phone page forces the server fallback.
 
 ## Mobile / Touch
 

@@ -147,6 +147,35 @@ Click **share** to get a room code (e.g. `TIGER-7`), a QR code and a link. Anyon
 
 ---
 
+## Phone remote control (experimental)
+
+Control the timer from a phone: start, pause, ±1 minute, catch up, presets, messages, and run sheet Back/Next. The phone shows the live countdown.
+
+1. Click **phone** in the timer's button bar. A panel shows a QR code.
+2. Scan it with the phone. The phone page opens and connects.
+
+The badge at the top of the phone shows how it's connected:
+
+- **⚡ LAN direct:** phone and timer are on the same network, so they talk to each other directly.
+- **via server:** they can't reach each other directly (different networks, mobile data, or venue Wi-Fi that keeps devices apart). Everything still works through the pairing server. It's small messages only, about 100 bytes a second.
+
+Restart and the presets need a second tap, so a stray touch can't restart a talk. The phone screen stays on while the page is open. Several phones can connect at once.
+
+The QR code contains a secret key: anyone with the link can control the timer. **New code** disconnects every phone and makes a new link. **Turn off** stops phone control. The QR image needs internet access; otherwise use **Copy link**.
+
+### Pairing server
+
+Phone control needs `remote-server.js` running on a server you control. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the phone panel.
+
+```bash
+npm install
+node remote-server.js --cert fullchain.pem --key privkey.pem --origin https://your-timer-site
+```
+
+For a Linux server with Let's Encrypt, `deploy/timer-remote.service` runs it under systemd as a normal user. systemd reads the root-only certificate and hands it to the server. `deploy/certbot-deploy-hook.sh` restarts it after each renewal. Both files have install steps at the top. Open port 8443 in the firewall.
+
+Some venue and corporate networks only allow ports 80 and 443. On those, phones can't reach a server on 8443: use mobile data on the phone, or run the server on 443 behind a reverse proxy.
+
 ## Phones and tablets
 
 On a touch screen the controller shows a bottom bar (presets, start, pause, ±1 min), and the clock face responds to gestures:

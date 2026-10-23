@@ -1,0 +1,38 @@
+# systemd unit for the experimental phone-control pairing server (remote-server.js).
+#
+# Install (as root):
+#   cp deploy/timer-remote.service /etc/systemd/system/
+#   # edit User=, WorkingDirectory=, the node path and the domain below if yours differ
+#   systemctl daemon-reload
+#   systemctl enable --now timer-remote
+#   journalctl -u timer-remote -f        # logs
+#
+# The TLS certificate stays root-only: systemd reads it at start-up (LoadCredential=) and
+# hands the server a private copy in $CREDENTIALS_DIRECTORY, which remote-server.js uses
+# automatically. Needs systemd 247+ (`systemctl --version`).
+
+[Unit]
+Description=Presentation Timer phone-control pairing server (experimental)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# An ordinary account; no access to /etc/letsencrypt needed
+User=timer
+Group=timer
+WorkingDirectory=/opt/timer-beta
+LoadCredential=fullchain.pem:/etc/letsencrypt/live/timer.sophtwhere.com/fullchain.pem
+LoadCredential=privkey.pem:/etc/letsencrypt/live/timer.sophtwhere.com/privkey.pem
+ExecStart=/usr/bin/node remote-server.js --port 8443 --origin https://timer.sophtwhere.com
+Restart=on-failure
+RestartSec=5
+
+# Hardening (it only needs its own folder and the network)
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+
+[Install]
+WantedBy=multi-user.target
