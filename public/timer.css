@@ -1377,7 +1377,14 @@ html.portrait #disp_next_mins:before{
   #remain_disp { padding-bottom: 80px; }
   div.buttons  { display: none !important; }
   html.reduced #touch-strip { display: none; }
+  /* No keyboard hints or "open display / help" links on a phone (they sat under the strip):
+     the strip's ? button opens the help */
+  #link, #disp_next_mins { display: none !important; }
+  /* The time details sit just above the strip, whatever the screen's shape */
+  html:not(.reduced) #started_disp, html:not(.reduced) #ends_disp { top: auto; bottom: calc(80px + env(safe-area-inset-bottom)); }
+  html:not(.reduced):not(.future) #elapsed_disp, html:not(.reduced) #duration_disp { top: auto; bottom: calc(80px + 1.6em + env(safe-area-inset-bottom)); }
 }
+.touch-btn.touch-help { flex: 0 0 44px; font-size: 18px; }
 
 
 /* ═══════════════════════════════════════════════════════════════════════════

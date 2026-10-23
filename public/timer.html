@@ -49,6 +49,7 @@
           var help = HelpOverlay.install({ section: 'quick-start', canOpen: function () {
             return !presenterWindow && !document.documentElement.classList.contains('reduced');
           }});
+          window.timerHelp = help;           // the touch strip's ? button (touchcontrols.js)
           var link = document.querySelector('#link a[href*="#quick-start"]');
           if (link) link.addEventListener('click', function (e) { if (help.open('quick-start')) e.preventDefault(); });
         });
@@ -251,6 +252,7 @@
         <button class="touch-btn" id="touch-pause-btn">⏸ Pause</button>
         <button class="touch-btn" id="touch-plus-btn">+1 min</button>
         <button class="touch-btn" id="touch-minus-btn">-1 min</button>
+        <button class="touch-btn touch-help" id="touch-help-btn" title="Help" aria-label="Help">?</button>
       </div>
 
       <!-- Touch preset bottom sheet -->

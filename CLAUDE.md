@@ -344,14 +344,17 @@ Separate from the relay/`share` audience display. Pieces: `remote-server.js` (st
 ## Mobile / Touch
 
 `touchcontrols.js` activates only when `'ontouchstart' in window` is true. It:
-- Shows the `#touch-strip` (fixed bottom bar with 5 large buttons)
-- Handles swipe gestures on `#clock_main` (swipe right/left = ±1 min, swipe up/down = ±15 sec)
+- Shows the `#touch-strip` (fixed bottom bar: Presets, Start, Pause, ±1 min, and **?**, which opens the help via `window.timerHelp`, set by the inline script in `timer.html`)
+- ±1 min use the `adjust` command (a synthetic Ctrl+arrow gave ±1 s: the timer only knows Ctrl is held from a real Control keydown)
+- No swipe gestures (removed: easy to trigger by accident, and the ±1 min buttons do the same)
 - Handles long-press on `#clock_main` (600ms) = pause/resume
 - Handles double-tap = start/restart
 - Builds the preset bottom sheet on demand
 - Shows the quick-start overlay on first load if no timer state exists
 
 All gestures dispatch into the existing `onDocKeyDown`/`onDocKeyUp` keyboard handlers — `touchcontrols.js` has no timer logic of its own.
+
+On touch screens (`@media (pointer: coarse)` in `timer.css`) the keyboard hints (`#disp_next_mins`) and the "open timer display / help" line (`#link`) are hidden, and the elapsed/total/started/ends lines are positioned from the bottom, just above the strip.
 
 The `#touch-strip` is hidden via CSS on non-touch devices (`@media (pointer: coarse)` controls visibility). The `div.buttons` desktop bar is hidden on touch devices via the same media query.
 

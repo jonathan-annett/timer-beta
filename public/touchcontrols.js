@@ -35,6 +35,12 @@
     if (typeof onDocKeyUp   === 'function') onDocKeyUp(ev);
   }
 
+  // ±1 minute, applied at once (what Ctrl+↑/↓ do). Not a synthetic Ctrl+arrow: the timer only
+  // knows Ctrl is held from a real Control keydown, so that gave ±1 second.
+  function adjustMinute(add) {
+    if (typeof processTimerApiMessage === 'function') processTimerApiMessage({ cmd: 'adjust', addtime: add, msecs: 60000 });
+  }
+
   // ─── Touch strip buttons ──────────────────────────────────────────────────
 
   function initStrip() {
@@ -60,12 +66,18 @@
 
     document.getElementById('touch-plus-btn')?.addEventListener('pointerdown', e => {
       e.preventDefault();
-      pressKey('ArrowUp', true); // Ctrl+ArrowUp = +1 min
+      adjustMinute(true);
     });
 
     document.getElementById('touch-minus-btn')?.addEventListener('pointerdown', e => {
       e.preventDefault();
-      pressKey('ArrowDown', true); // Ctrl+ArrowDown = -1 min
+      adjustMinute(false);
+    });
+
+    // The guide (README overlay; installed by timer.html as window.timerHelp)
+    document.getElementById('touch-help-btn')?.addEventListener('click', e => {
+      e.preventDefault();
+      if (window.timerHelp) window.timerHelp.open('phones-and-tablets');
     });
 
     document.getElementById('touch-presets-btn')?.addEventListener('pointerdown', e => {
@@ -126,7 +138,7 @@
     });
   }
 
-  // ─── Swipe & long-press gesture layer on main clock ───────────────────────
+  // ─── Tap & long-press gestures on the main clock ──────────────────────────
 
   function initGestures() {
     const target = document.getElementById('clock_main');
@@ -135,7 +147,7 @@
     let touchStartX = 0, touchStartY = 0;
     let touchStartTime = 0;
     let longPressTimer = null;
-    const SWIPE_THRESHOLD  = 40;  // px
+    const TAP_SLOP         = 40;  // px a tap may move
     const LONG_PRESS_MS    = 600;
 
     target.addEventListener('touchstart', e => {
@@ -164,8 +176,9 @@
       const dt = Date.now() - touchStartTime;
       const absDx = Math.abs(dx), absDy = Math.abs(dy);
 
-      if (absDx < SWIPE_THRESHOLD && absDy < SWIPE_THRESHOLD && dt < 400) {
-        // Tap — only act if not a swipe or long press
+      // Taps only: swipes used to nudge the time, but they were easy to set off by accident
+      // and the strip's ±1 min buttons do the same job.
+      if (absDx < TAP_SLOP && absDy < TAP_SLOP && dt < 400) {
         // Double-tap detection
         if (target._lastTap && (Date.now() - target._lastTap) < 350) {
           target._lastTap = 0;
@@ -173,40 +186,12 @@
         } else {
           target._lastTap = Date.now();
         }
-        return;
       }
-
-      if (absDx > absDy && absDx > SWIPE_THRESHOLD) {
-        // Horizontal swipe
-        if (dx > 0) {
-          pressKey('ArrowUp', true);   // swipe right = +1 min
-        } else {
-          pressKey('ArrowDown', true); // swipe left  = -1 min
-        }
-      } else if (absDy > absDx && absDy > SWIPE_THRESHOLD) {
-        // Vertical swipe
-        if (dy < 0) {
-          // Swipe up = +15 sec (15× ArrowUp then Ctrl+Enter)
-          _nudge15(true);
-        } else {
-          // Swipe down = -15 sec
-          _nudge15(false);
-        }
-      }
-
-      if (navigator.vibrate) navigator.vibrate(20);
     }, { passive: true });
 
     target.addEventListener('touchmove', () => {
       if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
     }, { passive: true });
-  }
-
-  function _nudge15(add) {
-    // Replicate the button macro: 15× ArrowUp/Down then Ctrl+Enter
-    const key = add ? 'ArrowUp' : 'ArrowDown';
-    for (let i = 0; i < 15; i++) pressKey(key);
-    pressKey('Enter', true);
   }
 
   // ─── Quick-start overlay (first load on mobile, no saved state) ───────────

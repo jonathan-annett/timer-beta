@@ -236,14 +236,12 @@ Some venue and corporate networks only allow ports 80 and 443. On those, phones 
 
 ## Phones and tablets
 
-On a touch screen the controller shows a bottom bar (presets, start, pause, ±1 min), and the clock face responds to gestures:
+On a touch screen the controller shows a bottom bar: **Presets**, **Start**, **Pause**, **+1 min**, **−1 min** and **?** (this guide). The clock face also responds to two gestures:
 
 | Gesture | Action |
 |---|---|
 | Double-tap | Start / restart |
 | Long-press | Pause / resume |
-| Swipe right / left | +1 / −1 minute |
-| Swipe up / down | +15 / −15 seconds |
 
 The first time you open it on a phone, it asks how long your talk is.
 
