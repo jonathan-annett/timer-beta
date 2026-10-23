@@ -33,12 +33,12 @@ export function UpdatePresets(self: ModuleInstance): void {
 		{ feedbackId: 'paused' },
 		{ feedbackId: 'impending' },
 		{ feedbackId: 'expired' },
-	], '30')
+	], 'auto')
 	button('remain_msg', 'Countdown', 'Remaining time + message', '$(presentationtimer:remain)\\n$(presentationtimer:custommsg)', [{ actionId: 'pause', options: {} }], [
 		{ feedbackId: 'paused' },
 		{ feedbackId: 'impending' },
 		{ feedbackId: 'expired' },
-	], '14')
+	], 'auto')
 	button('elapsed', 'Countdown', 'Elapsed / ends at', 'elapsed\\n$(presentationtimer:elapsed)\\nends $(presentationtimer:endsAt)', [], [], '7')
 
 	// Controls
