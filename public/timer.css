@@ -886,12 +886,15 @@ html.over .mainDiv > .progressDiv > .progress{
 }
 */
 
+/* Button bar. Sizes are deliberately in px (unlike the countdown, which uses viewport
+   units), so browser zoom (Cmd/Ctrl + and -) resizes the buttons only. The bar grows to
+   fit when zoomed-in buttons wrap; runsheet.js publishes its bottom as --buttons-bottom. */
 div.buttons  {
   position : absolute;
   top:    0;
   left:   0;
-  height: 100px;
   right:  180px;
+  padding: 6px 8px;
   background-color:var(--color-main-background);
   opacity: 0.5;
   z-index: 9999;
@@ -909,22 +912,36 @@ div.buttons:hover  {
 
 div.buttons div.btn2, 
 div.buttons div.btn {
-   position:relative;
-   left :10px;
-   top:10px;
-   width:50px;
- 
+   min-width: 34px;
    background-color:  var(--color-button-background);
    border: none;
    color:  var(--color-button-font);
-   padding: 13px 24px;
+   padding: 7px 9px;
    text-align: center;
    text-decoration: none;
    display: inline-block;
-   font-size: 16px;
-   margin: 4px 2px;
+   font-size: 13px;
+   line-height: 1.2;
+   margin: 2px 1px;
+   white-space: nowrap;
    cursor: pointer;
 }
+
+div.buttons .btn-label {
+   font-size: 13px;
+   margin: 0 4px 0 10px;
+}
+div.buttons .btn-label:first-child { margin-left: 2px; }
+
+/* Flex instead of inline-block: no stray whitespace gaps, so the row fits narrower screens */
+html.showbuttons div.buttons {
+   display: flex;
+   flex-wrap: wrap;
+   align-items: center;
+   gap: 3px 2px;
+}
+div.buttons div.btn2,
+div.buttons div.btn { margin: 0; }
 
 #link,
 #link a {
@@ -934,10 +951,10 @@ div.buttons div.btn {
 
 div.buttons div.btn2 {
     
-   width:80px;
+   min-width: 48px;
+   padding: 7px 8px;
    background-color:  var(--color-button2-background);
    color: var(--color-button2-font);
-   padding: 13px 12px;
    
     
 }
@@ -1560,7 +1577,7 @@ html.adjusting_time #btncatchup {
 #runsheet_dash {
   display: none;
   position: absolute;
-  top: 118px;
+  top: calc(var(--buttons-bottom, 104px) + 12px);
   left: 12px;
   right: 50vw;
   font-size: 2.1vh;
@@ -1606,7 +1623,7 @@ html.runsheet:not(.reduced) #runsheet_dash { display: block; }
 /* In run sheet mode the controller's copy of the message moves to the top right,
    so long item names don't collide with the dashboard (presenter view unchanged). */
 html.runsheet:not(.reduced) #custom_message {
-  top: 118px;
+  top: calc(var(--buttons-bottom, 104px) + 12px);
   left: 50vw;
   right: 12px;
   width: auto;

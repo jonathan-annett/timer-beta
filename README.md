@@ -22,6 +22,18 @@ That's all you need for most events. Everything below is optional.
 
 ---
 
+## Button size (browser zoom)
+
+The browser's zoom changes only the size of the **buttons**. The countdown, messages, run sheet dashboard and run sheet editor size themselves to the window and stay the same.
+
+| | Mac | Windows / Linux |
+|---|---|---|
+| Bigger buttons | **Cmd +** | **Ctrl +** |
+| Smaller buttons | **Cmd −** | **Ctrl −** |
+| Back to normal | **Cmd 0** | **Ctrl 0** |
+
+At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. On a smaller screen, zoom out (e.g. to 90%) to keep them on one row. For a touchscreen or a far-away operator position, zoom in; the buttons wrap onto more rows and everything below moves down to make room. Chrome remembers the zoom for the site, so set it once.
+
 ## Keyboard reference
 
 ### Setting and starting

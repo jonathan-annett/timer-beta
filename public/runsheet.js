@@ -380,7 +380,21 @@
 
   window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive };
 
+  // The dashboard sits just below the button bar, whose height depends on zoom and
+  // window width (buttons wrap). Publish its bottom edge for the CSS.
+  function trackButtonBar() {
+    const bar = document.querySelector('div.buttons');
+    if (!bar || !window.ResizeObserver) return;
+    const update = () => {
+      const bottom = bar.offsetParent ? Math.ceil(bar.getBoundingClientRect().bottom) : 0;
+      document.documentElement.style.setProperty('--buttons-bottom', bottom + 'px');
+    };
+    new ResizeObserver(update).observe(bar);
+    update();
+  }
+
   function init() {
+    trackButtonBar();
     document.getElementById('btnrunsheet')?.addEventListener('click', openEditor);
     commit();
     // Heartbeat for the editor window, so it knows Next/Back will be handled. Written by
