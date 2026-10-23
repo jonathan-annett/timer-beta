@@ -88,7 +88,7 @@ On first load the timer checks the time against an internet time service, so two
 
 Load the show's running order and step through it with a presentation clicker, the Stream Deck, or the keyboard.
 
-1. Press **E** (or click **run sheet**) to open the editor. It opens in its own window, so you can drag it to another screen.
+1. Press **E** (or click **run sheet**) to open the editor. It opens in its own window, so you can drag it to another screen. Its **?** button (or **F1**) shows this guide.
 2. Paste your running order into **Add items** and click **Replace sheet**. Any of these work:
    - Rows copied from Excel or Google Sheets, with start times, names and/or durations in any order, with or without a header row.
    - A CSV file (**Open CSV…**).

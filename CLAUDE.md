@@ -43,6 +43,7 @@ timer_build/
     ├── runsheet.js         Run sheet controller: next/back/log, Page Up/Down, dashboard (timer window only)
     ├── runsheet.html       Run sheet editor window (opened with E)
     ├── runsheet-editor.js  Editor logic for runsheet.html
+    ├── markdown-lite.js    Tiny Markdown renderer (README help overlay in the editor; node-testable)
     ├── fsapi.js            Fullscreen API abstraction (cross-browser)
     ├── inettime.js         Internet time sync via worldtimeapi.org
     ├── timeroverlaypip.js  Picture-in-Picture overlay of countdown
@@ -269,6 +270,8 @@ Files: `runsheet-core.js` (pure logic, shared), `runsheet.js` (controller window
 **Ahead/behind:** for the current item, projected end = max(now, timer's end incl. pause time) compared with its planned end. Before the start it's a late start against the first planned time; after the finish it's the actual finish against the planned finish. Within ±30 s counts as on time.
 
 **Keys:** Page Down/Up are caught in the capture phase only in run sheet mode, so outside it they still reach `timer.js` (PowerPoint mode). The editor window handles them too, so a clicker focused on it still works. **E** opens the editor (not while typing).
+
+**Help overlay:** the editor's **?**/F1 shows the README, rendered by `markdown-lite.js`. It loads `README.md` next to the page if one is deployed, otherwise the copy on GitHub (raw.githubusercontent.com, which allows CORS), otherwise a link. Responses not starting with `#` are rejected, so a host's HTML 404 page isn't shown. Anchors use GitHub's heading slugs, so README links like `#quick-start` work in both places.
 
 **Editor sizing:** `runsheet.html` sizes everything in `rem` from `html { font-size: 1.27vw }` (width-based, so the table keeps its proportions), like the timer page's viewport units. Chrome zooms per site, and people zoom the timer window to size its buttons, so the editor must not use `px` (except 1px borders) or it would scale along with them.
 

@@ -428,6 +428,66 @@
     send(e.key === 'PageDown' ? 'next' : 'back');
   });
 
+  // ─── Help overlay (README) ────────────────────────────────────────────────
+  // Static deployments often only copy public/, so try a README.md next to this page
+  // first, then the copy on GitHub. Rendered with markdown-lite.js (no dependencies).
+
+  const REPO = 'https://github.com/jonathan-annett/timer-beta';
+  const README_SOURCES = ['README.md', 'https://raw.githubusercontent.com/jonathan-annett/timer-beta/main/README.md'];
+  let helpLoaded = null;      // Promise<boolean>
+
+  async function loadReadme() {
+    for (const url of README_SOURCES) {
+      try {
+        const r = await fetch(url, { cache: 'no-cache' });
+        if (!r.ok) continue;
+        const text = await r.text();
+        if (!/^\s*#/.test(text)) continue;            // e.g. a host's HTML 404 page
+        $('help-body').innerHTML = MarkdownLite.render(text, { linkBase: REPO + '/blob/main/' });
+        return true;
+      } catch (_) { /* offline or blocked: try the next source */ }
+    }
+    $('help-body').innerHTML = `<p class="help-status">Couldn't load the help here. Read it on GitHub: <a href="${REPO}#readme" target="_blank" rel="noopener">${REPO}</a></p>`;
+    return false;
+  }
+
+  function jumpTo(id) {
+    const el = id && document.getElementById(id);
+    if (!el || !$('help-body').contains(el)) return;
+    el.scrollIntoView({ block: 'start' });
+    el.classList.remove('help-flash'); void el.offsetWidth; el.classList.add('help-flash');
+  }
+
+  function openHelp(section) {
+    $('help').hidden = false;
+    $('help-gh').href = REPO + '#' + (section || 'readme');
+    if (!helpLoaded) {
+      $('help-body').innerHTML = '<p class="help-status">Loading help…</p>';
+      helpLoaded = loadReadme();
+    }
+    helpLoaded.then(() => jumpTo(section || 'run-sheet'));
+    $('help-close').focus();
+  }
+  const closeHelp = () => { $('help').hidden = true; };
+  const helpOpen = () => !$('help').hidden;
+
+  $('btn-help').addEventListener('click', () => openHelp('run-sheet'));
+  $('help-close').addEventListener('click', closeHelp);
+  $('help').addEventListener('click', e => {
+    if (e.target === $('help')) { closeHelp(); return; }            // click outside the panel
+    const a = e.target.closest('a[href^="#"]');
+    if (a) { e.preventDefault(); jumpTo(a.getAttribute('href').slice(1)); }   // links within the README
+  });
+  document.addEventListener('keydown', e => {
+    const t = e.target;
+    const typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+    if (e.key === 'Escape' && helpOpen()) { closeHelp(); return; }
+    if (e.key === 'F1' || (e.key === '?' && !typing && !e.ctrlKey && !e.metaKey)) {
+      e.preventDefault();
+      helpOpen() ? closeHelp() : openHelp('run-sheet');
+    }
+  });
+
   // ─── Boot ─────────────────────────────────────────────────────────────────
 
   renderAll();

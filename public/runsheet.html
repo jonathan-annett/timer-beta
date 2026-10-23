@@ -106,6 +106,33 @@
     #log-table td.item { white-space: normal; color: var(--text); }
     #log-table tr.finish td { color: var(--warn); }
     .log-empty { color: var(--faint); font-size: 0.857rem; padding: 0.286rem 0; }
+
+    /* Help overlay (README) */
+    #btn-help { width: 2.2rem; padding: 0.3rem 0; font-weight: bold; }
+    #help { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 20; display: flex; justify-content: center; }
+    #help[hidden] { display: none; }
+    .help-panel { width: min(62rem, 96vw); margin: 1.5rem 0; background: var(--panel); border: 1px solid var(--line2);
+      border-radius: 0.6rem; display: flex; flex-direction: column; min-height: 0; }
+    .help-bar { display: flex; align-items: center; gap: 1rem; padding: 0.7rem 1.1rem; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    .help-bar .help-links { display: flex; gap: 0.9rem; flex: 1; }
+    .help-bar a { color: var(--accent); text-decoration: none; font-size: 0.93rem; }
+    .help-bar a:hover { text-decoration: underline; }
+    #help-body { overflow: auto; padding: 0.5rem 1.8rem 2.5rem; line-height: 1.55; }
+    .md h1 { font-size: 1.7rem; margin: 1rem 0 0.4rem; } .md h2 { font-size: 1.35rem; margin: 1.8rem 0 0.5rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--line); }
+    .md h3 { font-size: 1.1rem; margin: 1.3rem 0 0.4rem; } .md p, .md ul, .md ol { margin: 0.5rem 0; }
+    .md li { margin: 0.2rem 0; } .md a { color: var(--accent); }
+    .md code { background: #1f1f1f; border: 1px solid var(--line2); border-radius: 0.25rem; padding: 0 0.3rem; font-size: 0.9em; }
+    .md pre { background: #101010; border: 1px solid var(--line2); border-radius: 0.4rem; padding: 0.8rem 1rem; overflow: auto; }
+    .md pre code { background: none; border: 0; padding: 0; }
+    .md table { border-collapse: collapse; margin: 0.6rem 0; width: auto; }
+    .md th, .md td { border: 1px solid var(--line2); padding: 0.35rem 0.7rem; text-align: left; vertical-align: top; position: static; background: none;
+      font-size: 0.93rem; text-transform: none; letter-spacing: 0; color: var(--text); }
+    .md th { background: #1a1a1a; font-weight: bold; }
+    .md blockquote { margin: 0.6rem 0; padding: 0.1rem 1rem; border-left: 0.25rem solid var(--warn); color: var(--dim); }
+    .md hr { border: 0; border-top: 1px solid var(--line); margin: 1.5rem 0; }
+    .md .help-flash { animation: helpflash 1.2s ease-out; }
+    @keyframes helpflash { from { background: #2a3a14; } to { background: transparent; } }
+    .help-status { color: var(--dim); padding: 2rem 0; }
   </style>
 </head>
 <body>
@@ -114,6 +141,7 @@
       <input id="title" placeholder="Show title" aria-label="Show title">
       <label class="mode" title="When on, Page Down / Next advances the run sheet"><input type="checkbox" id="active"> Run sheet mode</label>
       <span id="live"></span>
+      <button id="btn-help" title="Help (? or F1)" aria-label="Help">?</button>
       <div id="conn">The timer window isn't open. Open the timer in another tab or window; Next and Back won't do anything until it's running.</div>
     </header>
 
@@ -175,6 +203,23 @@
     </div>
   </div>
 
+  <div id="help" hidden>
+    <div class="help-panel" role="dialog" aria-label="Help">
+      <div class="help-bar">
+        <b>Help</b>
+        <span class="help-links">
+          <a href="#quick-start" data-jump>Quick start</a>
+          <a href="#run-sheet" data-jump>Run sheet</a>
+          <a href="#stream-deck" data-jump>Stream Deck</a>
+          <a href="#keyboard-reference" data-jump>Keys</a>
+        </span>
+        <a id="help-gh" target="_blank" rel="noopener">Open on GitHub ↗</a>
+        <button id="help-close" aria-label="Close help">✕</button>
+      </div>
+      <div id="help-body" class="md"></div>
+    </div>
+  </div>
+  <script src="markdown-lite.js"></script>
   <script src="runsheet-core.js"></script>
   <script src="runsheet-editor.js"></script>
 </body>
