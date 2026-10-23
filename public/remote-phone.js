@@ -138,6 +138,7 @@
 
   function onMessage(m) {
     if (m && m.t === 'deck') return onDeck(m);
+    if (m && m.t === 'share-link') return onShareLink(m);
     if (!m || m.t !== 'state' || typeof m.s !== 'object') return;
     if (m.full) for (const k of Object.keys(state)) delete state[k];
     Object.assign(state, m.s);
@@ -354,6 +355,7 @@
     deck:      { label: 'Stream Deck XL',    desc: 'The timer’s XL key layout' },
     countdown: { label: 'Countdown display', desc: 'Big countdown and message, no controls' },
     runsheet:  { label: 'Run sheet display', desc: 'Now, next and the schedule, no controls' },
+    admin:     { label: 'Admin: set up another computer', desc: 'Scan another computer’s QR code to make it a remote or display of this timer' },
   };
   const allowedViews = () => role === 'control' ? Object.keys(VIEWS) : ['countdown', 'runsheet'];
   const store = { get: k => { try { return localStorage.getItem(k); } catch (_) { return null; } },
@@ -371,8 +373,9 @@
   }
   let view = initialView();
 
-  function setView(v) {
+  function setView(v, fromUser) {
     if (!allowedViews().includes(v)) v = allowedViews()[0];
+    if (view === 'admin' && v !== 'admin') adminReset();
     view = v;
     store.set(viewKey(), v);
     const b = document.body;
@@ -382,6 +385,7 @@
     document.documentElement.style.fontSize = '';
     layout();
     if (peer && role === 'control') peer.send({ t: 'deck', on: v === 'deck' });
+    if (v === 'admin' && fromUser) startScan();      // picked from the menu: a tap, so the camera may start
   }
 
   function applyRole() {
@@ -396,7 +400,7 @@
       const btn = document.createElement('button');
       btn.className = k === view ? 'on' : '';
       btn.innerHTML = `${VIEWS[k].label}<small>${VIEWS[k].desc}</small>`;
-      btn.addEventListener('click', () => { $('viewmenu').hidden = true; setView(k); });
+      btn.addEventListener('click', () => { $('viewmenu').hidden = true; setView(k, true); });
       list.appendChild(btn);
     }
     installOption(list);
@@ -415,6 +419,7 @@
     else if (view === 'countdown') fitCountdown();
     else if (view === 'runsheet') layoutRunsheet();
   }
+  window.addEventListener('pagehide', () => stopScan());
   window.addEventListener('resize', layout);
 
   // ─── Countdown display ───────────────────────────────────────────────────
@@ -517,6 +522,182 @@
         more(list.after, 'more');
       }
       if (view === 'runsheet') scrollToCurrent();
+    }
+  }
+
+  // ─── Admin: set up another computer ──────────────────────────────────────
+  // 1. Scan the QR code another computer shows in its phone panel (its Control code, which lets
+  //    this phone send it commands). It must be a different timer from ours.
+  // 2. Choose what it should become. Ask OUR timer for that link (it only answers controllers).
+  // 3. Join the other computer's room with its key and hand it the link; it shows a notice and,
+  //    unless someone there cancels, opens remote.html with our timer's link.
+
+  let scanStream = null, scanTimer = null, detector = null, scanCanvas = null, lastRejected = '';
+  let target = null, pending = null;
+
+  function admStatus(text, kind) {
+    const el = $('admstatus');
+    el.textContent = text || '';
+    el.className = kind || '';
+  }
+  function loadScript(src) {
+    return new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = src; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+  }
+
+  async function startScan() {
+    stopScan();
+    target = null;
+    $('admchoose').hidden = true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return admStatus('This browser can’t use the camera here.', 'error');
+    admStatus('Starting the camera…');
+    try {
+      scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    } catch (err) {
+      return admStatus('Couldn’t use the camera (' + (err.name || err.message) + '). Allow camera access for this page, then tap Scan.', 'error');
+    }
+    const v = $('admvideo');
+    v.srcObject = scanStream;
+    $('admscan').hidden = false;
+    try { await v.play(); } catch (_) { /* autoplay muted video normally works */ }
+    if (!detector && 'BarcodeDetector' in window) {
+      try { if ((await BarcodeDetector.getSupportedFormats()).includes('qr_code')) detector = new BarcodeDetector({ formats: ['qr_code'] }); } catch (_) { /* use jsQR */ }
+    }
+    if (!detector && !window.jsQR) {
+      try { await loadScript('jsQR.js'); } catch (_) { stopScan(); return admStatus('Couldn’t load the QR reader.', 'error'); }
+    }
+    admStatus('Point the camera at the other computer’s phone QR code.');
+    scanLoop();
+  }
+
+  async function scanLoop() {
+    if (!scanStream) return;
+    const v = $('admvideo');
+    let text = null;
+    if (v.readyState >= 2 && v.videoWidth) {
+      try {
+        if (detector) {
+          const codes = await detector.detect(v);
+          if (codes.length) text = codes[0].rawValue;
+        } else {
+          const k = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
+          const w = Math.round(v.videoWidth * k), h2 = Math.round(v.videoHeight * k);
+          scanCanvas = scanCanvas || document.createElement('canvas');
+          scanCanvas.width = w; scanCanvas.height = h2;
+          const ctx = scanCanvas.getContext('2d', { willReadFrequently: true });
+          ctx.drawImage(v, 0, 0, w, h2);
+          const r = window.jsQR(ctx.getImageData(0, 0, w, h2).data, w, h2, { inversionAttempts: 'attemptBoth' });
+          if (r) text = r.data;
+        }
+      } catch (_) { /* try the next frame */ }
+    }
+    if (!scanStream) return;
+    if (text && onScanned(text)) return;
+    scanTimer = setTimeout(scanLoop, 180);
+  }
+
+  function stopScan() {
+    clearTimeout(scanTimer);
+    if (scanStream) scanStream.getTracks().forEach(t => t.stop());
+    scanStream = null;
+    $('admvideo').srcObject = null;
+    $('admscan').hidden = true;
+  }
+
+  function adminReset() {
+    stopScan();
+    if (pending && pending.ws) try { pending.ws.close(); } catch (_) { /* gone */ }
+    pending = null; target = null;
+    $('admchoose').hidden = true;
+    admStatus('');
+  }
+
+  // Is this another computer's Control code? Returns true when accepted (scanning stops).
+  function onScanned(text) {
+    const reject = msg => { if (text !== lastRejected) { lastRejected = text; admStatus(msg, 'error'); } return false; };
+    let u;
+    try { u = new URL(text); } catch (_) { return reject('That isn’t a timer phone code.'); }
+    if (!/remote\.html$/.test(u.pathname)) return reject('That isn’t a timer phone code.');
+    const f = parse(u.hash.slice(1));
+    const room = f.r || f.room, key = f.k || f.key;
+    if (!room) return reject('That isn’t a timer phone code.');
+    if (room === cfg.room) return reject('That’s this timer’s own code. Scan the code on the other computer.');
+    if (!key) return reject('That’s a view-only code. On the other computer choose Control in the phone panel, then scan again.');
+    target = { room, key, server: f.s || f.server || `wss://${u.hostname}:8443/` };
+    lastRejected = '';
+    stopScan();
+    if (navigator.vibrate) navigator.vibrate(30);
+    admStatus('Found another timer (' + room + '). What should that computer become?', 'ok');
+    $('admchoose').hidden = false;
+    return true;
+  }
+
+  document.querySelectorAll('#admchoose button').forEach(b => b.addEventListener('click', () => shareTo(b.dataset.mode)));
+  $('admscanbtn').addEventListener('click', () => { adminReset(); startScan(); });
+  $('admstop').addEventListener('click', () => { stopScan(); if (!target) admStatus(''); });
+
+  function shareTo(mode) {
+    if (!target) return;
+    if (!peer || !hostOnline) return admStatus('This phone isn’t connected to its timer right now.', 'error');
+    $('admchoose').hidden = true;
+    const req = Math.random().toString(36).slice(2, 12);
+    pending = { req, mode, target, timer: setTimeout(() => fail('This timer didn’t answer. Is it still connected?'), 8000) };
+    admStatus('Asking this timer for the link…');
+    peer.send({ t: 'share', mode, req });
+  }
+
+  function fail(msg) {
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    if (pending.ws) try { pending.ws.close(); } catch (_) { /* gone */ }
+    pending = null;
+    admStatus(msg, 'error');
+  }
+
+  // Our timer answered with the link: deliver it to the other computer
+  function onShareLink(m) {
+    if (!pending || m.req !== pending.req || typeof m.frag !== 'string') return;
+    clearTimeout(pending.timer);
+    const p = pending, t = p.target;
+    admStatus('Sending it to the other computer…');
+    p.timer = setTimeout(() => fail('The other computer didn’t answer. Is its timer page open with phone control on?'), 10000);
+    let ws2, peer2 = null;
+    try { ws2 = new WebSocket(t.server); } catch (_) { return fail('Bad server address in that code.'); }
+    p.ws = ws2;
+    ws2.onopen = () => ws2.send(JSON.stringify({ type: 'join', room: t.room, key: t.key }));
+    ws2.onmessage = ev => {
+      let x; try { x = JSON.parse(ev.data); } catch (_) { return; }
+      if (x.type === 'joined') {
+        if (x.role && x.role !== 'control') return fail('That code doesn’t allow control. Choose Control on the other computer.');
+        if (!x.hostOnline) return fail('The other computer’s timer isn’t connected right now.');
+        peer2 = RemotePeer.create({
+          initiator: false,
+          relay: msg => { if (ws2.readyState === WebSocket.OPEN) ws2.send(JSON.stringify({ type: 'up', msg })); },
+          onMessage: r => onAdoptReply(p, r),
+          onModeChange: () => {},
+        });
+        p.peer2 = peer2;
+        peer2.send({ t: 'adopt', req: p.req, mode: p.mode, frag: m.frag });
+      } else if (x.type === 'down' && peer2) {
+        peer2.receive(x.msg);
+      } else if (x.type === 'error') {
+        fail(x.reason === 'not-found' ? 'That code has expired or the other timer is closed. Scan its code again.' : 'The other computer refused: ' + x.reason);
+      }
+    };
+    ws2.onerror = () => fail('Couldn’t reach the other computer’s server.');
+  }
+
+  function onAdoptReply(p, r) {
+    if (!r || r.req !== p.req) return;
+    const what = p.mode === 'control' ? 'a remote control' : p.mode === 'runsheet' ? 'a run sheet display' : 'a countdown display';
+    if (r.t === 'adopt-ok') {
+      clearTimeout(p.timer);
+      admStatus('Done: the other computer is opening ' + what + ' of this timer (someone there has 8 seconds to cancel).', 'ok');
+      // Stay connected a little longer, to hear if it's cancelled
+      p.timer = setTimeout(() => { if (pending === p) { try { p.ws.close(); } catch (_) { /* gone */ } pending = null; } }, 12000);
+    } else if (r.t === 'adopt-cancelled') {
+      admStatus('Someone at the other computer cancelled.', 'error');
+    } else if (r.t === 'adopt-refused') {
+      fail('The other computer refused the link (is it the same timer?).');
     }
   }
 

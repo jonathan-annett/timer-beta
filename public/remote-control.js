@@ -78,6 +78,14 @@
     u.hash = new URLSearchParams(h).toString();
     return u.toString();
   }
+  // The same link for an admin phone to pass on to another computer: always names the server,
+  // since that computer may get its default from a different address.
+  function shareFragment(mode) {
+    const p = pairing();
+    const h = mode === 'control' ? { r: p.room, k: p.key } : { r: p.room, v: p.view, m: mode };
+    h.s = serverUrl();
+    return new URLSearchParams(h).toString();
+  }
 
   // ─── Connection to the pairing server ────────────────────────────────────
 
@@ -125,7 +133,7 @@
     removePeer(id);
     // 'view' only when the server says so; servers from before view-only keys send no role
     // (and reject view keys), so their phones joined with the control key.
-    const entry = { n: ++phoneCounter, role: role === 'view' ? 'view' : 'control', sent: {}, peer: null, deck: false, faces: [] };
+    const entry = { id, n: ++phoneCounter, role: role === 'view' ? 'view' : 'control', sent: {}, peer: null, deck: false, faces: [] };
     entry.peer = RemotePeer.create({
       initiator: true,
       relay: relayTo(id),
@@ -180,7 +188,63 @@
     } else if (m.t === 'cmd' && Object.prototype.hasOwnProperty.call(ALLOWED, m.cmd)) {
       const apiMsg = ALLOWED[m.cmd](m);
       if (apiMsg && typeof processTimerApiMessage === 'function') processTimerApiMessage(apiMsg);
+    } else if (m.t === 'share') {
+      // Admin phone (a controller of this timer) wants a link to hand to another computer.
+      // A controller could already show its own link, so this gives it nothing extra for
+      // Control; for the displays it gets the view-only link.
+      const mode = Object.prototype.hasOwnProperty.call(LINK_MODES, m.mode) ? m.mode : null;
+      if (!mode) return;
+      e.peer.send({ t: 'share-link', req: String(m.req || '').slice(0, 40), mode, frag: shareFragment(mode) });
+      const d = new Date();
+      shareNote = `Phone ${e.n} passed the ${mode === 'control' ? 'control' : LINK_MODES[mode].label.toLowerCase() + ' display'} link to another computer at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      renderPanel();
+    } else if (m.t === 'adopt') {
+      adopt(e, m);                             // this computer is the "other computer"
     }
+  }
+
+  // ─── Becoming a remote or display of another timer (admin phone) ──────────
+  // A controller of THIS timer (it scanned our Control code) passes on another timer's link.
+  // We check it's a well-formed link, say what's about to happen, and after a few seconds open
+  // it here, unless someone at this computer cancels.
+  let shareNote = '';
+  function adopt(e, m) {
+    const req = String(m.req || '').slice(0, 40);
+    const f = Object.fromEntries(new URLSearchParams(typeof m.frag === 'string' ? m.frag.slice(0, 600) : ''));
+    const okRoom = /^[A-Za-z0-9]{6,32}$/.test(f.r || '');
+    const okKey = k => typeof k === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(k);
+    const isControl = okKey(f.k) && !f.v, isView = okKey(f.v) && !f.k && (f.m === 'countdown' || f.m === 'runsheet');
+    const okServer = /^wss:\/\/[^\s#?]+$/i.test(f.s || '');
+    if (!okRoom || !okServer || !(isControl || isView) || f.r === pairing().room) {
+      e.peer.send({ t: 'adopt-refused', req });
+      return;
+    }
+    const h = isControl ? { r: f.r, k: f.k, s: f.s } : { r: f.r, v: f.v, m: f.m, s: f.s };
+    const url = new URL('remote.html', location.href);
+    url.search = '';
+    url.hash = new URLSearchParams(h).toString();
+    const what = isControl ? 'a remote control' : f.m === 'runsheet' ? 'a run sheet display' : 'a countdown display';
+    e.peer.send({ t: 'adopt-ok', req });
+    showAdoptNotice(what, url.toString(), () => { const p = peers.get(e.id); if (p) p.peer.send({ t: 'adopt-cancelled', req }); });
+  }
+
+  function showAdoptNotice(what, url, onCancel) {
+    injectStyles();
+    let el = document.getElementById('adopt-notice');
+    if (el) el.remove();
+    el = document.createElement('div');
+    el.id = 'adopt-notice';
+    el.innerHTML = `<div class="an-box">
+        <div class="an-title">This computer is being set up as ${what} for another timer</div>
+        <div class="an-text">Sent from a phone with control of this timer. Opening in <b class="an-n">8</b> s…</div>
+        <div class="an-row"><button class="an-open">Open now</button><button class="an-cancel">Cancel</button></div>
+      </div>`;
+    document.body.appendChild(el);
+    let n = 8;
+    const go = () => { clearInterval(t); location.href = url; };
+    const t = setInterval(() => { n -= 1; el.querySelector('.an-n').textContent = n; if (n <= 0) go(); }, 1000);
+    el.querySelector('.an-open').addEventListener('click', go);
+    el.querySelector('.an-cancel').addEventListener('click', () => { clearInterval(t); el.remove(); onCancel(); });
   }
 
   // ─── State for phones (from the timerAPI bus) ────────────────────────────
@@ -295,6 +359,13 @@
 #phone-panel .pp-modehint { font-size: 11px; color: #999; margin-bottom: 6px; }
 #phone-panel .pp-modehint b { color: #fff; }
 #phone-panel .pp-view { color: #9ab; }
+#adopt-notice { position: fixed; inset: 0; z-index: 2147483100; background: rgba(0,0,0,.85); display: flex;
+  align-items: center; justify-content: center; font: 18px/1.4 "Helvetica Neue", Arial, sans-serif; color: #ddd; }
+#adopt-notice .an-box { background: #111; border: 1px solid #2a6a9a; border-radius: 12px; padding: 24px 28px; max-width: 560px; }
+#adopt-notice .an-title { font-size: 22px; color: #fff; font-weight: bold; margin-bottom: 8px; }
+#adopt-notice .an-row { display: flex; gap: 10px; margin-top: 18px; }
+#adopt-notice button { flex: 1; padding: 10px; font-size: 16px; border-radius: 6px; border: 1px solid #444; background: #222; color: #eee; cursor: pointer; }
+#adopt-notice .an-open { background: #0b3d5c; border-color: #2a6a9a; }
 #phone-panel .pp-lan { color: #7fdc7f; } #phone-panel .pp-srv { color: #ffcc33; }
 #phone-panel .pp-hint { font-size: 11px; color: #666; margin-top: 4px; }
 #phone-panel .pp-adv { margin-top: 8px; font-size: 12px; color: #888; }
@@ -440,7 +511,8 @@
       [...peers.values()].map(e => `<div>${e.role === 'view' ? 'Display' : 'Phone'} ${e.n} · ` +
         (e.role === 'view' ? '<span class="pp-view">view only</span> · ' : '') +
         `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : '<b class="pp-srv">via server</b>'}</div>`).join('') +
-      (lanCount < peers.size ? '<div class="pp-hint">"via server": not on the same network (or the Wi-Fi isolates devices).</div>' : '');
+      (lanCount < peers.size ? '<div class="pp-hint">"via server": not on the same network (or the Wi-Fi isolates devices).</div>' : '') +
+      (shareNote ? `<div class="pp-hint">${shareNote}</div>` : '');
   }
 
   // ─── On / off ────────────────────────────────────────────────────────────

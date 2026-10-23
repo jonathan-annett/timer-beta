@@ -193,6 +193,27 @@
       .rsv-main { grid-column: 1; grid-row: 2; align-content: start; }
     }
 
+    /* ── Admin: pass this timer to another computer by scanning its QR code ── */
+    #adm { display: none; position: fixed; left: 0; right: 0; bottom: 0; top: var(--top-h, 48px); overflow-y: auto;
+      padding: 0 max(4vw, env(safe-area-inset-right)) max(4vw, env(safe-area-inset-bottom)) max(4vw, env(safe-area-inset-left));
+      font-size: 16px; }
+    body.v-admin #adm { display: block; }
+    #adm h2 { font-size: 1.25em; margin: 0.3em 0 0.4em; }
+    #adm p { color: #aaa; margin: 0 0 0.8em; line-height: 1.45; }
+    #admscan { position: relative; background: #111; border-radius: 0.8em; overflow: hidden; margin: 0.4em 0 0.8em;
+      aspect-ratio: 4 / 3; max-height: 55vh; width: 100%; }
+    #admscan[hidden] { display: none; }
+    #admvideo { width: 100%; height: 100%; object-fit: cover; display: block; }
+    #admscan .admframe { position: absolute; inset: 15%; border: 3px solid rgba(95, 211, 95, .8); border-radius: 0.6em; pointer-events: none; }
+    #admstatus { margin: 0.5em 0; padding: 0.6em 0.8em; border-radius: 0.6em; background: #161616; color: #ccc; }
+    #admstatus:empty { display: none; }
+    #admstatus.ok { background: #0d2e0d; color: #8dff8d; }
+    #admstatus.error { background: #3a0d0d; color: #ff9a9a; }
+    #admchoose[hidden] { display: none; }
+    #admchoose button { display: block; width: 100%; text-align: left; margin: 0.4em 0; padding: 0.8em 0.9em; }
+    #admchoose button small { display: block; color: var(--dim); font-size: 0.82em; margin-top: 0.15em; }
+    #adm .grid { margin-top: 0.6em; }
+
     /* View menu */
     #viewmenu .box button { display: block; width: 100%; margin: 0.35em 0; text-align: left; padding: 0.8em 0.9em; }
     #viewmenu .box button.on { background: #0b3d5c; border-color: #2a6a9a; }
@@ -200,10 +221,10 @@
 
     /* Message box for the deck's "Type message" key, and tips */
     .sheet { position: fixed; inset: 0; background: rgba(0,0,0,.75); display: flex; align-items: center;
-      justify-content: center; padding: 4vw; z-index: 10; font-size: 16px; }
+      justify-content: center; padding: max(3vmin, env(safe-area-inset-top)) 4vw max(3vmin, env(safe-area-inset-bottom)); z-index: 10; font-size: 16px; }
     .sheet[hidden] { display: none; }
     .sheet .box { background: var(--card); border: 1px solid var(--line); border-radius: 0.8em; padding: 0.8em;
-      width: min(100%, 30em); }
+      width: min(100%, 30em); max-height: 100%; overflow-y: auto; }   /* scrolls on a short (landscape) screen */
     .sheet .send { margin: 0.4em 0 0; }
     .sheet p { margin: 0.3em 0 0.8em; line-height: 1.45; }
   </style>
@@ -223,6 +244,22 @@
 
     <!-- Countdown display (view only) -->
     <div id="cd"><div id="cdclock"><span class="lbl">Current time</span><span id="cdclocktime"></span></div><div id="cdremain">–:––</div><div id="cdsub"></div><div id="cdmsg"></div><div id="cdbar"><div id="cdbarfill"></div></div></div>
+
+    <!-- Admin: pass this timer to another computer (scan that computer's Control QR code) -->
+    <div id="adm">
+      <h2>Set up another computer</h2>
+      <p>Make another computer a remote control or display of this timer. On that computer, open the timer, click
+        <b>phone</b>, choose <b>Control</b>, and scan its QR code here.</p>
+      <div id="admscan" hidden><video id="admvideo" playsinline muted autoplay></video><div class="admframe"></div></div>
+      <div id="admstatus"></div>
+      <div id="admchoose" hidden>
+        <h3>Make that computer…</h3>
+        <button data-mode="control">A remote control<small>It can control this timer, like this phone</small></button>
+        <button data-mode="countdown">A countdown display<small>View only: big countdown and messages</small></button>
+        <button data-mode="runsheet">A run sheet display<small>View only: now, next and the schedule, e.g. for a green room</small></button>
+      </div>
+      <div class="grid g2"><button id="admscanbtn">Scan a QR code</button><button id="admstop">Stop camera</button></div>
+    </div>
 
     <!-- Run sheet status display (view only), e.g. for a green room -->
     <div id="rsv">

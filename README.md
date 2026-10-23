@@ -171,6 +171,14 @@ The **run sheet display** shows the time of day, what's on now with its countdow
 
 **⛶ Full screen** hides the browser bars (Android and tablets). Safari on iPhone can't do that for web pages; instead use **Share → Add to Home Screen** and open the remote from its icon. The simple controls size themselves to fit the screen without scrolling, and switch to two columns on a phone held sideways, a tablet or an almost square folding phone.
 
+**Setting up another computer (Admin):** to make another computer, say a laptop in another room, a remote control or display of this timer without typing a link into it:
+
+1. On that computer, open the timer, click **phone** and choose **Control**.
+2. On a phone that controls this timer, choose **☰ View → Admin: set up another computer** and scan the other computer's QR code.
+3. Choose **A remote control**, **A countdown display** or **A run sheet display**.
+
+The phone gets the link from this timer and passes it to the other computer, which shows a notice for 8 seconds (anyone there can **Cancel**) and then opens it. It's then listed in this timer's phone panel, and it remembers the link. The phone needs the other computer's *Control* code because it is telling that computer what to do; a view-only code won't work. iPhones scan with the built-in QR reader where the browser has one, and otherwise with a small bundled reader (jsQR).
+
 **For a multi-day event:** the timer keeps the same codes until someone presses **New code**, and each phone remembers the last link it opened. Install the remote as an app (**☰ View → Install as an app** on Android and in desktop Chrome/Edge; on iPhone, **Share → Add to Home Screen**) and it opens straight into the remote, full screen, already paired. If the timer computer is shut down overnight, phones show *timer offline* and reconnect by themselves when it's opened again the next day. After **New code**, every phone needs the new QR code.
 
 In the simple controls, Restart and the presets need a second tap, so a stray touch can't restart a talk. Deck keys work on the first press, like a real deck. The phone screen stays on while the page is open. Up to 16 phones and displays can connect at once.

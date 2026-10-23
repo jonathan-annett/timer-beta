@@ -53,6 +53,7 @@ timer_build/
     ├── remote-peer.js      LAN-only WebRTC link with server fallback (shared by timer and phone)
     ├── remote.html         Phone control page (opened from the QR code)
     ├── remote-phone.js     Its logic
+    ├── jsQR.js             QR decoder for the phone's Admin scanner (third-party, Apache-2.0; jsQR-LICENSE.txt)
     ├── fsapi.js            Fullscreen API abstraction (cross-browser)
     ├── inettime.js         Internet time sync via worldtimeapi.org
     ├── timeroverlaypip.js  Picture-in-Picture overlay of countdown
@@ -311,6 +312,8 @@ Separate from the relay/`share` audience display. Pieces: `remote-server.js` (st
 
 **Virtual XL deck:** the phone's **▦ Deck** view sends `{t:'deck', on}`; the timer then also sends `{t:'deck', full, cols, rows, k:{index: face}}` with only the keys whose face changed (from `StreamDeck.faces('xl')`, worked out once per push; ~300 B/s via the server, mostly the two countdown keys). A press is `{t:'key', i}`: an integer 0–31, only while the deck view is on, run by `StreamDeck.press(i, 'xl')`, i.e. whatever the operator's XL layout has on that key. `toggle_presenter` (needs a click on the timer machine) and `custom_msg` (the phone opens its own box and sends `custommessage`) are never run from a phone (`PHONE_NO_PRESS`). Phone views: `simple`, `deck`, `countdown`, `runsheet` (body classes `v-*`); view-only devices get only the last two. The phone stores its view in `remote_view` (controller) or `remote_view_display`, and the first view of a new link comes from its `m`. It saves the last link's fragment in `remote_saved_link` and uses it when opened without one (bookmark, installed app). When the server says `not-found`/`room-closed` (timer closed for more than 2 minutes, or server restarted) the phone keeps retrying every 15 s rather than giving up, so displays survive overnight. `remote.webmanifest` (icons `remote-icon-*.png`, start URL `remote.html`, scope `remote.html`) makes it installable; it's added by script except on iOS, where Add to Home Screen would otherwise use the start URL and lose the link (iOS Home Screen apps don't share Safari's storage).
 
+**Admin (set up another computer):** a controller phone's `admin` view scans another computer's phone-panel QR code with the camera (`BarcodeDetector` where available, else the bundled `jsQR.js`, Apache-2.0, loaded on demand). It accepts only a different room with a control key (`k`). The user picks a mode; the phone sends its own timer `{t:'share', mode, req}`, and the timer (controllers only) answers `{t:'share-link', req, mode, frag}` built by `shareFragment()` (always includes `s`) and notes it in the panel. The phone then joins the other computer's room with the scanned key (a second WebSocket plus a `RemotePeer`) and sends `{t:'adopt', req, mode, frag}`. The other computer's `adopt()` (control peers only) validates every field (room, one key, mode, `wss://` server, not its own room), rebuilds the link itself, replies `adopt-ok` or `adopt-refused`, and shows `#adopt-notice`; after 8 s it navigates to `remote.html#…` unless cancelled (`adopt-cancelled` goes back to the phone).
+
 **Phone layout:** the simple view is sized entirely in `em`; `fitSimple()` in `remote-phone.js` sets html's font-size to the largest that fits the screen without scrolling (binary search; widths are checked per element because on a phone overflowing content widens the page itself, so `innerWidth` can't be trusted). It refits when the content changes shape, but not while an input has focus (keyboard up). At aspect ≥ 4:5 it's two columns (`.colA`/`.colB`). The deck view is `position: fixed`; `layoutDeck()` sizes square keys to fit and spreads the leftover space into the gaps (`--key`, `--col-gap`, `--row-gap`). Wider than 1.15:1 adds `body.side`: the top bar becomes a 52 px icon strip on the left (`.long`/`.short` labels). Full screen uses the Fullscreen API; where there's none (iPhone) the button shows Add to Home Screen instructions (the page has the apple-mobile-web-app meta tags).
 
 **Testing locally:** `node remote-server.js --cert cert.pem --key key.pem --origin https://…` with a self-signed cert, and the timer at `timer.html?remote=wss://localhost:8443/`. In headless Chromium, use `--no-proxy-server` and `ignore_https_errors`. Disabling `RTCPeerConnection` on the phone page forces the server fallback.
@@ -335,6 +338,7 @@ The `audience.html` page supports tap-to-fullscreen (calls `requestFullscreen()`
 
 ## Files You Can Safely Ignore
 
+- `jsQR.js` — vendored, minified QR decoder (jsQR 1.4.0). Do not modify.
 - `w3color.js` — colour parsing, used by `timerapi.js` for colour name conversion. Do not modify.
 - `FileSaver.js` — used by `dropPlayer.js` for saving files. Do not modify.
 - `currentdevice.js` — not loaded. Can be deleted if desired.
