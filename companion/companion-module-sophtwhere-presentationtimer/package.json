@@ -17,7 +17,7 @@
 		"directory": "companion/companion-module-sophtwhere-presentationtimer"
 	},
 	"engines": {
-		"node": "^22.20"
+		"node": ">=22.20"
 	},
 	"dependencies": {
 		"@companion-module/base": "~2.0.4",
