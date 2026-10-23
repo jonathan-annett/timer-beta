@@ -8,12 +8,13 @@
  * the web server). "New code" revokes every phone. The pairing survives reloads so phones
  * reconnect by themselves.
  *
- * Two kinds of link (chosen in the panel before scanning): Control, with the room key, and
- * View only (countdown or run sheet display), with a separate view key. The pairing server
- * tells us which key a phone used (role 'control' / 'view'); a view-only phone can only ask
- * for state, and anything else it sends is ignored here.
+ * Three kinds of link (chosen in the panel before scanning), each with its own key: Control
+ * (the room key), View only (countdown or run sheet display; view key) and Admin (admin key).
+ * The pairing server tells us which key a phone used (role 'control' / 'view' / 'admin'), and
+ * it's enforced here: a view-only phone can only ask for state; a controller can control the
+ * timer; only an admin can also ask for links to set up other computers ('share').
  *
- * localStorage: remote_server (wss URL), remote_pairing ({room,key,view}), remote_enabled ('1'),
+ * localStorage: remote_server (wss URL), remote_pairing ({room,key,view,admin}), remote_enabled ('1'),
  * remote_link_mode ('control' | 'countdown' | 'runsheet': which link the QR code shows).
  * MIT Licensed
  */
@@ -50,8 +51,9 @@
     if (renew || !p || !p.room || !p.key) {
       p = { room: randomString(8, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'), key: randomString(24, KEYCHARS) };
     }
-    if (!p.view) {                                   // view-only key (pairings from before it existed get one)
-      p.view = randomString(24, KEYCHARS);
+    if (!p.view || !p.admin) {                       // view-only and admin keys (older pairings get them)
+      p.view = p.view || randomString(24, KEYCHARS);
+      p.admin = p.admin || randomString(24, KEYCHARS);
       localStorage.setItem(PAIR_KEY, JSON.stringify(p));
     }
     return p;
@@ -63,7 +65,12 @@
     control:   { label: 'Control',   hint: 'Phones scanning this code can <b>control</b> the timer.' },
     countdown: { label: 'Countdown', hint: '<b>View only</b>: a countdown display. Can’t control the timer.' },
     runsheet:  { label: 'Run sheet', hint: '<b>View only</b>: run sheet status, e.g. for a green room. Can’t control the timer.' },
+    admin:     { label: 'Admin',     hint: '<b>Admin</b>: can control the timer, use every view, and set up other computers as remotes or displays. Keep this one to yourself.' },
   };
+  const SHARE_MODES = ['control', 'countdown', 'runsheet'];   // what an admin phone can set another computer up as
+  const MIN_PROTOCOL = { control: 1, countdown: 2, runsheet: 2, admin: 3 };   // pairing server needed for each link
+  const linkFields = (p, mode) => mode === 'control' ? { r: p.room, k: p.key }
+    : mode === 'admin' ? { r: p.room, a: p.admin } : { r: p.room, v: p.view, m: mode };
   const linkMode = () => { const m = localStorage.getItem(LINK_MODE_KEY); return LINK_MODES[m] ? m : 'control'; };
   const serverUrl = () => localStorage.getItem(SERVER_KEY) || defaultServer();
   function phoneLink(mode = linkMode()) {
@@ -73,7 +80,7 @@
     // Short names, and the server only when it isn't the default (the phone page works that
     // out from its own address): a shorter link makes a simpler, easier-to-scan QR code.
     // A view-only link carries only the view key, so it can never be turned into a controller.
-    const h = mode === 'control' ? { r: p.room, k: p.key } : { r: p.room, v: p.view, m: mode };
+    const h = linkFields(p, mode);
     if (serverUrl() !== defaultServer()) h.s = serverUrl();
     u.hash = new URLSearchParams(h).toString();
     return u.toString();
@@ -82,7 +89,7 @@
   // since that computer may get its default from a different address.
   function shareFragment(mode) {
     const p = pairing();
-    const h = mode === 'control' ? { r: p.room, k: p.key } : { r: p.room, v: p.view, m: mode };
+    const h = linkFields(p, mode);
     h.s = serverUrl();
     return new URLSearchParams(h).toString();
   }
@@ -98,7 +105,7 @@
     sock.onopen = () => {
       retryDelay = 1000;
       const p = pairing();
-      sock.send(JSON.stringify({ type: 'host', room: p.room, key: p.key, viewKey: p.view }));
+      sock.send(JSON.stringify({ type: 'host', room: p.room, key: p.key, viewKey: p.view, adminKey: p.admin }));
     };
     sock.onmessage = ev => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
@@ -137,7 +144,7 @@
     removePeer(id);
     // 'view' only when the server says so; servers from before view-only keys send no role
     // (and reject view keys), so their phones joined with the control key.
-    const entry = { id, n: ++phoneCounter, role: role === 'view' ? 'view' : 'control', sent: {}, peer: null, deck: false, faces: [] };
+    const entry = { id, n: ++phoneCounter, role: role === 'view' || role === 'admin' ? role : 'control', sent: {}, peer: null, deck: false, faces: [] };
     entry.peer = RemotePeer.create({
       initiator: true,
       relay: relayTo(id),
@@ -181,7 +188,7 @@
     if (m.t === 'hello') {
       e.sent = {}; e.faces = [];
       pushTo(e, true);
-    } else if (e.role !== 'control') {
+    } else if (e.role !== 'control' && e.role !== 'admin') {
       return;                                  // view-only display: nothing else is accepted
     } else if (m.t === 'deck') {               // phone switched its virtual Stream Deck XL on/off
       e.deck = !!m.on; e.faces = [];
@@ -193,12 +200,12 @@
       const apiMsg = ALLOWED[m.cmd](m);
       if (apiMsg && typeof processTimerApiMessage === 'function') processTimerApiMessage(apiMsg);
     } else if (m.t === 'share') {
-      // Admin phone (a controller of this timer) wants a link to hand to another computer.
-      // A controller could already show its own link, so this gives it nothing extra for
-      // Control; for the displays it gets the view-only link.
-      const mode = Object.prototype.hasOwnProperty.call(LINK_MODES, m.mode) ? m.mode : null;
+      // An admin phone wants a link to hand to another computer. Admins only: a controller can
+      // control the timer but not set up other devices.
+      if (e.role !== 'admin') { e.peer.send({ t: 'share-link', req: String(m.req || '').slice(0, 40), error: 'not-admin' }); return; }
+      const mode = SHARE_MODES.includes(m.mode) ? m.mode : null;
       if (!mode) return;
-      if (mode !== 'control' && serverProtocol < 2) {     // an old pairing server refuses view-only keys
+      if (serverProtocol < MIN_PROTOCOL[mode]) {         // an old pairing server refuses view-only keys
         e.peer.send({ t: 'share-link', req: String(m.req || '').slice(0, 40), mode, error: 'old-server' });
         return;
       }
@@ -319,7 +326,7 @@
       if (full || e.sent[k] !== v) { diff[k] = v; e.sent[k] = v; any = true; }
     }
     if (any || full) e.peer.send({ t: 'state', full: !!full, s: diff });
-    if (e.deck && e.role === 'control') pushDeck(e);
+    if (e.deck && e.role !== 'view') pushDeck(e);
   }
 
   // ─── Panel ───────────────────────────────────────────────────────────────
@@ -367,6 +374,8 @@
 #phone-panel .pp-modehint { font-size: 11px; color: #999; margin-bottom: 6px; }
 #phone-panel .pp-modehint b { color: #fff; }
 #phone-panel .pp-view { color: #9ab; }
+#phone-panel .pp-admin { color: #e0a0ff; }
+#phone-panel .pp-modes button.on[data-mode="admin"] { background: #4a2060; border-color: #8a4aaa; }
 #phone-panel .pp-warn { color: #ff9a6a; }
 #adopt-notice { position: fixed; inset: 0; z-index: 2147483100; background: rgba(0,0,0,.85); display: flex;
   align-items: center; justify-content: center; font: 18px/1.4 "Helvetica Neue", Arial, sans-serif; color: #ddd; }
@@ -404,7 +413,7 @@
       <div class="pp-head"><b>Phone control</b> <span class="pp-exp">experimental</span><button class="pp-close" aria-label="Close">✕</button></div>
       <div class="pp-status"></div>
       <div class="pp-modes" role="group" aria-label="What the QR code is for">
-        <button data-mode="control">Control</button><button data-mode="countdown">Countdown</button><button data-mode="runsheet">Run sheet</button>
+        <button data-mode="control">Control</button><button data-mode="countdown">Countdown</button><button data-mode="runsheet">Run sheet</button><button data-mode="admin">Admin</button>
       </div>
       <div class="pp-modehint"></div>
       <div class="pp-qr"></div>
@@ -468,8 +477,10 @@
     ov.title = 'Click to close';
     ov.appendChild(qrCanvas(qrFor, Math.min(window.innerWidth, window.innerHeight) * 0.8));
     const cap = document.createElement('div');
-    cap.textContent = (linkMode() === 'control' ? 'Scan with a phone to control the timer' :
-      'Scan for a view-only ' + (linkMode() === 'runsheet' ? 'run sheet' : 'countdown') + ' display') + ' · click to close';
+    const lm = linkMode();
+    cap.textContent = (lm === 'control' ? 'Scan with a phone to control the timer' :
+      lm === 'admin' ? 'Admin code: control, every view, and setting up other computers' :
+      'Scan for a view-only ' + (lm === 'runsheet' ? 'run sheet' : 'countdown') + ' display') + ' · click to close';
     ov.appendChild(cap);
     const close = () => { ov.remove(); window.removeEventListener('keydown', onKey, true); };
     const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
@@ -512,9 +523,9 @@
     el.querySelectorAll('.pp-modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
     el.querySelector('.pp-modes').style.display = enabled ? '' : 'none';
     // View-only links need pairing server protocol 2; an older server rejects their key
-    const oldServer = hosted && serverProtocol < 2;
-    el.querySelector('.pp-modehint').innerHTML = !enabled ? '' : (oldServer && mode !== 'control')
-      ? '<span class="pp-warn">The pairing server is out of date and will refuse view-only links. Update remote-server.js on the server and restart it.</span>'
+    const oldServer = hosted && serverProtocol < MIN_PROTOCOL[mode];
+    el.querySelector('.pp-modehint').innerHTML = !enabled ? '' : oldServer
+      ? `<span class="pp-warn">The pairing server is out of date and will refuse ${mode === 'admin' ? 'admin' : 'view-only'} links. Update remote-server.js on the server and restart it.</span>`
       : LINK_MODES[mode].hint;
     el.querySelector('.pp-link').textContent = enabled ? phoneLink() : '';
     if (enabled) drawQR(phoneLink());
@@ -522,7 +533,7 @@
     if (force || document.activeElement !== srv) srv.value = serverUrl();
     el.querySelector('.pp-peers').innerHTML = !peers.size ? (enabled ? '<i>No phones connected</i>' : '') :
       [...peers.values()].map(e => `<div>${e.role === 'view' ? 'Display' : 'Phone'} ${e.n} · ` +
-        (e.role === 'view' ? '<span class="pp-view">view only</span> · ' : '') +
+        (e.role === 'view' ? '<span class="pp-view">view only</span> · ' : e.role === 'admin' ? '<span class="pp-admin">admin</span> · ' : '') +
         `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : '<b class="pp-srv">via server</b>'}</div>`).join('') +
       (lanCount < peers.size ? '<div class="pp-hint">"via server": not on the same network (or the Wi-Fi isolates devices).</div>' : '') +
       (shareNote ? `<div class="pp-hint">${shareNote}</div>` : '');

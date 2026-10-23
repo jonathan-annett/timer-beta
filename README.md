@@ -156,16 +156,17 @@ Control the timer from a phone: start, pause, ±1 minute, catch up, presets, mes
    - **Control**: the phone can control the timer.
    - **Countdown**: a view-only countdown and message display. It follows the timer's **B** (progress bar), **T** (time of day) and **M** (messages: the *Paused* notice) switches, like the presenter screen.
    - **Run sheet**: a view-only display of now, next, ahead/behind and the schedule, e.g. for a green room or backstage.
+   - **Admin**: everything Control can do, every view, and setting up other computers (below). Keep this code for yourself: Control lets someone run the timer without being able to hand it to other devices.
 3. Scan it with the phone or tablet. The page opens and connects.
 
-View-only devices get a different key from controllers, and the timer itself ignores anything they send, so they can't control it even if someone fiddles with the page. The phone panel lists each device as *Phone* or *Display · view only*.
+Each kind of code has its own key, and the timer enforces what each can do, even if someone fiddles with the page: view-only devices can't send anything, and only admin phones can set up other computers. The phone panel lists each device as *Phone*, *Phone · admin* or *Display · view only*.
 
 The badge at the top of the phone shows how it's connected:
 
 - **⚡ LAN direct:** phone and timer are on the same network, so they talk to each other directly.
 - **via server:** they can't reach each other directly (different networks, mobile data, or venue Wi-Fi that keeps devices apart). Everything still works through the pairing server. It's small messages only, about 100 bytes a second.
 
-**☰ View** (top right) chooses what the screen shows. A controller can use **Simple controls**, **Stream Deck XL**, **Countdown display** or **Run sheet display**; a view-only device only the two displays. The **Stream Deck XL** view is a virtual Stream Deck: the same 32 keys as the timer's XL layout, drawn the same way, including countdown, message and run sheet keys. Pressing a key does exactly what that key does on a real deck. Change the layout in the timer's deck editor (**D**, model *XL*), and the phone follows, even with no real deck connected. Turn the phone sideways for bigger keys: the keys fill the screen and the buttons move into a narrow strip down the side. **Type message** opens a message box on the phone. **Remote** is dimmed, because opening a presenter window needs a click on the timer computer. The phone remembers which view you used last.
+**☰ View** (top right) chooses what the screen shows. A controller can use **Simple controls**, **Stream Deck XL**, **Countdown display** or **Run sheet display**; an admin phone also gets **Admin: set up another computer**; a view-only device only the two displays. The **Stream Deck XL** view is a virtual Stream Deck: the same 32 keys as the timer's XL layout, drawn the same way, including countdown, message and run sheet keys. Pressing a key does exactly what that key does on a real deck. Change the layout in the timer's deck editor (**D**, model *XL*), and the phone follows, even with no real deck connected. Turn the phone sideways for bigger keys: the keys fill the screen and the buttons move into a narrow strip down the side. **Type message** opens a message box on the phone. **Remote** is dimmed, because opening a presenter window needs a click on the timer computer. The phone remembers which view you used last.
 
 The **run sheet display** shows the time of day, what's on now with its countdown, what's next with its planned time, how far ahead or behind the show is, and the whole schedule with planned times. Items that have run are dimmed and show when they actually started. On a tablet held sideways the status is on the left and the schedule on the right.
 
@@ -174,7 +175,7 @@ The **run sheet display** shows the time of day, what's on now with its countdow
 **Setting up another computer (Admin):** to make another computer, say a laptop in another room, a remote control or display of this timer without typing a link into it:
 
 1. On that computer, open the timer, click **phone** and choose **Control**.
-2. On a phone that controls this timer, choose **☰ View → Admin: set up another computer** and scan the other computer's QR code.
+2. On a phone paired with this timer's **Admin** code, choose **☰ View → Admin: set up another computer** and scan the other computer's QR code.
 3. Choose **A remote control**, **A countdown display** or **A run sheet display**.
 
 The phone gets the link from this timer and passes it to the other computer, which shows a notice for 8 seconds (anyone there can **Cancel**) and then opens it. It's then listed in this timer's phone panel, and it remembers the link. The phone needs the other computer's *Control* code because it is telling that computer what to do; a view-only code won't work. iPhones scan with the built-in QR reader where the browser has one, and otherwise with a small bundled reader (jsQR).
@@ -187,7 +188,7 @@ The QR code contains a secret key: anyone with the link can control the timer. *
 
 ### Pairing server
 
-Phone control needs `remote-server.js` running on a server you control. View-only links need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 2* supports view-only links), and the timer's phone panel warns if the server is too old for them. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the phone panel.
+Phone control needs `remote-server.js` running on a server you control. View-only links need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 3* supports view-only and admin links), and the timer's phone panel warns if the server is too old for the code you've selected. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the phone panel.
 
 ```bash
 npm install

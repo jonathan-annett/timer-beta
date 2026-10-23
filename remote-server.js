@@ -6,8 +6,9 @@
  * Runs on its own port (default 8443) with your TLS certificate, so the timer can stay on
  * a static host. It only:
  *   - pairs a timer ("host") with phones using a room code + secret key (from the QR code),
- *     or a second, view-only key: phones joining with it are reported to the timer as
- *     role 'view', and the timer ignores every command from them,
+ *     or a second, view-only key, or a third, admin key. Which key a phone used decides its
+ *     role ('control', 'view' or 'admin'), which is reported to the timer; the timer enforces it
+ *     (view: no commands; admin: may also set up other computers),
  *   - forwards WebRTC signalling so phone and timer can try a direct LAN connection, and
  *   - relays the (small) control/state messages when a direct connection isn't possible.
  * It never looks inside the messages it forwards.
@@ -48,8 +49,8 @@ const INSECURE = flag('insecure');
 const ORIGINS = (arg('origin') || process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 
 // Bumped when the protocol gains features; sent to timers in 'hosted' so they can tell an
-// out-of-date server (1 = control only; 2 = adds view-only keys and roles).
-const PROTOCOL = 2;
+// out-of-date server (1 = control only; 2 = adds view-only keys and roles; 3 = adds admin keys).
+const PROTOCOL = 3;
 const MAX_MESSAGE_BYTES = 16 * 1024;     // signalling + state messages are tiny
 const MAX_MSGS_PER_SEC = 40;             // per socket; extra messages are dropped
 const MAX_PHONES_PER_ROOM = 16;          // controllers + view-only displays
@@ -64,8 +65,8 @@ if (!ORIGINS.length) console.warn('[remote] WARNING: no --origin given, so any w
 
 // ─── Rooms ────────────────────────────────────────────────────────────────────
 
-// room id -> { keyHash, viewHash, host: ws|null, phones: Map<id, {ws, role}>, hostGoneAt }
-// role: 'control' (joined with the room key) or 'view' (joined with the view-only key)
+// room id -> { keyHash, viewHash, adminHash, host: ws|null, phones: Map<id, {ws, role}>, hostGoneAt }
+// role: 'control' (joined with the room key), 'view' (view-only key) or 'admin' (admin key)
 const rooms = new Map();
 const hash = s => crypto.createHash('sha256').update(String(s)).digest('hex');
 const safeEqual = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -99,7 +100,7 @@ const server = INSECURE
 server.on('request', (req, res) => {
   // Plain HTTPS requests: a health check, and a page so you can accept a self-signed cert
   res.writeHead(200, { 'content-type': 'text/plain' });
-  res.end(`timer remote server ok, protocol ${PROTOCOL} (view-only links, admin share) (${rooms.size} rooms)\n`);
+  res.end(`timer remote server ok, protocol ${PROTOCOL} (view-only and admin links) (${rooms.size} rooms)\n`);
 });
 
 const wss = new WebSocketServer({
@@ -141,15 +142,16 @@ wss.on('connection', ws => {
       if (m.type === 'host') {
         let room = rooms.get(m.room);
         if (room && !safeEqual(room.keyHash, keyHash)) { send(ws, { type: 'error', reason: 'room-taken' }); return ws.close(); }
-        if (!room) { room = { keyHash, viewHash: null, host: null, phones: new Map(), hostGoneAt: null }; rooms.set(m.room, room); }
-        // The view-only key may change (the timer made a new one): displays using the old one are dropped
+        if (!room) { room = { keyHash, viewHash: null, adminHash: null, host: null, phones: new Map(), hostGoneAt: null }; rooms.set(m.room, room); }
+        // The view-only and admin keys may change (the timer made new ones): phones using an old one are dropped
         const viewHash = validKey(m.viewKey) ? hash(m.viewKey) : null;
-        if (room.viewHash && room.viewHash !== viewHash) {
-          for (const [id, p] of room.phones) {
-            if (p.role === 'view') { send(p.ws, { type: 'error', reason: 'room-closed' }); p.ws.close(); room.phones.delete(id); }
-          }
+        const adminHash = validKey(m.adminKey) ? hash(m.adminKey) : null;
+        const changed = { view: room.viewHash && room.viewHash !== viewHash, admin: room.adminHash && room.adminHash !== adminHash };
+        for (const [id, p] of room.phones) {
+          if (changed[p.role]) { send(p.ws, { type: 'error', reason: 'room-closed' }); p.ws.close(); room.phones.delete(id); }
         }
         room.viewHash = viewHash;
+        room.adminHash = adminHash;
         if (room.host && room.host !== ws) room.host.close();          // newest timer window wins
         room.host = ws; room.hostGoneAt = null;
         role = 'host'; roomId = m.room;
@@ -161,7 +163,9 @@ wss.on('connection', ws => {
       if (m.type === 'join') {
         const room = rooms.get(m.room);
         // Which key decides the role. The timer is told, and enforces it.
-        const phoneRole = !room ? null : safeEqual(room.keyHash, keyHash) ? 'control'
+        const phoneRole = !room ? null
+                        : room.adminHash && safeEqual(room.adminHash, keyHash) ? 'admin'
+                        : safeEqual(room.keyHash, keyHash) ? 'control'
                         : room.viewHash && safeEqual(room.viewHash, keyHash) ? 'view' : null;
         if (!phoneRole) { send(ws, { type: 'error', reason: 'not-found' }); return ws.close(); }
         if (room.phones.size >= MAX_PHONES_PER_ROOM) { send(ws, { type: 'error', reason: 'room-full' }); return ws.close(); }

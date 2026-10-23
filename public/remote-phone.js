@@ -25,15 +25,17 @@
   const parse = frag => Object.fromEntries(new URLSearchParams(frag));
   let h = parse(location.hash.slice(1));
   try {
-    if ((h.r || h.room) && (h.k || h.key || h.v)) localStorage.setItem(SAVED_LINK, location.hash.slice(1));
+    if ((h.r || h.room) && (h.a || h.k || h.key || h.v)) localStorage.setItem(SAVED_LINK, location.hash.slice(1));
     else if (localStorage.getItem(SAVED_LINK)) h = parse(localStorage.getItem(SAVED_LINK));
   } catch (_) { /* private mode: links still work, they just aren't remembered */ }
   const cfg = {
     server: h.s || h.server || `wss://${location.hostname}:8443/`,
     room: h.r || h.room,
-    key: h.k || h.key || h.v,
+    key: h.a || h.k || h.key || h.v,
   };
-  let role = (h.k || h.key) ? 'control' : 'view';   // confirmed by the server on join
+  // admin (#a=…): control + every view + set up other computers; control (#k=…); view (#v=…).
+  // The server confirms it on join, and the timer enforces it.
+  let role = h.a ? 'admin' : (h.k || h.key) ? 'control' : 'view';
   if (!cfg.room || !cfg.key) {
     $('blocked').hidden = false;
     $('blocked').textContent = 'Open this page by scanning the QR code in the timer’s “phone” panel.';
@@ -74,7 +76,7 @@
       onModeChange: showMode,
     });
     peer.send({ t: 'hello' });                  // goes through the server until the LAN link is up
-    if (view === 'deck' && role === 'control') peer.send({ t: 'deck', on: true });
+    if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true });
   }
 
   function connect() {
@@ -88,7 +90,7 @@
       switch (m.type) {
         case 'joined':
           hostOnline = m.hostOnline; waiting = false; retry = 1000;
-          if (m.role === 'view' && role !== 'view') { role = 'view'; applyRole(); }
+          if (m.role && m.role !== role && ['admin', 'control', 'view'].includes(m.role)) { role = m.role; applyRole(); }
           newPeer();
           break;
         case 'down': if (peer) peer.receive(m.msg); break;
@@ -359,10 +361,11 @@
     runsheet:  { label: 'Run sheet display', desc: 'Now, next and the schedule, no controls' },
     admin:     { label: 'Admin: set up another computer', desc: 'Scan another computer’s QR code to make it a remote or display of this timer' },
   };
-  const allowedViews = () => role === 'control' ? Object.keys(VIEWS) : ['countdown', 'runsheet'];
+  const allowedViews = () => role === 'admin' ? Object.keys(VIEWS)
+    : role === 'control' ? Object.keys(VIEWS).filter(v => v !== 'admin') : ['countdown', 'runsheet'];
   const store = { get: k => { try { return localStorage.getItem(k); } catch (_) { return null; } },
                   set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* private mode */ } } };
-  const viewKey = () => role === 'control' ? 'remote_view' : 'remote_view_display';
+  const viewKey = () => role !== 'view' ? 'remote_view' : 'remote_view_display';
 
   // First view: the one chosen in the timer's panel when this link is new (#m=…), otherwise the
   // one this phone used last.
@@ -386,12 +389,15 @@
     if (v !== 'deck') b.classList.remove('side');
     document.documentElement.style.fontSize = '';
     layout();
-    if (peer && role === 'control') peer.send({ t: 'deck', on: v === 'deck' });
+    if (peer && role !== 'view') peer.send({ t: 'deck', on: v === 'deck' });
     if (v === 'admin' && fromUser) startScan();      // picked from the menu: a tap, so the camera may start
   }
 
   function applyRole() {
-    $('roletag').hidden = role !== 'view';
+    $('roletag').hidden = role === 'control';
+    $('roletag').textContent = role === 'admin' ? 'ADMIN' : 'VIEW ONLY';
+    $('roletag').title = role === 'admin' ? 'This device can also set up other computers' : 'This device can’t control the timer';
+    $('roletag').classList.toggle('admin', role === 'admin');
     setView(view);
   }
 
@@ -620,10 +626,10 @@
     try { u = new URL(text); } catch (_) { return reject('That isn’t a timer phone code.'); }
     if (!/remote\.html$/.test(u.pathname)) return reject('That isn’t a timer phone code.');
     const f = parse(u.hash.slice(1));
-    const room = f.r || f.room, key = f.k || f.key;
+    const room = f.r || f.room, key = f.k || f.key || f.a;
     if (!room) return reject('That isn’t a timer phone code.');
     if (room === cfg.room) return reject('That’s this timer’s own code. Scan the code on the other computer.');
-    if (!key) return reject('That’s a view-only code. On the other computer choose Control in the phone panel, then scan again.');
+    if (!key) return reject('That’s a view-only code. On the other computer choose Control (or Admin) in the phone panel, then scan again.');
     target = { room, key, server: f.s || f.server || `wss://${u.hostname}:8443/` };
     lastRejected = '';
     stopScan();
@@ -658,6 +664,7 @@
   // Our timer answered with the link: deliver it to the other computer
   function onShareLink(m) {
     if (!pending || m.req !== pending.req) return;
+    if (m.error === 'not-admin') return fail('Only an admin phone can set up other computers. Scan the timer’s Admin code with this phone.');
     if (m.error === 'old-server') return fail('This timer’s pairing server is out of date, so view-only displays can’t connect. Update remote-server.js on the server, or choose A remote control.');
     if (typeof m.frag !== 'string') return;
     clearTimeout(pending.timer);
@@ -671,7 +678,7 @@
     ws2.onmessage = ev => {
       let x; try { x = JSON.parse(ev.data); } catch (_) { return; }
       if (x.type === 'joined') {
-        if (x.role && x.role !== 'control') return fail('That code doesn’t allow control. Choose Control on the other computer.');
+        if (x.role && x.role !== 'control' && x.role !== 'admin') return fail('That code doesn’t allow control. Choose Control on the other computer.');
         if (!x.hostOnline) return fail('The other computer’s timer isn’t connected right now.');
         peer2 = RemotePeer.create({
           initiator: false,
