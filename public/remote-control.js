@@ -106,7 +106,7 @@
 
   function addPeer(id) {
     removePeer(id);
-    const entry = { n: ++phoneCounter, sent: {}, peer: null };
+    const entry = { n: ++phoneCounter, sent: {}, peer: null, deck: false, faces: [] };
     entry.peer = RemotePeer.create({
       initiator: true,
       relay: relayTo(id),
@@ -146,9 +146,16 @@
   function onPhoneMessage(id, m) {
     const e = peers.get(id);
     if (!e || !m || typeof m !== 'object') return;
+    if (m.t === 'hello' || m.t === 'deck') deckFaces = null;   // outside a push: work them out afresh
     if (m.t === 'hello') {
-      e.sent = {};
+      e.sent = {}; e.faces = [];
       pushTo(e, true);
+    } else if (m.t === 'deck') {               // phone switched its virtual Stream Deck XL on/off
+      e.deck = !!m.on; e.faces = [];
+      pushTo(e, false);
+    } else if (m.t === 'key') {                // virtual deck key pressed: index only, never a command
+      const i = num(m.i, 0, 31);
+      if (e.deck && i !== null && i === Math.floor(i) && window.StreamDeck) window.StreamDeck.press(i, 'xl');
     } else if (m.t === 'cmd' && Object.prototype.hasOwnProperty.call(ALLOWED, m.cmd)) {
       const apiMsg = ALLOWED[m.cmd](m);
       if (apiMsg && typeof processTimerApiMessage === 'function') processTimerApiMessage(apiMsg);
@@ -179,17 +186,33 @@
           const val = MAP[k][1](v[k]);
           if (state[MAP[k][0]] !== val) { state[MAP[k][0]] = val; changed = true; }
         }
-        if (changed && peers.size) schedulePush();
+        if ((changed || deckPhones()) && peers.size) schedulePush();   // deck keys follow more variables
       },
     };
+    if (window.StreamDeck) window.StreamDeck.onChange(() => { if (deckPhones()) schedulePush(); });
   }
+  const deckPhones = () => [...peers.values()].some(e => e.deck);
 
   function schedulePush() {
     if (pushTimer) return;
     pushTimer = setTimeout(() => {          // coalesce bursts into one small message
       pushTimer = null;
+      deckFaces = null;
       for (const e of peers.values()) pushTo(e, false);
     }, 60);
+  }
+
+  // Virtual XL key faces (colours + text from streamdeck.js), worked out once per push.
+  // Only keys whose face changed are sent: usually just the two countdown keys each second.
+  let deckFaces = null;
+  function pushDeck(e) {
+    if (!window.StreamDeck) { if (!e.faces.none) { e.faces = { none: true }; e.peer.send({ t: 'deck', none: true }); } return; }
+    if (!deckFaces) deckFaces = window.StreamDeck.faces('xl').map(f => [f, JSON.stringify(f)]);
+    const k = {};
+    let any = false;
+    const full = !e.faces.length;
+    deckFaces.forEach(([f, json], i) => { if (e.faces[i] !== json) { k[i] = f; e.faces[i] = json; any = true; } });
+    if (any) e.peer.send({ t: 'deck', full, cols: 8, rows: 4, k });
   }
 
   // Sends only the fields that changed since the last message to this phone (low bandwidth)
@@ -200,6 +223,7 @@
       if (full || e.sent[k] !== v) { diff[k] = v; e.sent[k] = v; any = true; }
     }
     if (any || full) e.peer.send({ t: 'state', full: !!full, s: diff });
+    if (e.deck) pushDeck(e);
   }
 
   // ─── Panel ───────────────────────────────────────────────────────────────

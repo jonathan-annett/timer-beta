@@ -159,7 +159,9 @@ The badge at the top of the phone shows how it's connected:
 - **⚡ LAN direct:** phone and timer are on the same network, so they talk to each other directly.
 - **via server:** they can't reach each other directly (different networks, mobile data, or venue Wi-Fi that keeps devices apart). Everything still works through the pairing server. It's small messages only, about 100 bytes a second.
 
-Restart and the presets need a second tap, so a stray touch can't restart a talk. The phone screen stays on while the page is open. Several phones can connect at once.
+**▦ Deck** (top right on the phone) switches to a virtual **Stream Deck XL**: the same 32 keys as the timer's XL layout, drawn the same way, including countdown, message and run sheet keys. Pressing a key does exactly what that key does on a real deck. Change the layout in the timer's deck editor (**D**, model *XL*), and the phone follows, even with no real deck connected. Turn the phone sideways for bigger keys. **Type message** opens a message box on the phone. **Remote** is dimmed, because opening a presenter window needs a click on the timer computer. **☰ Simple** goes back to the normal controls; the phone remembers which you used last.
+
+In the simple controls, Restart and the presets need a second tap, so a stray touch can't restart a talk. Deck keys work on the first press, like a real deck. The phone screen stays on while the page is open. Several phones can connect at once.
 
 The QR code contains a secret key: anyone with the link can control the timer. **New code** disconnects every phone and makes a new link. **Turn off** stops phone control. The QR image needs internet access; otherwise use **Copy link**.
 

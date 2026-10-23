@@ -83,7 +83,7 @@
     countdown_minor:  { label: 'Sec / Min', group: 'Countdown', display: 'minor', cmd: null },
     // Preset message: text is stored per key (keyOverrides[...].message). Press shows it on the
     // presenter screen; press again (while it's showing) clears it.
-    message:          { label: 'Message',   group: 'Messages',  isMessage: true, cmd: i => toggleMessage(i) },
+    message:          { label: 'Message',   group: 'Messages',  isMessage: true, cmd: (i, m) => toggleMessage(i, m) },
     message_clear:    { label: 'Clear\nmessage', group: 'Messages', cmd: () => _sendCmd({ cmd: 'custommessage', text: '' }) },
     // Run sheet (see runsheet.js). Next shows the upcoming item's name; Schedule shows ahead/behind.
     rs_prev:          { label: '◀ Back',    group: 'Run sheet', rsKey: 'prev',   cmd: () => _sendCmd({ cmd: 'runsheetprev' }) },
@@ -280,6 +280,7 @@
     if (sel) sel.value = String(brightness);
     applyBrightness();
     scheduleRedrawAll();   // the Backlight key shows the current level
+    notifyChange();
   }
 
   // Next lower step, wrapping from the dimmest back to 100%.
@@ -388,7 +389,7 @@
     const actionKey = layout[index];
     if (!actionKey || actionKey === 'empty') return;
     const action = ACTIONS[actionKey];
-    if (action && action.cmd) action.cmd(index);
+    if (action && action.cmd) action.cmd(index, modelKey);
   }
 
   // ─── Key rendering ────────────────────────────────────────────────────────
@@ -434,10 +435,11 @@
 
   // ─── Message keys ─────────────────────────────────────────────────────────
 
-  const messageFor = i => ((keyOverrides[modelKey + ':' + i] || {}).message || '').trim();
+  // m: deck model ('xl' etc.); the connected deck's by default, 'xl' for the phone's virtual deck
+  const messageFor = (i, m = modelKey) => ((keyOverrides[m + ':' + i] || {}).message || '').trim();
 
-  function toggleMessage(index) {
-    const text = messageFor(index);
+  function toggleMessage(index, m = modelKey) {
+    const text = messageFor(index, m);
     if (!text) return;   // no text set for this key yet
     _sendCmd({ cmd: 'custommessage', text: currentMessage === text ? '' : text });
   }
@@ -449,26 +451,6 @@
   function scheduleMessageKeys() {
     const layout = layouts[modelKey] || [];
     layout.forEach((a, i) => { if (a === 'message' || a === 'message_clear') scheduleRedrawKey(i); });
-  }
-
-  // Word-wrap `text` into at most maxLines lines that fit maxWidth (ellipsis if it overflows).
-  function wrapLines(ctx, text, maxWidth, maxLines) {
-    const words = text.split(/\s+/).filter(Boolean), lines = [];
-    let line = '';
-    for (const w of words) {
-      const test = line ? line + ' ' + w : w;
-      if (ctx.measureText(test).width <= maxWidth || !line) { line = test; continue; }
-      lines.push(line); line = w;
-      if (lines.length === maxLines) break;
-    }
-    if (lines.length < maxLines && line) lines.push(line);
-    const used = lines.join(' ').split(/\s+/).length;
-    if (used < words.length || ctx.measureText(lines[lines.length - 1] || '').width > maxWidth) {
-      let last = lines[lines.length - 1] || '';
-      while (last.length > 1 && ctx.measureText(last + '…').width > maxWidth) last = last.slice(0, -1);
-      lines[lines.length - 1] = last + '…';
-    }
-    return lines;
   }
 
   // ─── Countdown keys ───────────────────────────────────────────────────────
@@ -502,17 +484,11 @@
     });
   }
 
-  // Largest bold font (up to maxPx) at which `text` fits within maxWidth.
-  function fitFont(ctx, text, maxWidth, maxPx) {
-    let px = maxPx;
-    do { ctx.font = `bold ${px}px "Helvetica Neue", Arial, sans-serif`; } while (ctx.measureText(text).width > maxWidth && --px > 8);
-    return px;
-  }
-
-  function renderKey(index, actionKey, size) {
+  // What a key looks like, as data (colours and text). DeckFace.paint (deck-face.js) draws it;
+  // the phone's virtual XL gets the same objects, so both look the same.
+  function faceFor(m, index, actionKey) {
     const action = ACTIONS[actionKey] || ACTIONS['empty'];
-    const overrideKey = modelKey + ':' + index;
-    const override = keyOverrides[overrideKey] || {};
+    const override = keyOverrides[m + ':' + index] || {};
 
     // Determine colours from state
     let bg = override.bg || '#1a1a2e';
@@ -524,7 +500,7 @@
     else if (deckState.impending && actionKey !== 'empty') { bg = '#2d1a00'; fg = '#ff9900'; }
     if (actionKey === 'pause_resume' && deckState.pausing) { bg = '#2d1a00'; fg = '#ff9900'; }
     if (action.isMessage) {
-      const text = messageFor(index);
+      const text = messageFor(index, m);
       if (text && currentMessage === text) { bg = override.bg || '#0b3d5c'; fg = override.fg || '#7fd4ff'; }
       else if (!text) { fg = '#555555'; }
     }
@@ -547,87 +523,39 @@
       else { bg = '#111111'; fg = '#cccccc'; }
     }
 
-    const canvas = document.createElement('canvas');
-    canvas.width = size; canvas.height = size;
-    const ctx = canvas.getContext('2d');
-
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, size, size);
-
+    const f = { bg, fg };
     if (action.display) {
-      if (!override.bg) { ctx.fillStyle = deckState.expired ? '#2d0000' : deckState.impending ? '#2d1a00' : '#000'; ctx.fillRect(0, 0, size, size); }
-      const text = countdownText(action.display);
-      countdownCache.set(index, text);
-      ctx.fillStyle = fg;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      fitFont(ctx, text, size * 0.86, Math.round(size * (action.display === 'full' ? 0.5 : 0.62)));
-      ctx.fillText(text, size / 2, size / 2 + 1);
+      if (!override.bg) f.base = deckState.expired ? '#2d0000' : deckState.impending ? '#2d1a00' : '#000';
+      f.big = { text: countdownText(action.display), scale: action.display === 'full' ? 0.5 : 0.62 };
     }
-
     if (action.isMessage) {
-      const text = override.label || messageFor(index) || 'Message\n(no text)';
-      const fontSize = size < 90 ? 12 : 14;
-      ctx.font = `bold ${fontSize}px "Helvetica Neue", Arial, sans-serif`;
-      ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      const lines = text.includes('\n') ? text.split('\n') : wrapLines(ctx, text, size * 0.9, 4);
-      const lineH = fontSize * 1.25, top = size / 2 - ((lines.length - 1) * lineH) / 2;
-      lines.forEach((l, i) => ctx.fillText(l, size / 2, top + i * lineH));
+      f.wrap = { text: override.label || messageFor(index, m) || 'Message\n(no text)', maxLines: 4 };
     }
-
     if (action.rsKey && rs.active) {
       // Small caption on top, content below
       const cap = action.rsKey === 'next' ? 'NEXT ▶' : action.rsKey === 'prev' ? '◀ BACK' : 'SCHEDULE';
       const body = action.rsKey === 'next' ? rs.next : action.rsKey === 'status' ? (rs.status || '—') : '';
-      ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      if (!body) {
-        fitFont(ctx, cap, size * 0.86, Math.round(size * 0.2));
-        ctx.fillText(cap, size / 2, size / 2);
-      } else {
-        ctx.font = `bold ${Math.round(size * 0.13)}px "Helvetica Neue", Arial, sans-serif`;
-        ctx.globalAlpha = 0.75; ctx.fillText(cap, size / 2, size * 0.16); ctx.globalAlpha = 1;
-        if (action.rsKey === 'status') {
-          fitFont(ctx, body, size * 0.86, Math.round(size * 0.3));
-          ctx.fillText(body, size / 2, size * 0.58);
-        } else {
-          const fontSize = size < 90 ? 12 : 14;
-          ctx.font = `bold ${fontSize}px "Helvetica Neue", Arial, sans-serif`;
-          const lines = wrapLines(ctx, body, size * 0.9, 3), lineH = fontSize * 1.2;
-          const top = size * 0.58 - ((lines.length - 1) * lineH) / 2;
-          lines.forEach((l, i) => ctx.fillText(l, size / 2, top + i * lineH));
-        }
-      }
+      f.rs = { cap, body, status: action.rsKey === 'status' };
     }
 
     const rawLabel = (action.display || action.isMessage || (action.rsKey && rs.active)) ? '' :
       actionKey === 'brightness_cycle' ? (override.label || 'Backlight') + '\n' + brightness + '%' :
       override.label ||
       (action.toggleState && deckState[action.toggleState] && action.altLabel ? action.altLabel : action.label) || '';
-
-    if (rawLabel) {
-      const lines = rawLabel.split('\n');
-      const fontSize = size < 90 ? 12 : 14;
-      ctx.fillStyle = fg;
-      ctx.font = `bold ${fontSize}px "Lucida", sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const lineH = fontSize * 1.4;
-      const startY = size / 2 - ((lines.length - 1) * lineH) / 2;
-      lines.forEach((line, i) => ctx.fillText(line, size / 2, startY + i * lineH));
-    }
+    if (rawLabel) f.label = rawLabel;
 
     // Thin state indicator bar at bottom
-    if (deckState.expired) {
-      ctx.fillStyle = '#ff2222';
-      ctx.fillRect(0, size - 4, size, 4);
-    } else if (deckState.impending) {
-      ctx.fillStyle = '#ff9900';
-      ctx.fillRect(0, size - 4, size, 4);
-    } else if (deckState.pausing) {
-      ctx.fillStyle = '#888888';
-      ctx.fillRect(0, size - 4, size, 4);
-    }
+    const bar = deckState.expired ? '#ff2222' : deckState.impending ? '#ff9900' : deckState.pausing ? '#888888' : '';
+    if (bar) f.bar = bar;
+    return f;
+  }
 
+  function renderKey(index, actionKey, size) {
+    const f = faceFor(modelKey, index, actionKey);
+    if (f.big) countdownCache.set(index, f.big.text);
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    DeckFace.paint(canvas.getContext('2d'), f, size);
     return canvas;
   }
 
@@ -884,6 +812,7 @@
     saveLayouts();
     closeEditor();
     if (device) scheduleRedrawAll();
+    notifyChange();
   }
 
   function resetToDefaults() {
@@ -1021,6 +950,38 @@
     });
     navigator.hid.addEventListener('disconnect', onHidDisconnect);
   }
+
+  // ─── Virtual deck (phone remote, see remote-control.js) ──────────────────
+  // A phone can show a deck model's layout (the XL's) and press its keys. Keys run the same
+  // actions as on a real deck, chosen by the operator's layout: a phone only sends an index.
+  // Not from a phone: 'Remote' opens a window here, which needs a click on this computer, and
+  // 'Type message' opens the on-screen box here (the phone shows its own box instead).
+  const PHONE_NO_PRESS = new Set(['toggle_presenter', 'custom_msg', 'empty']);
+  const changeListeners = [];
+  function notifyChange() { changeListeners.forEach(fn => { try { fn(); } catch (_) { /* ignore */ } }); }
+
+  window.StreamDeck = {
+    model: m => MODELS[m],
+    // Every key's face, with `a` (its action) and `press` (whether pressing does anything)
+    faces(m = 'xl') {
+      const model = MODELS[m], layout = layouts[m] || [];
+      if (!model) return [];
+      return Array.from({ length: model.keyCount }, (_, i) => {
+        const a = layout[i] || 'empty', act = ACTIONS[a] || ACTIONS.empty;
+        const f = faceFor(m, i, a);
+        f.a = a;
+        f.press = a === 'custom_msg' || (!!act.cmd && !PHONE_NO_PRESS.has(a));
+        return f;
+      });
+    },
+    press(index, m = 'xl') {
+      const a = (layouts[m] || [])[index], act = ACTIONS[a];
+      if (!act || !act.cmd || PHONE_NO_PRESS.has(a)) return false;
+      act.cmd(index, m);
+      return true;
+    },
+    onChange(fn) { changeListeners.push(fn); },
+  };
 
   // Run after DOM is ready
   if (document.readyState === 'loading') {

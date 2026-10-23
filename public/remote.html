@@ -66,14 +66,42 @@
       border-radius: 0.6em; padding: 0.6em; }
     h3 { font-size: 0.75em; letter-spacing: .1em; color: var(--dim); text-transform: uppercase; margin: 1em 0 0.3em; font-weight: normal; }
     #blocked { text-align: center; color: var(--dim); padding: 30vh 6vw 0; }
+
+    /* View switch, and the virtual Stream Deck XL (8 × 4 keys, drawn like the real deck's) */
+    #viewbtn { padding: 0.2em 0.7em; font-size: 0.95em; border-radius: 1em; }
+    #deck { display: none; }
+    body.deckview #simple { display: none; }
+    body.deckview #deck { display: block; }
+    body.deckview { overflow: hidden; }
+    body.deckview .top { margin-bottom: 1.5vmin; font-size: 14px; }   /* small bar: leave the room to the keys */
+    @media (min-width: 600px) and (min-height: 600px) { body.deckview .top { font-size: 18px; } }
+    #keys { display: grid; grid-template-columns: repeat(8, var(--key, 40px)); gap: calc(var(--key, 40px) * 0.14);
+      justify-content: center; }
+    #keys canvas { width: var(--key, 40px); height: var(--key, 40px); border-radius: 14%; display: block;
+      transition: transform .06s; touch-action: manipulation; }
+    #keys canvas.down { transform: scale(0.9); }
+    #keys canvas.idle { cursor: default; }
+    #keys canvas.off { opacity: .3; }   /* works on the real deck, not from a phone (Remote) */
+    #deckhint { text-align: center; color: var(--dim); font-size: 0.8em; margin-top: 1em; }
+    #deckhint:empty { display: none; }
+    #sheet { position: fixed; inset: 0; background: rgba(0,0,0,.75); display: flex; align-items: center;
+      justify-content: center; padding: 4vw; z-index: 10; }
+    #sheet[hidden] { display: none; }
+    #sheet .box { background: var(--card); border: 1px solid var(--line); border-radius: 0.8em; padding: 0.8em;
+      width: min(100%, 30em); }
+    #sheet .send { margin: 0.4em 0 0; }
     #blocked[hidden], #app[hidden] { display: none; }
   </style>
 </head>
 <body>
   <div id="blocked" hidden></div>
   <div id="app" hidden>
-    <div class="top"><span id="link-badge" class="off">connecting…</span><span id="note"></span></div>
+    <div class="top"><span id="link-badge" class="off">connecting…</span><span id="note"></span>
+      <button id="viewbtn" title="Switch between the simple controls and a virtual Stream Deck XL">▦ Deck</button></div>
 
+    <div id="deck"><div id="keys"></div><div id="deckhint"></div></div>
+
+    <div id="simple">
     <div id="remain">–:––</div>
     <div id="substate"></div>
 
@@ -104,8 +132,17 @@
 
     <h3>Message to the presenter</h3>
     <div class="send"><input id="msginput" maxlength="200" placeholder="e.g. Please wrap up" enterkeyhint="send"><button id="msgsend">Send</button></div>
+    </div>
   </div>
 
+  <!-- "Type message" key on the virtual deck -->
+  <div id="sheet" hidden><div class="box">
+    <h3 style="margin-top:0">Message to the presenter</h3>
+    <div class="send"><input id="sheetinput" maxlength="200" placeholder="e.g. Please wrap up" enterkeyhint="send"><button id="sheetsend">Send</button></div>
+    <div class="grid g2"><button id="sheetclear">Clear message</button><button id="sheetcancel">Cancel</button></div>
+  </div></div>
+
+  <script src="deck-face.js"></script>
   <script src="remote-peer.js"></script>
   <script src="remote-phone.js"></script>
 </body>

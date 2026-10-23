@@ -39,6 +39,7 @@ timer_build/
     ├── timer.css           All styles + state classes (large — ~1300 lines)
     ├── timerapi.js         Inbound command handler (processTimerApiMessage)
     ├── streamdeck.js       Stream Deck WebHID integration + in-app editor
+    ├── deck-face.js        Draws a deck key face onto a canvas (shared by streamdeck.js and the phone's virtual XL)
     ├── relay.js            WebSocket-first remote display client + WebRTC upgrade
     ├── touchcontrols.js    Mobile gestures, touch strip, quick-start overlay
     ├── runsheet-core.js    Run sheet logic: parsing, normalising, CSV (pure, no DOM; node-testable)
@@ -264,6 +265,8 @@ The in-app editor opens with the `D` key or the "deck" button. Layouts are store
 
 **Catch up and backlight keys:** `catch_up` is drawn dim unless `deckState.adjusting_up`/`adjusting_down` is set. `brightness_cycle` steps 100 → 50 → 25 → 10% and shows the level. Brightness is a feature report: gen2 `0x03 [0x08, pct]`, gen1 `0x05 [0x55, 0xaa, 0xd1, 0x01, pct]`. It is a device setting, so it is saved immediately rather than with the layout. The XL default layout puts both keys in the empty bottom-row slots.
 
+**Key faces:** `faceFor(model, index, actionKey)` describes a key as data (`bg`, `fg`, `big`, `wrap`, `rs`, `label`, `bar`); `DeckFace.paint()` in `deck-face.js` draws it, scaling text with the key size. `renderKey()` is just the two together. Keep look-changes in `faceFor`/`paint` so the phone's virtual deck stays identical. `window.StreamDeck` exposes `faces(model)`, `press(index, model)` and `onChange(fn)` (called after a layout save or backlight change) for it.
+
 On page load, `streamdeck.js` calls `navigator.hid.getDevices()` to auto-reconnect to any previously-granted device without another permission prompt.
 
 In the editor, **Disconnect** blanks the keys, closes the device and sets `localStorage.streamdeck_autoconnect = '0'`. That stops auto-attach on reload and replug until **Connect** is clicked, which clears the flag and re-opens the still-granted device without the picker. **Forget deck** disconnects, then calls `HIDDevice.forget()` to revoke the site's permission.
@@ -301,6 +304,8 @@ Separate from the relay/`share` audience display. Pieces: `remote-server.js` (st
 **Link (`remote-peer.js`):** a WebRTC data channel with **no STUN/TURN** (`iceServers: []`), so it can only connect when the phone can reach the timer's machine on the LAN; success is the same-LAN test. The timer is the initiator. Payloads are `{k:'sig', sdp|ice}` for signalling and `{k:'data', d}` for fallback data, both via the server. It gives up after 7 s or when the connection fails/closes, and `send()` then uses the server. It works with browsers' default mDNS-hidden host candidates.
 
 **Messages:** timer → phone `{t:'state', full, s:{remain, over, impending, paused, adjUp, adjDown, msg, def, rsOn, rsNow, rsNext, rsBack, rsStatus, rsLate}}`. These are diffs per phone, coalesced over 60 ms, and built from the `timerAPI` bus (`remote-control.js` chains `timerAPI` and calls `opened` when enabled to fill its state). Phone → timer: `{t:'hello'}` (requests a full state) and `{t:'cmd', cmd, …}`. **Commands go through the `ALLOWED` map in `remote-control.js` only** (restart, start, pause, undopause, adjust, catchup, custommessage ≤200 chars, runsheetnext/prev), with values range-checked. Never forward arbitrary API commands from phones: the API includes `redirect` and `keys`.
+
+**Virtual XL deck:** the phone's **▦ Deck** view sends `{t:'deck', on}`; the timer then also sends `{t:'deck', full, cols, rows, k:{index: face}}` with only the keys whose face changed (from `StreamDeck.faces('xl')`, worked out once per push; ~300 B/s via the server, mostly the two countdown keys). A press is `{t:'key', i}`: an integer 0–31, only while the deck view is on, run by `StreamDeck.press(i, 'xl')`, i.e. whatever the operator's XL layout has on that key. `toggle_presenter` (needs a click on the timer machine) and `custom_msg` (the phone opens its own box and sends `custommessage`) are never run from a phone (`PHONE_NO_PRESS`). The phone's view choice is `localStorage.remote_view` on the phone.
 
 **Testing locally:** `node remote-server.js --cert cert.pem --key key.pem --origin https://…` with a self-signed cert, and the timer at `timer.html?remote=wss://localhost:8443/`. In headless Chromium, use `--no-proxy-server` and `ignore_https_errors`. Disabling `RTCPeerConnection` on the phone page forces the server fallback.
 

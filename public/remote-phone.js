@@ -53,6 +53,7 @@
       onModeChange: showMode,
     });
     peer.send({ t: 'hello' });                  // goes through the server until the LAN link is up
+    if (view === 'deck') peer.send({ t: 'deck', on: true });
   }
 
   function connect() {
@@ -111,6 +112,7 @@
   // ─── State from the timer ────────────────────────────────────────────────
 
   function onMessage(m) {
+    if (m && m.t === 'deck') return onDeck(m);
     if (!m || m.t !== 'state' || typeof m.s !== 'object') return;
     if (m.full) for (const k of Object.keys(state)) delete state[k];
     Object.assign(state, m.s);
@@ -188,6 +190,105 @@
     confirmTap(b, () => cmd('start', { msecs: min * 60000 }));
     $('presets').appendChild(b);
   }
+
+  // ─── Virtual Stream Deck XL ──────────────────────────────────────────────
+  // The timer sends each key's face (colours and text, from its XL layout) and only the keys
+  // that change; we draw them with the same code as the real deck (deck-face.js). A press
+  // sends just the key's number; the timer runs that key's action.
+
+  const VIEW_KEY = 'remote_view';
+  let view = 'simple';
+  try { view = localStorage.getItem(VIEW_KEY) === 'deck' ? 'deck' : 'simple'; } catch (_) { /* private mode */ }
+  const faces = [];
+  const canvases = [];
+  const SHOW_ONLY = new Set(['countdown', 'countdown_major', 'countdown_minor', 'rs_status', 'empty']);   // display keys
+  let keyCss = 40;
+
+  function setView(v) {
+    view = v;
+    try { localStorage.setItem(VIEW_KEY, v); } catch (_) { /* ignore */ }
+    document.body.classList.toggle('deckview', v === 'deck');
+    $('viewbtn').textContent = v === 'deck' ? '☰ Simple' : '▦ Deck';
+    if (v === 'deck') layoutDeck();
+    if (peer) peer.send({ t: 'deck', on: v === 'deck' });
+  }
+  $('viewbtn').addEventListener('click', () => setView(view === 'deck' ? 'simple' : 'deck'));
+
+  function buildKeys() {
+    const box = $('keys');
+    for (let i = 0; i < 32; i++) {
+      const c = document.createElement('canvas');
+      c.className = 'idle';
+      c.addEventListener('pointerdown', e => { e.preventDefault(); pressKey(i, c); });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => c.addEventListener(t, () => c.classList.remove('down')));
+      c.addEventListener('contextmenu', e => e.preventDefault());   // no long-press menu
+      box.appendChild(c);
+      canvases.push(c);
+    }
+  }
+
+  // Biggest square keys that fit the screen (8 across, 4 down, gaps 14% of a key)
+  function layoutDeck() {
+    if (view !== 'deck') return;
+    const top = document.querySelector('.top').getBoundingClientRect().bottom;
+    const padX = window.innerWidth * 0.06, padY = window.innerWidth * 0.04 + 12;   // body padding
+    const w = (window.innerWidth - padX) / (8 + 7 * 0.14);
+    const h = (window.innerHeight - top - padY) / (4 + 3 * 0.14);
+    keyCss = Math.max(24, Math.floor(Math.min(w, h)));
+    document.documentElement.style.setProperty('--key', keyCss + 'px');
+    $('deckhint').textContent = window.innerHeight > window.innerWidth ? 'Turn your phone sideways for bigger keys' : '';
+    canvases.forEach((_, i) => drawKey(i));
+  }
+  window.addEventListener('resize', layoutDeck);
+
+  function drawKey(i) {
+    const c = canvases[i], f = faces[i];
+    if (!c) return;
+    const px = Math.round(keyCss * (window.devicePixelRatio || 1));
+    if (c.width !== px) { c.width = c.height = px; }
+    const ctx = c.getContext('2d');
+    if (!f) { ctx.fillStyle = '#0d0d0d'; ctx.fillRect(0, 0, px, px); return; }
+    DeckFace.paint(ctx, f, px);
+    c.className = f.press ? '' : SHOW_ONLY.has(f.a) ? 'idle' : 'idle off';
+  }
+
+  function onDeck(m) {
+    if (m.none) { $('deckhint').textContent = 'The timer has no Stream Deck support loaded.'; return; }
+    if (!m.k || typeof m.k !== 'object') return;
+    for (const [i, f] of Object.entries(m.k)) {
+      const n = Number(i);
+      if (n >= 0 && n < 32 && f && typeof f === 'object') { faces[n] = f; if (view === 'deck') drawKey(n); }
+    }
+  }
+
+  function pressKey(i, c) {
+    const f = faces[i];
+    if (!f || !f.press) return;
+    c.classList.add('down');
+    if (navigator.vibrate) navigator.vibrate(12);
+    if (f.a === 'custom_msg') return openSheet();
+    if (peer) peer.send({ t: 'key', i });
+  }
+
+  // "Type message" key: a message box on the phone (the deck key opens one on the timer)
+  function openSheet() {
+    $('sheet').hidden = false;
+    $('sheetinput').value = '';
+    setTimeout(() => $('sheetinput').focus(), 50);
+  }
+  const closeSheet = () => { $('sheet').hidden = true; $('sheetinput').blur(); };
+  const sheetSend = () => {
+    const t = $('sheetinput').value.trim();
+    if (t) cmd('custommessage', { text: t });
+    closeSheet();
+  };
+  $('sheetsend').addEventListener('click', sheetSend);
+  $('sheetinput').addEventListener('keydown', e => { if (e.key === 'Enter') sheetSend(); });
+  $('sheetclear').addEventListener('click', () => { cmd('custommessage', { text: '' }); closeSheet(); });
+  $('sheetcancel').addEventListener('click', closeSheet);
+
+  buildKeys();
+  setView(view);
 
   // ─── Boot ────────────────────────────────────────────────────────────────
 
