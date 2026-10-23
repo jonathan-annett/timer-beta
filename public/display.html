@@ -1,0 +1,71 @@
+<html class="reduced">
+<!--
+ * display.html
+ * The presenter screen of a timer on ANOTHER computer, for a desktop opened as a view-only
+ * countdown display (remote.html shows it full window). It uses the presenter markup and
+ * timer.css, and the main timer's own state classes, countdown text, message and bar, so it
+ * looks exactly like that timer's presenter window. remote.html feeds it with postMessage;
+ * it never reads or writes this computer's own timer state (localStorage).
+ *
+ * No <!DOCTYPE>, on purpose: timer.html has none, so the presenter renders in quirks mode,
+ * and this must render the same way.
+ * MIT Licensed
+-->
+  <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Presentation Timer - Remote Screen</title>
+      <link rel="stylesheet" href="timer.css">
+  </head>
+  <body>
+      <div id="clock_main">
+          <div id="remain_info_message"></div>
+          <div id="custom_message"></div>
+          <div id="remain_disp"></div>
+          <div id="now_disp"></div>
+      </div>
+       <div class="mainDiv">
+          <div class="progressDiv">
+             <div class="progress">
+             </div>
+           </div>
+       </div>
+       <div id="drag_to_monitor">Drag window to appropriate monitor and press F to make it Fullscreen</div>
+      <script>
+      (function () {
+        'use strict';
+        var html = document.documentElement;
+        var $ = function (id) { return document.getElementById(id); };
+        var progress = document.querySelector('.progress');
+        var p2 = function (n) { return String(n).padStart(2, '0'); };
+        // Same format as the presenter's time of day (local24HourTime)
+        function clock() { var d = new Date(); $('now_disp').textContent = p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()); }
+        clock();
+        setInterval(clock, 1000);
+
+        window.addEventListener('message', function (e) {
+          if (e.origin !== location.origin || e.source !== window.parent) return;
+          var s = e.data;
+          if (!s || typeof s !== 'object' || s.t !== 'display') return;
+          // The main timer's own class list, plus 'reduced' (what its presenter window does)
+          if (typeof s.cls === 'string') {
+            var cls = s.cls.replace(/[^\w\- ]/g, '').trim();
+            if (html.className !== cls + ' reduced') html.className = cls + ' reduced';
+          }
+          if (typeof s.remain === 'string' && $('remain_disp').textContent !== s.remain) $('remain_disp').textContent = s.remain;
+          var msg = typeof s.msg === 'string' ? s.msg : '';
+          if ($('custom_message').textContent !== msg) $('custom_message').textContent = msg;
+          // Full screen is on the page around this one; the presenter hides its hint then
+          document.body.classList.toggle('fullscreen', !!s.full);
+          var pct = Math.max(0, Math.min(100, Number(s.pct) || 0));
+          progress.style.width = pct + '%';
+        });
+        // F toggles full screen, as in the presenter window (the page around this one does it)
+        document.addEventListener('keydown', function (e) {
+          if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) window.parent.postMessage({ t: 'display-key', key: 'f' }, location.origin);
+        });
+        window.parent.postMessage({ t: 'display-ready' }, location.origin);
+      })();
+      </script>
+  </body>
+</html>

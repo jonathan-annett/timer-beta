@@ -274,6 +274,7 @@
     rs_title: ['rsTitle', String], rs_text: ['rsText', String], rs_list: ['rsList', String],
     // The timer's B / T / M switches and the progress bar, for the phone's countdown display
     showbar: ['bar', truthy], showtimenow: ['clock', truthy], showmessages: ['msgs', truthy], barpct: ['pct', Number],
+    htmlclass: ['cls', String],          // the timer's class list, for desktop displays (display.html)
   };
 
   function installBus() {

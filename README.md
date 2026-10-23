@@ -154,7 +154,7 @@ Control the timer from a phone: start, pause, ±1 minute, catch up, presets, mes
 1. Click **phone** in the timer's button bar. A panel shows a QR code.
 2. Choose what the code is for:
    - **Control**: the phone can control the timer.
-   - **Countdown**: a view-only countdown and message display. It follows the timer's **B** (progress bar), **T** (time of day) and **M** (messages: the *Paused* notice) switches, like the presenter screen.
+   - **Countdown**: a view-only countdown and message display. On a computer (a confidence monitor, a screen in another room) it looks exactly like the timer's presenter screen, and **F** toggles full screen; move the mouse to see its controls. On a phone or tablet it uses a touch-friendly layout that follows the timer's **B** (progress bar), **T** (time of day) and **M** (messages: the *Paused* notice) switches.
    - **Run sheet**: a view-only display of now, next, ahead/behind and the schedule, e.g. for a green room or backstage.
    - **Admin**: everything Control can do, every view, and setting up other computers (below). Keep this code for yourself: Control lets someone run the timer without being able to hand it to other devices.
 3. Scan it with the phone or tablet. The page opens and connects.

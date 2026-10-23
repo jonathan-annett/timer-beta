@@ -549,6 +549,7 @@ custom_message.addEventListener('focus', function(){
 				  }
 		 }
 		 localStorage.setItem("remainDispClass",html.className);
+		 announceHtmlClass();
 		 
 	  } else {
 		  keyDisp.textContent = tabCount+" tabs open";
@@ -1967,6 +1968,17 @@ add milliseconds to the start time
 	   }
    }
 
+
+	// The presenter window copies this page's class list (remainDispClass); remote desktop
+	// displays (display.html) get the same list over the bus, only when it changes.
+	var lastClassSent = null;
+	function announceHtmlClass(force) {
+		if (!timerAPI) return;
+		if (force || html.className !== lastClassSent) {
+			lastClassSent = html.className;
+			timerAPI.send({ setVariableValues: { htmlclass: lastClassSent } });
+		}
+	}
 
 	var lastBarSent = null;   // var: setBarPct runs during startup
 	function setBarPct(pct) {

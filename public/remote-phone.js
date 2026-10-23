@@ -388,6 +388,7 @@
     b.classList.toggle('deckview', v === 'deck');
     if (v !== 'deck') b.classList.remove('side');
     document.documentElement.style.fontSize = '';
+    updatePresenterMode();
     layout();
     if (peer && role !== 'view') peer.send({ t: 'deck', on: v === 'deck' });
     if (v === 'admin' && fromUser) startScan();      // picked from the menu: a tap, so the camera may start
@@ -453,6 +454,52 @@
     if (msg) fitText($('cdmsg'), W, H - $('cdremain').offsetHeight - 16, 400);
   }
 
+  // ─── Countdown display on a desktop ──────────────────────────────────────
+  // A computer with a mouse (a confidence monitor, a screen in another room) shows exactly what
+  // the main timer's presenter window shows: display.html uses the presenter markup and
+  // timer.css, fed with the timer's own class list, countdown text, message and bar.
+  // Phones and tablets keep the touch layout above.
+  const desktop = matchMedia('(hover: hover) and (pointer: fine)').matches;
+  let frameReady = false;
+  function presenterMode() { return desktop && view === 'countdown'; }
+  function updatePresenterMode() {
+    const on = presenterMode();
+    document.body.classList.toggle('cd-presenter', on);
+    const f = $('cdframe');
+    if (on && !f.getAttribute('src')) { frameReady = false; f.src = 'display.html'; }
+    if (on) postDisplay();
+  }
+  function postDisplay() {
+    if (!presenterMode() || !frameReady) return;
+    $('cdframe').contentWindow.postMessage({
+      t: 'display', cls: state.cls || '', remain: state.remain || '', msg: state.msg || '',
+      pct: state.pct || 0, full: isFull(),
+    }, location.origin);
+  }
+  window.addEventListener('message', e => {
+    if (e.origin !== location.origin || e.source !== $('cdframe').contentWindow || !e.data) return;
+    if (e.data.t === 'display-ready') { frameReady = true; postDisplay(); }
+    if (e.data.t === 'display-key' && e.data.key === 'f' && presenterMode()) toggleFullscreen();
+  });
+  // F toggles full screen on a desktop countdown display, like the presenter window
+  document.addEventListener('keydown', e => {
+    if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && presenterMode() &&
+        !/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) toggleFullscreen();
+  });
+  // Show the controls while the mouse moves, then hide them (and the cursor) again
+  let mouseTimer = null;
+  const wake = () => {
+    document.body.classList.add('mouse');
+    clearTimeout(mouseTimer);
+    mouseTimer = setTimeout(() => { if ($('viewmenu').hidden) document.body.classList.remove('mouse'); }, 2500);
+  };
+  ['mousemove', 'mousedown', 'keydown'].forEach(t => document.addEventListener(t, wake));
+  // (mouse moves over the iframe don't reach this page; display.html covers the window, so
+  // also listen on its document once loaded)
+  $('cdframe').addEventListener('load', () => {
+    try { ['mousemove', 'mousedown'].forEach(t => $('cdframe').contentDocument.addEventListener(t, wake)); } catch (_) { /* not same origin */ }
+  });
+
   // ─── Run sheet display ───────────────────────────────────────────────────
 
   function layoutRunsheet() {
@@ -477,6 +524,8 @@
   function renderDisplays() {
     const remain = (state.over ? '+' : '') + (state.remain || '–:––');
     const sub = state.paused && state.msgs ? 'Paused' : '';     // status messages follow the timer's M switch
+
+    postDisplay();
 
     // Countdown display: the time of day (T), progress bar (B) and status messages (M) follow the
     // timer's own switches, like the presenter screen
@@ -763,6 +812,7 @@
   $('fstipok').addEventListener('click', () => { $('fstip').hidden = true; });
   ['fullscreenchange', 'webkitfullscreenchange'].forEach(t => document.addEventListener(t, () => {
     showFsButton();
+    postDisplay();
     setTimeout(layout, 100);
   }));
   showFsButton();

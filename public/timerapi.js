@@ -208,6 +208,7 @@ function processTimerApiMessage(msg) {
                         showbar: localStorage.getItem('showbar') || '0',
                         showmessages: localStorage.getItem('showmessages') || '0',
                         barpct: String(Math.floor(Number(localStorage.getItem('barpct')) || 0)),
+                        htmlclass: document.documentElement.className,
                         paused: secToStr(pausedMsec / 1000),
                         pauses: secToStr((pausedMsec + pauseAcum) / 1000),
                     }
