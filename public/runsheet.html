@@ -12,6 +12,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Run sheet</title>
   <style>
+    /* Sized like the timer page: everything scales from a viewport-relative root size
+       (rem), so Chrome's per-site zoom (used to size the timer's buttons) doesn't
+       change this window. 1.8vh ≈ 14px in a 780px-tall window. */
+    html { font-size: 1.8vh; }
     :root {
       --bg: #0b0b0b; --panel: #131313; --line: #262626; --line2: #333;
       --text: #ddd; --dim: #888; --faint: #555;
@@ -20,15 +24,15 @@
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
-      font: 14px/1.4 "Helvetica Neue", Arial, sans-serif; }
+      font-family: "Helvetica Neue", Arial, sans-serif; line-height: 1.4; }
     button { font: inherit; color: var(--text); background: #1e1e1e; border: 1px solid var(--line2);
-      border-radius: 5px; padding: 6px 12px; cursor: pointer; }
+      border-radius: 0.357rem; padding: 0.429rem 0.857rem; cursor: pointer; }
     button:hover { background: #2a2a2a; border-color: #555; }
     button:disabled { opacity: .35; cursor: default; }
     button.primary { background: #123a12; border-color: #2e6b2e; color: var(--now-text); }
     button.danger { color: #ff9a9a; }
     input, textarea { font: inherit; color: var(--text); background: transparent; border: 1px solid transparent;
-      border-radius: 4px; padding: 4px 6px; width: 100%; }
+      border-radius: 0.286rem; padding: 0.286rem 0.429rem; width: 100%; }
     input:hover { border-color: var(--line2); }
     input:focus, textarea:focus { outline: none; border-color: var(--accent); background: #161b22; }
     input::placeholder { color: #5d6670; font-style: italic; }
@@ -37,35 +41,35 @@
 
     .app { display: grid; grid-template-rows: auto auto 1fr; height: 100%; }
 
-    header { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
-    #title { font-size: 18px; font-weight: bold; max-width: 420px; }
-    .mode { display: flex; align-items: center; gap: 8px; color: var(--dim); white-space: nowrap; cursor: pointer; }
-    .mode input { width: auto; }
+    header { display: flex; align-items: center; gap: 1rem; padding: 0.714rem 1.143rem; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+    #title { font-size: 1.286rem; font-weight: bold; max-width: 30rem; }
+    .mode { display: flex; align-items: center; gap: 0.571rem; color: var(--dim); white-space: nowrap; cursor: pointer; }
+    .mode input { width: 1.1rem; height: 1.1rem; margin: 0; }
     #live { margin-left: auto; font-weight: bold; color: var(--dim); white-space: nowrap; }
     #live.behind { color: var(--behind); } #live.ahead { color: var(--ahead); } #live.ontime { color: #ccc; }
-    #conn { color: var(--warn); font-size: 13px; display: none; width: 100%; }
+    #conn { color: var(--warn); font-size: 0.929rem; display: none; width: 100%; }
     #conn.show { display: block; }
 
-    .transport { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-    .transport button { padding: 8px 18px; font-size: 15px; }
-    .transport .now-next { margin-left: 12px; color: var(--dim); min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .transport { display: flex; align-items: center; gap: 0.714rem; padding: 0.714rem 1.143rem; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    .transport button { padding: 0.571rem 1.286rem; font-size: 1.071rem; }
+    .transport .now-next { margin-left: 0.857rem; color: var(--dim); min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .transport .now-next b { color: var(--text); }
-    .transport .hint { color: var(--faint); font-size: 12px; }
+    .transport .hint { color: var(--faint); font-size: 0.857rem; }
 
-    .main { display: grid; grid-template-columns: 1fr 380px; min-height: 0; }
-    .sheet { overflow: auto; padding: 4px 8px 40px; }
+    .main { display: grid; grid-template-columns: 1fr 24rem; min-height: 0; }
+    .sheet { overflow: auto; padding: 0.286rem 0.571rem 2.857rem; }
     aside { border-left: 1px solid var(--line); overflow: auto; background: var(--panel); }
 
     table { border-collapse: collapse; width: 100%; }
-    th { text-align: left; font-weight: normal; color: var(--faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
-      padding: 8px 6px 4px; position: sticky; top: 0; background: var(--bg); z-index: 1; }
-    #rs-table td { padding: 2px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-    #rs-table td.num { color: var(--faint); text-align: right; width: 34px; padding-right: 8px; }
-    #rs-table td.start { width: 92px; } #rs-table td.dur { width: 160px; }
-    #rs-table td.ends { width: 62px; color: var(--dim); }
-    #rs-table td.status { width: 150px; font-size: 12px; color: var(--dim); white-space: nowrap; }
-    #rs-table td.acts { width: 128px; white-space: nowrap; text-align: right; }
-    #rs-table td.acts button { padding: 2px 7px; font-size: 12px; background: transparent; border-color: transparent; color: var(--dim); }
+    th { text-align: left; font-weight: normal; color: var(--faint); font-size: 0.786rem; letter-spacing: .08em; text-transform: uppercase;
+      padding: 0.571rem 0.429rem 0.286rem; position: sticky; top: 0; background: var(--bg); z-index: 1; }
+    #rs-table td { padding: 0.143rem 0.286rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    #rs-table td.num { color: var(--faint); text-align: right; width: 2.4rem; padding-right: 0.571rem; }
+    #rs-table td.start { width: 5.5rem; } #rs-table td.dur { width: 11rem; }
+    #rs-table td.ends { width: 4rem; color: var(--dim); }
+    #rs-table td.status { width: 9rem; font-size: 0.857rem; color: var(--dim); white-space: nowrap; }
+    #rs-table td.acts { width: 6.6rem; white-space: nowrap; text-align: right; }
+    #rs-table td.acts button { padding: 0.143rem 0.3rem; font-size: 0.857rem; background: transparent; border-color: transparent; color: var(--dim); }
     #rs-table td.acts button:hover { border-color: var(--line2); color: var(--text); }
     #rs-table td.acts button.go { color: var(--now-text); }
     #rs-table tr:hover td { background: #121212; }
@@ -81,26 +85,26 @@
     .st-now { color: var(--now-text); font-weight: bold; }
     .st-late { color: var(--behind); } .st-early { color: var(--ahead); }
     .st-gap { color: var(--warn); }
-    .empty { color: var(--dim); padding: 40px 16px; text-align: center; }
-    .add-row { margin: 10px 4px; }
+    .empty { color: var(--dim); padding: 2.857rem 1.143rem; text-align: center; }
+    .add-row { margin: 0.714rem 0.286rem; }
 
     details { border-bottom: 1px solid var(--line); }
-    summary { cursor: pointer; padding: 12px 16px; font-weight: bold; list-style: none; }
+    summary { cursor: pointer; padding: 0.857rem 1.143rem; font-weight: bold; list-style: none; }
     summary::before { content: '▸ '; color: var(--faint); }
     details[open] summary::before { content: '▾ '; }
-    .panel { padding: 0 16px 16px; }
-    .panel p.hint { color: var(--dim); font-size: 12px; margin: 0 0 8px; }
-    .panel .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-    .panel label.inline { display: flex; align-items: center; gap: 8px; color: var(--dim); }
-    .panel label.inline input { width: 70px; border-color: var(--line2); }
-    #imp-msg { font-size: 12px; margin-top: 8px; color: var(--dim); white-space: pre-line; }
+    .panel { padding: 0 1.143rem 1.143rem; }
+    .panel p.hint { color: var(--dim); font-size: 0.857rem; margin: 0 0 0.571rem; }
+    .panel .row { display: flex; gap: 0.571rem; align-items: center; margin-top: 0.571rem; flex-wrap: wrap; }
+    .panel label.inline { display: flex; align-items: center; gap: 0.571rem; color: var(--dim); }
+    .panel label.inline input { width: 5rem; border-color: var(--line2); }
+    #imp-msg { font-size: 0.857rem; margin-top: 0.571rem; color: var(--dim); white-space: pre-line; }
     #imp-msg.ok { color: var(--now-text); } #imp-msg.warn { color: var(--warn); }
-    .sep { border: 0; border-top: 1px solid var(--line); margin: 14px 0 6px; }
+    .sep { border: 0; border-top: 1px solid var(--line); margin: 1rem 0 0.429rem; }
 
-    #log-table td { padding: 4px 6px; border-bottom: 1px solid var(--line); font-size: 12px; white-space: nowrap; }
+    #log-table td { padding: 0.286rem 0.429rem; border-bottom: 1px solid var(--line); font-size: 0.857rem; white-space: nowrap; }
     #log-table td.item { white-space: normal; color: var(--text); }
     #log-table tr.finish td { color: var(--warn); }
-    .log-empty { color: var(--faint); font-size: 12px; padding: 4px 0; }
+    .log-empty { color: var(--faint); font-size: 0.857rem; padding: 0.286rem 0; }
   </style>
 </head>
 <body>

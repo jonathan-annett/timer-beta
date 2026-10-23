@@ -270,6 +270,8 @@ Files: `runsheet-core.js` (pure logic, shared), `runsheet.js` (controller window
 
 **Keys:** Page Down/Up are caught in the capture phase only in run sheet mode, so outside it they still reach `timer.js` (PowerPoint mode). The editor window handles them too, so a clicker focused on it still works. **E** opens the editor (not while typing).
 
+**Editor sizing:** `runsheet.html` sizes everything in `rem` from `html { font-size: 1.8vh }`, like the timer page's viewport units. Chrome zooms per site, and people zoom the timer window to size its buttons, so the editor must not use `px` (except 1px borders) or it would scale along with them.
+
 **Layout:** on the controller in run sheet mode the dashboard takes the top-left half and the controller's copy of the message moves to the top right (`html.runsheet:not(.reduced) #custom_message`). The presenter view is unchanged.
 
 **Tests:** `runsheet-core.js` exports via `module.exports` when loaded in node. The pure functions are easy to unit-test there.
