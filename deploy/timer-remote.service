@@ -1,6 +1,8 @@
 # systemd unit for the experimental phone-control pairing server (remote-server.js).
 #
 # Install (as root):
+#   git clone https://github.com/jonathan-annett/timer-beta /opt/timer-beta   # or use your own path
+#   cd /opt/timer-beta && npm install --omit=dev                            # the server needs 'ws'
 #   cp deploy/timer-remote.service /etc/systemd/system/
 #   # edit User=, WorkingDirectory=, the node path and the domain below if yours differ
 #   systemctl daemon-reload
@@ -15,11 +17,16 @@
 Description=Presentation Timer phone-control pairing server (experimental)
 After=network-online.target
 Wants=network-online.target
+# Stop retrying after 5 failed starts in a minute (e.g. a wrong path), instead of looping forever
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 # An ordinary account; no access to /etc/letsencrypt needed
 User=timer
 Group=timer
+# Must exist, be readable by User=, and contain node_modules (npm install). A wrong path
+# shows as status=200/CHDIR; a wrong node path in ExecStart as status=203/EXEC.
 WorkingDirectory=/opt/timer-beta
 LoadCredential=fullchain.pem:/etc/letsencrypt/live/timer.sophtwhere.com/fullchain.pem
 LoadCredential=privkey.pem:/etc/letsencrypt/live/timer.sophtwhere.com/privkey.pem
