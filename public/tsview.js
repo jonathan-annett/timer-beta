@@ -465,7 +465,7 @@ function createTimestampViewer(videoElement,canvas,timestampCanvas,liveCanvas,sc
             window.top.flyoutVideoWin.document.close();
 			window.top.flyoutVideoWin.addEventListener ("load",function(){
 				console.log("video win loaded");
-				window.top.flyoutVideoWin.addEventListener ("unload",onVideoWinUnload);
+				window.top.flyoutVideoWin.addEventListener ("pagehide",onVideoWinUnload);
 			});
 			
 			 window.addEventListener('message', function(event) {

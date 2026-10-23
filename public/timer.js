@@ -30,7 +30,7 @@ if (
 }
 
 
-window.addEventListener ("unload",onControlUnload);
+window.addEventListener ("pagehide",onControlUnload);
 
 const wc_canvas = document.getElementById('wc_canvas');
 const wc_canvas2 = document.getElementById('wc_canvas2');
@@ -298,7 +298,7 @@ custom_message.addEventListener('focus', function(){
 		 if (timerWin) {
 			timerWin.addEventListener ("load",function(){
 				console.log("timer win loaded");
-				timerWin.addEventListener ("unload",onTimerWinUnload);
+				timerWin.addEventListener ("pagehide",onTimerWinUnload);
 			});
 		 }
 	  }
