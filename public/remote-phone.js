@@ -31,10 +31,13 @@
 
   // ─── Connection ──────────────────────────────────────────────────────────
 
+  const BADGE_ICON = { lan: '⚡', server: '⇄', off: '•' };   // the landscape deck strip shows icons only
   function setBadge(kind, text, note) {
     const b = $('link-badge');
     b.className = kind;
-    b.textContent = text;
+    b.title = text + (note ? ' — ' + note : '');
+    b.querySelector('.long').textContent = text;
+    b.querySelector('.short').textContent = BADGE_ICON[kind] || '•';
     $('note').textContent = note || '';
   }
   function showMode() {
@@ -145,7 +148,43 @@
       $('rsback').disabled = !state.rsBack;
       $('rsnextbtn').disabled = !state.rsNext;
     }
+    scheduleFit();
   }
+
+  // ─── Simple view: fit the screen ─────────────────────────────────────────
+  // Everything in the simple view is sized in em, so one number (html's font-size) scales it.
+  // Pick the largest size at which it fits the screen without scrolling, whatever the shape
+  // (tall phone, landscape, an almost square foldable or tablet). Refit when the content
+  // changes shape: run sheet card shown, message length, countdown gaining an hour digit.
+  let fitSig = '', fitTimer = null;
+  function scheduleFit(force) {
+    const sig = [view, innerWidth, innerHeight, !!state.rsOn, (state.msg || '').length, (state.remain || '').length,
+      (state.rsNow || '').length, (state.rsNext || '').length].join('|');
+    if (!force && sig === fitSig) return;
+    fitSig = sig;
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(fitSimple, 30);
+  }
+  function fitSimple() {
+    if (view !== 'simple' || $('app').hidden) return;
+    // Don't shrink everything while the on-screen keyboard is up
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+    // Widths are checked per element: on a phone, content that's too wide makes the page itself
+    // wider (innerWidth grows with it), so comparing against the window would always pass.
+    const root = document.documentElement, simple = $('simple'), remain = $('remain');
+    const wide = el => el.scrollWidth > el.clientWidth + 1;
+    const fits = px => {
+      root.style.fontSize = px + 'px';
+      return root.scrollHeight <= innerHeight + 1 && !wide(simple) && !wide(remain) &&
+        ![...simple.querySelectorAll('.grid, .presets, .send')].some(wide);
+    };
+    let lo = 9, hi = 48;
+    if (!fits(lo)) return;                 // tiny screen: smallest size, and it scrolls
+    while (hi - lo > 0.5) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+    fits(Math.floor(lo * 2) / 2);
+  }
+  window.addEventListener('resize', () => scheduleFit());
+  document.addEventListener('focusout', () => setTimeout(() => scheduleFit(true), 300));   // keyboard closed
 
   // ─── Controls ────────────────────────────────────────────────────────────
 
@@ -208,8 +247,11 @@
     view = v;
     try { localStorage.setItem(VIEW_KEY, v); } catch (_) { /* ignore */ }
     document.body.classList.toggle('deckview', v === 'deck');
-    $('viewbtn').textContent = v === 'deck' ? '☰ Simple' : '▦ Deck';
-    if (v === 'deck') layoutDeck();
+    if (v !== 'deck') document.body.classList.remove('side');
+    $('viewbtn').querySelector('.long').textContent = v === 'deck' ? '☰ Simple' : '▦ Deck';
+    $('viewbtn').querySelector('.short').textContent = v === 'deck' ? '☰' : '▦';
+    if (v === 'deck') { document.documentElement.style.fontSize = ''; layoutDeck(); }
+    else scheduleFit(true);
     if (peer) peer.send({ t: 'deck', on: v === 'deck' });
   }
   $('viewbtn').addEventListener('click', () => setView(view === 'deck' ? 'simple' : 'deck'));
@@ -227,19 +269,32 @@
     }
   }
 
-  // Biggest square keys that fit the screen (8 across, 4 down, gaps 14% of a key)
+  // Size the keys to fill the screen: as big as fit (square, like the real deck), with the
+  // spare space shared out between them. Landscape moves the top bar into a narrow strip
+  // down the side (body.side), so the keys get the full height.
   function layoutDeck() {
     if (view !== 'deck') return;
-    const top = document.querySelector('.top').getBoundingClientRect().bottom;
-    const padX = window.innerWidth * 0.06, padY = window.innerWidth * 0.04 + 12;   // body padding
-    const w = (window.innerWidth - padX) / (8 + 7 * 0.14);
-    const h = (window.innerHeight - top - padY) / (4 + 3 * 0.14);
-    keyCss = Math.max(24, Math.floor(Math.min(w, h)));
-    document.documentElement.style.setProperty('--key', keyCss + 'px');
-    $('deckhint').textContent = window.innerHeight > window.innerWidth ? 'Turn your phone sideways for bigger keys' : '';
+    const root = document.documentElement, body = document.body;
+    const side = innerWidth > innerHeight * 1.15;
+    body.classList.toggle('side', side);
+    if (!side) root.style.setProperty('--top-h', Math.ceil(document.querySelector('.top').getBoundingClientRect().bottom) + 'px');
+    $('deckhint').textContent = side || innerWidth > 560 ? '' : 'Turn your phone sideways for bigger keys';
+
+    const deck = $('deck'), cs = getComputedStyle(deck);
+    const hint = $('deckhint').textContent ? $('deckhint').getBoundingClientRect().height + 16 : 0;
+    const W = deck.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const H = deck.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - hint;
+    const MIN_GAP = 0.08, MAX_GAP = side ? 0.6 : 0.2;          // gaps as a fraction of a key
+    keyCss = Math.max(20, Math.floor(Math.min(W / (8 + 7 * MIN_GAP), H / (4 + 3 * MIN_GAP))));
+    const colGap = Math.min((W - 8 * keyCss) / 7, keyCss * MAX_GAP);
+    const rowGap = Math.min((H - 4 * keyCss) / 3, keyCss * MAX_GAP);
+    root.style.setProperty('--key', keyCss + 'px');
+    root.style.setProperty('--col-gap', Math.max(0, Math.floor(colGap)) + 'px');
+    root.style.setProperty('--row-gap', Math.max(0, Math.floor(rowGap)) + 'px');
     canvases.forEach((_, i) => drawKey(i));
   }
   window.addEventListener('resize', layoutDeck);
+  window.addEventListener('orientationchange', () => setTimeout(layoutDeck, 250));   // some phones report the new size late
 
   function drawKey(i) {
     const c = canvases[i], f = faces[i];
@@ -286,6 +341,34 @@
   $('sheetinput').addEventListener('keydown', e => { if (e.key === 'Enter') sheetSend(); });
   $('sheetclear').addEventListener('click', () => { cmd('custommessage', { text: '' }); closeSheet(); });
   $('sheetcancel').addEventListener('click', closeSheet);
+
+  // ─── Full screen ─────────────────────────────────────────────────────────
+  // Android and tablets: the Fullscreen API. iPhone Safari has none for pages, so explain
+  // Add to Home Screen instead (the page has the meta tags to open without browser bars).
+  const standalone = matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || navigator.standalone;
+  const fsApi = document.fullscreenEnabled || document.webkitFullscreenEnabled;
+  const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  function toggleFullscreen() {
+    if (!fsApi) { $('fstip').hidden = false; return; }
+    const el = document.documentElement;
+    if (isFull()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else {
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      const p = req.call(el, { navigationUI: 'hide' });
+      if (p && p.catch) p.catch(() => {});
+    }
+  }
+  function showFsButton() {
+    $('fsbtn').hidden = standalone && !fsApi;          // already running from the Home Screen
+    $('fsbtn').querySelector('.long').textContent = isFull() ? '⛶ Exit full screen' : '⛶ Full screen';
+  }
+  $('fsbtn').addEventListener('click', toggleFullscreen);
+  $('fstipok').addEventListener('click', () => { $('fstip').hidden = true; });
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(t => document.addEventListener(t, () => {
+    showFsButton();
+    setTimeout(() => { layoutDeck(); scheduleFit(true); }, 100);
+  }));
+  showFsButton();
 
   buildKeys();
   setView(view);
