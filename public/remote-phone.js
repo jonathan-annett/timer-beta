@@ -589,16 +589,22 @@
   function layoutRunsheet() {
     if (view !== 'runsheet') return;
     // Text size from the screen: readable across a room on a tablet, still fits on a phone
-    let px = Math.max(13, Math.min(34, Math.min(innerWidth * 0.042, innerHeight * 0.04)));
+    const start = Math.max(13, Math.min(34, Math.min(innerWidth * 0.042, innerHeight * 0.04)));
+    let px = start;
     const set = () => document.documentElement.style.setProperty('--rs-font', px.toFixed(1) + 'px');
     set();
-    // With the controls (control and admin phones), make the text smaller until they fit on screen
-    if (document.body.classList.contains('can-ctl')) {
-      const box = $('rsv'), ctl = $('rsvctl');
-      const fits = () => ctl.getBoundingClientRect().bottom <= box.getBoundingClientRect().bottom - parseFloat(getComputedStyle(box).paddingBottom) + 0.5
-        && box.scrollWidth <= box.clientWidth + 1;
-      while (!fits() && px > 9) { px -= 0.5; set(); }
-    }
+    // Then smaller, if need be:
+    //  - until the controls (control and admin phones) are on screen, however small that takes;
+    //  - until the whole schedule fits without scrolling, but not below 70 % (on a square or
+    //    short screen the list otherwise gets a few clipped rows under the status).
+    const box = $('rsv'), ctl = $('rsvctl'), list = $('rsvlist');
+    const withCtl = document.body.classList.contains('can-ctl');
+    const bottom = () => box.getBoundingClientRect().bottom - parseFloat(getComputedStyle(box).paddingBottom) + 0.5;
+    const ctlFits = () => !withCtl || (ctl.getBoundingClientRect().bottom <= bottom() && box.scrollWidth <= box.clientWidth + 1);
+    const listFits = () => list.scrollHeight <= list.clientHeight + 1;
+    while (!ctlFits() && px > 9) { px -= 0.5; set(); }
+    const floor = Math.max(11, Math.min(px, start * 0.7));
+    while (!listFits() && px > floor) { px -= 0.5; set(); }
     scrollToCurrent();
   }
   function scrollToCurrent() {
@@ -646,9 +652,6 @@
     const st = $('rsvstatus');
     st.textContent = state.rsOn ? (state.rsText || '') : '';
     st.className = late >= 30 ? 'behind' : late <= -30 ? 'ahead' : '';
-    // The controls must stay on screen: refit when the text changes shape (not every second)
-    const rsig = [state.rsOn, state.rsNow, state.rsNext, (state.rsText || '').length].join('|');
-    if (rsig !== rsvSig) { rsvSig = rsig; if (view === 'runsheet') layoutRunsheet(); }
 
     if (state.rsList !== lastList) {
       lastList = state.rsList;
@@ -675,6 +678,9 @@
       }
       if (view === 'runsheet') scrollToCurrent();
     }
+    // Refit (controls on screen, schedule fitting) when the content changes shape, not every second
+    const rsig = [state.rsOn, state.rsNow, state.rsNext, (state.rsText || '').length, state.rsList || ''].join('|');
+    if (rsig !== rsvSig) { rsvSig = rsig; if (view === 'runsheet') layoutRunsheet(); }
   }
 
   // ─── Admin: set up another computer ──────────────────────────────────────
