@@ -31,6 +31,7 @@ timer_build/
 ├── relay-server.js        Express app — entry point for deployment
 ├── remote-server.js       EXPERIMENTAL phone-control pairing server (wss, port 8443; standalone)
 ├── deploy/                systemd unit + certbot hook for remote-server.js
+├── docs/                  Plans and notes (glasses-g2-plan.md: the Even Realities G2 app, not started)
 ├── package.json           Dependencies: express, ws
 └── public/                Served as static files
     ├── timer.html          Controller page
@@ -392,6 +393,7 @@ The `audience.html` page supports tap-to-fullscreen (calls `requestFullscreen()`
 - **Static hosting:** `share` and `audience.html` need `relay-server.js` running. On a plain static host (e.g. the `/beta` deployment) they fail; everything else works.
 - `currentdevice.js` is still in `public/` but unused. It can be deleted.
 - Run sheet: the touch strip has no Next/Back yet; editing a running item's duration doesn't change its countdown until it's restarted.
+- **Even Realities G2 glasses (planned, not started):** a presenter-facing countdown + messages app for the glasses, as a third kind of view-only display. The plan, the G2 app model as understood in Oct 2026, the message contract it must follow, the pairing options and the open questions are in `docs/glasses-g2-plan.md`. Read that before starting; verify the SDK facts marked *(check)* against the official docs first, since they came from community write-ups. The app would live in `glasses/` (its own Node/Even CLI project, not in `public/`).
 - No authentication on the relay server. The room code is the only access control. Sufficient for typical use; add a token if the server will be public-facing and high-value.
 
 ---
