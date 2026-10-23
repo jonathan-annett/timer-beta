@@ -130,6 +130,7 @@ In the editor you can drag actions from the palette onto keys, set per-key label
 - **Display toggles**: bar, clock and messages.
 - **Messages**: drag a *Message* action onto a key, and its text field opens in the editor. Pressing the key shows that message on the presenter screen; pressing it again clears it. The key lights up while its message is showing. *Clear message* removes whatever is showing, and *Type message* opens the on-screen message box. The XL comes with two examples (*Please wrap up*, *Time for questions*).
 - **Run sheet**: *Back*, *Next* (shows the next item's name) and *Schedule* (time ahead in green, or behind in red). The XL has all three in row 2 by default.
+- **Video**: *Play video* (lit when a video is ready), *Stop video* and *Rewind video* (lit while one plays; rewinding goes back to the start, ready to play again). They work for dropped and run sheet videos. The XL has Stop and Rewind in the last two keys by default (if you saved your own XL layout, add them in the editor or use Reset defaults).
 - **Catch up**: lights up while the timer is running fast or slow after a nudge; press it to jump straight to the adjusted time.
 - **Backlight**: steps the deck's brightness 100 → 50 → 25 → 10% for dark venues. You can also set it in the editor, and it's remembered.
 
@@ -141,7 +142,7 @@ In the editor you can drag actions from the palette onto keys, set per-key label
 
 ## Videos
 
-Drag a video file onto the timer (or a link to one) to load it into a separate **player window**. Drag that window to the screen it should play on and press **F** for full screen. Controls appear at the bottom right of the timer:
+Click **video** to open the separate **player window**, drag it to the screen it should play on and press **F** for full screen. Drag a video file onto the timer (or a link to one) to load it; controls appear at the bottom right of the timer:
 
 | | |
 |---|---|
@@ -151,6 +152,19 @@ Drag a video file onto the timer (or a link to one) to load it into a separate *
 | **Before play: first frame / black** | What the player window shows before the video plays. Remembered for next time. |
 
 Keys pressed in the player window work as if pressed in the timer. Drop another video on either window to replace the current one.
+
+### Videos in the run sheet
+
+In the run sheet editor, click **+ video** on an item (or drop a video file on its row). The file is copied into the browser, so it's still there after a restart; the item takes the video's length as its duration, and its name as the item name if it has none. Give the item a descriptive name: that's the message shown while it plays. Choose **frame** or **black** for what the player shows before it plays.
+
+During the show:
+
+- When the item before a video starts, its video is loaded into the player and waits there (showing its first frame, or black).
+- **Next** onto the video item plays it straight away; the timer counts down its length.
+- When it finishes, the run sheet stays on that item (timer 0:00) until you press **Next**.
+- **Back** stops it and loads it again, ready to replay.
+
+The player window has to be open (click **video** once before the show); if it isn't when a video is coming up, the dashboard says so. There are no on-screen controls for run sheet videos: use the Stream Deck.
 
 ## Remote display
 

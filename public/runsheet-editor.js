@@ -122,6 +122,7 @@
         `<td class="num">${it.isEnd ? 'End' : i + 1}</td>` +
         `<td class="start"><input data-field="start" aria-label="Start time"></td>` +
         `<td class="name"><input data-field="name" aria-label="Item name"></td>` +
+        `<td class="vid"></td>` +
         `<td class="dur"><input data-field="duration" aria-label="Duration"></td>` +
         `<td class="ends"></td><td class="status"></td>` +
         `<td class="acts">` +
@@ -134,6 +135,7 @@
       name.value = src.name || '';
       dur.value = src.duration != null ? C.formatDuration(src.duration) : '';
       name.placeholder = 'Item name';
+      if (!it.isEnd) renderVideoCell(tr.querySelector('td.vid'), src);
       dur.placeholder = it.isEnd ? 'finish' :
         C.formatDuration(it.eff) + (it.durSource === 'times' ? ' (from times)' : it.durSource === 'default' ? ' (default)' : '');
       tbody.appendChild(tr);
@@ -247,6 +249,126 @@
 
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+  // ─── Videos ───────────────────────────────────────────────────────────────
+  // A video on an item plays when Next reaches it (runsheet.js); the item's name is the message.
+  // The file is copied into the browser (video-store.js), so it survives restarts. item.video is
+  // {key, name, size, duration}; item.videoIdle 'show' | 'hide' is what the player shows before
+  // it plays (first frame or black).
+
+  const noExt = n => String(n || '').replace(/\.[A-Za-z0-9]{1,5}$/, '') || String(n || '');
+  const busy = new Set();                      // item ids whose video is being copied
+
+  function renderVideoCell(td, item) {
+    if (busy.has(item.id)) { td.innerHTML = '<span class="vbusy">copying video…</span>'; return; }
+    if (!item.video) {
+      td.innerHTML = `<button class="vadd" data-act="vadd" tabindex="-1" title="Play a video for this item (or drop a video file on the row)">+ video</button>`;
+      return;
+    }
+    const v = item.video;
+    // Compact: the Item column already shows the name; the file name is in the tooltip
+    td.innerHTML = `<span class="vicon">🎬</span> <span class="vdur"></span>` +
+      `<select data-vidle tabindex="-1" title="Before it plays, the player shows the video's first frame, or black">` +
+      `<option value="show">frame</option><option value="hide">black</option></select>` +
+      `<button class="vdel" data-act="vdel" tabindex="-1" title="Remove the video">✕</button>`;
+    td.title = 'Video: ' + v.name;
+    td.querySelector('.vdur').textContent = v.duration ? C.formatDuration(v.duration) : '';
+    td.querySelector('select').value = item.videoIdle === 'hide' ? 'hide' : 'show';
+  }
+
+  // Length of a video file, in seconds (from its metadata)
+  function probeDuration(file) {
+    return new Promise(resolve => {
+      const el = document.createElement('video');
+      const url = URL.createObjectURL(file);
+      const done = d => { URL.revokeObjectURL(url); resolve(d); };
+      el.preload = 'metadata';
+      el.onloadedmetadata = () => done(isFinite(el.duration) ? el.duration : null);
+      el.onerror = () => done(null);
+      el.src = url;
+      setTimeout(() => done(null), 15000);
+    });
+  }
+
+  async function attachVideo(id, file) {
+    const item = sheet.items.find(it => it.id === id);
+    if (!item || !file) return;
+    if (!/^video\//.test(file.type)) { alert('That isn’t a video file.'); return; }
+    if (!window.videoStore) { alert('Videos can’t be stored in this browser.'); return; }
+    busy.add(id); renderAll();
+    try {
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+      const duration = await probeDuration(file);
+      const key = 'rsvideo:' + id + ':' + Date.now();
+      await window.videoStore.put(key, file);
+      const it = sheet.items.find(x => x.id === id);          // the sheet may have been reloaded meanwhile
+      if (!it) { window.videoStore.remove(key); return; }
+      if (it.video) window.videoStore.remove(it.video.key).catch(() => {});
+      const secs = duration ? Math.max(1, Math.floor(duration + 0.25)) : null;
+      it.video = { key, name: noExt(file.name), size: file.size, duration: secs };
+      if (!it.videoIdle) it.videoIdle = 'show';
+      if (!it.name) it.name = noExt(file.name);
+      if (it.duration == null && secs) it.duration = secs;    // the item runs as long as the video
+      saveSheet();
+    } catch (err) {
+      alert('Couldn’t store the video in this browser: ' + (err && err.message || err) +
+        '\n(Is the disk full? Browsers can only use part of the free space.)');
+    } finally {
+      busy.delete(id);
+      renderAll();
+    }
+  }
+
+  function removeVideo(id) {
+    const item = sheet.items.find(it => it.id === id);
+    if (!item || !item.video) return;
+    if (!confirm(`Remove the video "${item.video.name}" from this item?`)) return;
+    window.videoStore && window.videoStore.remove(item.video.key).catch(() => {});
+    delete item.video; delete item.videoIdle;
+    saveSheet();
+  }
+
+  // Videos no longer used by the sheet (rows deleted, sheet replaced) are removed from the browser
+  function cleanUpVideos() {
+    if (!window.videoStore) return;
+    const used = new Set(sheet.items.filter(it => it.video).map(it => it.video.key));
+    window.videoStore.keys().then(keys => keys.forEach(k => {
+      if (String(k).startsWith('rsvideo:') && !used.has(k)) window.videoStore.remove(k).catch(() => {});
+    })).catch(() => {});
+  }
+
+  // One hidden file picker, shared by the rows
+  const picker = document.createElement('input');
+  picker.type = 'file'; picker.accept = 'video/*'; picker.hidden = true;
+  document.body.appendChild(picker);
+  let pickFor = null;
+  picker.addEventListener('change', () => { const f = picker.files[0]; picker.value = ''; if (f && pickFor) attachVideo(pickFor, f); });
+
+  // Drop a video file on a row to attach it
+  const tbodyEl = document.querySelector('#rs-table tbody');
+  tbodyEl.addEventListener('dragover', e => {
+    const tr = e.target.closest('tr');
+    if (!tr || tr.classList.contains('endrow') || !Array.from(e.dataTransfer.types).includes('Files')) return;
+    e.preventDefault();
+    tbodyEl.querySelectorAll('tr.vdrop').forEach(r => r !== tr && r.classList.remove('vdrop'));
+    tr.classList.add('vdrop');
+  });
+  tbodyEl.addEventListener('dragleave', e => { const tr = e.target.closest('tr'); if (tr && !tr.contains(e.relatedTarget)) tr.classList.remove('vdrop'); });
+  tbodyEl.addEventListener('drop', e => {
+    const tr = e.target.closest('tr');
+    tbodyEl.querySelectorAll('tr.vdrop').forEach(r => r.classList.remove('vdrop'));
+    if (!tr || tr.classList.contains('endrow')) return;
+    const f = Array.from(e.dataTransfer.files || []).find(x => x.type.startsWith('video/'));
+    if (!f) return;
+    e.preventDefault();
+    attachVideo(tr.dataset.id, f);
+  });
+  // Before-play setting
+  tbodyEl.addEventListener('change', e => {
+    if (!e.target.matches('select[data-vidle]')) return;
+    const item = sheet.items.find(it => it.id === e.target.closest('tr').dataset.id);
+    if (item) { item.videoIdle = e.target.value === 'hide' ? 'hide' : 'show'; saveSheet(); }
+  });
+
   // ─── Table editing ────────────────────────────────────────────────────────
 
   const tbody = document.querySelector('#rs-table tbody');
@@ -298,6 +420,12 @@
     const i = sheet.items.findIndex(it => it.id === id);
     if (i < 0) return;
     switch (btn.dataset.act) {
+      case 'vadd':
+        pickFor = id; picker.click();
+        break;
+      case 'vdel':
+        removeVideo(id);
+        break;
       case 'go':
         send('goto', { id });
         break;
@@ -309,8 +437,10 @@
         break;
       case 'del':
         if (id === state.currentId && !state.finished && !confirm('This item is running now. Delete it anyway?')) return;
+        if (sheet.items[i].video && !confirm(`This item has a video ("${sheet.items[i].video.name}"). Delete the item and its video?`)) return;
         sheet.items.splice(i, 1);
         saveSheet();
+        cleanUpVideos();
         break;
     }
   });
@@ -437,4 +567,5 @@
 
   renderAll();
   setInterval(renderLive, 2000);
+  setTimeout(cleanUpVideos, 3000);   // remove stored videos the sheet no longer uses
 })();

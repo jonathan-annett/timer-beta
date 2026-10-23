@@ -59,7 +59,8 @@ timer_build/
     ├── inettime.js         Internet time sync via worldtimeapi.org
     ├── timeroverlaypip.js  Picture-in-Picture overlay of countdown
     ├── tsview.js           Webcam/screen-capture timestamp viewer
-    ├── dropPlayer.js       Video player window + window.videoPlayer API (load/play/stop/rewind/setIdle); drop to load
+    ├── dropPlayer.js       Video player window + window.videoPlayer API (two slots: playing + cued); drop to load
+    ├── video-store.js      window.videoStore: run sheet video files kept in IndexedDB (timer + editor)
     ├── elementcolors.js    CSS custom property colour helpers
     ├── w3color.js          Colour parsing library (third-party)
     ├── FileSaver.js        File save helper (third-party)
@@ -132,7 +133,7 @@ This means loading order matters but both can coexist. `streamdeck.js` loads fir
 
 `runsheet.js` also sends `rs_active`, `rs_current`, `rs_next`, `rs_can_back`, `rs_status` and `rs_late` (seconds; + = behind) on the bus when they change. The `opened` command makes it resend.
 
-`htmlclass` (the controller's full class list, i.e. what the presenter window copies from `remainDispClass`) is sent by `announceHtmlClass()` each tick only when it changes, and by `opened`. `barpct` (whole percent of the progress bar) is sent by `setBarPct()` only when it changes, and by `opened`; the phone countdown display draws its bar from it. `showbar`/`showtimenow`/`showmessages` go out when toggled and on `opened`.
+`htmlclass` (the controller's full class list, i.e. what the presenter window copies from `remainDispClass`) is sent by `announceHtmlClass()` each tick only when it changes, and by `opened`. `video_status` (`empty`|`cued`|`playing`) and `video_name` come from the video player. `barpct` (whole percent of the progress bar) is sent by `setBarPct()` only when it changes, and by `opened`; the phone countdown display draws its bar from it. `showbar`/`showtimenow`/`showmessages` go out when toggled and on `opened`.
 
 **Catch up:** ↑/↓ (and the `nudge` command) move `seekEndsAt`; each tick eases `endsAt` towards it by 25 ms, so the display runs fast or slow. `catchUpNow()` in `timer.js` snaps `endsAt = seekEndsAt`. It is shared by Ctrl+Enter, Ctrl+Space, the `catch up` button and the `catchup` command.
 
@@ -199,7 +200,8 @@ All timer state persists in localStorage. These are the canonical keys:
 | `streamdeck_key_overrides` | JSON | Per-key label/colour customisations |
 | `streamdeck_autoconnect` | `'0'` or absent | `'0'` after the user clicks Disconnect; suppresses auto-reconnect |
 | `streamdeck_brightness` | 1–100 | Stream Deck backlight %, applied on connect |
-| `runsheet` | JSON | The run sheet `{title, perItem, items:[{id,name,start,duration}]}`; written by the editor |
+| `runsheet` | JSON | The run sheet `{title, perItem, items:[{id,name,start,duration,video?,videoIdle?}]}`; written by the editor (video files are in IndexedDB `blobDB`) |
+| `video_idle` | `'show'` or `'hide'` | Before-play setting for dropped videos (first frame or black) |
 | `runsheet_state` | JSON | Show state `{active, index, currentId, finished, history, log, dayBase}`; written only by `runsheet.js` |
 | `runsheet_cmd` | JSON | Command from the editor (`next`, `back`, `goto`, `reset`, `active`); consumed and removed by `runsheet.js` |
 | `runsheet_live` | JSON | Status text for the editor, written by `runsheet.js` when it changes |
@@ -323,7 +325,9 @@ Separate from the relay/`share` audience display. Pieces: `remote-server.js` (st
 
 ## Video player
 
-`dropPlayer.js` writes a player page into a named pop-up (`video_player_window`) and drives its `<video>` from the timer window. Everything goes through `window.videoPlayer`: `load(url, {name, idle, controls, message, revoke})` cues a video, `play()` starts it and the timer (`start` with the clip's whole seconds, message `Video: <name>` unless `message` is given), `stop()` unloads and clears message and timer (also on `ended`), `rewind()` re-cues at 0 with the timer paused at the clip length (the pause is sent 60 ms after the start: paused at exactly N.000 s the display reads N+1), `setIdle('show'|'hide')` sets what's shown before playing (first frame, or black via opacity). `state()` and `onChange(fn)` report `{status: empty|cued|playing, name, idle, duration}`. Dropped files are blob URLs released when replaced or stopped. On-screen controls (`#video-controls`, styles injected by the script) appear only for `controls: true` loads (drops). The player page must not load external scripts (it's written with `document.write`; an external `<script src>` stalled the parser so nothing after it ran); it forwards keys to the timer with `postMessage` to `window.opener.location.origin` (its own `location` is about:blank). `window.videoStore` keeps `storeBlob`/`retrieveBlob` (IndexedDB `blobDB`). `localStorage.video_idle` holds the drop default.
+`dropPlayer.js` writes a player page into a named pop-up (`video_player_window`, opened by the **video** button or on demand during a key press; browsers block it otherwise) and drives its two `<video>` elements from the timer window: a **playing** slot and a **cued** slot (loaded, paused at 0), so the next video can load behind one that's playing. `arrange()` shows the playing one on top, otherwise the cued one (opacity 1, or 0 for "black"). Everything goes through `window.videoPlayer`: `open()`, `isOpen()`, `load(url, {name, idle, controls, message, revoke, tag, onEnd})` cues, `play()` plays the cued video and starts the timer (`start` with the clip's whole seconds, message `Video: <name>` unless `message`), `stop({quiet})` unloads the playing video (else the cued one) and, unless quiet, clears message and timer, `rewind()` re-cues the playing video at 0 with the timer paused at its length (pause sent 60 ms after the start: paused at exactly N.000 s the display reads N+1), `unloadCued()`, `setIdle()`. `onEnd: 'unload'` (drops) stops and clears; `'recue'` (run sheet) goes back to before-play, timer 0:00, message kept. `state()`/`onChange(fn)` report `{status, name, idle, duration, playing:{tag,name}, cued:{tag,name,idle}}`; it also publishes `video_status`/`video_name` on the bus. API commands `videoplay`/`videostop`/`videorewind` call it. A `NotAllowedError` from `play()` (autoplay with sound) shows a toast asking for a click in the player window. On-screen controls (`#video-controls`, styles injected) appear only for `controls: true` loads (drops). The player page must not load external scripts (written with `document.write`; an external `<script src>` stalled the parser so nothing after it ran); it forwards keys to the timer with `postMessage` to `window.opener.location.origin` (its own `location` is about:blank). `localStorage.video_idle` holds the drop default.
+
+**Run sheet videos:** items may carry `video {key, name, size, duration}` and `videoIdle` (`show`|`hide`); `normalise()`/`standardise()` pass them through. The editor's Video column attaches a file (picker or drop on the row): `probeDuration()`, then `videoStore.put('rsvideo:<id>:<time>', file)`; the item's duration (if empty) and name (if empty) come from the video. Unused `rsvideo:` blobs are removed 3 s after the editor opens and when a row is deleted. In `runsheet.js`, `startItem()` calls `playItemVideo()` for a video item (plays the cued video if its `tag` is the item id, else fetches, cues and plays; `pendingPlay` holds `preloadNext()` meanwhile so the next preload can't take its place) and `stopRunsheetVideo()` otherwise; `back()` stops it too. `commit()` calls `preloadNext()`, which cues the next item's video (or unloads a run sheet video no longer next) but never replaces a dropped video's cue. Deck actions `video_play`/`video_stop`/`video_rewind` are lit from `deckState.video_cued`/`video_playing` (derived from `video_status`).
 
 ## Mobile / Touch
 

@@ -1,22 +1,32 @@
 /*!
  * dropPlayer.js
  * Video playback in a separate player window (drag it to another screen and press F for full
- * screen). Drop a video file (or a link to one) on the timer to load it. While a video plays,
- * the timer counts down its length and shows "Video: <name>" as the message.
+ * screen). Drop a video file (or a link to one) on the timer to load it; run sheet items can
+ * carry videos too (runsheet.js). While a video plays, the timer counts down its length and
+ * shows a message ("Video: <name>", or the run sheet item's name).
  *
- * window.videoPlayer is the one way to drive it (on-screen controls, and later the run sheet
- * and the Stream Deck):
- *   load(url, {name, idle, controls, message, revoke})  cue a video (not playing)
- *   play()      start from the cued position; the timer counts down the video's length
- *   stop()      stop and unload; clears the message and the timer
- *   rewind()    back to the start, cued (paused), ready to play again
- *   setIdle('show'|'hide')  before playing, show the first frame or keep the window black
- *   state()     {status: 'empty'|'cued'|'playing', name, idle, duration}
+ * The player has two slots: the video PLAYING, and the video CUED (loaded, paused at the start,
+ * ready to go). The run sheet cues the next item's video while the current item runs, so Next
+ * starts it at once. A cued video shows its first frame or black ("before play") whenever
+ * nothing is playing.
+ *
+ * window.videoPlayer is the one way to drive it (on-screen controls, run sheet, Stream Deck via
+ * the videoplay / videostop / videorewind commands):
+ *   open()      open the player window (needs a click or key press)
+ *   isOpen()
+ *   load(url, {name, idle, controls, message, revoke, tag, onEnd})   cue a video
+ *   play()      play the cued video; the timer counts down its length
+ *   stop({quiet})  stop what's playing (or unload what's cued); unless quiet, clear the
+ *               message and the timer
+ *   rewind()    the playing video back to the start, cued, timer paused at its length
+ *   unloadCued()  drop the cued video only
+ *   setIdle('show'|'hide')  before play: first frame, or black
+ *   state()     {status: 'empty'|'cued'|'playing', name, idle, duration, playing:{tag,name}, cued:{tag,name,idle}}
  *   onChange(fn)
+ * onEnd: 'unload' (dropped videos: stop and clear) or 'recue' (run sheet: back to before-play,
+ * timer 0:00, message kept; the operator presses Next when ready).
  *
- * Ad hoc (dropped) videos get controls on the timer screen: ▶ play, ■ stop, ⟲ rewind and the
- * "Before play" toggle.
- *
+ * Publishes video_status ('empty'|'cued'|'playing') and video_name on the timerAPI bus.
  * localStorage: video_idle ('show' | 'hide'), the "Before play" setting for dropped videos.
  * MIT Licensed
  */
@@ -29,33 +39,47 @@
   const IDLE_KEY = 'video_idle';
   const api = msg => { if (typeof processTimerApiMessage === 'function') processTimerApiMessage(msg); };
 
-  let win = null;            // the player window
-  let video = null;          // its <video>
-  let current = null;        // {url, name, idle, controls, message, revoke}
-  let status = 'empty';      // 'empty' | 'cued' | 'playing'
+  let win = null;                       // the player window
+  let els = [];                         // its two <video> elements
+  let playing = null, cued = null;      // slots: {el, url, name, idle, controls, message, revoke, tag, onEnd}
   const listeners = [];
-  const notify = () => { listeners.forEach(fn => { try { fn(state()); } catch (_) { /* ignore */ } }); renderControls(); };
 
-  function state() {
-    return {
-      status,
-      name: current ? current.name : '',
-      idle: current ? current.idle : storedIdle(),
-      duration: video && isFinite(video.duration) ? video.duration : null,
-    };
-  }
   function storedIdle() { try { return localStorage.getItem(IDLE_KEY) === 'hide' ? 'hide' : 'show'; } catch (_) { return 'show'; } }
 
   // Names are shown without the file extension ("Video: Keynote intro", not "…intro.mp4")
   const noExt = n => String(n || '').replace(/\.[A-Za-z0-9]{1,5}$/, '') || String(n || '');
-
-  // A readable name from a URL (last path segment, without the query)
   function nameFromUrl(url) {
     try {
       const u = new URL(url, location.href);
       const last = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() || '');
       return noExt(last) || u.hostname || 'video';
     } catch (_) { return 'video'; }
+  }
+
+  function state() {
+    const s = playing || cued;
+    const el = s && s.el;
+    return {
+      status: playing ? 'playing' : cued ? 'cued' : 'empty',
+      name: s ? s.name : '',
+      idle: cued ? cued.idle : storedIdle(),
+      duration: el && isFinite(el.duration) ? el.duration : null,
+      playing: playing ? { tag: playing.tag || null, name: playing.name } : null,
+      cued: cued ? { tag: cued.tag || null, name: cued.name, idle: cued.idle } : null,
+    };
+  }
+
+  let lastBus = '';
+  function notify() {
+    const st = state();
+    listeners.forEach(fn => { try { fn(st); } catch (_) { /* ignore */ } });
+    renderControls();
+    // On the bus, for the Stream Deck keys and anything else listening
+    const bus = st.status + '|' + st.name;
+    if (bus !== lastBus && window.timerAPI) {
+      lastBus = bus;
+      window.timerAPI.send({ setVariableValues: { video_status: st.status, video_name: st.name } });
+    }
   }
 
   // ─── Player window ────────────────────────────────────────────────────────
@@ -66,12 +90,13 @@
       html, body { margin: 0; background: var(--color-main-background); overflow: hidden; user-select: none; }
       body.fullscreen { cursor: none; }
       ::backdrop { background: var(--color-main-background); }
-      video { position: absolute; left: 0; top: 0; width: 100vw; height: 100vh; object-fit: contain; background: black; }
-      #hint { position: absolute; bottom: 10px; width: 100%; text-align: center; color: #555;
+      video { position: absolute; left: 0; top: 0; width: 100vw; height: 100vh; object-fit: contain;
+        background: black; opacity: 0; }
+      #hint { position: absolute; bottom: 10px; width: 100%; text-align: center; color: #555; z-index: 10;
         font: 16px "Helvetica Neue", Arial, sans-serif; }
       body.fullscreen #hint { display: none; }
     </style></head><body>
-      <video playsinline></video>
+      <video playsinline preload="auto"></video><video playsinline preload="auto"></video>
       <div id="hint">Drag this window to the screen it should play on and press F for full screen</div>
       <script>
         // Full screen without fsapi.js: an external script in a document written by the timer
@@ -86,18 +111,14 @@
           document.addEventListener(t, function () { document.body.classList.toggle('fullscreen', isFull()); });
         });
         // F: full screen. Other keys go to the timer window, so its shortcuts work from here too.
+        // (this page is about:blank, whose location has no origin: address the timer's)
         function forward(type, e) {
-          // (this page is about:blank, whose location has no origin: address the timer's)
           if (window.opener) window.opener.postMessage({ type: 'video-player-key', event: type,
             value: { key: e.key, code: e.code, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey: e.altKey } }, window.opener.location.origin);
         }
         document.addEventListener('keydown', function (e) {
           if (e.metaKey) return;                       // leave Cmd shortcuts to the browser
-          if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.shiftKey) {
-            e.preventDefault();
-            toggleFull();
-            return;
-          }
+          if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); toggleFull(); return; }
           forward('keydown', e);
         });
         document.addEventListener('keyup', function (e) { if (!e.metaKey) forward('keyup', e); });
@@ -110,24 +131,29 @@
     </body></html>`;
   }
 
-  // Opens (or finds) the player window. Needs a user action (a click, key or drop) the first time.
-  function ensureWindow() {
-    if (win && !win.closed && video) return true;
+  const isOpen = () => !!(win && !win.closed && els.length);
+
+  // Opens the player window. The browser only allows this during a click or key press.
+  function open() {
+    if (isOpen()) return true;
     win = window.open('', 'video_player_window', 'location=0');
     if (!win) return false;
     // Always (re)write the player: a window left open from before a reload of this page would
     // still be sending its keys to the old page.
-    {
-      win.document.open();
-      win.document.write(playerHtml());
-      win.document.close();
-      video = win.document.querySelector('video');
-    }
+    win.document.open();
+    win.document.write(playerHtml());
+    win.document.close();
+    els = Array.from(win.document.querySelectorAll('video'));
+    els.forEach(el => { el.addEventListener('ended', () => onEnded(el)); });
+    playing = cued = null;
     win.addEventListener('beforeunload', () => {
-      win = null; video = null;
-      if (status !== 'empty') { status = 'empty'; release(); current = null; notify(); }
+      win = null; els = [];
+      [playing, cued].forEach(release);
+      playing = cued = null;
+      notify();
     });
-    return !!video;
+    notify();
+    return true;
   }
 
   // Keys pressed in the player window act on the timer as if pressed here
@@ -136,57 +162,70 @@
     document.dispatchEvent(new KeyboardEvent(e.data.event, e.data.value));
   });
 
-  // ─── Actions ──────────────────────────────────────────────────────────────
+  // ─── Slots ────────────────────────────────────────────────────────────────
 
-  function release() {
-    if (current && current.revoke && current.url.startsWith('blob:')) URL.revokeObjectURL(current.url);
+  function release(slot) {
+    if (!slot) return;
+    if (slot.el) { slot.el.pause(); slot.el.removeAttribute('src'); slot.el.load(); slot.el.style.opacity = '0'; }
+    if (slot.revoke && slot.url.startsWith('blob:')) URL.revokeObjectURL(slot.url);
   }
 
-  function applyIdle() {
-    if (video && status !== 'playing') video.style.opacity = current && current.idle === 'hide' ? '0' : '1';
+  // What the window shows: the playing video on top; otherwise the cued one (first frame or black)
+  function arrange() {
+    els.forEach(el => { el.style.zIndex = '1'; el.style.opacity = '0'; });
+    if (playing) { playing.el.style.zIndex = '3'; playing.el.style.opacity = '1'; }
+    else if (cued) { cued.el.style.zIndex = '2'; cued.el.style.opacity = cued.idle === 'hide' ? '0' : '1'; }
   }
 
   function load(url, opts) {
     opts = opts || {};
-    if (!ensureWindow()) { alert('Allow pop-up windows for this site to play videos.'); return false; }
-    if (current && current.url !== url) release();
-    current = {
-      url,
+    if (!open()) { toast('Allow pop-up windows for this site to play videos (or click "video" first).'); return false; }
+    if (cued) { release(cued); cued = null; }
+    const el = els.find(x => !playing || x !== playing.el);
+    cued = {
+      el, url,
       name: opts.name || nameFromUrl(url),
       idle: opts.idle === 'hide' || opts.idle === 'show' ? opts.idle : storedIdle(),
       controls: opts.controls !== false,
-      message: opts.message,                // the message while playing; default "Video: <name>"
+      message: opts.message,
       revoke: !!opts.revoke,
+      tag: opts.tag || null,
+      onEnd: opts.onEnd === 'recue' ? 'recue' : 'unload',
     };
-    status = 'cued';
-    video.onended = onEnded;
-    video.pause();
-    video.src = url;
-    video.currentTime = 0;
-    applyIdle();
+    el.pause();
+    el.src = url;
+    el.currentTime = 0;
+    arrange();
     notify();
     return true;
   }
 
   // The timer counts whole seconds (a 4.003 s clip would otherwise show 0:05 when cued)
   const wholeSeconds = sec => Math.max(1, Math.floor(sec + 0.25)) * 1000;
-  const playingMessage = () => current.message || ('Video: ' + current.name);
-
-  function whenReady(fn) {
-    if (video.readyState >= 1 && isFinite(video.duration)) return fn();
-    video.addEventListener('loadedmetadata', fn, { once: true });
+  const messageFor = s => s.message || ('Video: ' + s.name);
+  function whenReady(el, fn) {
+    if (el.readyState >= 1 && isFinite(el.duration)) return fn();
+    el.addEventListener('loadedmetadata', fn, { once: true });
   }
 
   function play() {
-    if (!current || !video || status === 'playing') return false;
-    status = 'playing';
-    video.style.opacity = '1';
-    whenReady(() => {
-      const remaining = Math.max(0, video.duration - video.currentTime);
+    if (!cued || !isOpen()) return false;
+    if (playing) { release(playing); playing = null; }
+    playing = cued; cued = null;
+    const s = playing;
+    arrange();
+    whenReady(s.el, () => {
+      if (playing !== s) return;
+      const remaining = Math.max(0, s.el.duration - s.el.currentTime);
       api({ cmd: 'start', msecs: wholeSeconds(remaining) });
-      api({ cmd: 'custommessage', text: playingMessage() });
-      const p = video.play();
-      if (p && p.catch) p.catch(() => {});
+      api({ cmd: 'custommessage', text: messageFor(s) });
+      const p = s.el.play();
+      if (p && p.catch) p.catch(err => {
+        if (err && err.name === 'NotAllowedError') {
+          toast('The browser stopped the video playing with sound. Click once in the player window, then play again.');
+          playing = null; cued = s; arrange(); notify();
+        }
+      });
     });
     notify();
     return true;
@@ -198,44 +237,68 @@
     api({ cmd: 'pause' });
   }
 
-  function stop() {
-    if (!current) return false;
-    if (video) { video.pause(); video.removeAttribute('src'); video.load(); video.style.opacity = '0'; }
-    release();
-    current = null;
-    status = 'empty';
-    clearTimer();
+  function stop(opts) {
+    const quiet = opts && opts.quiet;
+    if (playing) { release(playing); playing = null; }
+    else if (cued) { release(cued); cued = null; }
+    else return false;
+    if (!quiet) clearTimer();
+    arrange();
     notify();
     return true;
   }
 
-  // Back to the start, cued and paused: the timer shows the video's full length, ready to go
+  // Unload only the cued video (the run sheet's preload is no longer next); playing is untouched
+  function unloadCued() {
+    if (!cued) return false;
+    release(cued); cued = null;
+    arrange();
+    notify();
+    return true;
+  }
+
+  // The playing video back to the start, cued, with the timer paused at its length
   function rewind() {
-    if (!current || !video) return false;
-    video.pause();
-    video.currentTime = 0;
-    status = 'cued';
-    applyIdle();
-    whenReady(() => {
-      api({ cmd: 'start', msecs: wholeSeconds(video.duration) });
-      api({ cmd: 'custommessage', text: playingMessage() });
+    const s = playing;
+    if (!s) return false;
+    if (cued) { release(cued); cued = null; }
+    s.el.pause();
+    s.el.currentTime = 0;
+    cued = s; playing = null;
+    arrange();
+    whenReady(s.el, () => {
+      api({ cmd: 'start', msecs: wholeSeconds(s.el.duration) });
+      api({ cmd: 'custommessage', text: messageFor(s) });
       // Pause a moment later: paused at exactly N.000 s the timer would read N+1
-      setTimeout(() => { if (status === 'cued') api({ cmd: 'pause' }); }, 60);
+      setTimeout(() => { if (cued === s) api({ cmd: 'pause' }); }, 60);
     });
     notify();
     return true;
   }
 
-  function onEnded() {
-    // Played to the end: unload, and clear the message and the timer (as Stop does)
-    stop();
+  function onEnded(el) {
+    const s = playing;
+    if (!s || s.el !== el) return;
+    if (s.onEnd === 'recue') {
+      // Run sheet: stay on the item. Back to before-play (unless the next video is already
+      // cued, which then shows instead); the timer shows 0:00, the message stays.
+      playing = null;
+      if (cued) release(s);
+      else { s.el.currentTime = 0; cued = s; }
+      api({ cmd: 'start', msecs: 0 });
+      api({ cmd: 'pause' });
+      arrange();
+      notify();
+    } else {
+      stop();                               // dropped video: unload, clear message and timer
+    }
   }
 
   function setIdle(idle) {
     idle = idle === 'hide' ? 'hide' : 'show';
-    if (current) current.idle = idle;
-    if (!current || current.controls) { try { localStorage.setItem(IDLE_KEY, idle); } catch (_) { /* ignore */ } }
-    applyIdle();
+    if (cued) cued.idle = idle;
+    if (!cued || cued.controls) { try { localStorage.setItem(IDLE_KEY, idle); } catch (_) { /* ignore */ } }
+    arrange();
     notify();
   }
 
@@ -270,14 +333,32 @@
 #video-controls .vc-play { background: #0e3a12; border-color: #2a6a2a; color: #9cf59c; min-width: 44px; }
 #video-controls .vc-stop { background: #3a0d0d; border-color: #6a2a2a; color: #ff9a9a; min-width: 44px; }
 #video-controls .vc-idle { color: #aaa; }
-html.reduced #video-controls { display: none; }`;
+#video-toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); z-index: 10000; max-width: 80vw;
+  background: #3a2a00; border: 1px solid #a07a20; color: #ffd27a; border-radius: 8px; padding: 10px 14px;
+  font: 15px "Helvetica Neue", Arial, sans-serif; }
+#video-toast[hidden] { display: none; }
+html.reduced #video-controls, html.reduced #video-toast { display: none; }`;
 
-  let bar = null;
-  function controlsEl() {
-    if (bar) return bar;
+  let bar = null, toastEl = null, toastTimer = null;
+  function injectStyles() {
+    if (document.getElementById('video-player-css')) return;
     const st = document.createElement('style');
+    st.id = 'video-player-css';
     st.textContent = CSS;
     document.head.appendChild(st);
+  }
+  function toast(text) {
+    injectStyles();
+    if (!toastEl) { toastEl = document.createElement('div'); toastEl.id = 'video-toast'; document.body.appendChild(toastEl); }
+    toastEl.textContent = text;
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.hidden = true; }, 8000);
+  }
+
+  function controlsEl() {
+    if (bar) return bar;
+    injectStyles();
     bar = document.createElement('div');
     bar.id = 'video-controls';
     bar.hidden = true;
@@ -289,54 +370,34 @@ html.reduced #video-controls { display: none; }`;
     document.body.appendChild(bar);
     bar.querySelector('.vc-play').addEventListener('click', play);
     bar.querySelector('.vc-rewind').addEventListener('click', rewind);
-    bar.querySelector('.vc-stop').addEventListener('click', stop);
-    bar.querySelector('.vc-idle').addEventListener('click', () => setIdle(state().idle === 'hide' ? 'show' : 'hide'));
-    // Clicking these mustn't also trigger the timer's own click handling
-    bar.addEventListener('mousedown', e => e.stopPropagation());
+    bar.querySelector('.vc-stop').addEventListener('click', () => stop());
+    bar.querySelector('.vc-idle').addEventListener('click', () => setIdle(cued && cued.idle === 'hide' ? 'show' : 'hide'));
+    bar.addEventListener('mousedown', e => e.stopPropagation());   // not the timer's own click handling
     return bar;
   }
 
+  // Controls show for dropped videos only (run sheet videos are run from the sheet and the deck)
   function renderControls() {
-    const show = !!current && current.controls && status !== 'empty';
+    const s = playing || cued;
+    const show = !!s && s.controls;
     if (!show && !bar) return;
     const el = controlsEl();
     el.hidden = !show;
     if (!show) return;
-    el.querySelector('.vc-name').textContent = 'Video: ' + current.name;
-    el.querySelector('.vc-name').title = current.name;
-    el.querySelector('.vc-play').hidden = status !== 'cued';
-    el.querySelector('.vc-rewind').hidden = status !== 'playing';
-    el.querySelector('.vc-idle').hidden = status !== 'cued';
-    el.querySelector('.vc-idle').textContent = 'Before play: ' + (current.idle === 'hide' ? 'black' : 'first frame');
+    el.querySelector('.vc-name').textContent = 'Video: ' + s.name;
+    el.querySelector('.vc-name').title = s.name;
+    el.querySelector('.vc-play').hidden = !!playing;
+    el.querySelector('.vc-rewind').hidden = !playing;
+    el.querySelector('.vc-idle').hidden = !!playing;
+    el.querySelector('.vc-idle').textContent = 'Before play: ' + (cued && cued.idle === 'hide' ? 'black' : 'first frame');
   }
 
-  window.videoPlayer = { load, loadDrop, play, stop, rewind, setIdle, state, onChange: fn => listeners.push(fn) };
+  // The "video" button opens the player window (a click, so the browser allows it)
+  function wireButton() {
+    const b = document.getElementById('btnvideo');
+    if (b) b.addEventListener('click', () => { if (!open()) toast('Allow pop-up windows for this site to open the video player.'); else if (win) win.focus(); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireButton); else wireButton();
 
-  // ─── Blob storage (IndexedDB), for keeping video files ────────────────────
-
-  function openDatabase() {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open('blobDB', 1);
-      request.onerror = () => reject('Failed to open database');
-      request.onsuccess = () => resolve(request.result);
-      request.onupgradeneeded = event => { event.target.result.createObjectStore('blobs', { keyPath: 'key' }); };
-    });
-  }
-  async function storeBlob(key, blob) {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const request = db.transaction(['blobs'], 'readwrite').objectStore('blobs').put({ key, data: blob });
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject('Failed to store blob');
-    });
-  }
-  async function retrieveBlob(key) {
-    const db = await openDatabase();
-    return new Promise((resolve, reject) => {
-      const request = db.transaction(['blobs'], 'readonly').objectStore('blobs').get(key);
-      request.onsuccess = () => resolve(request.result ? request.result.data : null);
-      request.onerror = () => reject('Failed to retrieve blob');
-    });
-  }
-  window.videoStore = { storeBlob, retrieveBlob };
+  window.videoPlayer = { open, isOpen, load, loadDrop, play, stop, rewind, unloadCued, setIdle, state, toast, onChange: fn => listeners.push(fn) };
 })();

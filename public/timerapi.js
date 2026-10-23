@@ -85,6 +85,11 @@ function processTimerApiMessage(msg) {
             break;
         }
 
+        // Video player (dropPlayer.js): play the cued video, stop, rewind to the start
+        case "videoplay":   { if (window.videoPlayer) return window.videoPlayer.play(); break; }
+        case "videostop":   { if (window.videoPlayer) return window.videoPlayer.stop(); break; }
+        case "videorewind": { if (window.videoPlayer) return window.videoPlayer.rewind(); break; }
+
         case "adjust": {
             if (msg.addtime) {
                 bumpEnd(msg.msecs, msg.msecs);

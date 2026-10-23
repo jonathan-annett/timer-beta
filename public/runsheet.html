@@ -67,8 +67,19 @@
       padding: 0.571rem 0.429rem 0.286rem; position: sticky; top: 0; background: var(--bg); z-index: 1; }
     #rs-table td { padding: 0.143rem 0.286rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
     #rs-table td.num { color: var(--faint); text-align: right; width: 2.4rem; padding-right: 0.571rem; }
-    #rs-table td.start { width: 5.5rem; } #rs-table td.dur { width: 11rem; }
+    #rs-table td.start { width: 5.5rem; } #rs-table td.dur { width: 9rem; }
     #rs-table td.ends { width: 4rem; color: var(--dim); }
+    /* Video column: + video, or the attached video with its before-play setting */
+    #rs-table td.vid { width: 7rem; white-space: nowrap; font-size: 0.857rem; color: var(--dim); }
+    #rs-table td.vid button { padding: 0.143rem 0.4rem; font-size: 0.857rem; }
+    #rs-table td.vid .vadd { background: transparent; border-color: transparent; color: var(--faint); }
+    #rs-table tr:hover td.vid .vadd { border-color: var(--line2); color: var(--dim); }
+    #rs-table td.vid .vdur { color: var(--text); }
+    #rs-table td.vid select { font-size: 0.786rem; padding: 0.071rem 0.143rem; margin-left: 0.214rem; background: #1a1a1a;
+      color: var(--text); border: 1px solid var(--line2); border-radius: 0.214rem; }
+    #rs-table td.vid .vdel { background: transparent; border-color: transparent; color: var(--dim); }
+    #rs-table td.vid .vbusy { font-style: italic; }
+    #rs-table tr.vdrop td { background: #0b2a3d !important; }
     #rs-table td.status { width: 9rem; font-size: 0.857rem; color: var(--dim); white-space: nowrap; }
     #rs-table td.acts { width: 6.6rem; white-space: nowrap; text-align: right; }
     #rs-table td.acts button { padding: 0.143rem 0.3rem; font-size: 0.857rem; background: transparent; border-color: transparent; color: var(--dim); }
@@ -133,7 +144,7 @@
     <div class="main">
       <section class="sheet">
         <table id="rs-table">
-          <thead><tr><th>#</th><th>Start</th><th>Item</th><th>Duration</th><th>Ends</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>Start</th><th>Item</th><th>Video</th><th>Duration</th><th>Ends</th><th>Status</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
         <div class="empty" id="empty">No items yet. Paste a run sheet into <b>Add items</b> on the right, or add items one by one.</div>
@@ -182,6 +193,7 @@
 
   <script src="markdown-lite.js"></script>
   <script src="help-overlay.js"></script>
+  <script src="video-store.js"></script>
   <script src="runsheet-core.js"></script>
   <script src="runsheet-editor.js"></script>
 </body>

@@ -169,6 +169,8 @@ var RunsheetCore = (function () {
       name: it.name || '',
       start: it.start == null ? null : it.start,
       duration: it.duration == null ? null : it.duration,
+      video: it.video || null,                  // {key, name, size, duration} (run sheet videos)
+      videoIdle: it.videoIdle === 'hide' ? 'hide' : 'show',
       planned: planned[i],
       eff: eff[i],
       isEnd: i === endIdx,
@@ -199,6 +201,7 @@ var RunsheetCore = (function () {
         name: it.name,
         start: norm.anchored ? it.planned % DAY : null,
         duration: it.isEnd ? null : it.eff,
+        ...(it.video ? { video: it.video, videoIdle: it.videoIdle } : {}),
       })),
     });
   }

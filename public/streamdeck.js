@@ -90,6 +90,10 @@
     rs_next:          { label: 'Next ▶',    group: 'Run sheet', rsKey: 'next',   cmd: () => _sendCmd({ cmd: 'runsheetnext' }) },
     rs_status:        { label: 'Schedule',  group: 'Run sheet', rsKey: 'status', cmd: null },
     custom_msg:       { label: 'Type\nmessage', group: 'Messages', cmd: () => _sendCmd({ cmd: 'keys', keys: ['c'] }) },
+    // Video player (dropPlayer.js; dropped videos and run sheet videos). Lit by the player's state.
+    video_play:       { label: '▶ Play\nvideo',   group: 'Video', cmd: () => _sendCmd({ cmd: 'videoplay' }) },
+    video_stop:       { label: '■ Stop\nvideo',   group: 'Video', cmd: () => _sendCmd({ cmd: 'videostop' }) },
+    video_rewind:     { label: '⟲ Rewind\nvideo', group: 'Video', cmd: () => _sendCmd({ cmd: 'videorewind' }) },
     empty:            { label: '',          group: 'Other',     cmd: null },
   };
 
@@ -106,7 +110,7 @@
       'preset_10','preset_20','preset_30','preset_45','preset_60','preset_90','preset_120','preset_180',
       'message','message','message_clear','rs_prev','rs_next','rs_status','countdown_major','countdown_minor',
       'start_restart','pause_resume','add_1min','sub_1min','add_15sec','sub_15sec','undo_pause','custom_msg',
-      'toggle_bar','toggle_time','toggle_messages','toggle_presenter','catch_up','brightness_cycle','empty','empty',
+      'toggle_bar','toggle_time','toggle_messages','toggle_presenter','catch_up','brightness_cycle','video_stop','video_rewind',
     ],
   };
 
@@ -124,6 +128,7 @@
   let deckState = {
     expired: false, impending: false, adjusting_up: false, adjusting_down: false,
     pausing: false, showbar: false, showtimenow: false, showmessages: false,
+    video_cued: false, video_playing: false,    // from the bus's video_status
   };
 
   // Remaining time, from the timer's `remain` text ("M:SS" or "H:MM:SS"; counts up overtime
@@ -156,7 +161,11 @@
       send(msg) {
         if (prev && prev.send) prev.send(msg); // chain (relay.js may also be installed)
         if (msg && msg.setVariableValues) {
-          const v = msg.setVariableValues;
+          const v = Object.assign({}, msg.setVariableValues);
+          if ('video_status' in v) {          // one status → the two flags the video keys draw from
+            v.video_cued = v.video_status === 'cued';
+            v.video_playing = v.video_status === 'playing';
+          }
           let changed = false;
           for (const k of Object.keys(v)) {
             if (!(k in deckState)) continue;
@@ -512,6 +521,15 @@
       const adjusting = deckState.adjusting_up || deckState.adjusting_down;
       bg = adjusting ? (override.bg || '#003300') : '#0d0d0d';
       fg = adjusting ? (override.fg || '#33ff33') : '#444444';
+    }
+    if (actionKey === 'video_play' || actionKey === 'video_stop' || actionKey === 'video_rewind') {
+      const on = actionKey === 'video_play' ? deckState.video_cued
+        : actionKey === 'video_rewind' ? deckState.video_playing
+        : deckState.video_cued || deckState.video_playing;
+      if (!on) { bg = '#0d0d0d'; fg = '#444444'; }
+      else if (actionKey === 'video_play') { bg = override.bg || '#0e3a12'; fg = override.fg || '#8dff8d'; }
+      else if (actionKey === 'video_stop') { bg = override.bg || '#3a0d0d'; fg = override.fg || '#ff7777'; }
+      else { bg = override.bg || '#0b3d5c'; fg = override.fg || '#7fd4ff'; }
     }
     if (action.rsKey) {
       const on = rs.active && (action.rsKey === 'prev' ? rs.canBack : action.rsKey === 'next' ? !!rs.next : true);

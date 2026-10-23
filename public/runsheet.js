@@ -98,6 +98,8 @@
     api({ cmd: 'default', msecs: ms });
     api({ cmd: 'start', msecs: ms });
     api({ cmd: 'custommessage', text: it.name });
+    if (it.video) playItemVideo(it);              // the player restarts the timer at the video's length
+    else stopRunsheetVideo();                     // moving on from a video item stops its video
   }
 
   function finishShow() {
@@ -133,6 +135,7 @@
     if (debounced()) return false;
     const h = state.history.pop();
     if (!h) { flash('Nothing to go back to'); return false; }
+    stopRunsheetVideo();                          // undoing a video item stops it (it's then cued again)
     if (h.timer) api({ cmd: 'restore', state: h.timer });
     state.index = h.index; state.currentId = h.currentId; state.finished = h.finished;
     state.log.length = Math.min(state.log.length, h.logLen);
@@ -154,6 +157,81 @@
   function commit() {
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
     render();
+    preloadNext();
+  }
+
+  // ─── Videos ───────────────────────────────────────────────────────────────
+  // An item can carry a video (item.video {key, name, duration}, stored by the editor in the
+  // browser: video-store.js) and a before-play setting (item.videoIdle 'show' | 'hide').
+  // Next on such an item plays it at once; to make that instant, the NEXT item's video is
+  // cued in the player while the current item runs. The item's name is the message. When
+  // the video ends the sheet stays on the item (player back to before-play, timer 0:00).
+
+  const vp = () => window.videoPlayer || null;
+
+  async function cueItemVideo(it) {
+    const p = vp();
+    if (!p || !p.isOpen() || !window.videoStore) return false;
+    let blob = null;
+    try { blob = await window.videoStore.get(it.video.key); } catch (_) { /* missing */ }
+    if (!blob) { flash(`The video for "${it.name}" isn't stored in this browser. Add it again in the run sheet editor.`); return false; }
+    return p.load(URL.createObjectURL(blob), {
+      name: it.video.name, idle: it.videoIdle, controls: false, message: it.name,
+      revoke: true, tag: it.id, onEnd: 'recue',
+    });
+  }
+
+  function playItemVideo(it) {
+    const p = vp();
+    if (!p) return;
+    // Opening the player needs a key press or click; Next from the keyboard or a clicker is one
+    if (!p.isOpen() && !p.open()) { flash('Click "video" to open the player window, then press Next again'); return; }
+    const st = p.state();
+    if (st.cued && st.cued.tag === it.id) { p.play(); return; }   // preloaded: starts at once
+    // Not preloaded: fetch it, then play. Hold the next preload meanwhile, or it could take
+    // this video's place in the player.
+    pendingPlay = it.id;
+    cueItemVideo(it).then(ok => {
+      const c = p.state().cued;
+      if (ok && state.currentId === it.id && c && c.tag === it.id) p.play();
+    }).finally(() => { if (pendingPlay === it.id) pendingPlay = null; preloadNext(); });
+  }
+  let pendingPlay = null;
+
+  // Stops a run sheet video that's playing (not a dropped one), leaving the timer to the sheet
+  function stopRunsheetVideo() {
+    const p = vp();
+    const st = p && p.state();
+    if (st && st.playing && st.playing.tag) p.stop({ quiet: true });
+  }
+
+  // Cue the next item's video, or drop a run sheet video that's cued but no longer next.
+  // Never replaces a dropped (ad hoc) video that's waiting to play.
+  let preloadFor = null;
+  function preloadNext() {
+    const p = vp();
+    if (!p || !p.isOpen() || !isActive() || pendingPlay) return;
+    const nj = state.finished ? -1 : nextIndex(state.index);
+    const it = nj >= 0 ? norm.items[nj] : null;
+    const st = p.state();
+    if (st.cued && !st.cued.tag) return;                        // a dropped video is cued
+    if (!it || !it.video) {
+      if (st.cued && st.cued.tag && st.cued.tag !== state.currentId) p.unloadCued();
+      preloadFor = null;
+      return;
+    }
+    if ((st.cued && st.cued.tag === it.id) || preloadFor === it.id) return;
+    preloadFor = it.id;
+    cueItemVideo(it).finally(() => { preloadFor = null; });
+  }
+
+  // Shown in the dashboard status when the next item is a video and the player isn't open
+  function videoHint() {
+    const p = vp();
+    if (!p || !isActive() || state.finished) return '';
+    const nj = nextIndex(state.index);
+    const it = nj >= 0 ? norm.items[nj] : null;
+    return it && it.video && !p.isOpen() ? 'next is a video: click "video" to open the player' : '';
   }
 
   // ─── Sheet changes from the editor ────────────────────────────────────────
@@ -315,7 +393,7 @@
       const pos = state.index >= 0 ? `${Math.min(state.index + 1, norm.timedCount)}/${norm.timedCount}` : `0/${norm.timedCount}`;
       const status = $('rs_status');
       if (status) {
-        status.textContent = flashText || [sheet.title, pos, info.text].filter(Boolean).join(' · ');
+        status.textContent = flashText || [sheet.title, pos, info.text, videoHint()].filter(Boolean).join(' · ');
         dash.classList.remove('rs-behind', 'rs-ahead', 'rs-ontime', 'rs-flash');
         dash.classList.add(flashText ? 'rs-flash' : 'rs-' + (info.kind === 'none' ? 'ontime' : info.kind));
       }
@@ -425,6 +503,8 @@
   function init() {
     trackButtonBar();
     document.getElementById('btnrunsheet')?.addEventListener('click', openEditor);
+    // When the player window opens (or anything about it changes), cue the next video if needed
+    if (vp()) vp().onChange(() => preloadNext());
     commit();
     // Heartbeat for the editor window, so it knows Next/Back will be handled. Written by
     // every timer window running this code, whether in controller or presenter (P) mode.
