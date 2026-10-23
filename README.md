@@ -1,6 +1,6 @@
 # Presentation Timer (beta)
 
-A keyboard-driven countdown timer for talks, conferences and live events. One window is the operator's controller; a second window shows a clean countdown on the stage display. It also works with a Stream Deck, a remote display over the network, and on phones and tablets.
+A keyboard-driven countdown timer for talks, conferences and live events. One window is the operator's controller; a second window shows a clean countdown on the stage display. It can step through a run sheet, play videos on another screen, and work with a Stream Deck, a remote display over the network, phones and tablets (as remote controls or extra displays).
 
 **Try it:** https://timer.sophtwhere.com/beta/
 
@@ -9,7 +9,7 @@ A keyboard-driven countdown timer for talks, conferences and live events. One wi
 ## Quick start
 
 1. **Open the timer** in Chrome or Edge on the computer you'll operate from.
-2. **Pick a duration**: click a preset (10, 20, 30, 45, 60, 90 min, 2h, 3h), or type the minutes (e.g. `4` `5`) and press **Enter**. For hours, type `1` `:` `30` for 1 h 30 min.
+2. **Pick a duration**: click a preset (10, 20, 30, 45, 60, 90 min, 2h, 3h; **Up** counts up from zero), or type the minutes (e.g. `4` `5`) and press **Enter**. For hours, type `1` `:` `30` for 1 h 30 min.
 3. **Press Space** to start. Press **Space** again any time to restart from the full duration.
 4. **Show it on the stage screen**: press **R** (or click *display* at the bottom) to open the presenter window. Drag it to the stage display and press **F** for fullscreen.
 5. **During the talk**:
@@ -100,8 +100,8 @@ Load the show's running order and step through it with a presentation clicker, t
 
 | | |
 |---|---|
-| **Next** (Page Down, clicker, deck key, editor button) | Starts the next item: shows its name to the presenter, sets the timer to its duration and starts it. The start time goes into the log. |
-| **Back** (Page Up, deck key, editor button) | Undoes the last Next exactly, as if it never happened: the previous countdown (including a pause), its duration and its message come back. Press repeatedly to step back further. |
+| **Next** (Page Down, clicker, deck key, editor button, phone) | Starts the next item: shows its name to the presenter, sets the timer to its duration and starts it. The start time goes into the log. |
+| **Back** (Page Up, deck key, editor button, phone) | Undoes the last Next exactly, as if it never happened: the previous countdown (including a pause), its duration and its message come back. Press repeatedly to step back further. |
 | **Space** | Restarts the current item's countdown, as usual. |
 | **▶** on a row in the editor | Jumps straight to that item (Back undoes it). |
 
@@ -182,7 +182,7 @@ Click **share** to get a room code (e.g. `TIGER-7`), a QR code and a link. Anyon
 
 ## Phone remote control (experimental)
 
-Control the timer from a phone: start, pause, ±1 minute, catch up, presets, messages, and run sheet Back/Next. The phone shows the live countdown. Phones and tablets can also be **view-only displays**: a big countdown, or the run sheet status for a green room.
+Control the timer from a phone or tablet: start, pause, ±1 minute, catch up, presets, messages, run sheet Back/Next, and a virtual Stream Deck XL. The phone shows the live countdown. Phones and tablets can also be **view-only displays**: a big countdown, or the run sheet status for a green room.
 
 1. Click **phone** in the timer's button bar. A panel shows a QR code.
 2. Choose what the code is for:
@@ -197,9 +197,9 @@ Each kind of code has its own key, and the timer enforces what each can do, even
 The badge at the top of the phone shows how it's connected:
 
 - **⚡ LAN direct:** phone and timer are on the same network, so they talk to each other directly.
-- **via server:** they can't reach each other directly (different networks, mobile data, or venue Wi-Fi that keeps devices apart). Everything still works through the pairing server. It's small messages only, about 100 bytes a second.
+- **via server:** they can't reach each other directly (different networks, mobile data, or venue Wi-Fi that keeps devices apart). Everything still works through the pairing server. It's small messages only: about 100 bytes a second, or a few hundred with the Stream Deck view open.
 
-**☰ View** (top right) chooses what the screen shows. A controller can use **Simple controls**, **Stream Deck XL**, **Countdown display** or **Run sheet display**; an admin phone also gets **Admin: set up another computer**; a view-only device only the two displays. The **Stream Deck XL** view is a virtual Stream Deck: the same 32 keys as the timer's XL layout, drawn the same way, including countdown, message and run sheet keys. Pressing a key does exactly what that key does on a real deck. Change the layout in the timer's deck editor (**D**, model *XL*), and the phone follows, even with no real deck connected. Turn the phone sideways for bigger keys: the keys fill the screen and the buttons move into a narrow strip down the side. **Type message** opens a message box on the phone. **Remote** is dimmed, because opening a presenter window needs a click on the timer computer. The phone remembers which view you used last.
+**☰ View** (top right) chooses what the screen shows. A controller can use **Simple controls**, **Stream Deck XL**, **Countdown display** or **Run sheet display**; an admin phone also gets **Admin: set up another computer**; a view-only device only the two displays. The menu also has the **Second tap** setting (below) and, where the browser supports it, **Install as an app**. The **Stream Deck XL** view is a virtual Stream Deck: the same 32 keys as the timer's XL layout, drawn the same way, including countdown, message and run sheet keys. Pressing a key does exactly what that key does on a real deck. Change the layout in the timer's deck editor (**D**, model *XL*), and the phone follows, even with no real deck connected. Turn the phone sideways for bigger keys: the keys fill the screen and the buttons move into a narrow strip down the side. **Type message** opens a message box on the phone. **Remote** is dimmed, because opening a presenter window needs a click on the timer computer. The phone remembers which view you used last.
 
 The **run sheet display** shows the time of day, what's on now with its countdown, what's next with its planned time, how far ahead or behind the show is, and the whole schedule with planned times. Items that have run are dimmed and show when they actually started. On a tablet held sideways the status is on the left and the schedule on the right. On a controller or admin phone or tablet (not a view-only display) it also has buttons, so a director or second operator can step in: **◀ Back**, **Pause** / **Resume** and **Next ▶**, nudges of **−1 min**, **−10 s**, **+10 s** and **+1 min**, and **Catch up**. A nudge works like the timer's ↑/↓ keys: the countdown runs a little fast or slow until it reaches the new end time; **Catch up** jumps straight there.
 
@@ -211,13 +211,13 @@ The **run sheet display** shows the time of day, what's on now with its countdow
 2. On a phone paired with this timer's **Admin** code, choose **☰ View → Admin: set up another computer** and scan the other computer's QR code.
 3. Choose **A remote control**, **A countdown display** or **A run sheet display**.
 
-The phone gets the link from this timer and passes it to the other computer, which shows a notice for 8 seconds (anyone there can **Cancel**) and then opens it. It's then listed in this timer's phone panel, and it remembers the link. The phone needs the other computer's *Control* code because it is telling that computer what to do; a view-only code won't work. iPhones scan with the built-in QR reader where the browser has one, and otherwise with a small bundled reader (jsQR).
+The phone gets the link from this timer and passes it to the other computer, which shows a notice for 8 seconds (anyone there can **Cancel**) and then opens it. It's then listed in this timer's phone panel, and it remembers the link. The phone needs the other computer's *Control* code because it is telling that computer what to do; a view-only code won't work. The phone uses the browser's built-in QR reader where there is one (Chrome on Android) and otherwise a small bundled reader (jsQR), so iPhones work too.
 
 **For a multi-day event:** the timer keeps the same codes until someone presses **New code**, and each phone remembers the last link it opened. Install the remote as an app (**☰ View → Install as an app** on Android and in desktop Chrome/Edge; on iPhone, **Share → Add to Home Screen**) and it opens straight into the remote, full screen, already paired. If the timer computer is shut down overnight, phones show *timer offline* and reconnect by themselves when it's opened again the next day. After **New code**, every phone needs the new QR code.
 
 Buttons and deck keys buzz as soon as you press them (on phones that can vibrate) and act when you lift your finger. Slide off the button before lifting to cancel the press. If you'd rather Restart and the presets need a second tap within 2 seconds, so a stray touch can't restart a talk, turn on **Second tap** in the ☰ View menu (each phone remembers its own setting; off by default). The phone screen stays on while the page is open. Up to 16 phones and displays can connect at once.
 
-The QR code contains a secret key: anyone with the link can control the timer. **New code** disconnects every phone and makes a new link. **Turn off** stops phone control. The QR image needs internet access; otherwise use **Copy link**.
+The QR code contains a secret key: anyone with the link can control the timer. **New code** disconnects every phone and makes a new link. **Turn off** stops phone control. Drawing the QR code needs internet access (the QR library is loaded from a CDN); without it, use **Copy link**.
 
 ### Pairing server
 
