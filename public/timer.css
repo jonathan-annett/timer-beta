@@ -437,6 +437,7 @@ html.reduced #messages_enabled {
 }
 
  
+html.show_custom_message.paused #remain_info_message,
 html.show_custom_message.showmessages.impending #remain_info_message,
 html.show_custom_message.showmessages.over #remain_info_message ,
 html.edit_custom_message.showmessages.impending #remain_info_message,
