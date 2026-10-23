@@ -454,6 +454,10 @@ html.show_custom_message #custom_message {
     color: var(--color-custom-message);
 }
 
+/* long messages: two smaller lines, very long: three (see announceCustomMessage) */
+html.msg-long  #custom_message { font-size: 6.5vh; line-height: 1.1; }
+html.msg-xlong #custom_message { font-size: 4.5vh; line-height: 1.1; }
+
 html.edit_custom_message #custom_message {
     color: var(--color-custom-message-editing);
 }
@@ -1547,4 +1551,68 @@ html.adjusting_time #btncatchup {
 .deck-key-options textarea {
   background: #1a1a1a; border: 1px solid #333; color: #ddd;
   padding: 4px 8px; border-radius: 3px; font: 12px sans-serif; resize: vertical;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RUN SHEET DASHBOARD (controller only; html.runsheet is set by runsheet.js)
+═══════════════════════════════════════════════════════════════════════════ */
+
+#runsheet_dash {
+  display: none;
+  position: absolute;
+  top: 118px;
+  left: 12px;
+  right: 50vw;
+  font-size: 2.1vh;
+  line-height: 1.35;
+  pointer-events: none;
+  z-index: 50;
+}
+html.runsheet:not(.reduced) #runsheet_dash { display: block; }
+
+#runsheet_dash .rs-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8em;
+  white-space: nowrap;
+  color: #777;
+}
+#runsheet_dash .rs-label {
+  flex: 0 0 3.4em;
+  font-size: 0.7em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #555;
+}
+#runsheet_dash .rs-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+#runsheet_dash .rs-meta { flex-shrink: 0; }
+#runsheet_dash .rs-meta { font-size: 0.8em; color: #666; }
+#runsheet_dash .rs-row.rs-empty { visibility: hidden; }
+
+#runsheet_dash #rs_cur { color: #fff; font-weight: bold; }
+#runsheet_dash #rs_cur .rs-name { font-size: 1.3em; }
+#runsheet_dash #rs_cur .rs-meta { font-weight: normal; color: #999; }
+#runsheet_dash #rs_next { color: #bbb; }
+
+#rs_status { margin-top: 0.2em; font-size: 0.85em; color: #888; padding-left: 4.4em; }
+#runsheet_dash.rs-behind #rs_status { color: #ff6b6b; }
+#runsheet_dash.rs-ahead  #rs_status { color: #5fd35f; }
+#runsheet_dash.rs-flash  #rs_status { color: #ffcc33; }
+
+/* In run sheet mode the controller's copy of the message moves to the top right,
+   so long item names don't collide with the dashboard (presenter view unchanged). */
+html.runsheet:not(.reduced) #custom_message {
+  top: 118px;
+  left: 50vw;
+  right: 12px;
+  width: auto;
+  font-size: 4.5vh;
+  line-height: 1.15;
+  text-align: right;
+  max-height: 3.6em;
+  overflow: hidden;
 }

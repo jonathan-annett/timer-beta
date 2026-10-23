@@ -1,0 +1,390 @@
+/*!
+ * runsheet.js
+ * Run sheet controller for the Presentation Timer (controller window only).
+ *
+ *  - Next (Page Down, Stream Deck, editor) logs the actual start, sets the message to
+ *    the item name, sets the default duration and starts the timer.
+ *  - Back (Page Up, Stream Deck, editor) undoes the last Next exactly, by restoring
+ *    the timer snapshot taken just before it.
+ *  - Draws the previous / now / next dashboard and works out ahead / behind.
+ *
+ * Storage (shared with the editor window, runsheet.html):
+ *   runsheet        the sheet (written by the editor)
+ *   runsheet_state  show state: active, index, history, log (written only here)
+ *   runsheet_cmd    commands from the editor (read and removed here)
+ *   runsheet_live   status text for the editor (written here, ~1/s on change)
+ * MIT Licensed
+ */
+
+/* global RunsheetCore, processTimerApiMessage, timeProvider, setHtmlClass, clearHtmlClass */
+
+(function () {
+  'use strict';
+
+  const params = new URLSearchParams(location.search);
+  if (params.has('presenter') || params.has('audience')) return;   // controller only
+  if (typeof RunsheetCore === 'undefined') return;
+
+  const C = RunsheetCore;
+  const SHEET_KEY = 'runsheet', STATE_KEY = 'runsheet_state', CMD_KEY = 'runsheet_cmd', LIVE_KEY = 'runsheet_live';
+  const ON_TIME_SEC = 30;        // within this many seconds counts as "on time"
+  const MAX_HISTORY = 200;
+
+  const readJSON = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? def : v; } catch (_) { return def; } };
+  const emptyState = () => ({ active: false, index: -1, currentId: null, finished: false, history: [], log: [], dayBase: null });
+
+  let sheet = readJSON(SHEET_KEY, { title: '', perItem: 20, items: [] });
+  const savedState = readJSON(STATE_KEY, null);
+  let state = Object.assign(emptyState(), savedState || {});
+  let norm = C.normalise(sheet);
+  if (!savedState && norm.items.length) state.active = true;   // first run with a sheet already loaded
+
+  const api = msg => (typeof processTimerApiMessage === 'function' ? processTimerApiMessage(msg) : undefined);
+  const now = () => timeProvider.now();
+  const isActive = () => !!state.active && norm.items.length > 0;
+  const idxOf = id => norm.items.findIndex(it => it.id === id);
+
+  function dayBaseNow() {
+    const d = timeProvider.date();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  }
+
+  // First item to run after index `from` (skips the finish marker); -1 if none.
+  function nextIndex(from) {
+    for (let j = from + 1; j < norm.items.length; j++) if (j !== norm.endIdx) return j;
+    return -1;
+  }
+
+  // Planned start of item i as a timestamp (ms), or null if not yet known.
+  function plannedMs(plannedSec) {
+    if (plannedSec == null) return null;
+    if (norm.anchored) return (state.dayBase != null ? state.dayBase : dayBaseNow()) + plannedSec * 1000;
+    // Unanchored: pinned to the actual start of the first item run in this show
+    const first = state.log.find(e => e.id !== 'end');
+    const fi = first ? idxOf(first.id) : -1;
+    if (!first || fi < 0) return null;
+    return first.actual + (plannedSec - norm.items[fi].planned) * 1000;
+  }
+  const plannedStartMs = i => (norm.items[i] ? plannedMs(norm.items[i].planned) : null);
+  const plannedFinishMs = () => plannedMs(norm.finishPlanned);
+
+  // ─── Actions ──────────────────────────────────────────────────────────────
+
+  let lastAction = 0;
+  function debounced() {               // a bouncing clicker shouldn't skip two items
+    const t = Date.now();
+    if (t - lastAction < 300) return true;
+    lastAction = t;
+    return false;
+  }
+
+  function pushHistory() {
+    state.history.push({
+      timer: api({ cmd: 'snapshot' }),
+      index: state.index, currentId: state.currentId, finished: state.finished,
+      logLen: state.log.length, dayBase: state.dayBase,
+    });
+    if (state.history.length > MAX_HISTORY) state.history.shift();
+  }
+
+  function startItem(i) {
+    const it = norm.items[i];
+    if (state.dayBase == null) state.dayBase = dayBaseNow();
+    state.index = i; state.currentId = it.id; state.finished = false;
+    const entry = { id: it.id, name: it.name, planned: null, plannedDur: it.eff, actual: now() };
+    state.log.push(entry);
+    entry.planned = plannedStartMs(i);            // after push: an unanchored show is pinned to its first entry
+    const ms = it.eff * 1000;
+    api({ cmd: 'default', msecs: ms });
+    api({ cmd: 'start', msecs: ms });
+    api({ cmd: 'custommessage', text: it.name });
+  }
+
+  function finishShow() {
+    state.finished = true;
+    const end = norm.endIdx >= 0 ? norm.items[norm.endIdx] : null;
+    state.log.push({ id: 'end', name: end ? end.name : 'Finish', planned: plannedFinishMs(), plannedDur: 0, actual: now() });
+    api({ cmd: 'custommessage', text: '' });
+  }
+
+  function next() {
+    if (!isActive()) return false;
+    if (debounced()) return false;
+    if (state.finished) { flash('End of run sheet — Back to undo'); return false; }
+    const j = nextIndex(state.index);
+    pushHistory();
+    if (j < 0) finishShow(); else startItem(j);
+    commit();
+    return true;
+  }
+
+  function goTo(id) {
+    if (!isActive()) return false;
+    const i = idxOf(id);
+    if (i < 0 || i === norm.endIdx) return false;
+    pushHistory();
+    startItem(i);
+    commit();
+    return true;
+  }
+
+  function back() {
+    if (!isActive()) return false;
+    if (debounced()) return false;
+    const h = state.history.pop();
+    if (!h) { flash('Nothing to go back to'); return false; }
+    if (h.timer) api({ cmd: 'restore', state: h.timer });
+    state.index = h.index; state.currentId = h.currentId; state.finished = h.finished;
+    state.log.length = Math.min(state.log.length, h.logLen);
+    state.dayBase = h.dayBase;
+    commit();
+    return true;
+  }
+
+  function resetShow() {
+    state = Object.assign(emptyState(), { active: state.active });
+    commit();
+  }
+
+  function setActive(on) {
+    state.active = !!on;
+    commit();
+  }
+
+  function commit() {
+    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    render();
+  }
+
+  // ─── Sheet changes from the editor ────────────────────────────────────────
+
+  function onSheetChanged() {
+    const hadItems = norm.items.length > 0;
+    sheet = readJSON(SHEET_KEY, { title: '', perItem: 20, items: [] });
+    norm = C.normalise(sheet);
+    if (!hadItems && norm.items.length > 0) state.active = true;      // loading a sheet switches it on
+    if (state.currentId) {
+      const i = idxOf(state.currentId);
+      if (i >= 0) state.index = i;                                    // follow the item if rows moved
+      else state.index = Math.min(state.index, norm.items.length - 1); // deleted: stay near it
+    }
+    commit();
+  }
+
+  function onCommand() {
+    const raw = localStorage.getItem(CMD_KEY);
+    if (!raw) return;
+    localStorage.removeItem(CMD_KEY);
+    let c; try { c = JSON.parse(raw); } catch (_) { return; }
+    switch (c.cmd) {
+      case 'next':   lastAction = 0; next(); break;
+      case 'back':   lastAction = 0; back(); break;
+      case 'goto':   goTo(c.id); break;
+      case 'reset':  resetShow(); break;
+      case 'active': setActive(c.on); break;
+    }
+  }
+
+  window.addEventListener('storage', ev => {
+    if (ev.key === SHEET_KEY) onSheetChanged();
+    else if (ev.key === CMD_KEY && ev.newValue) onCommand();
+  });
+
+  // ─── Status: ahead / behind ───────────────────────────────────────────────
+
+  // Seconds behind schedule (+) or ahead (−); null when there's nothing to compare yet.
+  function lateness() {
+    const t = now();
+    if (state.finished) {
+      const e = state.log[state.log.length - 1], pf = plannedFinishMs();
+      return (e && pf != null) ? (e.actual - pf) / 1000 : null;
+    }
+    const cur = norm.items[state.index];
+    if (state.index < 0 || !cur) {
+      const first = nextIndex(-1);
+      const p0 = norm.anchored && first >= 0 ? plannedStartMs(first) : null;
+      return p0 != null && t > p0 ? (t - p0) / 1000 : null;        // late start
+    }
+    const ps = plannedStartMs(state.index);
+    if (ps == null) return null;
+    const plannedEnd = ps + cur.eff * 1000;
+    const s = api({ cmd: 'snapshot' });
+    let projectedEnd = t;
+    if (s) {
+      const timerEnd = s.seekEndsAt + (s.pausedAt != null ? t - s.pausedAt : 0);
+      projectedEnd = Math.max(t, timerEnd);
+    }
+    return (projectedEnd - plannedEnd) / 1000;
+  }
+
+  function statusInfo() {
+    const late = lateness();
+    const pf = plannedFinishMs();
+    const finishEta = (pf != null && late != null) ? pf + late * 1000 : pf;
+    let text = '', short = '', kind = 'none';
+    if (!isActive()) return { text, short, kind, late: null };
+
+    const first = nextIndex(-1);
+    if (state.index < 0 && !state.finished) {
+      const p0 = norm.anchored && first >= 0 ? plannedStartMs(first) : null;
+      if (p0 == null) { text = 'Ready — press Next (Page Down) to start'; short = 'Ready'; }
+      else if (now() < p0) { text = `Starts ${clockOf(p0)} (in ${C.formatSpan((p0 - now()) / 1000)})`; short = clockOf(p0); }
+      else { text = `Late start: ${C.formatSpan(late)}`; short = '+' + C.formatSpan(late); kind = 'behind'; }
+      return { text, short, kind, late };
+    }
+    if (late == null) { text = ''; }
+    else if (Math.abs(late) < ON_TIME_SEC) { text = 'On time'; short = 'On time'; kind = 'ontime'; }
+    else if (late > 0) { text = `Running ${C.formatSpan(late)} behind`; short = '+' + C.formatSpan(late); kind = 'behind'; }
+    else { text = `${C.formatSpan(late)} ahead`; short = '−' + C.formatSpan(late); kind = 'ahead'; }
+    if (state.finished) {
+      const e = state.log[state.log.length - 1];
+      text = `Finished ${clockOf(e.actual)}` + (text ? ' · ' + text.replace('Running ', '') : '');
+    } else if (finishEta != null) {
+      text += (text ? ' · ' : '') + `finish ≈ ${clockOf(finishEta)}`;
+    }
+    return { text, short, kind, late };
+  }
+
+  function clockOf(ms) {
+    const d = new Date(ms);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  // ─── Dashboard ────────────────────────────────────────────────────────────
+
+  const $ = id => document.getElementById(id);
+  let flashText = '', flashTimer = null;
+  function flash(text) {
+    flashText = text;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { flashText = ''; render(); }, 2500);
+    render();
+  }
+
+  function setRow(row, name, meta) {
+    const el = $('rs_' + row);
+    if (!el) return;
+    el.querySelector('.rs-name').textContent = name || '';
+    el.querySelector('.rs-meta').textContent = meta || '';
+    el.classList.toggle('rs-empty', !name);
+  }
+
+  function variance(sec) {
+    if (sec == null || Math.abs(sec) < ON_TIME_SEC) return '';
+    return (sec > 0 ? '+' : '−') + C.formatSpan(sec);
+  }
+
+  function render() {
+    if (isActive()) setHtmlClass('runsheet'); else clearHtmlClass('runsheet');
+    const dash = $('runsheet_dash');
+    const info = statusInfo();
+
+    if (dash && isActive()) {
+      const log = state.log;
+      // Previous: the item that ran before the current one, in the order they actually ran.
+      // The last log entry is the current item (or the finish), so it's the one before that.
+      const prev = log[log.length - 2];
+      if (prev && prev.id !== 'end') {
+        const following = log[log.length - 1];
+        const ran = following ? (following.actual - prev.actual) / 1000 : null;
+        setRow('prev', prev.name, `${clockOf(prev.actual)}` + (ran != null ? ` · ran ${C.formatSpan(ran)}` : '') +
+               (ran != null ? ' ' + variance(ran - prev.plannedDur) : ''));
+      } else setRow('prev', '', '');
+
+      const cur = norm.items[state.index];
+      const curLog = log[log.length - 1];
+      if (state.finished) {
+        setRow('cur', 'Show finished', curLog ? clockOf(curLog.actual) : '');
+      } else if (state.index < 0 || !cur) {
+        setRow('cur', 'Not started', 'Page Down / Next to begin');
+      } else {
+        const started = curLog && curLog.id === cur.id ? curLog : null;
+        setRow('cur', cur.name, C.formatDuration(cur.eff) +
+               (started ? ` · started ${clockOf(started.actual)}` + (started.planned != null ? ' ' + variance((started.actual - started.planned) / 1000) : '') : ''));
+      }
+
+      const nj = state.finished ? -1 : nextIndex(state.index);
+      if (nj >= 0) {
+        const it = norm.items[nj], p = plannedStartMs(nj);
+        setRow('next', it.name, C.formatDuration(it.eff) + (p != null ? ` · planned ${clockOf(p)}` : ''));
+      } else if (!state.finished && norm.items.length) {
+        const pf = plannedFinishMs();
+        setRow('next', norm.endIdx >= 0 ? norm.items[norm.endIdx].name : 'End of show', pf != null ? `planned ${clockOf(pf)}` : '');
+      } else setRow('next', '', '');
+
+      const pos = state.index >= 0 ? `${Math.min(state.index + 1, norm.timedCount)}/${norm.timedCount}` : `0/${norm.timedCount}`;
+      const status = $('rs_status');
+      if (status) {
+        status.textContent = flashText || [sheet.title, pos, info.text].filter(Boolean).join(' · ');
+        dash.classList.remove('rs-behind', 'rs-ahead', 'rs-ontime', 'rs-flash');
+        dash.classList.add(flashText ? 'rs-flash' : 'rs-' + (info.kind === 'none' ? 'ontime' : info.kind));
+      }
+    }
+    announce(false, info);
+  }
+
+  // ─── Broadcast (Stream Deck, editor window) ───────────────────────────────
+
+  let lastVars = '', lastLive = '';
+  function announce(force, info) {
+    info = info || statusInfo();
+    const nj = state.finished ? -1 : nextIndex(state.index);
+    const cur = norm.items[state.index];
+    const vars = {
+      rs_active: isActive() ? '1' : '0',
+      rs_current: !state.finished && cur ? cur.name : '',
+      rs_next: !isActive() || state.finished ? '' : nj >= 0 ? norm.items[nj].name
+             : (norm.endIdx >= 0 ? norm.items[norm.endIdx].name + ' (end)' : 'End of show'),
+      rs_can_back: state.history.length > 0 ? '1' : '0',
+      rs_status: info.short,
+      rs_late: info.late == null ? '' : String(Math.round(info.late)),
+    };
+    const v = JSON.stringify(vars);
+    if ((force || v !== lastVars) && window.timerAPI) {
+      lastVars = v;
+      window.timerAPI.send({ setVariableValues: vars });
+    }
+    const live = JSON.stringify({ text: info.text, kind: info.kind, late: info.late == null ? null : Math.round(info.late) });
+    if (live !== lastLive) { lastLive = live; localStorage.setItem(LIVE_KEY, live); }
+  }
+
+  // ─── Keys ─────────────────────────────────────────────────────────────────
+
+  const isTyping = t => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+
+  // Capture phase, so Page Up/Down are handled here before timer.js sees them
+  // (outside run sheet mode they fall through to the old PowerPoint mode).
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'PageDown' && e.key !== 'PageUp') return;
+    if (!isActive() || isTyping(e.target) || document.documentElement.classList.contains('edit_custom_message')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.repeat) return;
+    if (e.key === 'PageDown') next(); else back();
+  }, true);
+
+  function openEditor() {
+    const w = window.open('runsheet.html', 'runsheet_editor_window', 'width=1100,height=780');
+    if (w) w.focus();
+    return false;
+  }
+
+  document.addEventListener('keydown', e => {
+    if ((e.key === 'e' || e.key === 'E') && !e.ctrlKey && !e.metaKey && !e.altKey && !isTyping(e.target)
+        && !document.documentElement.classList.contains('edit_custom_message')) {
+      openEditor();
+    }
+  });
+
+  // ─── Boot ─────────────────────────────────────────────────────────────────
+
+  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive };
+
+  function init() {
+    document.getElementById('btnrunsheet')?.addEventListener('click', openEditor);
+    commit();
+    setInterval(render, 1000);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();

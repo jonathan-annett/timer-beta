@@ -39,6 +39,10 @@ timer_build/
     ├── streamdeck.js       Stream Deck WebHID integration + in-app editor
     ├── relay.js            WebSocket-first remote display client + WebRTC upgrade
     ├── touchcontrols.js    Mobile gestures, touch strip, quick-start overlay
+    ├── runsheet-core.js    Run sheet logic: parsing, normalising, CSV (pure, no DOM; node-testable)
+    ├── runsheet.js         Run sheet controller: next/back/log, Page Up/Down, dashboard (timer window only)
+    ├── runsheet.html       Run sheet editor window (opened with E)
+    ├── runsheet-editor.js  Editor logic for runsheet.html
     ├── fsapi.js            Fullscreen API abstraction (cross-browser)
     ├── inettime.js         Internet time sync via worldtimeapi.org
     ├── timeroverlaypip.js  Picture-in-Picture overlay of countdown
@@ -109,9 +113,11 @@ This means loading order matters but both can coexist. `streamdeck.js` loads fir
 
 **Outbound** (timer → integrations): `timerAPI.send({ setVariableValues: { remain, expired, impending, pausing, adjusting_up, adjusting_down, custommsg, showbar, showtimenow, showmessages, endsAt, startedAt, ... } })`
 
-`custommsg` is the message currently on screen (`''` when none). Messages are set from several places (C key, `custommessage` command, `remote-json`, storage sync), so `timer.js` announces it from a single point: `announceCustomMessage()` runs each tick and sends only when the text changes. The `opened` command forces a resend. Don't add sends at the individual setters.
+`custommsg` is the message currently on screen (`''` when none). Messages are set from several places (C key, `custommessage` command, `remote-json`, storage sync), so `timer.js` announces it from a single point: `announceCustomMessage()` runs each tick and sends only when the text changes. The `opened` command forces a resend. Don't add sends at the individual setters. On page load `timer.js` shows the stored `custom_message`, so a presenter window opened later (or a reloaded controller) shows the current message.
 
-**Inbound** (integrations → timer): call `processTimerApiMessage({ cmd, ... })` directly. The full command set is documented in `timerapi.js`. Key commands: `start`, `pause`, `undopause`, `adjust`, `nudge`, `catchup`, `custommessage`, `settimercolors`, `keys`.
+**Inbound** (integrations → timer): call `processTimerApiMessage({ cmd, ... })` directly. The full command set is documented in `timerapi.js`. Key commands: `start`, `pause`, `undopause`, `adjust`, `nudge`, `catchup`, `custommessage`, `settimercolors`, `keys`, `snapshot` (returns the timer state), `restore`, `runsheetnext`, `runsheetprev`.
+
+`runsheet.js` also sends `rs_active`, `rs_current`, `rs_next`, `rs_can_back`, `rs_status` and `rs_late` (seconds; + = behind) on the bus when they change. The `opened` command makes it resend.
 
 **Catch up:** ↑/↓ (and the `nudge` command) move `seekEndsAt`; each tick eases `endsAt` towards it by 25 ms, so the display runs fast or slow. `catchUpNow()` in `timer.js` snaps `endsAt = seekEndsAt`. It is shared by Ctrl+Enter, Ctrl+Space, the `catch up` button and the `catchup` command.
 
@@ -138,6 +144,8 @@ Timer visual state lives entirely in CSS classes on `<html>`. JS uses `setHtmlCl
 | `shifting` | Shift key held |
 | `editing` | User is typing a custom duration |
 | `adjusting_time` | Timer is easing towards an adjusted end time (enables the catch up button) |
+| `runsheet` | Run sheet mode is on (shows the dashboard on the controller) |
+| `msg-long` / `msg-xlong` | Current message is long / very long; smaller message font (set in `announceCustomMessage`) |
 | `twoplus` | Two or more timer tabs open |
 | `portrait` / `landscape` | Orientation (set by currentdevice.js or resize handler) |
 | `overlay` | PiP overlay active |
@@ -176,6 +184,10 @@ All timer state persists in localStorage. These are the canonical keys:
 | `streamdeck_key_overrides` | JSON | Per-key label/colour customisations |
 | `streamdeck_autoconnect` | `'0'` or absent | `'0'` after the user clicks Disconnect; suppresses auto-reconnect |
 | `streamdeck_brightness` | 1–100 | Stream Deck backlight %, applied on connect |
+| `runsheet` | JSON | The run sheet `{title, perItem, items:[{id,name,start,duration}]}`; written by the editor |
+| `runsheet_state` | JSON | Show state `{active, index, currentId, finished, history, log, dayBase}`; written only by `runsheet.js` |
+| `runsheet_cmd` | JSON | Command from the editor (`next`, `back`, `goto`, `reset`, `active`); consumed and removed by `runsheet.js` |
+| `runsheet_live` | JSON | Status text for the editor, written by `runsheet.js` when it changes |
 | `tab_<id>` | timestamp ms | Heartbeat for multi-tab detection |
 | `controller_tab_<id>` | timestamp ms | Marks this tab as a controller |
 
@@ -245,6 +257,22 @@ In the editor, **Disconnect** blanks the keys, closes the device and sets `local
 
 ---
 
+## Run Sheet
+
+Files: `runsheet-core.js` (pure logic, shared), `runsheet.js` (controller window), `runsheet.html` + `runsheet-editor.js` (editor window). The two windows only talk through localStorage: the editor writes `runsheet` and `runsheet_cmd`; the controller is the single writer of `runsheet_state` and `runsheet_live`. Don't let the editor write `runsheet_state`.
+
+**Sheet model:** each item has `start` (seconds since midnight, or null) and `duration` (seconds, or null). `normalise()` derives everything else. An explicit duration wins; otherwise it's the gap to the next row's start, or `perItem` minutes. The last row is the finish marker if it has a start and no duration. The sheet is *anchored* if any row has a start (planned times are clock times); otherwise planned times are offsets pinned to when the first item actually started. Starts are unwrapped past midnight. Paste/CSV detection lives in `parseText()`. Durations: a plain number is minutes, `a:b` is h:mm (same as typing into the timer), `a:b:c` is h:mm:ss.
+
+**Next/Back:** every Next or goto pushes `{timer: processTimerApiMessage({cmd:'snapshot'}), index, currentId, finished, logLen, dayBase}` onto `state.history`, logs the actual start, then sends `default`, `start` and `custommessage` (item name). Back pops and sends `restore`, which calls `restoreTimerState()` in `timer.js` and restores the message. Snapshots hold absolute timestamps, so the restored countdown carries on as if the Next never happened. Items keep their full planned duration even when the show is late (deliberate). The current item is tracked by id, so it survives row edits.
+
+**Ahead/behind:** for the current item, projected end = max(now, timer's end incl. pause time) compared with its planned end. Before the start it's a late start against the first planned time; after the finish it's the actual finish against the planned finish. Within ±30 s counts as on time.
+
+**Keys:** Page Down/Up are caught in the capture phase only in run sheet mode, so outside it they still reach `timer.js` (PowerPoint mode). The editor window handles them too, so a clicker focused on it still works. **E** opens the editor (not while typing).
+
+**Layout:** on the controller in run sheet mode the dashboard takes the top-left half and the controller's copy of the message moves to the top right (`html.runsheet:not(.reduced) #custom_message`). The presenter view is unchanged.
+
+**Tests:** `runsheet-core.js` exports via `module.exports` when loaded in node. The pure functions are easy to unit-test there.
+
 ## Mobile / Touch
 
 `touchcontrols.js` activates only when `'ontouchstart' in window` is true. It:
@@ -280,6 +308,7 @@ The `audience.html` page supports tap-to-fullscreen (calls `requestFullscreen()`
 - **Static hosting:** `share` and `audience.html` need `relay-server.js` running. On a plain static host (e.g. the `/beta` deployment) they fail; everything else works.
 - `icon-192.png` and `icon-512.png` are referenced in `manifest.json` but not yet created. The PWA manifest will fail validation until they exist. Any solid black square PNG at the right dimensions will work.
 - `currentdevice.js` is still in `public/` but unused. It can be deleted.
+- Run sheet: the touch strip has no Next/Back yet; editing a running item's duration doesn't change its countdown until it's restarted.
 - No authentication on the relay server. The room code is the only access control. Sufficient for typical use; add a token if the server will be public-facing and high-value.
 
 ---

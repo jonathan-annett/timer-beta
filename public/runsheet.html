@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+ * runsheet.html
+ * Run sheet editor for the Presentation Timer. Opened from the timer with E or the
+ * "run sheet" button; can live on its own screen. Talks to the timer window through
+ * localStorage (see runsheet.js for the keys).
+ * MIT Licensed
+-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Run sheet</title>
+  <style>
+    :root {
+      --bg: #0b0b0b; --panel: #131313; --line: #262626; --line2: #333;
+      --text: #ddd; --dim: #888; --faint: #555;
+      --now: #2e7d32; --now-text: #9cf59c; --next: #1d2b3a;
+      --behind: #ff6b6b; --ahead: #5fd35f; --warn: #ffcc33; --accent: #4aa8ff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+      font: 14px/1.4 "Helvetica Neue", Arial, sans-serif; }
+    button { font: inherit; color: var(--text); background: #1e1e1e; border: 1px solid var(--line2);
+      border-radius: 5px; padding: 6px 12px; cursor: pointer; }
+    button:hover { background: #2a2a2a; border-color: #555; }
+    button:disabled { opacity: .35; cursor: default; }
+    button.primary { background: #123a12; border-color: #2e6b2e; color: var(--now-text); }
+    button.danger { color: #ff9a9a; }
+    input, textarea { font: inherit; color: var(--text); background: transparent; border: 1px solid transparent;
+      border-radius: 4px; padding: 4px 6px; width: 100%; }
+    input:hover { border-color: var(--line2); }
+    input:focus, textarea:focus { outline: none; border-color: var(--accent); background: #161b22; }
+    input::placeholder { color: #5d6670; font-style: italic; }
+    input.invalid { border-color: var(--behind); background: #2a1212; }
+    textarea { border-color: var(--line2); background: #101010; resize: vertical; }
+
+    .app { display: grid; grid-template-rows: auto auto 1fr; height: 100%; }
+
+    header { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+    #title { font-size: 18px; font-weight: bold; max-width: 420px; }
+    .mode { display: flex; align-items: center; gap: 8px; color: var(--dim); white-space: nowrap; cursor: pointer; }
+    .mode input { width: auto; }
+    #live { margin-left: auto; font-weight: bold; color: var(--dim); white-space: nowrap; }
+    #live.behind { color: var(--behind); } #live.ahead { color: var(--ahead); } #live.ontime { color: #ccc; }
+    #conn { color: var(--warn); font-size: 13px; display: none; width: 100%; }
+    #conn.show { display: block; }
+
+    .transport { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    .transport button { padding: 8px 18px; font-size: 15px; }
+    .transport .now-next { margin-left: 12px; color: var(--dim); min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .transport .now-next b { color: var(--text); }
+    .transport .hint { color: var(--faint); font-size: 12px; }
+
+    .main { display: grid; grid-template-columns: 1fr 380px; min-height: 0; }
+    .sheet { overflow: auto; padding: 4px 8px 40px; }
+    aside { border-left: 1px solid var(--line); overflow: auto; background: var(--panel); }
+
+    table { border-collapse: collapse; width: 100%; }
+    th { text-align: left; font-weight: normal; color: var(--faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+      padding: 8px 6px 4px; position: sticky; top: 0; background: var(--bg); z-index: 1; }
+    #rs-table td { padding: 2px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    #rs-table td.num { color: var(--faint); text-align: right; width: 34px; padding-right: 8px; }
+    #rs-table td.start { width: 92px; } #rs-table td.dur { width: 160px; }
+    #rs-table td.ends { width: 62px; color: var(--dim); }
+    #rs-table td.status { width: 150px; font-size: 12px; color: var(--dim); white-space: nowrap; }
+    #rs-table td.acts { width: 128px; white-space: nowrap; text-align: right; }
+    #rs-table td.acts button { padding: 2px 7px; font-size: 12px; background: transparent; border-color: transparent; color: var(--dim); }
+    #rs-table td.acts button:hover { border-color: var(--line2); color: var(--text); }
+    #rs-table td.acts button.go { color: var(--now-text); }
+    #rs-table tr:hover td { background: #121212; }
+
+    tr.done td { opacity: .55; }
+    tr.done td.status { opacity: 1; }
+    tr.current td { background: #102410 !important; }
+    tr.current td.num { color: var(--now-text); font-weight: bold; }
+    tr.current input[data-field=name] { font-weight: bold; color: #fff; }
+    tr.next td { background: var(--next); }
+    tr.endrow td { color: var(--dim); }
+    tr.endrow td.num { color: var(--warn); }
+    .st-now { color: var(--now-text); font-weight: bold; }
+    .st-late { color: var(--behind); } .st-early { color: var(--ahead); }
+    .st-gap { color: var(--warn); }
+    .empty { color: var(--dim); padding: 40px 16px; text-align: center; }
+    .add-row { margin: 10px 4px; }
+
+    details { border-bottom: 1px solid var(--line); }
+    summary { cursor: pointer; padding: 12px 16px; font-weight: bold; list-style: none; }
+    summary::before { content: '▸ '; color: var(--faint); }
+    details[open] summary::before { content: '▾ '; }
+    .panel { padding: 0 16px 16px; }
+    .panel p.hint { color: var(--dim); font-size: 12px; margin: 0 0 8px; }
+    .panel .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+    .panel label.inline { display: flex; align-items: center; gap: 8px; color: var(--dim); }
+    .panel label.inline input { width: 70px; border-color: var(--line2); }
+    #imp-msg { font-size: 12px; margin-top: 8px; color: var(--dim); white-space: pre-line; }
+    #imp-msg.ok { color: var(--now-text); } #imp-msg.warn { color: var(--warn); }
+    .sep { border: 0; border-top: 1px solid var(--line); margin: 14px 0 6px; }
+
+    #log-table td { padding: 4px 6px; border-bottom: 1px solid var(--line); font-size: 12px; white-space: nowrap; }
+    #log-table td.item { white-space: normal; color: var(--text); }
+    #log-table tr.finish td { color: var(--warn); }
+    .log-empty { color: var(--faint); font-size: 12px; padding: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <input id="title" placeholder="Show title" aria-label="Show title">
+      <label class="mode" title="When on, Page Down / Next advances the run sheet"><input type="checkbox" id="active"> Run sheet mode</label>
+      <span id="live"></span>
+      <div id="conn">The timer window isn't open. Open the timer in another tab or window; Next and Back won't do anything until it's running.</div>
+    </header>
+
+    <div class="transport">
+      <button id="btn-back" title="Undo the last Next (Page Up)">◀ Back</button>
+      <button id="btn-next" class="primary" title="Start the next item (Page Down)">Next ▶</button>
+      <span class="now-next" id="now-next"></span>
+      <span class="hint">Page Down / Page Up work here too</span>
+      <button id="btn-reset" class="danger" title="Clear the log and start the show again">Reset show…</button>
+    </div>
+
+    <div class="main">
+      <section class="sheet">
+        <table id="rs-table">
+          <thead><tr><th>#</th><th>Start</th><th>Item</th><th>Duration</th><th>Ends</th><th>Status</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty" id="empty">No items yet. Paste a run sheet into <b>Add items</b> on the right, or add items one by one.</div>
+        <button class="add-row" id="add-row">+ Add item</button>
+      </section>
+
+      <aside>
+        <details id="imp" open>
+          <summary>Add items</summary>
+          <div class="panel">
+            <p class="hint">Paste rows from Excel or Google Sheets (start, name and duration in any order, with or without a header row), CSV text, or one item per line, such as <i>9:00 Welcome</i> or <i>Keynote – 30 min</i>. Durations: <i>20</i> = 20 min, <i>1:30</i> = 1 h 30 min, <i>0:20:00</i> also works. A last row with only a start time is the finish.</p>
+            <textarea id="imp-text" rows="9" placeholder="Paste here…"></textarea>
+            <div class="row">
+              <label class="inline">Minutes per item when not given <input id="per-item" type="number" min="1" max="600" step="1"></label>
+            </div>
+            <div class="row">
+              <button id="imp-replace" class="primary">Replace sheet</button>
+              <button id="imp-append">Append</button>
+              <button id="imp-file">Open CSV…</button>
+              <input type="file" id="imp-file-input" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden>
+            </div>
+            <div id="imp-msg"></div>
+            <hr class="sep">
+            <div class="row">
+              <button id="csv-export">Export CSV</button>
+              <button id="standardise" title="Write the calculated start times and durations into every row">Fill in times</button>
+              <button id="clear-all" class="danger">Clear sheet</button>
+            </div>
+          </div>
+        </details>
+
+        <details id="logpanel" open>
+          <summary>Show log</summary>
+          <div class="panel">
+            <table id="log-table">
+              <thead><tr><th>Item</th><th>Planned</th><th>Actual</th><th>±</th><th>Ran</th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <div class="log-empty" id="log-empty">Nothing has started yet.</div>
+            <div class="row"><button id="log-export">Export log CSV</button></div>
+          </div>
+        </details>
+      </aside>
+    </div>
+  </div>
+
+  <script src="runsheet-core.js"></script>
+  <script src="runsheet-editor.js"></script>
+</body>
+</html>

@@ -85,6 +85,10 @@
     // presenter screen; press again (while it's showing) clears it.
     message:          { label: 'Message',   group: 'Messages',  isMessage: true, cmd: i => toggleMessage(i) },
     message_clear:    { label: 'Clear\nmessage', group: 'Messages', cmd: () => _sendCmd({ cmd: 'custommessage', text: '' }) },
+    // Run sheet (see runsheet.js). Next shows the upcoming item's name; Schedule shows ahead/behind.
+    rs_prev:          { label: '◀ Back',    group: 'Run sheet', rsKey: 'prev',   cmd: () => _sendCmd({ cmd: 'runsheetprev' }) },
+    rs_next:          { label: 'Next ▶',    group: 'Run sheet', rsKey: 'next',   cmd: () => _sendCmd({ cmd: 'runsheetnext' }) },
+    rs_status:        { label: 'Schedule',  group: 'Run sheet', rsKey: 'status', cmd: null },
     custom_msg:       { label: 'Type\nmessage', group: 'Messages', cmd: () => _sendCmd({ cmd: 'keys', keys: ['c'] }) },
     empty:            { label: '',          group: 'Other',     cmd: null },
   };
@@ -100,7 +104,7 @@
     ],
     xl: [
       'preset_10','preset_20','preset_30','preset_45','preset_60','preset_90','preset_120','preset_180',
-      'message','message','message_clear','empty','empty','empty','countdown_major','countdown_minor',
+      'message','message','message_clear','rs_prev','rs_next','rs_status','countdown_major','countdown_minor',
       'start_restart','pause_resume','add_1min','sub_1min','add_15sec','sub_15sec','undo_pause','custom_msg',
       'toggle_bar','toggle_time','toggle_messages','toggle_presenter','catch_up','brightness_cycle','empty','empty',
     ],
@@ -125,6 +129,9 @@
   // Remaining time, from the timer's `remain` text ("M:SS" or "H:MM:SS"; counts up overtime
   // once `expired`). Kept out of deckState: only countdown keys repaint when it changes.
   let currentMessage = '';   // message on the presenter screen ('' = none), from `custommsg`
+  // Run sheet state pushed by runsheet.js (rs_* variables). Kept out of deckState so a
+  // change repaints only the run sheet keys.
+  let rs = { active: false, next: '', canBack: false, status: '', late: null };
   let remainSec = 0;
   let remainText = '';
   const countdownCache = new Map();   // key index -> text last drawn, to skip identical repaints
@@ -158,6 +165,16 @@
           }
           if (changed) countdownCache.clear();
           if (changed && device) scheduleRedrawAll();
+          if ('rs_active' in v) {
+            const nrs = {
+              active: v.rs_active === '1', next: v.rs_next || '', canBack: v.rs_can_back === '1',
+              status: v.rs_status || '', late: v.rs_late === '' || v.rs_late == null ? null : Number(v.rs_late),
+            };
+            if (JSON.stringify(nrs) !== JSON.stringify(rs)) {
+              rs = nrs;
+              if (device && !changed) scheduleRsKeys();
+            }
+          }
           if (typeof v.custommsg === 'string' && v.custommsg !== currentMessage) {
             currentMessage = v.custommsg;
             if (device && !changed) scheduleMessageKeys();
@@ -425,6 +442,10 @@
     _sendCmd({ cmd: 'custommessage', text: currentMessage === text ? '' : text });
   }
 
+  function scheduleRsKeys() {
+    (layouts[modelKey] || []).forEach((a, i) => { if (ACTIONS[a] && ACTIONS[a].rsKey) scheduleRedrawKey(i); });
+  }
+
   function scheduleMessageKeys() {
     const layout = layouts[modelKey] || [];
     layout.forEach((a, i) => { if (a === 'message' || a === 'message_clear') scheduleRedrawKey(i); });
@@ -516,6 +537,15 @@
       bg = adjusting ? (override.bg || '#003300') : '#0d0d0d';
       fg = adjusting ? (override.fg || '#33ff33') : '#444444';
     }
+    if (action.rsKey) {
+      const on = rs.active && (action.rsKey === 'prev' ? rs.canBack : action.rsKey === 'next' ? !!rs.next : true);
+      if (!on) { bg = '#0d0d0d'; fg = '#444444'; }
+      else if (action.rsKey === 'next') { bg = override.bg || '#0e3a12'; fg = override.fg || '#8dff8d'; }
+      else if (action.rsKey === 'prev') { bg = override.bg || '#1a1a2e'; fg = override.fg || '#ffffff'; }
+      else if (rs.late != null && rs.late >= 30)  { bg = '#3a0d0d'; fg = '#ff7777'; }
+      else if (rs.late != null && rs.late <= -30) { bg = '#0d2e0d'; fg = '#77ff77'; }
+      else { bg = '#111111'; fg = '#cccccc'; }
+    }
 
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
@@ -545,7 +575,31 @@
       lines.forEach((l, i) => ctx.fillText(l, size / 2, top + i * lineH));
     }
 
-    const rawLabel = (action.display || action.isMessage) ? '' :
+    if (action.rsKey && rs.active) {
+      // Small caption on top, content below
+      const cap = action.rsKey === 'next' ? 'NEXT ▶' : action.rsKey === 'prev' ? '◀ BACK' : 'SCHEDULE';
+      const body = action.rsKey === 'next' ? rs.next : action.rsKey === 'status' ? (rs.status || '—') : '';
+      ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      if (!body) {
+        fitFont(ctx, cap, size * 0.86, Math.round(size * 0.2));
+        ctx.fillText(cap, size / 2, size / 2);
+      } else {
+        ctx.font = `bold ${Math.round(size * 0.13)}px "Helvetica Neue", Arial, sans-serif`;
+        ctx.globalAlpha = 0.75; ctx.fillText(cap, size / 2, size * 0.16); ctx.globalAlpha = 1;
+        if (action.rsKey === 'status') {
+          fitFont(ctx, body, size * 0.86, Math.round(size * 0.3));
+          ctx.fillText(body, size / 2, size * 0.58);
+        } else {
+          const fontSize = size < 90 ? 12 : 14;
+          ctx.font = `bold ${fontSize}px "Helvetica Neue", Arial, sans-serif`;
+          const lines = wrapLines(ctx, body, size * 0.9, 3), lineH = fontSize * 1.2;
+          const top = size * 0.58 - ((lines.length - 1) * lineH) / 2;
+          lines.forEach((l, i) => ctx.fillText(l, size / 2, top + i * lineH));
+        }
+      }
+    }
+
+    const rawLabel = (action.display || action.isMessage || (action.rsKey && rs.active)) ? '' :
       actionKey === 'brightness_cycle' ? (override.label || 'Backlight') + '\n' + brightness + '%' :
       override.label ||
       (action.toggleState && deckState[action.toggleState] && action.altLabel ? action.altLabel : action.label) || '';

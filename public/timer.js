@@ -217,6 +217,16 @@ custom_message.addEventListener('focus', function(){
   }
 
   dispNextMins.textContent = secToStr( defaultDuration / oneSecond );
+
+  // Show the current message on load. Without this, a presenter window opened after a
+  // message was set (or a reloaded controller) stayed blank until the message changed.
+  (function restoreStoredMessage() {
+	  const msg = localStorage.getItem("custom_message");
+	  if (msg) {
+		  custom_message.textContent = msg;
+		  setHtmlClass("show_custom_message");
+	  }
+  })();
   
   setInterval(displayUpdate,100);
   doc.addEventListener("keyup",onDocKeyUp);
@@ -306,6 +316,10 @@ custom_message.addEventListener('focus', function(){
 	  const msg = currentCustomMessage();
 	  if (!force && msg === lastAnnouncedMessage) return;
 	  lastAnnouncedMessage = msg;
+	  // Long messages (e.g. run sheet item names) get a smaller font so they don't run into the countdown
+	  if (msg.length > 90) { setHtmlClass("msg-xlong"); clearHtmlClass("msg-long"); }
+	  else if (msg.length > 28) { setHtmlClass("msg-long"); clearHtmlClass("msg-xlong"); }
+	  else { clearHtmlClass("msg-long"); clearHtmlClass("msg-xlong"); }
 	  if (timerAPI) timerAPI.send({ setVariableValues: { custommsg: msg } });
   }
 
@@ -704,6 +718,59 @@ custom_message.addEventListener('focus', function(){
 	  }
   }
   
+  // ─── Snapshot / restore (run sheet "Back") ─────────────────────────────────
+  // Everything that defines the running countdown. Timestamps are absolute, so a
+  // restored countdown carries on as if the change after the snapshot never happened.
+  function captureTimerState() {
+	  return {
+		  startedAt, endsAt, seekEndsAt, thisDuration, defaultDuration,
+		  pausedAt: pausedAt === undefined ? null : pausedAt,
+		  pauseAcum,
+		  message: currentCustomMessage(),
+	  };
+  }
+
+  // Restores the countdown. The message is restored separately by the `restore`
+  // API command (via `custommessage`), so it reaches the presenter screen too.
+  function restoreTimerState(s) {
+	  if (!s || !isFinite(s.startedAt)) return;
+	  setDefaultDuration(s.defaultDuration);          // first: it may also set thisDuration
+	  startedAt    = s.startedAt;
+	  endsAt       = s.endsAt;
+	  seekEndsAt   = s.seekEndsAt;
+	  thisDuration = s.thisDuration;
+	  pauseAcum    = s.pauseAcum || 0;
+	  pausedAt     = (s.pausedAt === null || s.pausedAt === undefined) ? undefined : s.pausedAt;
+
+	  writeNumber("startedAt", startedAt);
+	  writeNumber("endsAt", endsAt);
+	  writeNumber("seekEndsAt", seekEndsAt);
+	  writeNumber("pauseAcum", pauseAcum);
+	  writeNumber("pausedAt", pausedAt);
+	  if (pausedAt !== undefined) setHtmlClass("paused"); else clearHtmlClass("paused");
+
+	  startedDisp.textContent  = local24HourTime(timeProvider.date(startedAt));
+	  endsDisp.textContent     = local24HourTime(timeProvider.date(seekEndsAt));
+	  durationDisp.textContent = secToStr((seekEndsAt - startedAt) / 1000);
+	  extraTimeDisp.textContent = "";
+	  clearRemainClass("adjusting");
+	  clearRemainClass("adjustingDown");
+	  clearHtmlClass("adjusting_time");
+
+	  lastUpdateTick = 0;
+	  lastTimeText = "";                              // next tick re-derives over/impending and re-sends state
+	  if (togglePIPMode) togglePIPMode.lastContent = "";
+	  if (timerAPI) {
+		  timerAPI.send({ setVariableValues: {
+			  startedAt: startedDisp.textContent,
+			  endsAt: endsDisp.textContent,
+			  default: secToStr(defaultDuration / 1000),
+			  pausing: pausedAt !== undefined,
+		  }});
+	  }
+	  displayUpdate();
+  }
+
   function setPresenterMode() {
 	  runMode = "presenter";
 	  html.classList.add("reduced");

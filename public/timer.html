@@ -30,6 +30,8 @@
       <script src="streamdeck.js" defer></script>
       <script src="relay.js" defer></script>
       <script src="touchcontrols.js" defer></script>
+      <script src="runsheet-core.js" defer></script>
+      <script src="runsheet.js" defer></script>
       
       <div class="buttons">
           <span>&nbsp;&nbsp;Presets</span>
@@ -93,9 +95,19 @@
           <div id="btndeck" class="btn btn2">
             deck
           </div>
+          <div id="btnrunsheet" class="btn btn2" title="Run sheet editor (E)">
+            run&nbsp;sheet
+          </div>
           
       </div>
 <!--div class="buttonsmask"></div-->
+      <!-- Run sheet dashboard (shown in run sheet mode; see runsheet.js) -->
+      <div id="runsheet_dash">
+        <div class="rs-row" id="rs_prev"><span class="rs-label">Prev</span><span class="rs-name"></span><span class="rs-meta"></span></div>
+        <div class="rs-row" id="rs_cur"><span class="rs-label">Now</span><span class="rs-name"></span><span class="rs-meta"></span></div>
+        <div class="rs-row" id="rs_next"><span class="rs-label">Next</span><span class="rs-name"></span><span class="rs-meta"></span></div>
+        <div id="rs_status"></div>
+      </div>
       <div id="clock_main">
           <div class="xfs_only" id="started_disp"></div>
           <div class="xfs_only" id="elapsed_disp"></div>

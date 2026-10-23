@@ -60,6 +60,8 @@ That's all you need for most events. Everything below is optional.
 | **M** | Messages on / off |
 | **C** | Write a message for the presenter (**Enter** to show, **C** again to clear) |
 | **O** | Picture-in-picture countdown overlay (stays on top of other apps) |
+| **E** | Run sheet editor (opens in its own window) |
+| **Page Down / Page Up** | Run sheet mode: next item / back. Otherwise, in PowerPoint mode, Page Down restarts the timer |
 | **^** | PowerPoint mode: a clicker's **Page Down** restarts the timer |
 | **D** | Stream Deck layout editor |
 | **Ctrl+S** | Edit the timer's styles (CSS); **Ctrl+Shift+S** resets them |
@@ -69,6 +71,32 @@ That's all you need for most events. Everything below is optional.
 On first load the timer checks the time against an internet time service, so two computers stay in sync even if one clock is off. **Shift+T** re-checks; **Shift+L** ignores it and uses this computer's clock.
 
 ---
+
+## Run sheet
+
+Load the show's running order and step through it with a presentation clicker, the Stream Deck, or the keyboard.
+
+1. Press **E** (or click **run sheet**) to open the editor. It opens in its own window, so you can drag it to another screen.
+2. Paste your running order into **Add items** and click **Replace sheet**. Any of these work:
+   - Rows copied from Excel or Google Sheets, with start times, names and/or durations in any order, with or without a header row.
+   - A CSV file (**Open CSV…**).
+   - One item per line, e.g. `9:00 Welcome` or `Keynote – 30 min`. Plain names work too: set **Minutes per item** (e.g. 20 per speaker).
+3. Check the table and fix anything. Durations come from the gap to the next start time when they aren't given. A last row with only a start time (e.g. `17:00 Close`) is the finish time.
+
+**During the show** (run sheet mode on):
+
+| | |
+|---|---|
+| **Next** (Page Down, clicker, deck key, editor button) | Starts the next item: shows its name to the presenter, sets the timer to its duration and starts it. The start time goes into the log. |
+| **Back** (Page Up, deck key, editor button) | Undoes the last Next exactly, as if it never happened: the previous countdown (including a pause), its duration and its message come back. Press repeatedly to step back further. |
+| **Space** | Restarts the current item's countdown, as usual. |
+| **▶** on a row in the editor | Jumps straight to that item (Back undoes it). |
+
+The timer screen shows a three-line dashboard: **previous** (when it started and how long it ran), **now**, and **next** (its planned time). Below that is the schedule status, e.g. *Running 2:30 behind · finish ≈ 17:04*. Each item keeps its full planned duration even when the show is late; the status tells you how much to trim.
+
+Ahead/behind is measured against the sheet's start times. If it has none, it's measured from when you started the first item.
+
+The editor's **Show log** lists planned vs actual start times and how long each item ran, and **Export log CSV** saves it. **Export CSV** saves the sheet as Start, Name, Duration with every time filled in. **Fill in times** writes the calculated times into the table. **Reset show** clears the log to run it again, and the **Run sheet mode** switch turns the whole thing off without deleting the sheet.
 
 ## Stream Deck
 
@@ -86,6 +114,7 @@ In the editor you can drag actions from the palette onto keys, set per-key label
 - **Countdown keys**: show the remaining time on the deck. *Min / Hr* and *Sec / Min* work as a pair: `01` `30` for 90 seconds, `1h` `25m` for 85 minutes, and `+00` `45` in overtime. *Timer* shows the whole time on one key.
 - **Display toggles**: bar, clock and messages.
 - **Messages**: drag a *Message* action onto a key, and its text field opens in the editor. Pressing the key shows that message on the presenter screen; pressing it again clears it. The key lights up while its message is showing. *Clear message* removes whatever is showing, and *Type message* opens the on-screen message box. The XL comes with two examples (*Please wrap up*, *Time for questions*).
+- **Run sheet**: *Back*, *Next* (shows the next item's name) and *Schedule* (time ahead in green, or behind in red). The XL has all three in row 2 by default.
 - **Catch up**: lights up while the timer is running fast or slow after a nudge; press it to jump straight to the adjusted time.
 - **Backlight**: steps the deck's brightness 100 → 50 → 25 → 10% for dark venues. You can also set it in the editor, and it's remembered.
 

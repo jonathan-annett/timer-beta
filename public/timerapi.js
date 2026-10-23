@@ -1,4 +1,4 @@
-/* global timerAPI,onKey_Pause,onKey_UndoPause,catchUpNow,announceCustomMessage*/
+/* global timerAPI,onKey_Pause,onKey_UndoPause,catchUpNow,announceCustomMessage,captureTimerState,restoreTimerState*/
 
 function processTimerApiMessage(msg) {
     const { error,cmd, code } = msg ;
@@ -56,6 +56,27 @@ function processTimerApiMessage(msg) {
                 }
 
             });
+            break;
+        }
+
+        // Run sheet support: snapshot returns the timer state; restore puts it back
+        // (including the on-screen message). See captureTimerState() in timer.js.
+        case "snapshot":
+            return captureTimerState();
+
+        case "restore": {
+            restoreTimerState(msg.state);
+            if (msg.state) processTimerApiMessage({ cmd: 'custommessage', text: msg.state.message || '' });
+            break;
+        }
+
+        case "runsheetnext": {
+            if (window.runsheet) window.runsheet.next();
+            break;
+        }
+
+        case "runsheetprev": {
+            if (window.runsheet) window.runsheet.back();
             break;
         }
 
@@ -192,6 +213,7 @@ function processTimerApiMessage(msg) {
                 });
                 lastTimeText = "";
                 announceCustomMessage(true);
+                if (window.runsheet) window.runsheet.announce(true);
                 if (togglePIPMode) togglePIPMode.lastContent = "";
                 getTimerColors();
             }
