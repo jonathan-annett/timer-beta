@@ -11,8 +11,15 @@
   'use strict';
 
   const $ = id => document.getElementById(id);
-  const cfg = Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
-  if (!cfg.server || !cfg.room || !cfg.key) {
+  // Link: #r=<room>&k=<key>[&s=<server>]; the server defaults to wss://<this host>:8443/.
+  // (Long names server/room/key from older links still work.)
+  const h = Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
+  const cfg = {
+    server: h.s || h.server || `wss://${location.hostname}:8443/`,
+    room: h.r || h.room,
+    key: h.k || h.key,
+  };
+  if (!cfg.room || !cfg.key) {
     $('blocked').hidden = false;
     $('blocked').textContent = 'Open this page by scanning the QR code in the timer’s “phone” panel.';
     return;

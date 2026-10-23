@@ -54,7 +54,11 @@
     const p = pairing();
     const u = new URL('remote.html', location.href);
     u.search = '';
-    u.hash = new URLSearchParams({ server: serverUrl(), room: p.room, key: p.key }).toString();
+    // Short names, and the server only when it isn't the default (the phone page works that
+    // out from its own address): a shorter link makes a simpler, easier-to-scan QR code.
+    const h = { r: p.room, k: p.key };
+    if (serverUrl() !== defaultServer()) h.s = serverUrl();
+    u.hash = new URLSearchParams(h).toString();
     return u.toString();
   }
 
@@ -222,6 +226,7 @@
       </details>`;
     document.body.appendChild(el);
     el.querySelector('.pp-close').addEventListener('click', () => { el.hidden = true; });
+    el.querySelector('.pp-qr').addEventListener('click', showBigQR);
     el.querySelector('.pp-copy').addEventListener('click', () => navigator.clipboard && navigator.clipboard.writeText(phoneLink()));
     el.querySelector('.pp-renew').addEventListener('click', () => {
       if (!confirm('Make a new code? Phones using the current one will be disconnected.')) return;
@@ -239,6 +244,43 @@
     return el;
   }
 
+  // The QR library only computes the code; we draw it ourselves so every module lands on
+  // whole device pixels (no seams) with the standard 4-module white quiet zone around it.
+  function qrCanvas(text, cssSize) {
+    const tmp = document.createElement('div');
+    const q = new window.QRCode(tmp, { text, width: 64, height: 64, correctLevel: window.QRCode.CorrectLevel.M });
+    const m = q._oQRCode, n = m.getModuleCount(), quiet = 4, total = n + 2 * quiet;
+    const dpr = window.devicePixelRatio || 1;
+    const scale = Math.max(1, Math.round(cssSize * dpr / total));        // whole device pixels per module
+    const c = document.createElement('canvas');
+    c.width = c.height = total * scale;
+    c.style.width = c.style.height = (total * scale / dpr) + 'px';
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillStyle = '#000';
+    for (let r = 0; r < n; r++) for (let col = 0; col < n; col++) {
+      if (m.isDark(r, col)) ctx.fillRect((col + quiet) * scale, (r + quiet) * scale, scale, scale);
+    }
+    return c;
+  }
+
+  // Click the code to show it full-screen (easier to scan from a distance)
+  function showBigQR() {
+    if (!window.QRCode || !qrFor) return;
+    const ov = document.createElement('div');
+    ov.id = 'phone-qr-big';
+    ov.title = 'Click to close';
+    ov.appendChild(qrCanvas(qrFor, Math.min(window.innerWidth, window.innerHeight) * 0.8));
+    const cap = document.createElement('div');
+    cap.textContent = 'Scan with a phone to control the timer · click to close';
+    ov.appendChild(cap);
+    const close = () => { ov.remove(); window.removeEventListener('keydown', onKey, true); };
+    const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+    ov.addEventListener('click', close);
+    window.addEventListener('keydown', onKey, true);
+    document.body.appendChild(ov);
+  }
+
   let qrFor = null, qrLib = null;
   function drawQR(text) {
     const box = panel().querySelector('.pp-qr');
@@ -246,7 +288,7 @@
     qrFor = text;
     const render = () => {
       box.innerHTML = '';
-      try { new window.QRCode(box, { text, width: 200, height: 200, correctLevel: window.QRCode.CorrectLevel.M }); }
+      try { box.appendChild(qrCanvas(text, 280)); }
       catch (_) { box.textContent = 'QR code unavailable — use Copy link'; }
     };
     if (window.QRCode) return render();
