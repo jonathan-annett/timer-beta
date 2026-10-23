@@ -69,9 +69,11 @@
     runsheet:  { label: 'Run sheet', hint: '<b>View only</b>: run sheet status, e.g. for a green room. Can’t control the timer.' },
     admin:     { label: 'Admin',     hint: '<b>Admin</b>: can control the timer, use every view, and set up other computers as remotes or displays. Keep this one to yourself.' },
   };
-  const SHARE_MODES = ['control', 'countdown', 'runsheet'];   // what an admin phone can set another computer up as
-  const MIN_PROTOCOL = { control: 1, countdown: 2, runsheet: 2, admin: 3 };   // pairing server needed for each link
+  const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet'];   // what an admin phone can set another computer up as
+  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3 };   // pairing server needed for each link
+  // 'editor' is the control link with m=runsheet: a computer opening it starts in the run sheet editor
   const linkFields = (p, mode) => mode === 'control' ? { r: p.room, k: p.key }
+    : mode === 'editor' ? { r: p.room, k: p.key, m: 'runsheet' }
     : mode === 'admin' ? { r: p.room, a: p.admin } : { r: p.room, v: p.view, m: mode };
   // On a phone or tablet (the timer itself run on one), the panel is a simple sheet: a friend's
   // phone as a remote control or a countdown display. No run sheet or admin links there.
@@ -243,7 +245,7 @@
       }
       e.peer.send({ t: 'share-link', req: String(m.req || '').slice(0, 40), mode, frag: shareFragment(mode) });
       const d = new Date();
-      shareNote = `Phone ${e.n} passed the ${mode === 'control' ? 'control' : LINK_MODES[mode].label.toLowerCase() + ' display'} link to another computer at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      shareNote = `Phone ${e.n} passed the ${mode === 'control' ? 'control' : mode === 'editor' ? 'run sheet editor' : LINK_MODES[mode].label.toLowerCase() + ' display'} link to another computer at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       renderPanel();
     } else if (m.t === 'adopt') {
       adopt(e, m);                             // this computer is the "other computer"
@@ -450,10 +452,11 @@
       return;
     }
     const h = isControl ? { r: f.r, k: f.k, s: f.s } : { r: f.r, v: f.v, m: f.m, s: f.s };
+    if (isControl && f.m === 'runsheet') h.m = 'runsheet';          // open straight into the run sheet editor
     const url = new URL('remote.html', location.href);
     url.search = '';
     url.hash = new URLSearchParams(h).toString();
-    const what = isControl ? 'a remote control' : f.m === 'runsheet' ? 'a run sheet display' : 'a countdown display';
+    const what = isControl ? (f.m === 'runsheet' ? 'a run sheet editor' : 'a remote control') : f.m === 'runsheet' ? 'a run sheet display' : 'a countdown display';
     e.peer.send({ t: 'adopt-ok', req });
     showAdoptNotice(what, url.toString(), () => { const p = peers.get(e.id); if (p) p.peer.send({ t: 'adopt-cancelled', req }); });
   }

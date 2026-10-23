@@ -470,7 +470,7 @@
     simple:    { label: 'Simple controls',   desc: 'Start, pause, ±1 min, presets, messages' },
     deck:      { label: 'Stream Deck XL',    desc: 'The timer’s XL key layout' },
     countdown: { label: 'Countdown display', desc: 'Big countdown and message, no controls' },
-    runsheet:  { label: 'Run sheet display', desc: 'Now, next and the schedule, no controls' },
+    runsheet:  { label: 'Run sheet display', desc: 'Now, next and the schedule, no controls' },   // on a desktop controller: the editor (see applyRole)
     admin:     { label: 'Admin: set up another computer', desc: 'Scan another computer’s QR code to make it a remote or display of this timer' },
   };
   const allowedViews = () => role === 'admin' ? Object.keys(VIEWS)
@@ -509,6 +509,10 @@
 
   function applyRole() {
     document.body.classList.toggle('can-ctl', role !== 'view');   // run sheet view gets its controls
+    // A computer with control is offered the run sheet EDITOR in place of the display
+    const rs = VIEWS.runsheet;
+    if (desktop && role !== 'view') { rs.label = 'Run sheet editor'; rs.desc = 'Edit the timer’s run sheet: items, times, videos, Next/Back, the log'; }
+    else { rs.label = 'Run sheet display'; rs.desc = role === 'view' ? 'Now, next and the schedule' : 'Now, next and the schedule, with Next/Back and nudges'; }
     setTimeout(updateEditorMode, 0);                              // (after start-up: it needs `desktop`)
     $('roletag').hidden = role === 'control';
     $('roletag').textContent = role === 'admin' ? 'ADMIN' : 'VIEW ONLY';
