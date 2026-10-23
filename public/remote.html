@@ -138,6 +138,15 @@
     body.v-countdown .top { opacity: .55; }
 
     #cdremain { font-weight: bold; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    /* Follow the timer's switches: T (time of day), B (progress bar), M (status messages) */
+    #cdclock { display: none; color: #aaa; font-size: clamp(16px, 5vmin, 56px); font-variant-numeric: tabular-nums; margin-bottom: 0.3em; }
+    #cdclock .lbl { font-size: 0.45em; color: #606060; letter-spacing: .08em; text-transform: uppercase; vertical-align: middle; margin-right: 0.4em; }
+    body.cd-clock #cdclock { display: block; }
+    #cdbar { display: none; width: 100%; height: clamp(10px, 2.5vmin, 30px); background: #34495e; margin-top: 16px; flex: none; }
+    body.cd-bar #cdbar { display: block; }
+    #cdbarfill { height: 100%; width: 0; background: #529f44; }
+    body.impending #cdbarfill { background: orange; }
+    body.over #cdbarfill { background: var(--late); }
     body.impending #cdremain, body.impending #rsvremain { color: orange; }
     body.over #cdremain, body.over #rsvremain { color: var(--late); }
     body.paused #cdremain, body.paused #rsvremain { color: #777; }
@@ -213,7 +222,7 @@
     <div id="deck"><div id="keys"></div><div id="deckhint"></div></div>
 
     <!-- Countdown display (view only) -->
-    <div id="cd"><div id="cdremain">–:––</div><div id="cdsub"></div><div id="cdmsg"></div></div>
+    <div id="cd"><div id="cdclock"><span class="lbl">Current time</span><span id="cdclocktime"></span></div><div id="cdremain">–:––</div><div id="cdsub"></div><div id="cdmsg"></div><div id="cdbar"><div id="cdbarfill"></div></div></div>
 
     <!-- Run sheet status display (view only), e.g. for a green room -->
     <div id="rsv">

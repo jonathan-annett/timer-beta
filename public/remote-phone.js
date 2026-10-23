@@ -431,7 +431,8 @@
     if (view !== 'countdown') return;
     const box = $('cd'), cs = getComputedStyle(box);
     const W = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-    const H = box.clientHeight - parseFloat(cs.paddingBottom) - $('cdsub').offsetHeight - 8;
+    const extra = el => el.offsetHeight ? el.offsetHeight + parseFloat(getComputedStyle(el).marginTop) + parseFloat(getComputedStyle(el).marginBottom) : 0;
+    const H = box.clientHeight - parseFloat(cs.paddingBottom) - extra($('cdsub')) - extra($('cdclock')) - extra($('cdbar')) - 8;
     const msg = $('cdmsg').textContent;
     const remainH = msg ? H * 0.58 : H;
     $('cdmsg').style.maxWidth = W + 'px';
@@ -452,19 +453,28 @@
     const row = $('rsvlist').querySelector('.rl.now') || $('rsvlist').querySelector('.rl.next');
     if (row) $('rsvlist').scrollTop = Math.max(0, row.offsetTop - $('rsvlist').offsetTop - row.offsetHeight * 1.5);
   }
-  const clockNow = () => { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
-  setInterval(() => { if (view === 'runsheet') $('rsvclock').textContent = clockNow(); }, 5000);
+  const p2 = n => String(n).padStart(2, '0');
+  const clockNow = secs => { const d = new Date(); return p2(d.getHours()) + ':' + p2(d.getMinutes()) + (secs ? ':' + p2(d.getSeconds()) : ''); };
+  setInterval(() => {
+    if (view === 'runsheet') $('rsvclock').textContent = clockNow();
+    if (view === 'countdown' && state.clock) $('cdclocktime').textContent = clockNow(true);
+  }, 1000);
 
   let lastList = null, cdSig = '';
   function renderDisplays() {
     const remain = (state.over ? '+' : '') + (state.remain || '–:––');
-    const sub = state.paused ? 'Paused' : '';
+    const sub = state.paused && state.msgs ? 'Paused' : '';     // status messages follow the timer's M switch
 
-    // Countdown
+    // Countdown display: the time of day (T), progress bar (B) and status messages (M) follow the
+    // timer's own switches, like the presenter screen
+    document.body.classList.toggle('cd-clock', !!state.clock);
+    document.body.classList.toggle('cd-bar', !!state.bar);
+    $('cdbarfill').style.width = Math.max(0, Math.min(100, Number(state.pct) || 0)) + '%';
+    $('cdclocktime').textContent = clockNow(true);
     $('cdremain').textContent = remain;
     $('cdsub').textContent = sub;
     $('cdmsg').textContent = state.msg || '';
-    const sig = remain.length + '|' + (state.msg || '') + '|' + sub;
+    const sig = [remain.length, state.msg || '', sub, !!state.clock, !!state.bar].join('|');
     if (sig !== cdSig) { cdSig = sig; fitCountdown(); }
 
     // Run sheet

@@ -193,6 +193,8 @@
     rs_active: ['rsOn', truthy], rs_current: ['rsNow', String], rs_next: ['rsNext', String],
     rs_can_back: ['rsBack', truthy], rs_status: ['rsStatus', String], rs_late: ['rsLate', v => (v === '' ? null : Number(v))],
     rs_title: ['rsTitle', String], rs_text: ['rsText', String], rs_list: ['rsList', String],
+    // The timer's B / T / M switches and the progress bar, for the phone's countdown display
+    showbar: ['bar', truthy], showtimenow: ['clock', truthy], showmessages: ['msgs', truthy], barpct: ['pct', Number],
   };
 
   function installBus() {

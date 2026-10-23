@@ -1968,9 +1968,16 @@ add milliseconds to the start time
    }
 
 
+	var lastBarSent = null;   // var: setBarPct runs during startup
 	function setBarPct(pct) {
 		progress.style.width  = pct + '%';
 		localStorage.setItem("barpct",pct.toString());
+		// Whole percent on the bus (phone displays draw the bar too); only when it changes
+		const whole = Math.max(0, Math.min(100, Math.floor(Number(pct) || 0)));
+		if (timerAPI && whole !== lastBarSent) {
+			lastBarSent = whole;
+			timerAPI.send({ setVariableValues: { barpct: String(whole) } });
+		}
 	}
 	
 	function setBar(elapsed,total) {
