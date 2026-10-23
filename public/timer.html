@@ -253,7 +253,17 @@
         <button class="touch-btn" id="touch-pause-btn">⏸ Pause</button>
         <button class="touch-btn" id="touch-plus-btn">+1 min</button>
         <button class="touch-btn" id="touch-minus-btn">-1 min</button>
-        <button class="touch-btn touch-help" id="touch-help-btn" title="Help" aria-label="Help">?</button>
+        <button class="touch-btn touch-help" id="touch-more-btn" title="More" aria-label="More">⋯</button>
+      </div>
+
+      <!-- Touch "more" sheet: a friend's phone as a remote, help -->
+      <div id="touch-more-sheet" style="display:none">
+        <div class="touch-sheet-backdrop" id="touch-more-backdrop"></div>
+        <div class="touch-sheet-content">
+          <button class="touch-more-item" id="touch-remote-btn"><b>📱 Let a friend control this timer</b><small>Shows a code for their phone: a remote control, or a countdown display</small></button>
+          <button class="touch-more-item" id="touch-help-btn"><b>? Help</b><small>The guide</small></button>
+          <button class="touch-sheet-cancel" id="touch-more-cancel">Cancel</button>
+        </div>
       </div>
 
       <!-- Touch preset bottom sheet -->

@@ -71,7 +71,15 @@
   const MIN_PROTOCOL = { control: 1, countdown: 2, runsheet: 2, admin: 3 };   // pairing server needed for each link
   const linkFields = (p, mode) => mode === 'control' ? { r: p.room, k: p.key }
     : mode === 'admin' ? { r: p.room, a: p.admin } : { r: p.room, v: p.view, m: mode };
-  const linkMode = () => { const m = localStorage.getItem(LINK_MODE_KEY); return LINK_MODES[m] ? m : 'control'; };
+  // On a phone or tablet (the timer itself run on one), the panel is a simple sheet: a friend's
+  // phone as a remote control or a countdown display. No run sheet or admin links there.
+  const TOUCH = 'ontouchstart' in window;
+  const TOUCH_MODES = ['control', 'countdown'];
+  const linkMode = () => {
+    const m = localStorage.getItem(LINK_MODE_KEY);
+    if (TOUCH && !TOUCH_MODES.includes(m)) return 'control';
+    return LINK_MODES[m] ? m : 'control';
+  };
   const serverUrl = () => localStorage.getItem(SERVER_KEY) || defaultServer();
   function phoneLink(mode = linkMode()) {
     const p = pairing();
@@ -553,6 +561,28 @@
 #phone-panel button { flex: 1; padding: 5px 4px; font-size: 12px; background: #222; border: 1px solid #444; color: #ccc; border-radius: 4px; cursor: pointer; }
 #phone-panel button:hover { background: #333; color: #fff; }
 #phone-panel .pp-peers { margin-top: 8px; font-size: 12px; }
+/* On a phone/tablet: a bottom sheet (the button bar isn't shown there) */
+#phone-panel.pp-touch { top: auto; right: 0; left: 0; bottom: 0; width: auto; max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px);
+  border-radius: 16px 16px 0 0; padding: 14px 16px calc(16px + env(safe-area-inset-bottom)); font-size: 15px; z-index: 2147481500; }
+#phone-panel.pp-touch .pp-head { font-size: 17px; }
+#phone-panel.pp-touch .pp-close { font-size: 22px; padding: 4px 8px; }
+#phone-panel.pp-touch .pp-intro { color: #aaa; font-size: 14px; margin-bottom: 8px; }
+#phone-panel.pp-touch .pp-status { font-size: 13px; }
+#phone-panel.pp-touch .pp-modes button { font-size: 15px; padding: 10px 6px; }
+#phone-panel.pp-touch .pp-modehint { font-size: 14px; margin: 6px 0 10px; }
+#phone-panel.pp-touch .pp-qr canvas { max-height: min(60vw, calc(100vh - 360px)); }
+#phone-panel.pp-touch .pp-link { display: none; }
+#phone-panel.pp-touch .pp-row button { font-size: 15px; padding: 10px 6px; }
+#phone-panel.pp-touch .pp-peers { font-size: 14px; }
+#phone-panel.pp-touch .pp-adv[hidden] { display: none; }
+/* Sideways: the code on the right, everything else on the left */
+@media (max-height: 500px) {
+  #phone-panel.pp-touch { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; align-content: start; }
+  #phone-panel.pp-touch[hidden] { display: none; }
+  #phone-panel.pp-touch > * { grid-column: 1; }
+  #phone-panel.pp-touch .pp-qr { grid-column: 2; grid-row: 1 / span 8; align-self: start; }
+  #phone-panel.pp-touch .pp-qr canvas { max-height: calc(100vh - 44px); }
+}
 #phone-panel .pp-modes { display: flex; gap: 0; margin: 2px 0 6px; }
 #phone-panel .pp-modes button { border-radius: 0; margin: 0; }
 #phone-panel .pp-modes button:first-child { border-radius: 4px 0 0 4px; }
@@ -597,18 +627,20 @@
     el = document.createElement('div');
     el.id = 'phone-panel';
     el.hidden = true;
+    if (TOUCH) el.classList.add('pp-touch');
     el.innerHTML = `
-      <div class="pp-head"><b>Phone control</b> <span class="pp-exp">experimental</span><button class="pp-close" aria-label="Close">✕</button></div>
+      <div class="pp-head"><b>${TOUCH ? 'Let a friend control this timer' : 'Phone control'}</b> <span class="pp-exp">experimental</span><button class="pp-close" aria-label="Close">✕</button></div>
+      ${TOUCH ? '<div class="pp-intro">They scan this code with their phone. Choose what their phone becomes:</div>' : ''}
       <div class="pp-status"></div>
       <div class="pp-modes" role="group" aria-label="What the QR code is for">
-        <button data-mode="control">Control</button><button data-mode="countdown">Countdown</button><button data-mode="runsheet">Run sheet</button><button data-mode="admin">Admin</button>
+        <button data-mode="control">${TOUCH ? 'Remote control' : 'Control'}</button><button data-mode="countdown">${TOUCH ? 'Countdown display' : 'Countdown'}</button>${TOUCH ? '' : '<button data-mode="runsheet">Run sheet</button><button data-mode="admin">Admin</button>'}
       </div>
       <div class="pp-modehint"></div>
       <div class="pp-qr"></div>
       <div class="pp-link"></div>
       <div class="pp-row"><button class="pp-copy">Copy link</button><button class="pp-renew" title="Disconnect all phones and make a new code">New code</button><button class="pp-toggle"></button></div>
       <div class="pp-peers"></div>
-      <details class="pp-adv"><summary>Server</summary>
+      <details class="pp-adv"${TOUCH ? ' hidden' : ''}><summary>Server</summary>
         <div class="pp-row"><input class="pp-server" spellcheck="false"><button class="pp-apply">Apply</button></div>
         <div class="pp-hint">Default: wss://this-host:8443/ (remote-server.js). Phones on the same Wi-Fi connect directly; otherwise through the server.</div>
       </details>`;
@@ -714,6 +746,9 @@
     const oldServer = hosted && serverProtocol < MIN_PROTOCOL[mode];
     el.querySelector('.pp-modehint').innerHTML = !enabled ? '' : oldServer
       ? `<span class="pp-warn">The pairing server is out of date and will refuse ${mode === 'admin' ? 'admin' : 'view-only'} links. Update remote-server.js on the server and restart it.</span>`
+      : TOUCH ? (mode === 'control'
+          ? 'Their phone gets <b>Start</b>, <b>Pause</b>, ±1 min, presets and messages, a virtual Stream Deck, or a countdown display: they choose with ☰ View on their phone.'
+          : '<b>View only</b>: a big countdown and messages on their phone. It can’t change the timer.')
       : LINK_MODES[mode].hint;
     el.querySelector('.pp-link').textContent = enabled ? phoneLink() : '';
     if (enabled) drawQR(phoneLink());
@@ -769,7 +804,17 @@
     renderPanel();
   }
 
-  window.remoteControl = { open: togglePanel, enable, disable, get peers() { return peers; }, get state() { return state; } };
+  function openPanel() { const el = panel(); if (el.hidden) togglePanel(); }
+  // The phone's Back button closes the panel (and the full-screen code) before anything else
+  if (typeof BackGuard !== 'undefined') BackGuard.register(() => {
+    const big = document.getElementById('phone-qr-big');
+    if (big) { big.click(); return true; }
+    const el = document.getElementById('phone-panel');
+    if (el && !el.hidden) { el.hidden = true; return true; }
+    return false;
+  });
+
+  window.remoteControl = { open: openPanel, toggle: togglePanel, enable, disable, get peers() { return peers; }, get state() { return state; } };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

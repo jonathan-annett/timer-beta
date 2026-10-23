@@ -236,7 +236,9 @@ Some venue and corporate networks only allow ports 80 and 443. On those, phones 
 
 ## Phones and tablets
 
-On a touch screen the controller shows a bottom bar: **Presets**, **Start**, **Pause**, **+1 min**, **−1 min** and **?** (this guide). **Presets** opens a sheet with the built-in durations and any you've added. **Other duration…** there is a keypad: type the minutes (or hours : minutes, e.g. `1:30`), then **▶ Start** to start it, **Set default** to make it the default without starting, or **Save preset** to add it to the sheet. Your own presets are kept on the phone; **Edit** lets you remove them.
+On a touch screen the controller shows a bottom bar: **Presets**, **Start**, **Pause**, **+1 min**, **−1 min** and **⋯** (more: a friend's phone as a remote, and this guide). **Presets** opens a sheet with the built-in durations and any you've added. **Other duration…** there is a keypad: type the minutes (or hours : minutes, e.g. `1:30`), then **▶ Start** to start it, **Set default** to make it the default without starting, or **Save preset** to add it to the sheet. Your own presets are kept on the phone; **Edit** lets you remove them.
+
+**A friend's phone as your remote:** if you're speaking with the timer on your own phone or tablet, tap **⋯ → Let a friend control this timer**. A code appears; your friend scans it with their phone and gets a **remote control** (start, pause, ±1 min, presets, messages, or a virtual Stream Deck) or, with **Countdown display** selected first, a view-only countdown of their own. They can start the talk at the right moment and keep you to time while you speak. It needs the pairing server (see *Phone remote control*), which the hosted timer has; the two phones connect directly when they're on the same Wi-Fi, otherwise through it.
 
 The phone's **Back** button closes whatever is open (the guide, the presets, a menu); when nothing is open it does nothing, so a stray press can't leave the timer during a talk. The same goes for the phone remote.
 

@@ -74,11 +74,19 @@
       adjustMinute(false);
     });
 
-    // The guide (README overlay; installed by timer.html as window.timerHelp)
-    document.getElementById('touch-help-btn')?.addEventListener('click', e => {
-      e.preventDefault();
-      if (window.timerHelp) window.timerHelp.open('phones-and-tablets');
-    });
+    // ⋯ : a small sheet with "let a friend control this timer" (the phone panel's QR code, see
+    // remote-control.js) and the guide (README overlay; installed by timer.html as window.timerHelp)
+    const more = document.getElementById('touch-more-sheet');
+    const openMore = () => { if (!more) return; more.style.display = 'flex'; requestAnimationFrame(() => more.classList.add('visible')); };
+    const closeMore = () => { if (!more) return; more.classList.remove('visible'); setTimeout(() => { more.style.display = 'none'; }, 220); };
+    const onTap = (id, fn) => document.getElementById(id)?.addEventListener('pointerdown', e => { e.preventDefault(); fn(); });
+    onTap('touch-more-btn', openMore);
+    onTap('touch-more-cancel', closeMore);
+    onTap('touch-more-backdrop', closeMore);
+    onTap('touch-help-btn', () => { closeMore(); if (window.timerHelp) window.timerHelp.open('phones-and-tablets'); });
+    onTap('touch-remote-btn', () => { closeMore(); if (window.remoteControl) window.remoteControl.open(); else alert('Phone control isn’t available on this copy of the timer.'); });
+    moreSheetOpen = () => !!more && more.style.display !== 'none';
+    closeMoreSheet = closeMore;
 
     document.getElementById('touch-presets-btn')?.addEventListener('pointerdown', e => {
       e.preventDefault();
@@ -330,10 +338,12 @@
 
   // The phone's Back button: closes the preset sheet or the quick-start overlay if open;
   // otherwise it does nothing rather than leaving the timer (back-guard.js)
+  let moreSheetOpen = () => false, closeMoreSheet = () => {};
   function initBackGuard() {
     if (typeof BackGuard === 'undefined') return;
     BackGuard.install();
     BackGuard.register(() => {
+      if (moreSheetOpen()) { closeMoreSheet(); return true; }
       const sheet = document.getElementById('touch-preset-sheet');
       if (sheet && sheet.style.display !== 'none') {
         if (sheet.classList.contains('keypad')) showPad(false); else closePresetSheet();

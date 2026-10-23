@@ -1476,6 +1476,13 @@ html.portrait #disp_next_mins:before{
 .touch-pad-actions button.go { background: #0e3a12; border-color: #2a6a2a; color: #9cf59c; }
 .touch-pad-actions button:disabled { opacity: .35; }
 .touch-sheet-back { display: block; width: 100%; margin-bottom: 8px; color: #888; }
+/* "More" sheet */
+#touch-more-sheet { position: fixed; inset: 0; z-index: 10000; align-items: flex-end; justify-content: center; }
+#touch-more-sheet.visible .touch-sheet-content { transform: translateY(0); }
+.touch-more-item { display: block; width: 100%; text-align: left; padding: 14px 16px; margin-bottom: 8px; background: #1a1a2e; border: 1px solid #333;
+  border-radius: 8px; color: #fff; font-size: 16px; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.touch-more-item:active { background: #0f3460; }
+.touch-more-item small { display: block; color: #888; font-size: 13px; font-weight: normal; margin-top: 3px; }
 /* Short screens (a phone held sideways): the sheet scrolls, and the keypad sits beside its
    display and actions instead of above them */
 .touch-sheet-content { max-height: 100vh; max-height: 100dvh; overflow-y: auto; box-sizing: border-box; }
