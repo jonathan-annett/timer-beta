@@ -209,7 +209,7 @@ The phone gets the link from this timer and passes it to the other computer, whi
 
 **For a multi-day event:** the timer keeps the same codes until someone presses **New code**, and each phone remembers the last link it opened. Install the remote as an app (**☰ View → Install as an app** on Android and in desktop Chrome/Edge; on iPhone, **Share → Add to Home Screen**) and it opens straight into the remote, full screen, already paired. If the timer computer is shut down overnight, phones show *timer offline* and reconnect by themselves when it's opened again the next day. After **New code**, every phone needs the new QR code.
 
-In the simple controls, Restart and the presets need a second tap, so a stray touch can't restart a talk. Deck keys work on the first press, like a real deck. The phone screen stays on while the page is open. Up to 16 phones and displays can connect at once.
+Buttons and deck keys buzz as soon as you press them (on phones that can vibrate) and act when you lift your finger. Slide off the button before lifting to cancel the press. If you'd rather Restart and the presets need a second tap within 2 seconds, so a stray touch can't restart a talk, turn on **Second tap** in the ☰ View menu (each phone remembers its own setting; off by default). The phone screen stays on while the page is open. Up to 16 phones and displays can connect at once.
 
 The QR code contains a secret key: anyone with the link can control the timer. **New code** disconnects every phone and makes a new link. **Turn off** stops phone control. The QR image needs internet access; otherwise use **Copy link**.
 

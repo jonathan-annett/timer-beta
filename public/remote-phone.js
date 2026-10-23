@@ -218,28 +218,89 @@
 
   const cmd = (name, extra) => { if (peer) peer.send(Object.assign({ t: 'cmd', cmd: name }, extra || {})); };
 
-  // Destructive buttons need a second tap within 2 s (a pocket tap shouldn't restart a talk)
-  function confirmTap(btn, action) {
-    btn.addEventListener('click', () => {
-      if (btn.classList.contains('armed')) {
-        btn.classList.remove('armed'); btn.textContent = btn.dataset.label;
-        clearTimeout(btn._t); action();
-        return;
-      }
-      btn.dataset.label = btn.dataset.label || btn.textContent;
-      btn.classList.add('armed'); btn.textContent = 'Tap again';
-      btn._t = setTimeout(() => { btn.classList.remove('armed'); btn.textContent = btn.dataset.label; }, 2000);
+  // ─── Buttons: buzz on press, act on release ──────────────────────────────
+  // A press buzzes straight away (where the phone can) and fires when the finger lifts.
+  // Sliding off the button, or the browser taking the touch for a scroll, ignores it.
+  // Restart and the presets can also ask for a second tap (View menu; off by default),
+  // so a pocket tap can't restart a talk.
+  const needConfirm = () => { try { return localStorage.remote_confirm === '1'; } catch (e) { return false; } };
+  let iosHaptic = null;
+  function buzz() {
+    if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} return; }
+    // iPhone has no vibrate API; toggling a hidden iOS 18 switch control gives a haptic tick
+    if (!iOS) return;
+    if (!iosHaptic) {
+      iosHaptic = document.createElement('label');
+      iosHaptic.setAttribute('aria-hidden', 'true');
+      iosHaptic.style.cssText = 'position:fixed;left:-100px;top:0;width:1px;height:1px;overflow:hidden;opacity:0';
+      const box = document.createElement('input');
+      box.type = 'checkbox'; box.setAttribute('switch', ''); box.tabIndex = -1;
+      iosHaptic.appendChild(box);
+      document.body.appendChild(iosHaptic);
+    }
+    iosHaptic.click();
+  }
+  const SLOP = 8;   // px outside the button before a press counts as dragged off
+  function pressable(el, action, opts) {
+    opts = opts || {};
+    let active = null, lastPointer = 0;
+    el.classList.add('pressable');
+    const end = () => { active = null; lastPointer = performance.now(); el.classList.remove('down'); };   // the click after it is skipped
+    const inside = e => {
+      const r = el.getBoundingClientRect();
+      return e.clientX >= r.left - SLOP && e.clientX <= r.right + SLOP && e.clientY >= r.top - SLOP && e.clientY <= r.bottom + SLOP;
+    };
+    const fire = () => {
+      if (opts.confirm && needConfirm()) return arm(el, action);
+      action();
+    };
+    el.addEventListener('pointerdown', e => {
+      if (el.disabled || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      if (opts.can && !opts.can()) return;
+      if (opts.keepFocus) e.preventDefault();   // don't blur the message box (the keyboard would drop and move the button)
+      active = e.pointerId;
+      el.classList.add('down');
+      buzz();
     });
+    // Touches are captured by the element they started on, so pointerleave doesn't come: check position
+    el.addEventListener('pointermove', e => { if (e.pointerId === active && !inside(e)) end(); });
+    el.addEventListener('pointerleave', e => { if (e.pointerId === active && e.pointerType === 'mouse') end(); });
+    el.addEventListener('pointercancel', e => { if (e.pointerId === active) end(); });
+    el.addEventListener('pointerup', e => {
+      if (e.pointerId !== active) return;
+      const ok = inside(e) && !el.disabled;
+      end();
+      if (ok) fire();
+    });
+    // Keyboard (Enter/Space on a focused button) still works. The click that follows a pointer
+    // press is ignored (handled above); some touch clicks report detail 0 like keyboard ones.
+    el.addEventListener('click', e => {
+      const recent = performance.now() - lastPointer < 500;
+      lastPointer = 0;
+      if (active !== null || recent || el.disabled) return;
+      if (e.detail === 0) fire();
+    });
+    el.addEventListener('contextmenu', e => e.preventDefault());   // no long-press menu
+  }
+  function arm(btn, action) {
+    if (btn.classList.contains('armed')) {
+      btn.classList.remove('armed'); btn.textContent = btn.dataset.label;
+      clearTimeout(btn._t); action();
+      return;
+    }
+    btn.dataset.label = btn.dataset.label || btn.textContent;
+    btn.classList.add('armed'); btn.textContent = 'Tap again';
+    btn._t = setTimeout(() => { btn.classList.remove('armed'); btn.textContent = btn.dataset.label; }, 2000);
   }
 
-  confirmTap($('restart'), () => cmd('restart'));
-  $('pause').addEventListener('click', () => cmd('pause'));
-  $('minus').addEventListener('click', () => cmd('adjust', { addtime: false, msecs: 60000 }));
-  $('plus').addEventListener('click', () => cmd('adjust', { addtime: true, msecs: 60000 }));
-  $('catchup').addEventListener('click', () => cmd('catchup'));
-  $('rsnextbtn').addEventListener('click', () => cmd('runsheetnext'));
-  $('rsback').addEventListener('click', () => cmd('runsheetprev'));
-  $('msgclear').addEventListener('click', () => cmd('custommessage', { text: '' }));
+  pressable($('restart'), () => cmd('restart'), { confirm: true });
+  pressable($('pause'), () => cmd('pause'));
+  pressable($('minus'), () => cmd('adjust', { addtime: false, msecs: 60000 }));
+  pressable($('plus'), () => cmd('adjust', { addtime: true, msecs: 60000 }));
+  pressable($('catchup'), () => cmd('catchup'));
+  pressable($('rsnextbtn'), () => cmd('runsheetnext'));
+  pressable($('rsback'), () => cmd('runsheetprev'));
+  pressable($('msgclear'), () => cmd('custommessage', { text: '' }));
   const sendMsg = () => {
     const t = $('msginput').value.trim();
     if (!t) return;
@@ -247,14 +308,14 @@
     $('msginput').value = '';
     $('msginput').blur();
   };
-  $('msgsend').addEventListener('click', sendMsg);
+  pressable($('msgsend'), sendMsg, { keepFocus: true });
   $('msginput').addEventListener('keydown', e => { if (e.key === 'Enter') sendMsg(); });
 
   for (const min of [5, 10, 15, 20, 30, 45, 60, 90]) {
     const b = document.createElement('button');
     b.textContent = min < 60 ? min + ' min' : (min / 60) + ' h';
     if (min === 90) b.textContent = '1½ h';
-    confirmTap(b, () => cmd('start', { msecs: min * 60000 }));
+    pressable(b, () => cmd('start', { msecs: min * 60000 }), { confirm: true });
     $('presets').appendChild(b);
   }
 
@@ -272,9 +333,8 @@
     for (let i = 0; i < 32; i++) {
       const c = document.createElement('canvas');
       c.className = 'idle';
-      c.addEventListener('pointerdown', e => { e.preventDefault(); pressKey(i, c); });
-      ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => c.addEventListener(t, () => c.classList.remove('down')));
-      c.addEventListener('contextmenu', e => e.preventDefault());   // no long-press menu
+      c.addEventListener('pointerdown', e => e.preventDefault());
+      pressable(c, () => pressKey(i), { can: () => !!(faces[i] && faces[i].press) });
       box.appendChild(c);
       canvases.push(c);
     }
@@ -304,7 +364,7 @@
     root.style.setProperty('--row-gap', Math.max(0, Math.floor(rowGap)) + 'px');
     canvases.forEach((_, i) => drawKey(i));
   }
-  window.addEventListener('orientationchange', () => setTimeout(layout, 250));   // some phones report the new size late   // some phones report the new size late
+  window.addEventListener('orientationchange', () => setTimeout(layout, 250));   // some phones report the new size late
 
   function drawKey(i) {
     const c = canvases[i], f = faces[i];
@@ -314,7 +374,8 @@
     const ctx = c.getContext('2d');
     if (!f) { ctx.fillStyle = '#0d0d0d'; ctx.fillRect(0, 0, px, px); return; }
     DeckFace.paint(ctx, f, px);
-    c.className = f.press ? '' : SHOW_ONLY.has(f.a) ? 'idle' : 'idle off';
+    c.classList.toggle('idle', !f.press);
+    c.classList.toggle('off', !f.press && !SHOW_ONLY.has(f.a));
   }
 
   function onDeck(m) {
@@ -326,11 +387,9 @@
     }
   }
 
-  function pressKey(i, c) {
+  function pressKey(i) {
     const f = faces[i];
     if (!f || !f.press) return;
-    c.classList.add('down');
-    if (navigator.vibrate) navigator.vibrate(12);
     if (f.a === 'custom_msg') return openSheet();
     if (peer) peer.send({ t: 'key', i });
   }
@@ -411,6 +470,16 @@
       btn.innerHTML = `${VIEWS[k].label}<small>${VIEWS[k].desc}</small>`;
       btn.addEventListener('click', () => { $('viewmenu').hidden = true; setView(k, true); });
       list.appendChild(btn);
+    }
+    if (role !== 'view') {
+      const opt = document.createElement('button');
+      const sync = () => { opt.innerHTML = `Second tap: ${needConfirm() ? 'on' : 'off'}<small>${needConfirm() ? 'Restart and presets need a second tap within 2 s' : 'Restart and presets act on the first press'}</small>`; };
+      sync();
+      opt.addEventListener('click', () => {
+        try { if (needConfirm()) localStorage.removeItem('remote_confirm'); else localStorage.remote_confirm = '1'; } catch (e) {}
+        sync();
+      });
+      list.appendChild(opt);
     }
     installOption(list);
     $('viewmenu').hidden = false;

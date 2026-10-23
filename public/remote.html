@@ -30,7 +30,7 @@
                max(3vw, env(safe-area-inset-bottom)) max(3vw, env(safe-area-inset-left)); }
     button { font: inherit; color: var(--text); background: #1e1e1e; border: 1px solid #333; border-radius: 0.6em;
       padding: 0.75em 0.4em; touch-action: manipulation; }
-    button:active { background: #333; }
+    button:active:not(.pressable), button.down { background: #333; }   /* .pressable: lit only while the press counts */
     button:disabled { opacity: .35; }
 
     /* Top bar: connection badge, note, full screen, view switch */
