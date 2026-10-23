@@ -14,8 +14,9 @@
   <style>
     /* Sized like the timer page: everything scales from a viewport-relative root size
        (rem), so Chrome's per-site zoom (used to size the timer's buttons) doesn't
-       change this window. 1.8vh ≈ 14px in a 780px-tall window. */
-    html { font-size: 1.8vh; }
+       change this window. Width-based, so the table keeps its proportions in any window
+       shape: 1.27vw ≈ 14px in the default 1100px-wide window. */
+    html { font-size: 1.27vw; }
     :root {
       --bg: #0b0b0b; --panel: #131313; --line: #262626; --line2: #333;
       --text: #ddd; --dim: #888; --faint: #555;
