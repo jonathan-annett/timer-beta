@@ -176,6 +176,7 @@
     undopause:     () => ({ cmd: 'undopause' }),
     adjust:        m => num(m.msecs, 1000, HOUR) && { cmd: 'adjust', addtime: !!m.addtime, msecs: m.msecs },
     catchup:       () => ({ cmd: 'catchup' }),
+    nudge:         m => num(m.msecs, 1000, HOUR) && { cmd: 'nudge', addtime: !!m.addtime, msecs: m.msecs },   // eases; catch up snaps
     custommessage: m => typeof m.text === 'string' && { cmd: 'custommessage', text: m.text.slice(0, 200) },
     runsheetnext:  () => ({ cmd: 'runsheetnext' }),
     runsheetprev:  () => ({ cmd: 'runsheetprev' }),

@@ -184,13 +184,25 @@
     .rl.next { background: #141a22; }
     .rl.end { font-style: italic; color: #bbb; }
     .rl-more { color: var(--dim); font-size: 0.85em; padding: 0.35em 0.3em; }
+    #rsvctl { display: none; flex: none; margin-top: 0.6em; }
+    body.can-ctl #rsvctl { display: grid; gap: 0.4em; }
+    #rsvctl .rc3, #rsvctl .rc5 { display: grid; gap: 0.4em; }
+    #rsvctl .rc3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    #rsvctl .rc5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    #rsvctl button { font-size: 1em; padding: 0.6em 0.2em; border-radius: 0.5em; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    #rsvctl .rc3 button { font-size: 1.15em; font-weight: bold; padding: 0.7em 0.2em; }
+    #rsvctl .rc5 button { font-size: 0.8em; padding: 0.6em 0.1em; white-space: normal; line-height: 1.1; }   /* "Catch up" may wrap rather than clip */
+    #rsvctl .go { background: #0e3a12; border-color: #2a6a2a; color: #9cf59c; }
+    #rsvctl #rcpause.paused { background: #3a2a00; border-color: #a07a20; color: #ffd27a; }
+    #rsvctl #rccatch.on { background: #0b3d5c; border-color: #2a6a9a; color: #9fd8ff; }
     #rsvempty { color: var(--dim); text-align: center; margin-top: 20vh; font-size: 1.2em; }
     /* Wide screens (a tablet on the green room wall): status on the left, schedule on the right */
     @media (min-aspect-ratio: 5/4) {
       body.v-runsheet #rsv { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-        grid-template-rows: auto 1fr; column-gap: 1.2em; }
+        grid-template-rows: auto 1fr auto; column-gap: 1.2em; }
       .rsv-head { grid-column: 1 / -1; }
-      #rsvlist { margin-top: 0; grid-column: 2; grid-row: 2; border-top: 0; }
+      #rsvlist { margin-top: 0; grid-column: 2; grid-row: 2 / 4; border-top: 0; }
+      #rsvctl { grid-column: 1; grid-row: 3; }
       .rsv-main { grid-column: 1; grid-row: 2; align-content: start; }
     }
 
@@ -286,6 +298,21 @@
         <div id="rsvstatus"></div>
       </div>
       <div id="rsvlist"></div>
+      <!-- Control and admin phones only: a director or second operator can step in -->
+      <div id="rsvctl">
+        <div class="rc3">
+          <button id="rcback">◀ Back</button>
+          <button id="rcpause">Pause</button>
+          <button id="rcnext" class="go">Next ▶</button>
+        </div>
+        <div class="rc5">
+          <button id="rcm60" title="Nudge the end a minute earlier (the countdown runs fast until it gets there)">−1 min</button>
+          <button id="rcm10" title="Nudge the end 10 seconds earlier">−10 s</button>
+          <button id="rccatch" title="Jump to the nudged time now">Catch up</button>
+          <button id="rcp10" title="Nudge the end 10 seconds later">+10 s</button>
+          <button id="rcp60" title="Nudge the end a minute later (the countdown runs slow until it gets there)">+1 min</button>
+        </div>
+      </div>
     </div>
 
     <div id="simple">

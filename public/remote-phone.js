@@ -175,6 +175,12 @@
       $('rsback').disabled = !state.rsBack;
       $('rsnextbtn').disabled = !state.rsNext;
     }
+    $('rcback').disabled = !state.rsOn || !state.rsBack;
+    $('rcnext').disabled = !state.rsOn || !state.rsNext;
+    $('rcpause').textContent = state.paused ? 'Resume' : 'Pause';
+    $('rcpause').classList.toggle('paused', !!state.paused);
+    $('rccatch').disabled = !(state.adjUp || state.adjDown);
+    $('rccatch').classList.toggle('on', !!(state.adjUp || state.adjDown));
     renderDisplays();
     scheduleFit();
   }
@@ -301,6 +307,14 @@
   pressable($('rsnextbtn'), () => cmd('runsheetnext'));
   pressable($('rsback'), () => cmd('runsheetprev'));
   pressable($('msgclear'), () => cmd('custommessage', { text: '' }));
+  // Run sheet view, control and admin phones: Back / Pause / Next, live adjust and catch up
+  pressable($('rcback'), () => cmd('runsheetprev'));
+  pressable($('rcnext'), () => cmd('runsheetnext'));
+  pressable($('rcpause'), () => cmd('pause'));
+  pressable($('rccatch'), () => cmd('catchup'));
+  // Nudges, like the timer's ↑/↓: the countdown eases to the new end; Catch up jumps there
+  [['rcm60', false, 60000], ['rcm10', false, 10000], ['rcp10', true, 10000], ['rcp60', true, 60000]]
+    .forEach(([id, addtime, msecs]) => pressable($(id), () => cmd('nudge', { addtime, msecs })));
   const sendMsg = () => {
     const t = $('msginput').value.trim();
     if (!t) return;
@@ -454,6 +468,7 @@
   }
 
   function applyRole() {
+    document.body.classList.toggle('can-ctl', role !== 'view');   // run sheet view gets its controls
     $('roletag').hidden = role === 'control';
     $('roletag').textContent = role === 'admin' ? 'ADMIN' : 'VIEW ONLY';
     $('roletag').title = role === 'admin' ? 'This device can also set up other computers' : 'This device can’t control the timer';
@@ -574,8 +589,16 @@
   function layoutRunsheet() {
     if (view !== 'runsheet') return;
     // Text size from the screen: readable across a room on a tablet, still fits on a phone
-    const px = Math.max(13, Math.min(34, Math.min(innerWidth * 0.042, innerHeight * 0.04)));
-    document.documentElement.style.setProperty('--rs-font', px.toFixed(1) + 'px');
+    let px = Math.max(13, Math.min(34, Math.min(innerWidth * 0.042, innerHeight * 0.04)));
+    const set = () => document.documentElement.style.setProperty('--rs-font', px.toFixed(1) + 'px');
+    set();
+    // With the controls (control and admin phones), make the text smaller until they fit on screen
+    if (document.body.classList.contains('can-ctl')) {
+      const box = $('rsv'), ctl = $('rsvctl');
+      const fits = () => ctl.getBoundingClientRect().bottom <= box.getBoundingClientRect().bottom - parseFloat(getComputedStyle(box).paddingBottom) + 0.5
+        && box.scrollWidth <= box.clientWidth + 1;
+      while (!fits() && px > 9) { px -= 0.5; set(); }
+    }
     scrollToCurrent();
   }
   function scrollToCurrent() {
@@ -589,7 +612,7 @@
     if (view === 'countdown' && state.clock) $('cdclocktime').textContent = clockNow(true);
   }, 1000);
 
-  let lastList = null, cdSig = '';
+  let lastList = null, cdSig = '', rsvSig = '';
   function renderDisplays() {
     const remain = (state.over ? '+' : '') + (state.remain || '–:––');
     const sub = state.paused && state.msgs ? 'Paused' : '';     // status messages follow the timer's M switch
@@ -623,6 +646,9 @@
     const st = $('rsvstatus');
     st.textContent = state.rsOn ? (state.rsText || '') : '';
     st.className = late >= 30 ? 'behind' : late <= -30 ? 'ahead' : '';
+    // The controls must stay on screen: refit when the text changes shape (not every second)
+    const rsig = [state.rsOn, state.rsNow, state.rsNext, (state.rsText || '').length].join('|');
+    if (rsig !== rsvSig) { rsvSig = rsig; if (view === 'runsheet') layoutRunsheet(); }
 
     if (state.rsList !== lastList) {
       lastList = state.rsList;
