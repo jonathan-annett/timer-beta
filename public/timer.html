@@ -14,6 +14,7 @@
       <link rel="manifest" href="manifest.json">
       <title>Presentation Timer</title>
       <link rel="stylesheet" href="timer.css" id="style_1">
+      <link rel="stylesheet" href="help-overlay.css">
   </head>
   <body>
       <script src="w3color.js"></script> 
@@ -32,6 +33,21 @@
       <script src="touchcontrols.js" defer></script>
       <script src="runsheet-core.js" defer></script>
       <script src="runsheet.js" defer></script>
+      <script src="markdown-lite.js" defer></script>
+      <script src="help-overlay.js" defer></script>
+      <script>
+        // Help overlay (the "help" link, ? or F1): main controller screen only, never in a
+        // presenter window or in presenter / single-screen mode (P, S: html.reduced).
+        document.addEventListener('DOMContentLoaded', function () {
+          if (typeof HelpOverlay === 'undefined') return;
+          var presenterWindow = new URLSearchParams(location.search).has('presenter');
+          var help = HelpOverlay.install({ section: 'quick-start', canOpen: function () {
+            return !presenterWindow && !document.documentElement.classList.contains('reduced');
+          }});
+          var link = document.querySelector('#link a[href*="#quick-start"]');
+          if (link) link.addEventListener('click', function (e) { if (help.open('quick-start')) e.preventDefault(); });
+        });
+      </script>
       
       <div class="buttons">
           <span class="btn-label">Presets</span>

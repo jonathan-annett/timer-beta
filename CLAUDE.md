@@ -43,7 +43,9 @@ timer_build/
     ├── runsheet.js         Run sheet controller: next/back/log, Page Up/Down, dashboard (timer window only)
     ├── runsheet.html       Run sheet editor window (opened with E)
     ├── runsheet-editor.js  Editor logic for runsheet.html
-    ├── markdown-lite.js    Tiny Markdown renderer (README help overlay in the editor; node-testable)
+    ├── markdown-lite.js    Tiny Markdown renderer for the README help overlay (node-testable)
+    ├── help-overlay.js     README overlay (? / F1 / help link) for the timer main screen and the editor
+    ├── help-overlay.css    Its styles (viewport/em-sized)
     ├── fsapi.js            Fullscreen API abstraction (cross-browser)
     ├── inettime.js         Internet time sync via worldtimeapi.org
     ├── timeroverlaypip.js  Picture-in-Picture overlay of countdown
@@ -271,7 +273,7 @@ Files: `runsheet-core.js` (pure logic, shared), `runsheet.js` (controller window
 
 **Keys:** Page Down/Up are caught in the capture phase only in run sheet mode, so outside it they still reach `timer.js` (PowerPoint mode). The editor window handles them too, so a clicker focused on it still works. **E** opens the editor (not while typing).
 
-**Help overlay:** the editor's **?**/F1 shows the README, rendered by `markdown-lite.js`. It loads `README.md` next to the page if one is deployed, otherwise the copy on GitHub (raw.githubusercontent.com, which allows CORS), otherwise a link. Responses not starting with `#` are rejected, so a host's HTML 404 page isn't shown. Anchors use GitHub's heading slugs, so README links like `#quick-start` work in both places.
+**Help overlay:** `help-overlay.js` (+ `help-overlay.css`) shows the README rendered by `markdown-lite.js`. It's used by the editor (**?** button, opens at *Run sheet*) and the timer page (*help* link, opens at *Quick start*). Both also open it with **?** or **F1**. On the timer page it's installed by an inline script in `timer.html` with `canOpen` = not a `?presenter` window and not `html.reduced` (P and S modes), and it closes itself if the page becomes reduced while open. While open, a window-capture keydown listener stops the page's shortcuts (so Space scrolls the help instead of restarting the timer) but lets Page Up/Down through for the clicker. It loads `README.md` next to the page if deployed, otherwise the copy on GitHub (raw.githubusercontent.com allows CORS), otherwise a link. Responses not starting with `#` are rejected, so a host's HTML 404 page isn't shown. Anchors use GitHub's heading slugs, so README links like `#quick-start` work in both places. `timer.css` resets all padding, so the overlay CSS sets list padding explicitly.
 
 **Editor sizing:** `runsheet.html` sizes everything in `rem` from `html { font-size: 1.27vw }` (width-based, so the table keeps its proportions), like the timer page's viewport units. Chrome zooms per site, and people zoom the timer window to size its buttons, so the editor must not use `px` (except 1px borders) or it would scale along with them.
 

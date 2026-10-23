@@ -1,0 +1,51 @@
+/*!
+ * help-overlay.css — README overlay (help-overlay.js), shared by the timer and run sheet editor.
+ * Sized in viewport units / em, so browser zoom (used to size the timer's buttons) doesn't scale it.
+ */
+
+#help {
+  position: fixed; inset: 0; z-index: 10050;                 /* above the button bar (9999) and deck editor */
+  display: flex; justify-content: center;
+  background: rgba(0, 0, 0, .6);
+  font: max(1.1vw, 1.7vh)/1.55 "Helvetica Neue", Arial, sans-serif;
+  color: #ddd; text-align: left; cursor: auto;
+  user-select: text;                                         /* the timer page disables selection */
+}
+#help[hidden] { display: none; }
+#help .help-panel {
+  width: min(62em, 96vw); margin: 1.5em 0; min-height: 0;
+  display: flex; flex-direction: column;
+  background: #131313; border: 1px solid #333; border-radius: 0.6em;
+}
+#help .help-bar { display: flex; align-items: center; gap: 1em; padding: 0.7em 1.1em; border-bottom: 1px solid #262626; flex-wrap: wrap; }
+#help .help-links { display: flex; gap: 0.9em; flex: 1; flex-wrap: wrap; }
+#help .help-bar a { color: #4aa8ff; text-decoration: none; font-size: 0.93em; }
+#help .help-bar a:hover { text-decoration: underline; }
+#help #help-close { font: inherit; color: #ddd; background: #1e1e1e; border: 1px solid #333; border-radius: 0.35em; padding: 0.2em 0.7em; cursor: pointer; }
+#help #help-close:hover { background: #2a2a2a; }
+#help #help-body { overflow: auto; padding: 0.5em 1.8em 2.5em; outline: none; }
+
+#help .md h1 { font-size: 1.7em; margin: 1em 0 0.4em; }
+#help .md h2 { font-size: 1.35em; margin: 1.8em 0 0.5em; padding-bottom: 0.3em; border-bottom: 1px solid #262626; }
+#help .md h3 { font-size: 1.1em; margin: 1.3em 0 0.4em; }
+#help .md p, #help .md ul, #help .md ol { margin: 0.5em 0; }
+#help .md ul, #help .md ol { padding-left: 1.6em; }      /* timer.css resets all padding to 0 */
+#help .md li { margin: 0.2em 0; }
+#help .md li > ul, #help .md li > ol { margin: 0.2em 0; }
+#help .md a { color: #4aa8ff; }
+#help .md b { color: #fff; }
+#help .md code { background: #1f1f1f; border: 1px solid #333; border-radius: 0.25em; padding: 0 0.3em; font-size: 0.9em; }
+#help .md pre { background: #101010; border: 1px solid #333; border-radius: 0.4em; padding: 0.8em 1em; overflow: auto; }
+#help .md pre code { background: none; border: 0; padding: 0; }
+#help .md table { border-collapse: collapse; margin: 0.6em 0; }
+#help .md th, #help .md td {
+  border: 1px solid #333; padding: 0.35em 0.7em; text-align: left; vertical-align: top;
+  position: static; background: none; font-size: 0.93em; font-weight: normal;
+  text-transform: none; letter-spacing: 0; color: #ddd;
+}
+#help .md th { background: #1a1a1a; font-weight: bold; }
+#help .md blockquote { margin: 0.6em 0; padding: 0.1em 1em; border-left: 0.25em solid #ffcc33; color: #999; }
+#help .md hr { border: 0; border-top: 1px solid #262626; margin: 1.5em 0; }
+#help .md .help-flash { animation: helpflash 1.2s ease-out; }
+@keyframes helpflash { from { background: #2a3a14; } to { background: transparent; } }
+#help .help-status { color: #888; padding: 2em 0; }

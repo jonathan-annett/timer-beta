@@ -72,6 +72,7 @@ At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. O
 | **M** | Messages on / off |
 | **C** | Write a message for the presenter (**Enter** to show, **C** again to clear) |
 | **O** | Picture-in-picture countdown overlay (stays on top of other apps) |
+| **?** or **F1** | This guide, shown over the timer (main screen only, not in presenter or single-screen mode). The *help* link at the bottom does the same |
 | **E** | Run sheet editor (opens in its own window) |
 | **Page Down / Page Up** | Run sheet mode: next item / back. Otherwise, in PowerPoint mode, Page Down restarts the timer |
 | **^** | PowerPoint mode: a clicker's **Page Down** restarts the timer |
