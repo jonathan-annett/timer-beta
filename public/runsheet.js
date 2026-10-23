@@ -486,7 +486,9 @@
 
   // ─── Boot ─────────────────────────────────────────────────────────────────
 
-  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive };
+  // sheetChanged(): the sheet in localStorage was rewritten by this window (the remote editor,
+  // remote-control.js); the storage event that the editor window's writes give doesn't fire then.
+  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive, sheetChanged: onSheetChanged };
 
   // The dashboard sits just below the button bar, whose height depends on zoom and
   // window width (buttons wrap). Publish its bottom edge for the CSS.

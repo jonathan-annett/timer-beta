@@ -209,6 +209,11 @@
     /* ── Desktop countdown: the main timer's presenter screen (display.html), full window ── */
     #cdframe { display: none; position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: #000; }
     body.cd-presenter #cdframe { display: block; }
+    /* Desktop controller: the run sheet view is the run sheet editor for the timer */
+    #rsframe { display: none; position: fixed; left: 0; right: 0; bottom: 0; top: var(--top-h, 48px);
+      width: 100%; height: calc(100% - var(--top-h, 48px)); border: 0; border-top: 1px solid #262626; background: #0b0b0b; }
+    body.rs-editor #rsframe { display: block; }
+    body.rs-editor #rsv { display: none !important; }
     body.cd-presenter #cd { display: none !important; }
     /* Its controls only appear while the mouse moves, over the display */
     body.cd-presenter .top { position: fixed; top: 0; left: 0; right: 0; z-index: 5; opacity: 0; transition: opacity .4s;
@@ -251,6 +256,7 @@
     .sheet .send { margin: 0.4em 0 0; }
     .sheet p { margin: 0.3em 0 0.8em; line-height: 1.45; }
   </style>
+  <link rel="stylesheet" href="help-overlay.css">
 </head>
 <body>
   <div id="blocked" hidden></div>
@@ -267,6 +273,7 @@
 
     <!-- Countdown display on a desktop: the main timer's presenter screen -->
     <iframe id="cdframe" title="Countdown display" tabindex="-1"></iframe>
+    <iframe id="rsframe" title="Run sheet editor"></iframe>
 
     <!-- Countdown display (view only) -->
     <div id="cd"><div id="cdclock"><span class="lbl">Current time</span><span id="cdclocktime"></span></div><div id="cdremain">–:––</div><div id="cdsub"></div><div id="cdmsg"></div><div id="cdbar"><div id="cdbarfill"></div></div></div>
@@ -375,6 +382,8 @@
     <button id="fstipok" style="width:100%">OK</button>
   </div></div>
 
+  <script src="markdown-lite.js"></script>
+  <script src="help-overlay.js"></script>
   <script src="deck-face.js"></script>
   <script src="remote-peer.js"></script>
   <script src="remote-phone.js"></script>

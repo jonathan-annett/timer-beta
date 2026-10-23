@@ -18,7 +18,7 @@ var HelpOverlay = (function () {
 
   const REPO = 'https://github.com/jonathan-annett/timer-beta';
   const SOURCES = ['README.md', 'https://raw.githubusercontent.com/jonathan-annett/timer-beta/main/README.md'];
-  const QUICK_LINKS = [['quick-start', 'Quick start'], ['run-sheet', 'Run sheet'], ['stream-deck', 'Stream Deck'], ['keyboard-reference', 'Keys'], ['button-size-browser-zoom', 'Button size']];
+  const QUICK_LINKS = [['quick-start', 'Quick start'], ['run-sheet', 'Run sheet'], ['stream-deck', 'Stream Deck'], ['phone-remote-control-experimental', 'Phone'], ['keyboard-reference', 'Keys'], ['button-size-browser-zoom', 'Button size']];
 
   // Keys that still reach the page while help is open: the clicker keeps running the show,
   // and Cmd shortcuts belong to the browser.

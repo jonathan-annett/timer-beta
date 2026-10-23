@@ -144,12 +144,14 @@
     removePeer(id);
     // 'view' only when the server says so; servers from before view-only keys send no role
     // (and reject view keys), so their phones joined with the control key.
-    const entry = { id, n: ++phoneCounter, role: role === 'view' || role === 'admin' ? role : 'control', sent: {}, peer: null, deck: false, faces: [] };
+    const entry = { id, n: ++phoneCounter, role: role === 'view' || role === 'admin' ? role : 'control', sent: {}, peer: null, deck: false, faces: [],
+      join: RemotePeer.joiner(), rsSub: false, rsSent: {}, upload: null };
     entry.peer = RemotePeer.create({
       initiator: true,
       relay: relayTo(id),
-      onMessage: msg => onPhoneMessage(id, msg),
-      onModeChange: () => renderPanel(),
+      onMessage: (msg, via) => onPhoneMessage(id, msg, via),
+      onBinary: buf => onPhoneBinary(id, buf),
+      onModeChange: mode => { if (mode !== 'lan') dropUpload(entry, 'The direct link was lost'); renderPanel(); },
     });
     peers.set(id, entry);
     renderPanel();
@@ -158,6 +160,7 @@
   function removePeer(id) {
     const e = peers.get(id);
     if (!e) return;
+    dropUpload(e, null);
     e.peer.close();
     peers.delete(id);
     renderPanel();
@@ -182,7 +185,7 @@
     runsheetprev:  () => ({ cmd: 'runsheetprev' }),
   };
 
-  function onPhoneMessage(id, m) {
+  function onPhoneMessage(id, m, via) {
     const e = peers.get(id);
     if (!e || !m || typeof m !== 'object') return;
     if (m.t === 'hello' || m.t === 'deck') deckFaces = null;   // outside a push: work them out afresh
@@ -216,7 +219,190 @@
       renderPanel();
     } else if (m.t === 'adopt') {
       adopt(e, m);                             // this computer is the "other computer"
+    } else if (m.t === 'part') {               // a piece of a big message (the run sheet)
+      const whole = e.join(m);
+      if (whole && whole.t === 'rs-save') rsSave(e, whole);
+    } else if (m.t === 'rs-sub') {
+      rsSubscribe(e, !!m.on);
+    } else if (m.t === 'rs-save') {
+      rsSave(e, m);
+    } else if (m.t === 'rs-cmd') {
+      rsCommand(m);
+    } else if (m.t === 'vup-start') {
+      uploadStart(e, m, via);
+    } else if (m.t === 'vup-cancel') {
+      if (e.upload && e.upload.up === m.up) dropUpload(e, null);
     }
+  }
+
+  // ─── Run sheet editing from another computer ─────────────────────────────
+  // A controller on a desktop shows the run sheet editor (runsheet.html) for THIS timer. It
+  // gets the sheet, the show state and the live status when they change (polled here: this
+  // window's own writes give no storage events), and sends back a whole edited sheet or an
+  // editor command. Everything is checked: the sheet is rebuilt field by field, and videos can
+  // only be ones already on the sheet or uploaded below.
+
+  let rsTimer = null;
+  const rsRaw = () => ({
+    sheet: localStorage.getItem('runsheet') || '',
+    state: localStorage.getItem('runsheet_state') || '',
+    live: localStorage.getItem('runsheet_live') || '',
+  });
+  const parseOr = (text, def) => { try { const v = JSON.parse(text); return v == null ? def : v; } catch (_) { return def; } };
+  function trimState(text) {
+    const st = parseOr(text, {});
+    // The undo history holds whole timer snapshots: the editor only needs to know there is one
+    return { active: !!st.active, index: st.index, currentId: st.currentId || null, finished: !!st.finished,
+      log: Array.isArray(st.log) ? st.log : [], dayBase: st.dayBase == null ? null : st.dayBase,
+      historyLen: Array.isArray(st.history) ? st.history.length : 0 };
+  }
+  function rsPush(e, force) {
+    const raw = rsRaw();
+    const out = { t: 'rs-data' };
+    let any = false;
+    if (force || raw.sheet !== e.rsSent.sheet) { out.sheet = parseOr(raw.sheet, { title: '', perItem: 20, items: [] }); any = true; }
+    if (force || raw.state !== e.rsSent.state) { out.state = trimState(raw.state); any = true; }
+    if (force || raw.live !== e.rsSent.live) { out.live = parseOr(raw.live, {}); any = true; }
+    if (!any) return;
+    e.rsSent = raw;
+    RemotePeer.sendBig(e.peer, out);
+  }
+  function rsSubscribe(e, on) {
+    e.rsSub = on;
+    if (!on) return;
+    rsPush(e, true);
+    if (!rsTimer) rsTimer = setInterval(() => {
+      let n = 0;
+      for (const p of peers.values()) if (p.rsSub) { rsPush(p, false); n++; }
+      if (!n) { clearInterval(rsTimer); rsTimer = null; }
+    }, 700);
+  }
+
+  const ID_RE = /^[\w-]{1,40}$/;
+  function cleanSheet(s, current) {
+    if (!s || typeof s !== 'object' || !Array.isArray(s.items) || s.items.length > 500) return null;
+    const known = new Map((current.items || []).filter(it => it && it.video && it.video.key).map(it => [it.video.key, it.video]));
+    const ids = new Set();
+    const items = [];
+    const secs = (v, max) => (v == null ? null : num(v, 0, max));
+    for (const it of s.items) {
+      if (!it || typeof it !== 'object' || typeof it.id !== 'string' || !ID_RE.test(it.id) || ids.has(it.id)) return null;
+      ids.add(it.id);
+      const out = { id: it.id, name: typeof it.name === 'string' ? it.name.slice(0, 300) : '',
+        start: secs(it.start, 2 * 86400), duration: secs(it.duration, 86400) };
+      // A video can stay (or move to another row), never be made up: only keys already on the sheet
+      if (it.video && typeof it.video === 'object' && known.has(it.video.key)) {
+        out.video = known.get(it.video.key);
+        out.videoIdle = it.videoIdle === 'hide' ? 'hide' : 'show';
+      }
+      items.push(out);
+    }
+    return { title: typeof s.title === 'string' ? s.title.slice(0, 200) : '', perItem: num(s.perItem, 1, 600) || 20, items };
+  }
+  function writeSheet(sheet) {
+    const before = parseOr(localStorage.getItem('runsheet'), { items: [] });
+    const text = JSON.stringify(sheet);
+    localStorage.setItem('runsheet', text);
+    if (window.runsheet && window.runsheet.sheetChanged) window.runsheet.sheetChanged();
+    // Videos no longer on the sheet (or in Recent videos) are removed from this browser
+    const keep = new Set(sheet.items.filter(it => it.video).map(it => it.video.key));
+    parseOr(localStorage.getItem('video_history'), []).forEach(h => { if (h && h.key) keep.add(h.key); });
+    (before.items || []).forEach(it => {
+      if (it && it.video && !keep.has(it.video.key) && window.videoStore) window.videoStore.remove(it.video.key).catch(() => {});
+    });
+    return text;
+  }
+  function rsSave(e, m) {
+    const sheet = cleanSheet(m.sheet, parseOr(localStorage.getItem('runsheet'), { items: [] }));
+    if (!sheet) { e.peer.send({ t: 'rs-refused' }); return; }
+    e.rsSent.sheet = writeSheet(sheet);    // the sender has it already: don't echo it back mid-typing
+  }
+  function rsCommand(m) {
+    const rs = window.runsheet;
+    if (!rs) return;
+    switch (m.cmd) {
+      case 'next':   processTimerApiMessage({ cmd: 'runsheetnext' }); break;
+      case 'back':   processTimerApiMessage({ cmd: 'runsheetprev' }); break;
+      case 'goto':   if (typeof m.id === 'string' && ID_RE.test(m.id)) rs.goTo(m.id); break;
+      case 'reset':  rs.reset(); break;
+      case 'active': rs.setActive(!!m.on); break;
+    }
+  }
+
+  // ─── Videos from the remote editor: LAN only ──────────────────────────────
+  // A video file is sent straight over the data channel (never through the pairing server,
+  // which wouldn't take it anyway): 'vup-start' must arrive on the data channel while the
+  // link is direct, then the file follows as binary messages, each starting with the upload's
+  // number (4 bytes). Stored like a video added in the editor here (video-store.js).
+
+  const MAX_VIDEO = 20e9;
+  async function uploadStart(e, m, via) {
+    const up = num(m.up, 1, 1e9);
+    const fail = reason => e.peer.send({ t: 'vup-error', up: m.up, reason });
+    if (up === null) return;
+    if (via !== 'lan' || e.peer.mode !== 'lan') return fail('not-lan');
+    if (e.upload) return fail('busy');
+    const sheet = parseOr(localStorage.getItem('runsheet'), { items: [] });
+    const norm = window.RunsheetCore ? RunsheetCore.normalise(sheet) : null;
+    const row = norm && norm.items.find(it => it.id === m.id);
+    const size = num(m.size, 1, MAX_VIDEO);
+    if (!row || row.isEnd || size === null || typeof m.type !== 'string' || !/^video\//.test(m.type) || !window.videoStore) return fail('bad');
+    try {
+      if (navigator.storage && navigator.storage.estimate) {
+        const est = await navigator.storage.estimate();
+        if (est.quota && (est.usage || 0) + size > est.quota * 0.9) return fail('no-space');
+      }
+    } catch (_) { /* go ahead */ }
+    if (e.upload) return fail('busy');
+    e.upload = { up, id: m.id, size, type: m.type.slice(0, 60),
+      name: typeof m.name === 'string' ? m.name.slice(0, 200) : 'video',
+      duration: num(m.duration, 0, 86400), got: 0, chunks: [], blobs: [], chunkBytes: 0 };
+    e.upload.step = Math.max(256 << 10, Math.ceil(size / 50));    // progress reports: about every 2 %
+    e.upload.nextProg = e.upload.step;
+    e.peer.send({ t: 'vup-ok', up });
+  }
+
+  function onPhoneBinary(id, buf) {
+    const e = peers.get(id);
+    if (!e || (e.role !== 'control' && e.role !== 'admin') || !e.upload || !(buf instanceof ArrayBuffer) || buf.byteLength < 5) return;
+    const u = e.upload;
+    if (new DataView(buf).getUint32(0, true) !== u.up) return;
+    const data = buf.slice(4);
+    u.got += data.byteLength;
+    if (u.got > u.size) return dropUpload(e, 'too-big');
+    u.chunks.push(data); u.chunkBytes += data.byteLength;
+    if (u.chunkBytes >= 16 << 20) {             // let the browser keep big files on disk
+      u.blobs.push(new Blob(u.chunks)); u.chunks = []; u.chunkBytes = 0;
+    }
+    if (u.got >= u.nextProg) { u.nextProg += u.step; e.peer.send({ t: 'vup-prog', up: u.up, got: u.got }); }
+    if (u.got === u.size) uploadFinish(e, u);
+  }
+
+  async function uploadFinish(e, u) {
+    e.upload = null;
+    const blob = new Blob(u.blobs.concat(u.chunks.length ? [new Blob(u.chunks)] : []), { type: u.type });
+    const key = 'rsvideo:' + u.id + ':' + Date.now();
+    try {
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+      await window.videoStore.put(key, blob);
+    } catch (_) { e.peer.send({ t: 'vup-error', up: u.up, reason: 'store' }); return; }
+    const sheet = parseOr(localStorage.getItem('runsheet'), { title: '', perItem: 20, items: [] });
+    const it = (sheet.items || []).find(x => x && x.id === u.id);
+    if (!it) { window.videoStore.remove(key).catch(() => {}); e.peer.send({ t: 'vup-error', up: u.up, reason: 'gone' }); return; }
+    const secs = u.duration ? Math.max(1, Math.floor(u.duration + 0.25)) : null;
+    it.video = { key, name: u.name, size: u.size, duration: secs };
+    if (!it.videoIdle) it.videoIdle = 'show';
+    if (!it.name) it.name = u.name;
+    if (it.duration == null && secs) it.duration = secs;      // the item runs as long as the video
+    writeSheet(sheet);                                        // removes the item's old video too
+    e.peer.send({ t: 'vup-done', up: u.up, key });
+  }
+
+  function dropUpload(e, reason) {
+    if (!e || !e.upload) return;
+    const up = e.upload.up;
+    e.upload = null;
+    if (reason) try { e.peer.send({ t: 'vup-error', up, reason }); } catch (_) { /* gone */ }
   }
 
   // ─── Becoming a remote or display of another timer (admin phone) ──────────
@@ -504,8 +690,8 @@
     if (window.QRCode) return render();
     if (!qrLib) {
       qrLib = document.createElement('script');
-      qrLib.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
-      qrLib.onerror = () => { box.textContent = 'QR code unavailable offline — use Copy link'; };
+      qrLib.src = 'qrcode.min.js';               // qrcodejs 1.0.0 (MIT, qrcode-LICENSE.txt), bundled: no internet needed
+      qrLib.onerror = () => { box.textContent = 'QR code unavailable — use Copy link'; };
       document.head.appendChild(qrLib);
     }
     qrLib.addEventListener('load', render, { once: true });

@@ -58,6 +58,7 @@
     $('note').textContent = note || '';
   }
   function showMode() {
+    postLink();
     if (waiting) return setBadge('off', 'timer offline', role === 'view'
       ? 'waiting for the timer… (if this never connects, the pairing server may need updating, or the timer made a new code)'
       : 'waiting for the timer… (if it made a new code, scan it)');
@@ -77,6 +78,7 @@
     });
     peer.send({ t: 'hello' });                  // goes through the server until the LAN link is up
     if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true });
+    if (editorMode()) peer.send({ t: 'rs-sub', on: true });
   }
 
   function connect() {
@@ -140,9 +142,12 @@
 
   // ─── State from the timer ────────────────────────────────────────────────
 
+  const joinPart = RemotePeer.joiner();
   function onMessage(m) {
+    if (m && m.t === 'part') { const whole = joinPart(m); if (whole) onMessage(whole); return; }
     if (m && m.t === 'deck') return onDeck(m);
     if (m && m.t === 'share-link') return onShareLink(m);
+    if (m && typeof m.t === 'string' && /^(rs-|vup-)/.test(m.t)) return onEditorMessage(m);
     if (!m || m.t !== 'state' || typeof m.s !== 'object') return;
     if (m.full) for (const k of Object.keys(state)) delete state[k];
     Object.assign(state, m.s);
@@ -462,6 +467,7 @@
     if (v !== 'deck') b.classList.remove('side');
     document.documentElement.style.fontSize = '';
     updatePresenterMode();
+    updateEditorMode();
     layout();
     if (peer && role !== 'view') peer.send({ t: 'deck', on: v === 'deck' });
     if (v === 'admin' && fromUser) startScan();      // picked from the menu: a tap, so the camera may start
@@ -469,6 +475,7 @@
 
   function applyRole() {
     document.body.classList.toggle('can-ctl', role !== 'view');   // run sheet view gets its controls
+    setTimeout(updateEditorMode, 0);                              // (after start-up: it needs `desktop`)
     $('roletag').hidden = role === 'control';
     $('roletag').textContent = role === 'admin' ? 'ADMIN' : 'VIEW ONLY';
     $('roletag').title = role === 'admin' ? 'This device can also set up other computers' : 'This device can’t control the timer';
@@ -496,9 +503,15 @@
       });
       list.appendChild(opt);
     }
+    const helpBtn = document.createElement('button');
+    helpBtn.innerHTML = 'Help<small>The timer’s guide (phone remote, run sheet, Stream Deck…)</small>';
+    helpBtn.addEventListener('click', () => { $('viewmenu').hidden = true; help.open('phone-remote-control-experimental'); });
+    list.appendChild(helpBtn);
     installOption(list);
     $('viewmenu').hidden = false;
   }
+  // The README, as on the timer (help-overlay.js); ? or F1 open it too
+  const help = HelpOverlay.install({ section: 'phone-remote-control-experimental' });
   $('viewbtn').addEventListener('click', openViewMenu);
   $('viewcancel').addEventListener('click', () => { $('viewmenu').hidden = true; });
 
@@ -570,6 +583,95 @@
     if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey && presenterMode() &&
         !/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) toggleFullscreen();
   });
+  // ─── Run sheet editor (a controller on a computer) ────────────────────────
+  // On a desktop, a controller's run sheet view is the run sheet editor (runsheet.html?remote in
+  // #rsframe) for the timer. This page relays: the timer's sheet/state/status to the editor,
+  // and its edits and commands back. Videos go to the timer's computer only over the direct
+  // (LAN) link: as binary data-channel messages, never through the server.
+
+  let editorReady = false, editorSub = false;
+  function editorMode() { return desktop && view === 'runsheet' && role !== 'view'; }
+  function updateEditorMode() {
+    const on = editorMode();
+    document.body.classList.toggle('rs-editor', on);
+    const f = $('rsframe');
+    if (on && !f.getAttribute('src')) { editorReady = false; f.src = 'runsheet.html?remote'; }
+    if (on !== editorSub && peer) { editorSub = on; peer.send({ t: 'rs-sub', on }); }
+    if (on) postLink();
+  }
+  function postEditor(msg) {
+    if (!editorReady) return;
+    $('rsframe').contentWindow.postMessage(msg, location.origin);
+  }
+  function postLink() {
+    postEditor({ t: 'rs-link', online: !!(ws && ws.readyState === WebSocket.OPEN && hostOnline && peer),
+      lan: !!(peer && peer.mode === 'lan') });
+  }
+  function onEditorMessage(m) {
+    if (m.t === 'rs-data') postEditor(m);
+    else if (m.t === 'rs-refused') alert('The timer didn’t accept that change to the run sheet.');
+    else if (m.t.startsWith('vup-') && upload && m.up === upload.up) upload.onReply(m);
+  }
+  window.addEventListener('message', e => {
+    if (e.origin !== location.origin || e.source !== $('rsframe').contentWindow || !e.data || typeof e.data !== 'object') return;
+    const m = e.data;
+    if (m.t === 'rs-ready') {
+      editorReady = true;
+      postLink();
+      if (peer && editorMode()) { editorSub = true; peer.send({ t: 'rs-sub', on: true }); }   // a fresh copy for it
+    } else if (!peer || role === 'view') {
+      return;
+    } else if (m.t === 'rs-save' && m.sheet && typeof m.sheet === 'object') {
+      RemotePeer.sendBig(peer, { t: 'rs-save', sheet: m.sheet });
+    } else if (m.t === 'rs-cmd' && typeof m.cmd === 'string') {
+      peer.send({ t: 'rs-cmd', cmd: m.cmd, id: typeof m.id === 'string' ? m.id : undefined, on: m.on });
+    } else if (m.t === 'rs-video' && m.file instanceof Blob) {
+      uploadVideo(m);
+    }
+  });
+
+  // Sending a video file: 'vup-start' (on the data channel), wait for 'vup-ok', then the file
+  // in 64 KB binary messages (4-byte upload number + data), pacing on the channel's buffer.
+  // The timer reports what it has received ('vup-prog', shown as the progress) and stores it ('vup-done').
+  let upload = null, upSeq = 0;
+  const CHUNK = 64 * 1024;
+  function uploadVideo(m) {
+    const end = error => { if (upload && upload.id === m.id) upload = null; postEditor({ t: 'rs-vend', id: m.id, error }); };
+    if (upload) return end('Wait for the video being sent to finish first.');
+    if (!peer || peer.mode !== 'lan') return end('Videos can only be sent over a direct link on the same network as the timer.');
+    const file = m.file, up = ++upSeq;
+    const u = upload = { up, id: m.id, acked: 0, waitOk: null, failed: null };
+    const progress = pct => postEditor({ t: 'rs-vprog', id: m.id, pct: Math.min(99, Math.floor(pct)) });
+    const REASONS = { 'not-lan': 'The link to the timer isn’t direct (same network) any more.', busy: 'The timer is busy receiving another video.',
+      bad: 'The timer couldn’t take that video for this item.', 'no-space': 'There isn’t enough free space in the timer’s browser for that video.',
+      store: 'The timer couldn’t store the video (is its disk full?).', gone: 'That item was deleted on the timer.', 'too-big': 'The video arrived damaged; try again.' };
+    u.onReply = r => {
+      if (r.t === 'vup-ok' && u.waitOk) u.waitOk();
+      else if (r.t === 'vup-prog') { u.acked = r.got; progress(r.got / file.size * 100); }
+      else if (r.t === 'vup-done') { upload = null; postEditor({ t: 'rs-vend', id: m.id }); }
+      else if (r.t === 'vup-error') { u.failed = REASONS[r.reason] || 'The video wasn’t sent: the direct link was lost.'; end(u.failed); }
+    };
+    peer.send({ t: 'vup-start', up, id: m.id, name: String(m.name || file.name || 'video').slice(0, 200),
+      size: file.size, type: file.type, duration: typeof m.duration === 'number' ? m.duration : null });
+    new Promise((resolve, reject) => {
+      u.waitOk = resolve;
+      setTimeout(() => reject(new Error('The timer didn’t answer.')), 15000);
+    }).then(async () => {
+      for (let off = 0; off < file.size;) {
+        if (upload !== u) return;                            // cancelled or failed
+        const ab = await file.slice(off, Math.min(file.size, off + 16 * CHUNK)).arrayBuffer();
+        for (let p = 0; p < ab.byteLength; p += CHUNK) {
+          const piece = new Uint8Array(4 + Math.min(CHUNK, ab.byteLength - p));
+          new DataView(piece.buffer).setUint32(0, up, true);
+          piece.set(new Uint8Array(ab, p, piece.length - 4), 4);
+          if (!peer || !peer.sendBinary(piece.buffer)) throw new Error('The direct link to the timer was lost.');
+        }
+        off += ab.byteLength;
+        await peer.drained(4 << 20);                         // keep at most 4 MB waiting to go
+      }
+    }).catch(err => { if (upload === u) { try { peer && peer.send({ t: 'vup-cancel', up }); } catch (_) {} end((err && err.message) || 'The video wasn’t sent.'); } });
+  }
+
   // Show the controls while the mouse moves, then hide them (and the cursor) again
   let mouseTimer = null;
   const wake = () => {

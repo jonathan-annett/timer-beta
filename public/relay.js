@@ -266,7 +266,7 @@
     if (qrScriptLoaded) { render(); return; }
 
     const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    s.src = 'qrcode.min.js';   // bundled (MIT, qrcode-LICENSE.txt)
     s.onload = () => {
       qrScriptLoaded = true;
       // qrcodejs has a different API — use the canvas directly

@@ -3,6 +3,12 @@
  * Run sheet editor window. Edits the sheet (localStorage.runsheet) and sends
  * commands to the timer window (localStorage.runsheet_cmd). Show state and the
  * live status are written by runsheet.js in the timer window; this page only reads them.
+ *
+ * Remote mode (runsheet.html?remote inside remote.html, on a computer that controls a timer
+ * elsewhere): the same editor, but the sheet, state and status come from the page around it
+ * (postMessage, relayed from the timer over the phone-control link) and edits and commands go
+ * back the same way. This computer's own localStorage and video store aren't touched. Videos
+ * are sent to the timer's computer, and only over a direct (same network) link.
  * MIT Licensed
  */
 
@@ -17,9 +23,13 @@
   const $ = id => document.getElementById(id);
   const readJSON = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? def : v; } catch (_) { return def; } };
 
-  let sheet = readJSON(SHEET_KEY, { title: '', perItem: 20, items: [] });
-  let state = readJSON(STATE_KEY, {});
-  let live = readJSON(LIVE_KEY, {});
+  const REMOTE = new URLSearchParams(location.search).has('remote') && window.parent !== window;
+  const toParent = msg => window.parent.postMessage(msg, location.origin);
+  let link = { online: false, lan: false };          // remote mode: the link to the timer
+
+  let sheet = REMOTE ? { title: '', perItem: 20, items: [] } : readJSON(SHEET_KEY, { title: '', perItem: 20, items: [] });
+  let state = REMOTE ? {} : readJSON(STATE_KEY, {});
+  let live = REMOTE ? {} : readJSON(LIVE_KEY, {});
   let norm;
 
   // Older/hand-made sheets may lack ids
@@ -32,7 +42,8 @@
   // focus is moving (Tab), and rebuilding the table synchronously would drop the new focus.
   let renderPending = false;
   function saveSheet() {
-    localStorage.setItem(SHEET_KEY, JSON.stringify(sheet));
+    if (REMOTE) toParent({ t: 'rs-save', sheet });
+    else localStorage.setItem(SHEET_KEY, JSON.stringify(sheet));
     if (!renderPending) {
       renderPending = true;
       setTimeout(() => { renderPending = false; renderAll(); }, 0);
@@ -40,10 +51,12 @@
   }
 
   function send(cmd, extra) {
+    if (REMOTE) { toParent(Object.assign({ t: 'rs-cmd', cmd }, extra || {})); return; }
     localStorage.setItem(CMD_KEY, JSON.stringify(Object.assign({ cmd, nonce: Date.now() + Math.random() }, extra || {})));
   }
 
   window.addEventListener('storage', ev => {
+    if (REMOTE) return;                              // this computer's own timer, not the one being edited
     if (ev.key === SHEET_KEY) {
       sheet = readJSON(SHEET_KEY, sheet);
       renderAll();
@@ -61,7 +74,37 @@
   // (Not the timer's controller_tab_ heartbeat: that stops when the timer window is switched
   // to presenter mode with P, but the run sheet still runs there.)
   function controllerAlive() {
+    if (REMOTE) return link.online;
     return Date.now() - Number(localStorage.getItem('runsheet_alive') || 0) < 4000;
+  }
+
+  // Remote mode: data from the timer, via the page around this one
+  if (REMOTE) {
+    window.addEventListener('message', e => {
+      if (e.origin !== location.origin || e.source !== window.parent || !e.data || typeof e.data !== 'object') return;
+      const m = e.data;
+      if (m.t === 'rs-data') {
+        if (m.sheet && Array.isArray(m.sheet.items)) {
+          sheet = m.sheet;
+          sheet.items.forEach(it => { if (!it.id) it.id = C.newId(); });
+          if (!sheet.perItem) sheet.perItem = 20;
+        }
+        if (m.state) { state = m.state; state.history = new Array(Math.min(1000, m.state.historyLen || 0)); }
+        if (m.live) live = m.live;
+        if (m.sheet) renderAll(); else { renderStatus(); renderLive(); }
+      } else if (m.t === 'rs-link') {
+        link = { online: !!m.online, lan: !!m.lan };
+        renderLive();
+      } else if (m.t === 'rs-vprog') {
+        sending.set(m.id, m.pct);
+        const cell = document.querySelector(`#rs-table tr[data-id="${m.id}"] td.vid .vbusy`);
+        if (cell) cell.textContent = `sending video… ${m.pct}%`;
+      } else if (m.t === 'rs-vend') {
+        sending.delete(m.id); busy.delete(m.id);
+        if (m.error) alert(m.error);
+        renderAll();
+      }
+    });
   }
 
   // ─── Planned times (mirrors runsheet.js) ──────────────────────────────────
@@ -206,7 +249,7 @@
     // Transport
     $('active').checked = !!state.active;
     $('btn-next').disabled = !active || !!state.finished;
-    $('btn-back').disabled = !active || !(state.history && state.history.length);
+    $('btn-back').disabled = !active || !(state.history && state.history.length);   // (remote: a stand-in array of the right length)
     const cur = norm.items.find(it => it.id === curId);
     const nxt = norm.items.find(it => it.id === nextId);
     const parts = [];
@@ -228,6 +271,7 @@
     el.textContent = state.active ? (live.text || '') : '';
     el.className = live.kind || '';
     $('conn').classList.toggle('show', !controllerAlive());
+    if (REMOTE) $('conn').textContent = 'Not connected to the timer right now: reconnecting… Changes made now may not reach it.';
   }
 
   function renderLog() {
@@ -257,9 +301,13 @@
 
   const noExt = n => String(n || '').replace(/\.[A-Za-z0-9]{1,5}$/, '') || String(n || '');
   const busy = new Set();                      // item ids whose video is being copied
+  const sending = new Map();                   // remote mode: item id → % sent to the timer
 
   function renderVideoCell(td, item) {
-    if (busy.has(item.id)) { td.innerHTML = '<span class="vbusy">copying video…</span>'; return; }
+    if (busy.has(item.id)) {
+      td.innerHTML = `<span class="vbusy">${REMOTE ? `sending video… ${sending.get(item.id) || 0}%` : 'copying video…'}</span>`;
+      return;
+    }
     if (!item.video) {
       td.innerHTML = `<button class="vadd" data-act="vadd" tabindex="-1" title="Play a video for this item (or drop a video file on the row)">+ video</button>`;
       return;
@@ -293,6 +341,7 @@
     const item = sheet.items.find(it => it.id === id);
     if (!item || !file) return;
     if (!/^video\//.test(file.type)) { alert('That isn’t a video file.'); return; }
+    if (REMOTE) return sendVideo(id, file);
     if (!window.videoStore) { alert('Videos can’t be stored in this browser.'); return; }
     busy.add(id); renderAll();
     try {
@@ -318,18 +367,33 @@
     }
   }
 
+  // Remote mode: the file goes to the timer's computer, straight over the local network. Never
+  // through the pairing server: on a link through it, adding videos is refused.
+  async function sendVideo(id, file) {
+    if (!link.online) { alert('Not connected to the timer right now.'); return; }
+    if (!link.lan) {
+      alert('Videos can only be sent to the timer over a direct link on the same network, and this computer is connected through the server.\n\n' +
+        'Use the same Wi-Fi or network as the timer’s computer (the badge at the top shows ⚡ LAN direct), or add the video on the timer’s computer.');
+      return;
+    }
+    if (busy.size) { alert('Wait for the video being sent to finish first.'); return; }
+    busy.add(id); sending.set(id, 0); renderAll();
+    const duration = await probeDuration(file);
+    toParent({ t: 'rs-video', id, file, name: noExt(file.name), duration });
+  }
+
   function removeVideo(id) {
     const item = sheet.items.find(it => it.id === id);
     if (!item || !item.video) return;
     if (!confirm(`Remove the video "${item.video.name}" from this item?`)) return;
-    window.videoStore && window.videoStore.remove(item.video.key).catch(() => {});
+    if (!REMOTE) window.videoStore && window.videoStore.remove(item.video.key).catch(() => {});   // remote: the timer tidies up
     delete item.video; delete item.videoIdle;
     saveSheet();
   }
 
   // Videos no longer used by the sheet (rows deleted, sheet replaced) are removed from the browser
   function cleanUpVideos() {
-    if (!window.videoStore) return;
+    if (REMOTE || !window.videoStore) return;
     const used = new Set(sheet.items.filter(it => it.video).map(it => it.video.key));
     // Videos in the timer's Recent videos list stay until they drop off it (video-library.js)
     try { (JSON.parse(localStorage.getItem('video_history') || '[]') || []).forEach(e => { if (e && e.key) used.add(e.key); }); } catch (_) { /* ignore */ }
@@ -567,6 +631,14 @@
 
   // ─── Boot ─────────────────────────────────────────────────────────────────
 
+  if (REMOTE) {
+    document.title = 'Run sheet (remote)';
+    const tag = document.createElement('span');
+    tag.id = 'remote-tag';
+    tag.textContent = 'Editing the timer on another computer';
+    $('live').before(tag);
+    toParent({ t: 'rs-ready' });
+  }
   renderAll();
   setInterval(renderLive, 2000);
   setTimeout(cleanUpVideos, 3000);   // remove stored videos the sheet no longer uses

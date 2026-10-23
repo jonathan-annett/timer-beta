@@ -13,6 +13,16 @@
  *   relay(obj)      — sends obj to the other side through the server (signalling + fallback)
  *   peer.receive(m) — feed it messages that arrived through the server
  *   peer.send(obj)  — sends by the best available path
+ *   onMessage(obj, via)  via: 'lan' (the data channel) or 'server'
+ *
+ * Binary (video files from the run sheet editor): LAN only, never through the server.
+ *   peer.sendBinary(buf) → false unless the data channel is open; onBinary(buf) receives.
+ *   peer.drained(bytes) → a promise that resolves when less than `bytes` is waiting to go.
+ *
+ * Big JSON (a whole run sheet) is split to fit the server's 16 KB message limit:
+ *   RemotePeer.sendBig(peer, obj) sends it (in paced parts when big); RemotePeer.parts(obj) just
+ *   splits it; RemotePeer.joiner() → j(m) returns
+ *   the whole object when the last part of it arrives (null until then, and for other messages).
  * MIT Licensed
  */
 
@@ -20,7 +30,7 @@ var RemotePeer = (function () {
   'use strict';
 
   function create(opts) {
-    const { initiator, relay, onMessage, onModeChange } = opts;
+    const { initiator, relay, onMessage, onModeChange, onBinary } = opts;
     const timeoutMs = opts.timeoutMs || 7000;
     let pc = null, dc = null, mode = 'server', timer = null, closed = false;
     let pendingIce = [];
@@ -33,9 +43,15 @@ var RemotePeer = (function () {
 
     function wire(ch) {
       dc = ch;
+      ch.binaryType = 'arraybuffer';
+      ch.bufferedAmountLowThreshold = 1 << 20;
       ch.onopen = () => { clearTimeout(timer); setMode('lan'); };
       ch.onclose = () => { dc = null; setMode('server'); };
-      ch.onmessage = e => { try { onMessage(JSON.parse(e.data)); } catch (_) { /* ignore junk */ } };
+      ch.onmessage = e => {
+        if (typeof e.data !== 'string') { if (onBinary) onBinary(e.data); return; }
+        let m; try { m = JSON.parse(e.data); } catch (_) { return; /* ignore junk */ }
+        onMessage(m, 'lan');
+      };
     }
 
     function giveUp() {
@@ -95,14 +111,85 @@ var RemotePeer = (function () {
     function receive(m) {
       if (!m || typeof m !== 'object') return;
       if (m.k === 'sig') onSignal(m);
-      else if (m.k === 'data') onMessage(m.d);
+      else if (m.k === 'data') onMessage(m.d, 'server');
+    }
+
+    function sendBinary(buf) {
+      if (!dc || dc.readyState !== 'open') return false;
+      try { dc.send(buf); return true; } catch (_) { return false; }
+    }
+    // Resolves once the data channel's send buffer is below `bytes` (or rejects if it closes)
+    function drained(bytes) {
+      return new Promise((resolve, reject) => {
+        const ch = dc;
+        if (!ch || ch.readyState !== 'open') return reject(new Error('closed'));
+        if (ch.bufferedAmount < bytes) return resolve();
+        const check = () => {
+          if (ch.readyState !== 'open') { clearInterval(iv); return reject(new Error('closed')); }
+          if (ch.bufferedAmount < bytes) { clearInterval(iv); resolve(); }
+        };
+        const iv = setInterval(check, 50);
+        ch.addEventListener('bufferedamountlow', check, { once: true });
+      });
     }
 
     function close() { closed = true; giveUp(); }
 
     if (initiator) start();
-    return { send, receive, close, get mode() { return mode; } };
+    return { send, receive, close, sendBinary, drained, get mode() { return mode; } };
   }
 
-  return { create };
+  // ─── Big messages ──────────────────────────────────────────────────────────
+  // Server messages are limited to 16 KB, and a part's text is escaped again inside the
+  // envelope (and may be multi-byte UTF-8), so parts carry at most 3000 characters.
+  const PART = 3000;
+  let partSeq = 0;
+  function parts(obj) {
+    const text = JSON.stringify(obj);
+    const pid = (++partSeq).toString(36) + Math.random().toString(36).slice(2, 6);
+    const n = Math.max(1, Math.ceil(text.length / PART));
+    const out = [];
+    for (let i = 0; i < n; i++) out.push({ t: 'part', pid, i, n, s: text.slice(i * PART, (i + 1) * PART) });
+    return out;
+  }
+  function joiner(maxChars) {
+    const max = maxChars || 2000000;
+    const open = new Map();
+    return function join(m) {
+      if (!m || m.t !== 'part' || typeof m.pid !== 'string' || typeof m.s !== 'string') return null;
+      const n = m.n, i = m.i;
+      if (!Number.isInteger(n) || !Number.isInteger(i) || n < 1 || n > Math.ceil(max / PART) || i < 0 || i >= n) return null;
+      let p = open.get(m.pid);
+      if (!p) {
+        if (open.size > 8) open.delete(open.keys().next().value);      // abandoned messages
+        p = { n, got: 0, s: new Array(n) };
+        open.set(m.pid, p);
+      }
+      if (p.n !== n || p.s[i] != null) return null;
+      p.s[i] = m.s; p.got++;
+      if (p.got < n) return null;
+      open.delete(m.pid);
+      try { return JSON.parse(p.s.join('')); } catch (_) { return null; }
+    };
+  }
+
+  // Sends obj, split if it's big. Through the server the parts are paced: it drops anything
+  // over 40 messages a second per connection (and the timer's connection is shared by all phones).
+  function sendBig(peer, obj) {
+    const list = parts(obj);
+    if (list.length === 1) { peer.send(obj); return Promise.resolve(); }
+    return new Promise(resolve => {
+      let i = 0;
+      const step = () => {
+        while (i < list.length) {
+          peer.send(list[i++]);
+          if (peer.mode !== 'lan' && i < list.length) { setTimeout(step, 80); return; }
+        }
+        resolve();
+      };
+      step();
+    });
+  }
+
+  return { create, parts, joiner, sendBig };
 })();
