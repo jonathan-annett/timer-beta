@@ -207,13 +207,7 @@
     const i = sheet.items.indexOf(src);
     const oldEff = norm.items[i] ? norm.items[i].eff : sec;
     src.duration = sec;
-    if (shift) {
-      const delta = sec - oldEff;
-      for (let j = i + 1; j < sheet.items.length; j++) {
-        const x = sheet.items[j];
-        if (x.start != null && !x.hidden) x.start = ((x.start + delta) % 86400 + 86400) % 86400;
-      }
-    }
+    if (shift) C.shiftStarts(sheet, i, sec - oldEff);
     writeSheet();
   }
   function bumpTimer(ms) {
@@ -237,7 +231,9 @@
     commit();
     return true;
   }
-  // The item running now ends at endMs; the next item (nextId) starts at nextStart (seconds of the day)
+  // The item running now ends at endClock (a time of day, on this computer's clock). With nextId,
+  // that's the next item's new start (its start time from the editor), and everything after the
+  // next item moves by as much; without, everything after the live item moves.
   // A time of day (seconds) as a timestamp: the one nearest the item running now (past midnight too)
   function clockToMs(sec) {
     const DAY = 86400e3, e = state.log[state.log.length - 1];
@@ -247,16 +243,25 @@
     while (t > ref + DAY * 3 / 4) t -= DAY;
     return t;
   }
-  function curEnd(id, endMs, nextId, nextStart) {
+  function curEnd(id, endClock, nextId) {
     const src = liveItem(id);
     const s = api({ cmd: 'snapshot' });
-    if (nextStart != null) endMs = clockToMs(nextStart);       // this computer's clock, not the editor's
-    if (!src || !s || !(endMs > now() + 1000)) { flash('That end time has already passed'); return false; }
+    if (!src || !s || endClock == null || !isFinite(endClock)) return false;
+    const endMs = clockToMs(endClock);
+    if (!(endMs > now() + 1000)) { flash('That end time has already passed'); return false; }
     const bump = endMs - timerEndMs(s);
     bumpTimer(bump);
-    const nx = nextId ? sheet.items.find(x => x.id === nextId) : null;
-    if (nx && !nx.hidden && nextStart != null) nx.start = nextStart;
-    setLiveDuration(src, Math.max(1, Math.round((allottedMs(s) + bump) / 1000)), false);
+    const sec = Math.max(1, Math.round((allottedMs(s) + bump) / 1000));
+    const ni = nextId ? sheet.items.findIndex(x => x.id === nextId) : -1;
+    if (ni > sheet.items.indexOf(src) && !sheet.items[ni].hidden) {
+      const oldStart = norm.items[ni].planned;
+      setLiveDuration(src, sec, false);
+      sheet.items[ni].start = endClock % 86400;
+      C.shiftStarts(sheet, ni, C.dayDelta(oldStart, endClock));
+      writeSheet();
+    } else {
+      setLiveDuration(src, sec, true);
+    }
     syncSeen = null;
     commit();
     return true;
@@ -409,7 +414,7 @@
       case 'pause':  api({ cmd: 'pause' }); break;                           // toggles
       case 'restart': restartCountdown(); break;
       case 'curdur': curDuration(c.id, c.duration == null ? null : Number(c.duration)); break;
-      case 'curend': curEnd(c.id, Number(c.end), c.nextId, c.nextStart == null ? null : Number(c.nextStart)); break;
+      case 'curend': curEnd(c.id, Number(c.endClock), c.nextId || null); break;
       case 'livename': liveName(c.id, c.name); break;
     }
   }

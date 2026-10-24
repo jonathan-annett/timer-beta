@@ -177,7 +177,7 @@
         `<td class="name"><input data-field="name" aria-label="Item name"></td>` +
         `<td class="vid"></td><td class="deck"></td>` +
         `<td class="dur"><input data-field="duration" aria-label="Duration"></td>` +
-        `<td class="ends"></td><td class="status"></td>` +
+        `<td class="ends">${it.isEnd ? '' : '<input data-field="end" aria-label="End time">'}</td><td class="status"></td>` +
         `<td class="acts">` +
           // tabindex -1: Tab moves between the cells (start → name → duration → next row)
           (it.isEnd ? '' : `<button class="go" data-act="go" tabindex="-1" title="Start this item now">▶</button>`) +
@@ -233,7 +233,9 @@
       if (!it) return;
       const p = plannedMs(it.planned);
       tr.querySelector('[data-field=start]').placeholder = p != null ? clockOf(p) : '';
-      tr.querySelector('.ends').textContent = it.isEnd || p == null ? '' : clockOf(p + it.eff * 1000);
+      // The end is worked out (start + duration), never stored: shown as the placeholder; typing one sets the duration
+      const endIn = tr.querySelector('[data-field=end]');
+      if (endIn) endIn.placeholder = p == null ? '' : clockOf(p + it.eff * 1000);
 
       const k = lastById[it.id];
       const done = k != null && it.id !== curId;
@@ -617,16 +619,24 @@
       if (role === 'now' && v !== item.name) return liveRename(item, v);
       item.name = v;
     } else {
-      const v = field === 'start' ? C.parseClock(input.value) : C.parseDuration(input.value);
+      const v = field === 'duration' ? C.parseDuration(input.value) : C.parseClock(input.value);
       if (Number.isNaN(v)) {
         input.classList.add('invalid');
-        input.title = field === 'start' ? 'Couldn’t read that time — try 9:30, 9:30am or 14:00' : 'Couldn’t read that duration — try 20, 1:30, 20 min or 1 h 30 min';
+        input.title = field !== 'duration' ? 'Couldn’t read that time — try 9:30, 9:30am or 14:00' : 'Couldn’t read that duration — try 20, 1:30, 20 min or 1 h 30 min';
         return;
       }
       input.classList.remove('invalid');
       input.title = '';
+      if (field === 'end') {                         // an end time is another way of giving the duration
+        if (v == null) { renderAll(); return; }
+        if (role === 'now') return liveEnd(i, v);
+        const d = C.durationToEnd(norm, i, v);
+        if (d == null) { input.classList.add('invalid'); input.title = 'That’s not after the item starts'; return; }
+        return setDuration(i, d);
+      }
       if (role === 'now' && field === 'duration') return liveDuration(i, v);
       if (role === 'next' && field === 'start' && v != null && v !== item.start) return nextStart(i, v);
+      if (field === 'duration') return setDuration(i, v);
       item[field] = v;
     }
     saveSheet();
@@ -682,6 +692,24 @@
     return t;
   }
 
+  // A new duration (or end) for an item still to come: everything after it moves by as much.
+  // Cleared (back to "from the times" or the default) moves nothing.
+  function setDuration(i, sec) {
+    const oldEff = norm.items[i].eff;
+    sheet.items[i].duration = sec;
+    if (sec != null) C.shiftStarts(sheet, i, sec - oldEff);
+    saveSheet();
+  }
+  // A new end for the live item: its countdown ends then, and the rest of the day moves
+  function liveEnd(i, sec) {
+    if (clockNear(sec) <= editorNow() + 1000) {
+      ask(`${C.formatClock(sec)} has already gone (it’s ${clockOf(editorNow())} now). The end wasn’t changed.`,
+        [{ label: 'OK', value: 0, kind: 'primary' }]).then(() => renderAll());
+      return;
+    }
+    send('curend', { id: sheet.items[i].id, endClock: sec });
+  }
+
   // The live item's name is on the presenter's screen: change it there only when asked
   function liveRename(item, name) {
     ask(`<b>${esc(item.name || 'This item')}</b> is on now. The presenter's screen will show the new name, ` +
@@ -724,8 +752,9 @@
     const label = C.formatClock(sec);
     const T = clockNear(sec);
     const curEnd = cur && live.curId === cur.id ? live.curEnd : null;
-    const save = () => { item.start = sec; saveSheet(); };
-    const endAt = () => send('curend', { id: cur.id, end: T, nextId: item.id, nextStart: sec });
+    // Either way the items after the next one move by as much as its start does
+    const save = () => { const old = norm.items[i].planned; item.start = sec; if (old != null) C.shiftStarts(sheet, i, C.dayDelta(old, sec)); saveSheet(); };
+    const endAt = () => send('curend', { id: cur.id, endClock: sec, nextId: item.id });
     if (T <= editorNow() + 1000) {
       ask(`${label} has already gone (it’s ${clockOf(editorNow())} now). The start time wasn’t changed.`,
         [{ label: 'OK', value: 0, kind: 'primary' }]).then(() => renderAll());
@@ -733,7 +762,7 @@
     }
     if (!cur) { save(); return; }
     ask(`<b>${esc(item.name || 'The next item')}</b> starting at <b>${label}</b> means <b>${curName}</b> ends then` +
-        (curEnd != null ? ` (it’s due to end at ${clockOf(curEnd)})` : '') + `.<br>Change the countdown so it ends at ${label} too?`,
+        (curEnd != null ? ` (it’s due to end at ${clockOf(curEnd)})` : '') + `. The items after it move by as much.<br>Change the countdown so it ends at ${label} too?`,
       [{ label: `Yes, end the countdown at ${label}`, value: 'end', kind: 'primary' },
        { label: 'No, just the start time', value: 'start' },
        { label: 'Cancel', value: null, cancel: true }])

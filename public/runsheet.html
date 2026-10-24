@@ -69,7 +69,9 @@
     #rs-table td { padding: 0.143rem 0.286rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
     #rs-table td.num { color: var(--faint); text-align: right; width: 2.4rem; padding-right: 0.571rem; }
     #rs-table td.start { width: 5.5rem; } #rs-table td.dur { width: 9rem; }
-    #rs-table td.ends { width: 4rem; color: var(--dim); }
+    #rs-table td.ends { width: 4.6rem; color: var(--dim); }
+    #rs-table td.ends input::placeholder { color: var(--text); font-style: normal; opacity: 0.8; }
+    #rs-table tr.locked td.ends input::placeholder, #rs-table tr.hiddenrow td.ends input::placeholder { color: var(--dim); }
     /* Video column: + video, or the attached video with its before-play setting */
     #rs-table td.vid { width: 6.6rem; white-space: nowrap; font-size: 0.857rem; color: var(--dim); }
     #rs-table td.vid button { padding: 0.143rem 0.4rem; font-size: 0.857rem; }

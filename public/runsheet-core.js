@@ -196,6 +196,31 @@ var RunsheetCore = (function () {
   }
 
   // Bake derived values into the sheet so every row has start (if anchored), name and duration.
+  // ─── Rippling changes down the day ────────────────────────────────────────
+  // A new duration, end or next start moves everything after it: start times written on later
+  // rows shift by the same amount (rows without one follow anyway). Hidden rows (already run) stay.
+  function shiftStarts(sheet, from, delta) {
+    if (!delta) return;
+    for (let j = from + 1; j < sheet.items.length; j++) {
+      const x = sheet.items[j];
+      if (x.start != null && isFinite(x.start) && !x.hidden) x.start = ((x.start + delta) % DAY + DAY) % DAY;
+    }
+  }
+  // b − a for two times of day, the short way round midnight (seconds)
+  function dayDelta(a, b) {
+    let d = ((b - a) % DAY + DAY) % DAY;
+    if (d > DAY / 2) d -= DAY;
+    return d;
+  }
+  // A new end (time of day) for row i: its duration from its planned start, or null when that
+  // end isn't after the start (within 12 h)
+  function durationToEnd(norm, i, endSec) {
+    const it = norm.items[i];
+    if (!it || it.planned == null) return null;
+    const d = ((endSec - it.planned) % DAY + DAY) % DAY;
+    return d > 0 && d <= DAY / 2 ? d : null;
+  }
+
   function standardise(sheet) {
     const norm = normalise(sheet);
     return Object.assign({}, sheet, {
@@ -346,6 +371,7 @@ var RunsheetCore = (function () {
   return {
     parseClock, parseDuration,
     formatClock, formatDuration, formatSpan, formatHMS,
+    shiftStarts, dayDelta, durationToEnd,
     normalise, standardise, parseText, toCSV, csvCell, newId,
   };
 })();

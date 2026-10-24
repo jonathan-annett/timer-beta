@@ -421,14 +421,11 @@
         if (rs.curDuration && typeof m.id === 'string' && ID_RE.test(m.id) && (m.duration === null || num(m.duration, 1, 86400) !== null))
           rs.curDuration(m.id, m.duration);
         break;
-      case 'curend': {
-        const t = Date.now();
-        if (rs.curEnd && typeof m.id === 'string' && ID_RE.test(m.id) && num(m.end, t - 86400e3, t + 2 * 86400e3) !== null &&
-            (m.nextId == null || (typeof m.nextId === 'string' && ID_RE.test(m.nextId))) &&
-            (m.nextStart == null || num(m.nextStart, 0, 2 * 86400) !== null))
-          rs.curEnd(m.id, m.end, m.nextId || null, m.nextStart == null ? null : m.nextStart);
+      case 'curend':
+        if (rs.curEnd && typeof m.id === 'string' && ID_RE.test(m.id) && num(m.endClock, 0, 2 * 86400) !== null &&
+            (m.nextId == null || (typeof m.nextId === 'string' && ID_RE.test(m.nextId))))
+          rs.curEnd(m.id, m.endClock, m.nextId || null);
         break;
-      }
       case 'livename':
         if (rs.liveName && typeof m.id === 'string' && ID_RE.test(m.id) && typeof m.name === 'string' && m.name.length <= 300)
           rs.liveName(m.id, m.name);
