@@ -627,7 +627,7 @@
 #phone-panel {
   /* Below the button bar (which grows when zoomed buttons wrap), above everything else except the
      full-screen QR and help; scrolls if the window is short */
-  position: fixed; top: calc(var(--buttons-bottom, 48px) + 8px); right: 16px; width: 320px; z-index: 2147481000;
+  position: fixed; top: calc(var(--buttons-bottom, 48px) + 8px); right: 16px; width: 440px; max-width: calc(100vw - 32px); z-index: 2147481000;   /* room for all six link buttons */
   max-height: calc(100vh - var(--buttons-bottom, 48px) - 16px); overflow-y: auto; box-sizing: border-box;
   background: #111; border: 1px solid #333; border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,.6);
   color: #ddd; font: 13px/1.4 "Helvetica Neue", Arial, sans-serif; padding: 10px 12px 12px; cursor: auto;
