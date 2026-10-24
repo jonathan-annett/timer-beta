@@ -207,7 +207,7 @@ The **run sheet display** shows the time of day, what's on now with its countdow
 
 1. On that computer, open the timer, click **share** and choose **Control**.
 2. On a phone paired with this timer's **Admin** code, choose **☰ View → Admin: set up another computer** and scan the other computer's QR code.
-3. Choose **A remote control**, **A run sheet editor**, **A countdown display** or **A run sheet display**.
+3. Choose **A remote control**, **A run sheet editor**, **A countdown display**, **A run sheet display** or **A PowerPoint computer** (it opens the PowerPoint receiver page; see *Slides on a PowerPoint computer*).
 
 The phone gets the link from this timer and passes it to the other computer, which shows a notice for 8 seconds (anyone there can **Cancel**) and then opens it. It's then listed in this timer's share panel, and it remembers the link. The phone needs the other computer's *Control* code because it is telling that computer what to do; a view-only code won't work. The phone uses the browser's built-in QR reader where there is one (Chrome on Android) and otherwise a small bundled reader (jsQR), so iPhones work too.
 
@@ -232,7 +232,7 @@ Give a run sheet item a PowerPoint deck and it opens as a full-screen slide show
 
 The PowerPoint computer needs Windows with PowerPoint, Chrome or Edge, and the same network as the timer's computer. To set it up:
 
-1. On the timer, click **share**, choose **PowerPoint** and copy the link. Open it in Chrome or Edge on the PowerPoint computer.
+1. On the timer, click **share**, choose **PowerPoint** and copy the link. Open it in Chrome or Edge on the PowerPoint computer. Or, with an admin phone: open the timer on the PowerPoint computer, click **share** there, choose **Control**, and on the phone choose **Admin: set up another computer**, scan that code and pick **A PowerPoint computer**: it switches to the receiver page by itself.
 2. On that page, click **Download the player** and run the command it shows in PowerShell. The player is a small script that opens the decks in PowerPoint; keep its window open during the show. It shows its *Inbox* folder.
 3. On the page, click **Choose folder…** and pick that Inbox folder.
 

@@ -20,7 +20,9 @@ pairing server, which only relays small messages), and a web page can't start Po
 
 1. On the timer: **share → PowerPoint**, copy the link, open it in Chrome or Edge on the
    PowerPoint computer (same network as the timer's computer: the page's badge must show
-   ⚡ LAN direct).
+   ⚡ LAN direct). Or with an admin phone: open the timer on the PowerPoint computer, share →
+   Control there, then on the phone *Admin: set up another computer* → scan → **A PowerPoint
+   computer** (share mode `pptx`; that computer's `adopt()` opens `pptx.html#r=…&p=…&s=…`).
 2. In the page: **Download the player**, then run the command it shows in PowerShell:
    `powershell -ExecutionPolicy Bypass -File .\Pptx-WsController.ps1 -Link "…"`.
    It prints its Inbox folder (default `Documents\Presentation Timer\Inbox`).

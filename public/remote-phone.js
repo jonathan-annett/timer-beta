@@ -963,6 +963,9 @@
     peer.send({ t: 'share', mode, req });
   }
 
+  const oldServerText = mode => mode === 'pptx'
+    ? 'This timer’s pairing server is out of date, so PowerPoint computers can’t connect. Update remote-server.js on the server and restart it.'
+    : 'This timer’s pairing server is out of date, so view-only displays can’t connect. Update remote-server.js on the server, or choose A remote control.';
   function fail(msg) {
     if (!pending) return;
     clearTimeout(pending.timer);
@@ -975,7 +978,7 @@
   function onShareLink(m) {
     if (!pending || m.req !== pending.req) return;
     if (m.error === 'not-admin') return fail('Only an admin phone can set up other computers. Scan the timer’s Admin code with this phone.');
-    if (m.error === 'old-server') return fail('This timer’s pairing server is out of date, so view-only displays can’t connect. Update remote-server.js on the server, or choose A remote control.');
+    if (m.error === 'old-server') return fail(oldServerText(pending.mode));
     if (typeof m.frag !== 'string') return;
     clearTimeout(pending.timer);
     const p = pending, t = p.target;
@@ -1009,10 +1012,11 @@
 
   function onAdoptReply(p, r) {
     if (!r || r.req !== p.req) return;
-    const what = p.mode === 'control' ? 'a remote control' : p.mode === 'runsheet' ? 'a run sheet display' : 'a countdown display';
+    const what = { control: 'a remote control', editor: 'a run sheet editor', runsheet: 'a run sheet display', countdown: 'a countdown display', pptx: 'the PowerPoint receiver page' }[p.mode] || 'a remote';
     if (r.t === 'adopt-ok') {
       clearTimeout(p.timer);
-      admStatus('Done: the other computer is opening ' + what + ' of this timer (someone there has 8 seconds to cancel).', 'ok');
+      admStatus('Done: the other computer is opening ' + what + ' of this timer (someone there has 8 seconds to cancel).' +
+        (p.mode === 'pptx' ? ' Then start the PowerPoint player there, as that page shows.' : ''), 'ok');
       // Stay connected a little longer, to hear if it's cancelled
       p.timer = setTimeout(() => { if (pending === p) { try { p.ws.close(); } catch (_) { /* gone */ } pending = null; } }, 12000);
     } else if (r.t === 'adopt-cancelled') {

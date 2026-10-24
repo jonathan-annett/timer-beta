@@ -73,7 +73,7 @@
     companion: { label: 'Companion', hint: '<b>Bitfocus Companion</b> (or other automation): paste this link into the Companion connection’s settings. It gets every timer command and all the timer’s variables. It can’t set up other devices.' },
     pptx:      { label: 'PowerPoint', hint: '<b>PowerPoint</b>: open this link in Chrome or Edge on the computer that shows the slides (same network as this one). It receives the run sheet’s decks and shows how to start the PowerPoint player. It can’t control the timer.' },
   };
-  const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet'];   // what an admin phone can set another computer up as
+  const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet', 'pptx'];   // what an admin phone can set another computer up as
   const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4, pptx: 5 };   // pairing server needed for each link
   // 'editor' is the control link with m=runsheet: a computer opening it starts in the run sheet editor
   const linkFields = (p, mode) => mode === 'control' ? { r: p.room, k: p.key }
@@ -264,7 +264,7 @@
       }
       e.peer.send({ t: 'share-link', req: String(m.req || '').slice(0, 40), mode, frag: shareFragment(mode) });
       const d = new Date();
-      shareNote = `Phone ${e.n} passed the ${mode === 'control' ? 'control' : mode === 'editor' ? 'run sheet editor' : LINK_MODES[mode].label.toLowerCase() + ' display'} link to another computer at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      shareNote = `Phone ${e.n} passed the ${mode === 'control' ? 'control' : mode === 'editor' ? 'run sheet editor' : mode === 'pptx' ? 'PowerPoint' : LINK_MODES[mode].label.toLowerCase() + ' display'} link to another computer at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       renderPanel();
     } else if (m.t === 'adopt') {
       adopt(e, m);                             // this computer is the "other computer"
@@ -508,18 +508,20 @@
     const f = Object.fromEntries(new URLSearchParams(typeof m.frag === 'string' ? m.frag.slice(0, 600) : ''));
     const okRoom = /^[A-Za-z0-9]{6,32}$/.test(f.r || '');
     const okKey = k => typeof k === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(k);
-    const isControl = okKey(f.k) && !f.v, isView = okKey(f.v) && !f.k && (f.m === 'countdown' || f.m === 'runsheet');
+    const isControl = okKey(f.k) && !f.v && !f.p, isView = okKey(f.v) && !f.k && !f.p && (f.m === 'countdown' || f.m === 'runsheet');
+    const isPptx = okKey(f.p) && !f.k && !f.v;                       // this computer becomes a PowerPoint computer (pptx.html)
     const okServer = /^wss:\/\/[^\s#?]+$/i.test(f.s || '');
-    if (!okRoom || !okServer || !(isControl || isView) || f.r === pairing().room) {
+    if (!okRoom || !okServer || !(isControl || isView || isPptx) || f.r === pairing().room) {
       e.peer.send({ t: 'adopt-refused', req });
       return;
     }
-    const h = isControl ? { r: f.r, k: f.k, s: f.s } : { r: f.r, v: f.v, m: f.m, s: f.s };
+    const h = isControl ? { r: f.r, k: f.k, s: f.s } : isPptx ? { r: f.r, p: f.p, s: f.s } : { r: f.r, v: f.v, m: f.m, s: f.s };
     if (isControl && f.m === 'runsheet') h.m = 'runsheet';          // open straight into the run sheet editor
-    const url = new URL('remote.html', location.href);
+    const url = new URL(isPptx ? 'pptx.html' : 'remote.html', location.href);
     url.search = '';
     url.hash = new URLSearchParams(h).toString();
-    const what = isControl ? (f.m === 'runsheet' ? 'a run sheet editor' : 'a remote control') : f.m === 'runsheet' ? 'a run sheet display' : 'a countdown display';
+    const what = isPptx ? 'a PowerPoint computer (it receives the run sheet’s slides)'
+      : isControl ? (f.m === 'runsheet' ? 'a run sheet editor' : 'a remote control') : f.m === 'runsheet' ? 'a run sheet display' : 'a countdown display';
     e.peer.send({ t: 'adopt-ok', req });
     showAdoptNotice(what, url.toString(), () => { const p = peers.get(e.id); if (p) p.peer.send({ t: 'adopt-cancelled', req }); });
   }
