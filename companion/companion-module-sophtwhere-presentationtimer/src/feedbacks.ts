@@ -4,7 +4,7 @@ import type ModuleInstance from './main.js'
 const truthy = (v: unknown): boolean => v === true || v === 'true' || v === '1' || v === 1
 
 export const FEEDBACK_IDS = ['connected', 'paused', 'impending', 'expired', 'adjusting', 'message_showing', 'runsheet_active', 'runsheet_behind',
-	'runsheet_ahead', 'video_cued', 'video_playing', 'message_is', 'switch_on', 'remain_under'] as const
+	'runsheet_ahead', 'video_cued', 'video_playing', 'message_is', 'switch_on', 'remain_under', 'slides_showing', 'slides_next_ready'] as const
 
 const W = combineRgb(255, 255, 255)
 const K = combineRgb(0, 0, 0)
@@ -28,6 +28,8 @@ export const DEFAULT_STYLES: Record<(typeof FEEDBACK_IDS)[number], { bgcolor: nu
 	message_is: { bgcolor: combineRgb(90, 0, 140), color: W },
 	switch_on: { bgcolor: combineRgb(0, 80, 0), color: W },
 	remain_under: { bgcolor: combineRgb(220, 120, 0), color: K },
+	slides_showing: { bgcolor: combineRgb(0, 80, 0), color: W },
+	slides_next_ready: { bgcolor: combineRgb(0, 80, 0), color: W },
 }
 
 export function UpdateFeedbacks(self: ModuleInstance): void {
@@ -54,6 +56,8 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 		...stateIs('runsheet_behind', () => Number(vars().rs_late) >= 30, 'Run sheet: behind schedule (30 s or more)'),
 		...stateIs('runsheet_ahead', () => Number(vars().rs_late) <= -30 && vars().rs_late !== '' && vars().rs_late != null, 'Run sheet: ahead of schedule (30 s or more)'),
 		...stateIs('video_cued', () => vars().video_status === 'cued', 'A video is cued (ready to play)'),
+		...stateIs('slides_showing', () => truthy(vars().pptx_showing), 'PowerPoint: a slide show is running'),
+		...stateIs('slides_next_ready', () => truthy(vars().pptx_next_ready), 'PowerPoint: the next item’s deck is ready on every computer'),
 		...stateIs('video_playing', () => vars().video_status === 'playing', 'A video is playing'),
 		message_is: {
 			type: 'boolean',

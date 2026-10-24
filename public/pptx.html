@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!--
+  pptx.html  (EXPERIMENTAL)
+  PowerPoint receiver for the Presentation Timer. Opened on the computer that shows the slides,
+  from the PowerPoint link in the timer's share panel. It receives the run sheet's decks over the
+  local network and saves them in a folder, where the PowerPoint player script
+  (Pptx-WsController.ps1) picks them up and opens them when the run sheet reaches them.
+  MIT Licensed
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>PowerPoint receiver · Presentation Timer</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #111; color: #ddd; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 20px; margin: 0 0 4px; color: #fff; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  h2 { font-size: 15px; margin: 0 0 6px; color: #fff; }
+  .exp { font-size: 11px; color: #ffcc33; border: 1px solid #665200; border-radius: 3px; padding: 0 5px; font-weight: normal; }
+  #badge { font-size: 12px; font-weight: normal; padding: 2px 8px; border-radius: 10px; background: #333; color: #aaa; }
+  #badge.lan { background: #103a10; color: #7fdc7f; }
+  #badge.server { background: #3a2d00; color: #ffcc33; }
+  #note { color: #999; font-size: 13px; margin: 0 0 14px; min-height: 1em; }
+  section { background: #1b1b1b; border: 1px solid #2c2c2c; border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+  section.done { border-color: #1f4d1f; }
+  section.need { border-color: #665200; }
+  .step { display: inline-block; width: 1.6em; height: 1.6em; line-height: 1.6em; text-align: center; border-radius: 50%; background: #333; color: #fff; font-size: 12px; margin-right: 6px; }
+  section.done .step { background: #1f6b1f; }
+  p { margin: 6px 0; }
+  .hint { color: #999; font-size: 13px; }
+  button, .btn { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 5px; border: 1px solid #555; background: #262626; color: #eee; cursor: pointer; text-decoration: none; display: inline-block; }
+  button:hover, .btn:hover { background: #333; }
+  button.primary { background: #1d4f8a; border-color: #2c6bb3; }
+  code, pre { font: 12.5px/1.4 ui-monospace, Consolas, monospace; }
+  pre { background: #000; border: 1px solid #333; border-radius: 5px; padding: 8px; white-space: pre-wrap; word-break: break-all; user-select: all; margin: 6px 0; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .ok { color: #7fdc7f; }
+  .warn { color: #ffcc33; }
+  .bad { color: #ff8080; }
+  #files { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #files td { padding: 3px 6px; border-top: 1px solid #262626; }
+  #files td.sz { color: #888; text-align: right; white-space: nowrap; }
+  #files td.st { white-space: nowrap; }
+  #pinwait { position: fixed; inset: 0; background: rgba(0,0,0,.92); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; z-index: 5; }
+  #pinwait[hidden] { display: none; }
+  #pincode { font-size: 80px; letter-spacing: .15em; color: #ffcc33; margin: 10px 0; font-variant-numeric: tabular-nums; }
+  #blocked { padding: 40px 16px; text-align: center; color: #aaa; }
+</style>
+</head>
+<body>
+<div id="blocked" hidden></div>
+<main id="app" hidden>
+  <h1>PowerPoint receiver <span class="exp">experimental</span> <span id="badge">connecting…</span></h1>
+  <p id="note"></p>
+
+  <section id="s-folder">
+    <h2><span class="step">1</span>Choose the inbox folder</h2>
+    <p>Decks from the timer's run sheet are saved here. Choose the <b>Inbox</b> folder the player shows when it starts
+      (normally <code>Documents\Presentation Timer\Inbox</code>; you can make it in the folder picker).</p>
+    <div class="row"><button id="pick" class="primary">Choose folder…</button><span id="folder" class="hint"></span></div>
+    <p id="nofs" class="bad" hidden>This browser can't save into a folder. Use Chrome or Edge on this computer.</p>
+  </section>
+
+  <section id="s-player">
+    <h2><span class="step">2</span>Start the PowerPoint player</h2>
+    <p>The player is a small PowerShell script that opens each deck in PowerPoint when the run sheet reaches it.
+      <a class="btn" id="dl" href="Pptx-WsController.ps1" download="Pptx-WsController.ps1">Download the player</a></p>
+    <p class="hint">Then run this in PowerShell, in the folder you downloaded it to (it stays open while the show runs):</p>
+    <pre id="cmd"></pre>
+    <div class="row"><button id="copycmd">Copy command</button><span id="playerst" class="hint"></span></div>
+  </section>
+
+  <section id="s-status">
+    <h2>Decks</h2>
+    <p id="summary" class="hint">Nothing received yet.</p>
+    <table id="files"><tbody></tbody></table>
+  </section>
+
+  <p class="hint">Keep this page open during the show. Decks only travel over the local network, straight from the timer's computer: this computer must be on the same network (the badge shows ⚡ LAN direct).</p>
+</main>
+
+<div id="pinwait" hidden>
+  <div id="pinmsg">The timer is asking who this is. Type this PIN into the timer's share panel:</div>
+  <div id="pincode"></div>
+  <button id="pinretry" hidden>Try again</button>
+</div>
+
+<script src="remote-peer.js"></script>
+<script src="pptx-receiver.js"></script>
+</body>
+</html>

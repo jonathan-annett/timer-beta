@@ -100,6 +100,9 @@
     api({ cmd: 'custommessage', text: it.name });
     if (it.video) playItemVideo(it);              // the player restarts the timer at the video's length
     else stopRunsheetVideo();                     // moving on from a video item stops its video
+    // Slides: every PowerPoint machine opens the item's deck. An item without one leaves the
+    // last deck on screen.
+    if (it.deck && window.pptxHub) window.pptxHub.start(it);
   }
 
   function finishShow() {
@@ -140,6 +143,9 @@
     state.index = h.index; state.currentId = h.currentId; state.finished = h.finished;
     state.log.length = Math.min(state.log.length, h.logLen);
     state.dayBase = h.dayBase;
+    // Back onto an item with slides shows them again (if another deck is up)
+    const it = !state.finished && state.index >= 0 ? norm.items[state.index] : null;
+    if (it && window.pptxHub) window.pptxHub.current(it);
     commit();
     return true;
   }
@@ -158,6 +164,7 @@
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
     render();
     preloadNext();
+    if (window.pptxHub) window.pptxHub.changed();   // decks to send ahead, current and next first
   }
 
   // ─── Videos ───────────────────────────────────────────────────────────────
@@ -394,7 +401,7 @@
       const pos = state.index >= 0 ? `${Math.min(state.index + 1, norm.timedCount)}/${norm.timedCount}` : `0/${norm.timedCount}`;
       const status = $('rs_status');
       if (status) {
-        status.textContent = flashText || [sheet.title, pos, info.text, videoHint()].filter(Boolean).join(' · ');
+        status.textContent = flashText || [sheet.title, pos, info.text, videoHint(), window.pptxHub ? window.pptxHub.hint() : ''].filter(Boolean).join(' · ');
         dash.classList.remove('rs-behind', 'rs-ahead', 'rs-ontime', 'rs-flash');
         dash.classList.add(flashText ? 'rs-flash' : 'rs-' + (info.kind === 'none' ? 'ontime' : info.kind));
       }
@@ -488,7 +495,7 @@
 
   // sheetChanged(): the sheet in localStorage was rewritten by this window (the remote editor,
   // remote-control.js); the storage event that the editor window's writes give doesn't fire then.
-  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive, sheetChanged: onSheetChanged };
+  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive, sheetChanged: onSheetChanged, flash };
 
   // The dashboard sits just below the button bar, whose height depends on zoom and
   // window width (buttons wrap). Publish its bottom edge for the CSS.

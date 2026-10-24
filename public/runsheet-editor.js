@@ -96,11 +96,13 @@
         link = { online: !!m.online, lan: !!m.lan };
         renderLive();
       } else if (m.t === 'rs-vprog') {
-        sending.set(m.id, m.pct);
-        const cell = document.querySelector(`#rs-table tr[data-id="${m.id}"] td.vid .vbusy`);
-        if (cell) cell.textContent = `sending video… ${m.pct}%`;
+        const deck = m.kind === 'deck';
+        (deck ? deckSending : sending).set(m.id, m.pct);
+        const cell = document.querySelector(`#rs-table tr[data-id="${m.id}"] td.${deck ? 'deck' : 'vid'} .vbusy`);
+        if (cell) cell.textContent = `sending ${deck ? 'slides' : 'video'}… ${m.pct}%`;
       } else if (m.t === 'rs-vend') {
-        sending.delete(m.id); busy.delete(m.id);
+        if (m.kind === 'deck') { deckSending.delete(m.id); deckBusy.delete(m.id); }
+        else { sending.delete(m.id); busy.delete(m.id); }
         if (m.error) alert(m.error);
         renderAll();
       }
@@ -165,7 +167,7 @@
         `<td class="num">${it.isEnd ? 'End' : i + 1}</td>` +
         `<td class="start"><input data-field="start" aria-label="Start time"></td>` +
         `<td class="name"><input data-field="name" aria-label="Item name"></td>` +
-        `<td class="vid"></td>` +
+        `<td class="vid"></td><td class="deck"></td>` +
         `<td class="dur"><input data-field="duration" aria-label="Duration"></td>` +
         `<td class="ends"></td><td class="status"></td>` +
         `<td class="acts">` +
@@ -178,7 +180,7 @@
       name.value = src.name || '';
       dur.value = src.duration != null ? C.formatDuration(src.duration) : '';
       name.placeholder = 'Item name';
-      if (!it.isEnd) renderVideoCell(tr.querySelector('td.vid'), src);
+      if (!it.isEnd) { renderVideoCell(tr.querySelector('td.vid'), src); renderDeckCell(tr.querySelector('td.deck'), src); }
       dur.placeholder = it.isEnd ? 'finish' :
         C.formatDuration(it.eff) + (it.durSource === 'times' ? ' (from times)' : it.durSource === 'default' ? ' (default)' : '');
       tbody.appendChild(tr);
@@ -414,14 +416,86 @@
     saveSheet();
   }
 
-  // Videos no longer used by the sheet (rows deleted, sheet replaced) are removed from the browser
+  // ─── Slides (PowerPoint decks) ─────────────────────────────────────────────
+  // A deck on an item opens on the PowerPoint computers when Next reaches it (pptx-hub.js sends
+  // it to them ahead of time). Kept in the browser like videos: item.deck {key, name, size},
+  // key 'rsdeck:<item id>:<time>'; name is the file name, extension included.
+  const DECK_RE = /\.(pptx|ppsx|pptm|ppsm|ppt|pps|potx)$/i;
+  const isDeck = f => !!f && DECK_RE.test(f.name || '');
+  const deckBusy = new Set();
+  const deckSending = new Map();
+  function renderDeckCell(td, item) {
+    if (deckBusy.has(item.id)) {
+      td.innerHTML = `<span class="vbusy">${REMOTE ? `sending slides… ${deckSending.get(item.id) || 0}%` : 'copying slides…'}</span>`;
+      return;
+    }
+    if (!item.deck) {
+      td.innerHTML = `<button class="dadd" data-act="dadd" tabindex="-1" title="Open a PowerPoint deck on the PowerPoint computers when this item starts (or drop a .pptx file on the row)">+ slides</button>`;
+      return;
+    }
+    td.innerHTML = `<span class="vicon">📊</span> <span class="dname"></span>` +
+      `<button class="ddel" data-act="ddel" tabindex="-1" title="Remove the slides">✕</button>`;
+    td.title = 'Slides: ' + item.deck.name;
+    td.querySelector('.dname').textContent = noExt(item.deck.name);
+  }
+  async function attachDeck(id, file) {
+    const item = sheet.items.find(it => it.id === id);
+    if (!item || !file) return;
+    if (!isDeck(file)) { alert('That isn’t a PowerPoint file (.pptx, .ppsx, .ppt …).'); return; }
+    if (REMOTE) return sendDeck(id, file);
+    if (!window.videoStore) { alert('Slides can’t be stored in this browser.'); return; }
+    deckBusy.add(id); renderAll();
+    try {
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+      const key = 'rsdeck:' + id + ':' + Date.now();
+      await window.videoStore.put(key, file);
+      const it = sheet.items.find(x => x.id === id);
+      if (!it) { window.videoStore.remove(key); return; }
+      if (it.deck) window.videoStore.remove(it.deck.key).catch(() => {});
+      it.deck = { key, name: String(file.name).slice(0, 200), size: file.size };
+      if (!it.name) it.name = noExt(file.name);
+      saveSheet();
+    } catch (err) {
+      alert('Couldn’t store the slides in this browser: ' + (err && err.message || err));
+    } finally {
+      deckBusy.delete(id);
+      renderAll();
+    }
+  }
+  // Remote mode: like videos, straight to the timer's computer over the local network only
+  function sendDeck(id, file) {
+    if (!link.online) { alert('Not connected to the timer right now.'); return; }
+    if (!link.lan) {
+      alert('Slides can only be sent to the timer over a direct link on the same network, and this computer is connected through the server.\n\n' +
+        'Use the same Wi-Fi or network as the timer’s computer (the badge at the top shows ⚡ LAN direct), or add the slides on the timer’s computer.');
+      return;
+    }
+    if (busy.size || deckBusy.size) { alert('Wait for the file being sent to finish first.'); return; }
+    deckBusy.add(id); deckSending.set(id, 0); renderAll();
+    toParent({ t: 'rs-video', kind: 'deck', id, file, name: String(file.name).slice(0, 200) });
+  }
+  function removeDeck(id) {
+    const item = sheet.items.find(it => it.id === id);
+    if (!item || !item.deck) return;
+    if (!confirm(`Remove the slides “${item.deck.name}” from this item?`)) return;
+    if (!REMOTE) window.videoStore && window.videoStore.remove(item.deck.key).catch(() => {});
+    delete item.deck;
+    saveSheet();
+  }
+  const deckPicker = document.createElement('input');
+  deckPicker.type = 'file'; deckPicker.accept = '.pptx,.ppsx,.pptm,.ppsm,.ppt,.pps,.potx'; deckPicker.hidden = true;
+  document.body.appendChild(deckPicker);
+  deckPicker.addEventListener('change', () => { const f = deckPicker.files[0]; deckPicker.value = ''; if (f && pickFor) attachDeck(pickFor, f); });
+
+  // Videos and slides no longer used by the sheet (rows deleted, sheet replaced) are removed from the browser
   function cleanUpVideos() {
     if (REMOTE || !window.videoStore) return;
     const used = new Set(sheet.items.filter(it => it.video).map(it => it.video.key));
+    sheet.items.forEach(it => { if (it.deck) used.add(it.deck.key); });
     // Videos in the timer's Recent videos list stay until they drop off it (video-library.js)
     try { (JSON.parse(localStorage.getItem('video_history') || '[]') || []).forEach(e => { if (e && e.key) used.add(e.key); }); } catch (_) { /* ignore */ }
     window.videoStore.keys().then(keys => keys.forEach(k => {
-      if (String(k).startsWith('rsvideo:') && !used.has(k)) window.videoStore.remove(k).catch(() => {});
+      if ((String(k).startsWith('rsvideo:') || String(k).startsWith('rsdeck:')) && !used.has(k)) window.videoStore.remove(k).catch(() => {});
     })).catch(() => {});
   }
 
@@ -446,10 +520,11 @@
     const tr = e.target.closest('tr');
     tbodyEl.querySelectorAll('tr.vdrop').forEach(r => r.classList.remove('vdrop'));
     if (!tr || tr.classList.contains('endrow')) return;
-    const f = Array.from(e.dataTransfer.files || []).find(x => x.type.startsWith('video/'));
+    const list = Array.from(e.dataTransfer.files || []);
+    const f = list.find(x => x.type.startsWith('video/')) || list.find(isDeck);
     if (!f) return;
     e.preventDefault();
-    attachVideo(tr.dataset.id, f);
+    if (isDeck(f) && !f.type.startsWith('video/')) attachDeck(tr.dataset.id, f); else attachVideo(tr.dataset.id, f);
   });
   // Before-play setting
   tbodyEl.addEventListener('change', e => {
@@ -515,6 +590,12 @@
       case 'vdel':
         removeVideo(id);
         break;
+      case 'dadd':
+        pickFor = id; deckPicker.click();
+        break;
+      case 'ddel':
+        removeDeck(id);
+        break;
       case 'go':
         send('goto', { id });
         break;
@@ -527,6 +608,7 @@
       case 'del':
         if (id === state.currentId && !state.finished && !confirm('This item is running now. Delete it anyway?')) return;
         if (sheet.items[i].video && !confirm(`This item has a video ("${sheet.items[i].video.name}"). Delete the item and its video?`)) return;
+        if (sheet.items[i].deck && !confirm(`This item has slides ("${sheet.items[i].deck.name}"). Delete the item and its slides?`)) return;
         sheet.items.splice(i, 1);
         saveSheet();
         cleanUpVideos();

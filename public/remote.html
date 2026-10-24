@@ -31,6 +31,8 @@
     button { font: inherit; color: var(--text); background: #1e1e1e; border: 1px solid #333; border-radius: 0.6em;
       padding: 0.75em 0.4em; touch-action: manipulation; }
     button:active:not(.pressable), button.down { background: #333; }   /* .pressable: lit only while the press counts */
+    /* The browser mustn't turn a press into a scroll or zoom (it would cancel the press, and a quick tap was lost) */
+    .pressable { touch-action: none; }
     button:disabled { opacity: .35; }
 
     /* Top bar: connection badge, note, full screen, view switch */

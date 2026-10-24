@@ -185,6 +185,7 @@ Click **share** in the button bar to let other devices in. Control the timer fro
    - **Run sheet**: a view-only display of now, next, ahead/behind and the schedule, e.g. for a green room or backstage.
    - **Admin**: everything Control can do, every view, and setting up other computers (below). Keep this code for yourself: Control lets someone run the timer without being able to hand it to other devices.
    - **Companion**: for Bitfocus Companion (below) and other automation. The panel shows a link to copy instead of a QR code.
+   - **PowerPoint**: for the computer that shows the slides (see *Slides on a PowerPoint computer*). Also a link to copy.
 3. Scan it with the phone or tablet. The page opens and connects.
 
 Each kind of code has its own key, and the timer enforces what each can do, even if someone fiddles with the page: view-only devices can't send anything, and only admin phones can set up other computers. The share panel lists each device as *Phone*, *Phone · admin* or *Display · view only*.
@@ -212,7 +213,7 @@ The phone gets the link from this timer and passes it to the other computer, whi
 
 **For a multi-day event:** the timer keeps the same codes until someone presses **New code**, and each phone remembers the last link it opened. Install the remote as an app (**☰ View → Install as an app** on Android and in desktop Chrome/Edge; on iPhone, **Share → Add to Home Screen**) and it opens straight into the remote, full screen, already paired. If the timer computer is shut down overnight, phones show *timer offline* and reconnect by themselves when it's opened again the next day. After **New code**, every phone needs the new QR code.
 
-Buttons and deck keys buzz as soon as you press them (on phones that can vibrate) and act when you lift your finger. Slide off the button before lifting to cancel the press. If you'd rather Restart and the presets need a second tap within 2 seconds, so a stray touch can't restart a talk, turn on **Second tap** in the ☰ View menu (each phone remembers its own setting; off by default). The phone screen stays on while the page is open. Up to 16 phones and displays can connect at once.
+Buttons and deck keys buzz as soon as you press them (on phones that can vibrate) and act when you lift your finger. A quick tap always counts. If you touched a button by accident, the buzz warns you: keep your finger down, slide it off the button and lift it there, and nothing happens (the button goes dark to show it). If you'd rather Restart and the presets need a second tap within 2 seconds, so a stray touch can't restart a talk, turn on **Second tap** in the ☰ View menu (each phone remembers its own setting; off by default). The phone screen stays on while the page is open. Up to 16 phones and displays can connect at once.
 
 The QR code contains a secret key: anyone with the link can control the timer, so the panel closes itself as soon as a phone connects (open it again with **share** when you want to add another). For more protection tick **Require a PIN** under the code: each new phone then shows a 4-digit PIN, and it isn't let in until you type that PIN into the panel (three wrong tries refuse it). Phones you've let in stay approved until you make a new code. **New code** disconnects every phone and makes a new link. **Turn off** stops phone control. 
 
@@ -225,9 +226,21 @@ The QR code contains a secret key: anyone with the link can control the timer, s
 
 It connects within a second or two. If **Require a PIN** is on, Companion's status shows a PIN to type into the panel; it's remembered afterwards. The module's own help (in Companion) lists the actions, variables, feedbacks and presets. It isn't in Companion's module store yet: build it from `companion/companion-module-sophtwhere-presentationtimer` (`npm install && npm run build`) and point Companion's **Developer modules path** at the `companion/` folder, or `npm run package` for a `.tgz` to import. It is written for Companion 5.1 and should work from 4.3 on.
 
+### Slides on a PowerPoint computer
+
+Give a run sheet item a PowerPoint deck and it opens as a full-screen slide show on the computer that shows the slides when **Next** reaches that item. Decks are sent to that computer ahead of time, so the switch is instant. An item without slides leaves the last deck on screen; **Back** onto an item with slides shows them again. You can have a backup computer too: every PowerPoint computer gets the same decks and opens them at the same moment, and one that's switched on late catches up with the deck that's showing.
+
+The PowerPoint computer needs Windows with PowerPoint, Chrome or Edge, and the same network as the timer's computer. To set it up:
+
+1. On the timer, click **share**, choose **PowerPoint** and copy the link. Open it in Chrome or Edge on the PowerPoint computer.
+2. On that page, click **Download the player** and run the command it shows in PowerShell. The player is a small script that opens the decks in PowerPoint; keep its window open during the show. It shows its *Inbox* folder.
+3. On the page, click **Choose folder…** and pick that Inbox folder.
+
+Then attach decks in the run sheet editor: **+ slides** in the **Slides** column, or drop a .pptx file on a row (from a remote run sheet editor too, when it's on the same network). The share panel shows each PowerPoint computer and how many decks are ready on it, and the run sheet dashboard warns if the next item's slides aren't ready yet. Slides can also be changed from the timer API, Companion or a Stream Deck via Companion (next, previous, black screen…). The details, including the player's protocol, are in [`docs/powerpoint.md`](docs/powerpoint.md).
+
 ### Pairing server
 
-Sharing needs `remote-server.js` running on a server you control (the hosted timer has one). View-only, admin and Companion links need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 3* supports view-only and admin links, *4* adds Companion), and the timer's share panel warns if the server is too old for the code you've selected. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the share panel.
+Sharing needs `remote-server.js` running on a server you control (the hosted timer has one). View-only, admin, Companion and PowerPoint links need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 3* supports view-only and admin links, *4* adds Companion, *5* PowerPoint), and the timer's share panel warns if the server is too old for the code you've selected. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the share panel.
 
 ```bash
 npm install

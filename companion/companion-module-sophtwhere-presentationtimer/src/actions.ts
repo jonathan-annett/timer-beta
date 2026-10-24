@@ -228,6 +228,45 @@ export function UpdateActions(self: ModuleInstance): void {
 				await api({ cmd: String(ev.options.what) })
 			},
 		},
+		slides: {
+			name: 'PowerPoint: change slide',
+			description: 'On every PowerPoint computer connected to the timer (share → PowerPoint).',
+			options: [
+				{
+					id: 'action',
+					type: 'dropdown',
+					label: 'Do',
+					default: 'next',
+					choices: [
+						{ id: 'next', label: 'Next slide' },
+						{ id: 'prev', label: 'Previous slide' },
+						{ id: 'first', label: 'First slide' },
+						{ id: 'last', label: 'Last slide' },
+						{ id: 'black', label: 'Black screen' },
+						{ id: 'white', label: 'White screen' },
+						{ id: 'resume', label: 'Back from black/white' },
+						{ id: 'goto', label: 'Go to slide…' },
+					],
+				},
+				{ id: 'slide', type: 'textinput', label: 'Slide number (Go to)', default: '1', useVariables: true, isVisibleExpression: `$(options:action) == 'goto'` },
+			],
+			callback: async (ev) => {
+				let action = String(ev.options.action)
+				if (action === 'goto') {
+					const n = parseInt(parse(ev, 'slide'), 10)
+					if (!(n >= 1 && n <= 9999)) return self.log('warn', 'Slide number?')
+					action = String(n)
+				}
+				await api({ cmd: 'pptxslide', action })
+			},
+		},
+		slides_stop: {
+			name: 'PowerPoint: close the slide show',
+			options: [],
+			callback: async () => {
+				await api({ cmd: 'pptxstop' })
+			},
+		},
 		keys: {
 			name: 'Send keystrokes to the timer',
 			description: 'Keys as the timer’s keyboard reference lists them, separated by commas, e.g. "1,0,Enter" or "Control,ArrowUp,~Control" (~ = key up). Careful: this does whatever the keys do.',

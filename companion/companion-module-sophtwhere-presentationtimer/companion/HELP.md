@@ -30,6 +30,7 @@ Everything the timer's keyboard does, plus some conveniences:
 - **Toggle a display switch** / **Set a display switch** — progress bar, time of day, messages, presenter mode
 - **Run sheet: Next / Back**
 - **Video player** — play the cued video, stop, rewind
+- **PowerPoint: change slide** (next, previous, first, last, black, white, back from black, go to slide) and **PowerPoint: close the slide show** — on every PowerPoint computer connected to the timer (share → PowerPoint)
 - **Send keystrokes** — any keys from the timer's keyboard reference (`1,0,Enter`; `~` prefix = key up)
 - **Send a raw timer API command** — the JSON object for `processTimerApiMessage` (see `timerapi.js` in the timer's source). `redirect` is refused.
 
@@ -37,15 +38,15 @@ Everything the timer's keyboard does, plus some conveniences:
 
 Every value the timer publishes, as it publishes it (at most a few times a second):
 
-`remain` (the countdown as shown, `+` in overtime), its parts for big multi-key displays — `remain_hours`, `remain_minutes`, `remain_seconds` (two digits), `remain_sign` (`+` in overtime), `remain_total` (whole seconds, negative in overtime) and `remain_major` / `remain_minor` (minutes + seconds under an hour, `1h` + `25m` from an hour up, like the timer's Stream Deck keys) — `remain_actual`, `elapsed`, `default`, `startedAt`, `endsAt`, `pausing`, `paused`, `pauses`, `expired`, `impending`, `adjusting_up`, `adjusting_down`, `adjusting_delta`, `custommsg`, `showbar`, `showtimenow`, `showmessages`, `showpresenter`, `barpct`, `htmlclass`, `rs_active`, `rs_current`, `rs_next`, `rs_can_back`, `rs_status`, `rs_late`, `rs_title`, `rs_text`, `video_status`, `video_name`, and `link_status` for this connection. Anything new the timer sends appears automatically.
+`remain` (the countdown as shown, `+` in overtime), its parts for big multi-key displays — `remain_hours`, `remain_minutes`, `remain_seconds` (two digits), `remain_sign` (`+` in overtime), `remain_total` (whole seconds, negative in overtime) and `remain_major` / `remain_minor` (minutes + seconds under an hour, `1h` + `25m` from an hour up, like the timer's Stream Deck keys) — `remain_actual`, `elapsed`, `default`, `startedAt`, `endsAt`, `pausing`, `paused`, `pauses`, `expired`, `impending`, `adjusting_up`, `adjusting_down`, `adjusting_delta`, `custommsg`, `showbar`, `showtimenow`, `showmessages`, `showpresenter`, `barpct`, `htmlclass`, `rs_active`, `rs_current`, `rs_next`, `rs_can_back`, `rs_status`, `rs_late`, `rs_title`, `rs_text`, `video_status`, `video_name`, the PowerPoint computers' `pptx_machines`, `pptx_current`, `pptx_showing`, `pptx_slide`, `pptx_slides` and `pptx_next_ready`, and `link_status` for this connection. Anything new the timer sends appears automatically.
 
 ## Feedbacks
 
-Connected · Timer is paused · Under a minute left · Time is up · Catch up possible · A message is showing · The message showing is… · A display switch is on · Remaining time is under… · Run sheet mode is on · Run sheet behind / ahead of schedule · A video is cued · A video is playing.
+Connected · Timer is paused · Under a minute left · Time is up · Catch up possible · A message is showing · The message showing is… · A display switch is on · Remaining time is under… · Run sheet mode is on · Run sheet behind / ahead of schedule · A video is cued · A video is playing · PowerPoint slide show running · Next item's deck ready.
 
 ## Presets
 
-Ready-made buttons under **Countdown** (remaining time, with message, **Big:** one value per key in 44-point digits for building a large display across several keys, elapsed/ends at, connection status), **Controls**, **Durations**, **Messages**, **Display**, **Run sheet** and **Video**.
+Ready-made buttons under **Countdown** (remaining time, with message, **Big:** one value per key in 44-point digits for building a large display across several keys, elapsed/ends at, connection status), **Controls**, **Durations**, **Messages**, **Display**, **Run sheet**, **Video** and **Slides**.
 
 ## Notes
 

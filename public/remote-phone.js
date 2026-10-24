@@ -286,16 +286,21 @@
     }
     iosHaptic.click();
   }
-  const SLOP = 8;   // px outside the button before a press counts as dragged off
+  // A press fires when the finger lifts. It's cancelled only by sliding off on purpose: held
+  // longer than CANCEL_MS AND lifted outside the button. So a quick tap always counts, even if
+  // the finger rolls a little, while an accidental touch (felt as the buzz) can still be
+  // dragged off and let go. The button stays lit only while lifting would fire it.
+  const CANCEL_MS = 250;
   function pressable(el, action, opts) {
     opts = opts || {};
-    let active = null, lastPointer = 0;
+    let active = null, downAt = 0, lastPointer = 0;
     el.classList.add('pressable');
     const end = () => { active = null; lastPointer = performance.now(); el.classList.remove('down'); };   // the click after it is skipped
     const inside = e => {
       const r = el.getBoundingClientRect();
-      return e.clientX >= r.left - SLOP && e.clientX <= r.right + SLOP && e.clientY >= r.top - SLOP && e.clientY <= r.bottom + SLOP;
+      return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
     };
+    const wouldFire = e => inside(e) || performance.now() - downAt <= CANCEL_MS;
     const fire = () => {
       if (opts.confirm && needConfirm()) return arm(el, action);
       action();
@@ -305,16 +310,16 @@
       if (opts.can && !opts.can()) return;
       if (opts.keepFocus) e.preventDefault();   // don't blur the message box (the keyboard would drop and move the button)
       active = e.pointerId;
+      downAt = performance.now();
+      try { el.setPointerCapture(e.pointerId); } catch (_) { /* touches are captured anyway */ }
       el.classList.add('down');
       buzz();
     });
-    // Touches are captured by the element they started on, so pointerleave doesn't come: check position
-    el.addEventListener('pointermove', e => { if (e.pointerId === active && !inside(e)) end(); });
-    el.addEventListener('pointerleave', e => { if (e.pointerId === active && e.pointerType === 'mouse') end(); });
+    el.addEventListener('pointermove', e => { if (e.pointerId === active) el.classList.toggle('down', wouldFire(e)); });
     el.addEventListener('pointercancel', e => { if (e.pointerId === active) end(); });
     el.addEventListener('pointerup', e => {
       if (e.pointerId !== active) return;
-      const ok = inside(e) && !el.disabled;
+      const ok = wouldFire(e) && !el.disabled;
       end();
       if (ok) fire();
     });
@@ -687,22 +692,24 @@
   let upload = null, upSeq = 0;
   const CHUNK = 64 * 1024;
   function uploadVideo(m) {
-    const end = error => { if (upload && upload.id === m.id) upload = null; postEditor({ t: 'rs-vend', id: m.id, error }); };
-    if (upload) return end('Wait for the video being sent to finish first.');
-    if (!peer || peer.mode !== 'lan') return end('Videos can only be sent over a direct link on the same network as the timer.');
+    const kind = m.kind === 'deck' ? 'deck' : 'video';      // a video, or a PowerPoint deck (the same path)
+    const what = kind === 'deck' ? 'slides' : 'video';
+    const end = error => { if (upload && upload.id === m.id) upload = null; postEditor({ t: 'rs-vend', kind, id: m.id, error }); };
+    if (upload) return end('Wait for the file being sent to finish first.');
+    if (!peer || peer.mode !== 'lan') return end(`The ${what} can only be sent over a direct link on the same network as the timer.`);
     const file = m.file, up = ++upSeq;
     const u = upload = { up, id: m.id, acked: 0, waitOk: null, failed: null };
-    const progress = pct => postEditor({ t: 'rs-vprog', id: m.id, pct: Math.min(99, Math.floor(pct)) });
+    const progress = pct => postEditor({ t: 'rs-vprog', kind, id: m.id, pct: Math.min(99, Math.floor(pct)) });
     const REASONS = { 'not-lan': 'The link to the timer isn’t direct (same network) any more.', busy: 'The timer is busy receiving another video.',
-      bad: 'The timer couldn’t take that video for this item.', 'no-space': 'There isn’t enough free space in the timer’s browser for that video.',
-      store: 'The timer couldn’t store the video (is its disk full?).', gone: 'That item was deleted on the timer.', 'too-big': 'The video arrived damaged; try again.' };
+      bad: `The timer couldn’t take that ${what} for this item.`, 'no-space': `There isn’t enough free space in the timer’s browser for that ${what}.`,
+      store: `The timer couldn’t store the ${what} (is its disk full?).`, gone: 'That item was deleted on the timer.', 'too-big': `The ${what} arrived damaged; try again.` };
     u.onReply = r => {
       if (r.t === 'vup-ok' && u.waitOk) u.waitOk();
       else if (r.t === 'vup-prog') { u.acked = r.got; progress(r.got / file.size * 100); }
-      else if (r.t === 'vup-done') { upload = null; postEditor({ t: 'rs-vend', id: m.id }); }
-      else if (r.t === 'vup-error') { u.failed = REASONS[r.reason] || 'The video wasn’t sent: the direct link was lost.'; end(u.failed); }
+      else if (r.t === 'vup-done') { upload = null; postEditor({ t: 'rs-vend', kind, id: m.id }); }
+      else if (r.t === 'vup-error') { u.failed = REASONS[r.reason] || `The ${what} wasn’t sent: the direct link was lost.`; end(u.failed); }
     };
-    peer.send({ t: 'vup-start', up, id: m.id, name: String(m.name || file.name || 'video').slice(0, 200),
+    peer.send({ t: 'vup-start', up, kind, id: m.id, name: String(m.name || file.name || what).slice(0, 200),
       size: file.size, type: file.type, duration: typeof m.duration === 'number' ? m.duration : null });
     new Promise((resolve, reject) => {
       u.waitOk = resolve;
@@ -720,7 +727,7 @@
         off += ab.byteLength;
         await peer.drained(4 << 20);                         // keep at most 4 MB waiting to go
       }
-    }).catch(err => { if (upload === u) { try { peer && peer.send({ t: 'vup-cancel', up }); } catch (_) {} end((err && err.message) || 'The video wasn’t sent.'); } });
+    }).catch(err => { if (upload === u) { try { peer && peer.send({ t: 'vup-cancel', up }); } catch (_) {} end((err && err.message) || `The ${what} wasn’t sent.`); } });
   }
 
   // Show the controls while the mouse moves, then hide them (and the cursor) again

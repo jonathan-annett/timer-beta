@@ -6,9 +6,10 @@
  * Runs on its own port (default 8443) with your TLS certificate, so the timer can stay on
  * a static host. It only:
  *   - pairs a timer ("host") with phones using a room code + secret key (from the QR code),
- *     or a second, view-only key, or a third, admin key. Which key a phone used decides its
- *     role ('control', 'view' or 'admin'), which is reported to the timer; the timer enforces it
- *     (view: no commands; admin: may also set up other computers),
+ *     or a second, view-only key, or a third, admin key, or a Companion key, or a PowerPoint key.
+ *     Which key a phone used decides its role ('control', 'view', 'admin', 'companion' or
+ *     'pptx'), which is reported to the timer; the timer enforces it (view: no commands; admin:
+ *     may also set up other computers; pptx: only the PowerPoint machines' own messages),
  *   - forwards WebRTC signalling so phone and timer can try a direct LAN connection, and
  *   - relays the (small) control/state messages when a direct connection isn't possible.
  * It never looks inside the messages it forwards.
@@ -50,7 +51,7 @@ const ORIGINS = (arg('origin') || process.env.ALLOWED_ORIGINS || '').split(',').
 
 // Bumped when the protocol gains features; sent to timers in 'hosted' so they can tell an
 // out-of-date server (1 = control only; 2 = adds view-only keys and roles; 3 = adds admin keys).
-const PROTOCOL = 4;   // 2: view-only keys, 3: admin keys, 4: companion keys
+const PROTOCOL = 5;   // 2: view-only keys, 3: admin keys, 4: companion keys, 5: PowerPoint keys
 const MAX_MESSAGE_BYTES = 16 * 1024;     // signalling + state messages are tiny
 const MAX_MSGS_PER_SEC = 40;             // per socket; extra messages are dropped
 const MAX_PHONES_PER_ROOM = 16;          // controllers + view-only displays
@@ -65,9 +66,10 @@ if (!ORIGINS.length) console.warn('[remote] WARNING: no --origin given, so any w
 
 // ─── Rooms ────────────────────────────────────────────────────────────────────
 
-// room id -> { keyHash, viewHash, adminHash, compHash, host: ws|null, phones: Map<id, {ws, role}>, hostGoneAt }
+// room id -> { keyHash, viewHash, adminHash, compHash, pptxHash, host: ws|null, phones: Map<id, {ws, role}>, hostGoneAt }
 // role: 'control' (joined with the room key), 'view' (view-only key), 'admin' (admin key) or
-// 'companion' (companion key: Bitfocus Companion and other automation, full API on the timer)
+// 'companion' (companion key: Bitfocus Companion and other automation, full API on the timer) or
+// 'pptx' (PowerPoint key: the receiver page and PowerShell player on a PowerPoint machine)
 const rooms = new Map();
 const hash = s => crypto.createHash('sha256').update(String(s)).digest('hex');
 const safeEqual = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -101,7 +103,7 @@ const server = INSECURE
 server.on('request', (req, res) => {
   // Plain HTTPS requests: a health check, and a page so you can accept a self-signed cert
   res.writeHead(200, { 'content-type': 'text/plain' });
-  res.end(`timer remote server ok, protocol ${PROTOCOL} (view-only, admin and companion links) (${rooms.size} rooms)\n`);
+  res.end(`timer remote server ok, protocol ${PROTOCOL} (view-only, admin, companion and PowerPoint links) (${rooms.size} rooms)\n`);
 });
 
 const wss = new WebSocketServer({
@@ -109,7 +111,9 @@ const wss = new WebSocketServer({
   maxPayload: MAX_MESSAGE_BYTES,
   verifyClient: (info, done) => {
     const origin = info.origin || info.req.headers.origin;
-    if (ORIGINS.length && !ORIGINS.includes(origin)) {
+    // Browsers always send Origin, so it stops other websites using the server. Programs that
+    // aren't browsers (the PowerPoint player, Companion) may send none; they still need a key.
+    if (ORIGINS.length && origin && !ORIGINS.includes(origin)) {
       console.warn('[remote] rejected origin', origin);
       return done(false, 403, 'Origin not allowed');
     }
@@ -143,19 +147,21 @@ wss.on('connection', ws => {
       if (m.type === 'host') {
         let room = rooms.get(m.room);
         if (room && !safeEqual(room.keyHash, keyHash)) { send(ws, { type: 'error', reason: 'room-taken' }); return ws.close(); }
-        if (!room) { room = { keyHash, viewHash: null, adminHash: null, compHash: null, host: null, phones: new Map(), hostGoneAt: null }; rooms.set(m.room, room); }
+        if (!room) { room = { keyHash, viewHash: null, adminHash: null, compHash: null, pptxHash: null, host: null, phones: new Map(), hostGoneAt: null }; rooms.set(m.room, room); }
         // The view-only and admin keys may change (the timer made new ones): phones using an old one are dropped
         const viewHash = validKey(m.viewKey) ? hash(m.viewKey) : null;
         const adminHash = validKey(m.adminKey) ? hash(m.adminKey) : null;
         const compHash = validKey(m.compKey) ? hash(m.compKey) : null;
+        const pptxHash = validKey(m.pptxKey) ? hash(m.pptxKey) : null;
         const changed = { view: room.viewHash && room.viewHash !== viewHash, admin: room.adminHash && room.adminHash !== adminHash,
-          companion: room.compHash && room.compHash !== compHash };
+          companion: room.compHash && room.compHash !== compHash, pptx: room.pptxHash && room.pptxHash !== pptxHash };
         for (const [id, p] of room.phones) {
           if (changed[p.role]) { send(p.ws, { type: 'error', reason: 'room-closed' }); p.ws.close(); room.phones.delete(id); }
         }
         room.viewHash = viewHash;
         room.adminHash = adminHash;
         room.compHash = compHash;
+        room.pptxHash = pptxHash;
         if (room.host && room.host !== ws) room.host.close();          // newest timer window wins
         room.host = ws; room.hostGoneAt = null;
         role = 'host'; roomId = m.room;
@@ -170,6 +176,7 @@ wss.on('connection', ws => {
         const phoneRole = !room ? null
                         : room.adminHash && safeEqual(room.adminHash, keyHash) ? 'admin'
                         : room.compHash && safeEqual(room.compHash, keyHash) ? 'companion'
+                        : room.pptxHash && safeEqual(room.pptxHash, keyHash) ? 'pptx'
                         : safeEqual(room.keyHash, keyHash) ? 'control'
                         : room.viewHash && safeEqual(room.viewHash, keyHash) ? 'view' : null;
         if (!phoneRole) { send(ws, { type: 'error', reason: 'not-found' }); return ws.close(); }

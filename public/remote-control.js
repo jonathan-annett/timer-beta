@@ -53,9 +53,10 @@
       p = { room: randomString(8, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'), key: randomString(24, KEYCHARS) };
       localStorage.removeItem(APPROVED_KEY);                   // a new code: every phone starts again
     }
-    if (!p.view || !p.admin || !p.comp) {            // view-only, admin and companion keys (older pairings get them)
+    if (!p.view || !p.admin || !p.comp || !p.pptx) {  // view-only, admin, companion and PowerPoint keys (older pairings get them)
       p.view = p.view || randomString(24, KEYCHARS);
       p.comp = p.comp || randomString(24, KEYCHARS);
+      p.pptx = p.pptx || randomString(24, KEYCHARS);
       p.admin = p.admin || randomString(24, KEYCHARS);
       localStorage.setItem(PAIR_KEY, JSON.stringify(p));
     }
@@ -70,14 +71,17 @@
     runsheet:  { label: 'Run sheet', hint: '<b>View only</b>: run sheet status, e.g. for a green room. Can’t control the timer.' },
     admin:     { label: 'Admin',     hint: '<b>Admin</b>: can control the timer, use every view, and set up other computers as remotes or displays. Keep this one to yourself.' },
     companion: { label: 'Companion', hint: '<b>Bitfocus Companion</b> (or other automation): paste this link into the Companion connection’s settings. It gets every timer command and all the timer’s variables. It can’t set up other devices.' },
+    pptx:      { label: 'PowerPoint', hint: '<b>PowerPoint</b>: open this link in Chrome or Edge on the computer that shows the slides (same network as this one). It receives the run sheet’s decks and shows how to start the PowerPoint player. It can’t control the timer.' },
   };
   const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet'];   // what an admin phone can set another computer up as
-  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4 };   // pairing server needed for each link
+  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4, pptx: 5 };   // pairing server needed for each link
   // 'editor' is the control link with m=runsheet: a computer opening it starts in the run sheet editor
   const linkFields = (p, mode) => mode === 'control' ? { r: p.room, k: p.key }
     : mode === 'editor' ? { r: p.room, k: p.key, m: 'runsheet' }
     : mode === 'admin' ? { r: p.room, a: p.admin }
-    : mode === 'companion' ? { r: p.room, c: p.comp } : { r: p.room, v: p.view, m: mode };
+    : mode === 'companion' ? { r: p.room, c: p.comp }
+    : mode === 'pptx' ? { r: p.room, p: p.pptx } : { r: p.room, v: p.view, m: mode };
+  const PASTE_MODES = ['companion', 'pptx'];          // links to copy, not codes to scan
   // On a phone or tablet (the timer itself run on one), the panel is a simple sheet: a friend's
   // phone as a remote control or a countdown display. No run sheet or admin links there.
   const TOUCH = 'ontouchstart' in window;
@@ -90,7 +94,7 @@
   const serverUrl = () => localStorage.getItem(SERVER_KEY) || defaultServer();
   function phoneLink(mode = linkMode()) {
     const p = pairing();
-    const u = new URL('remote.html', location.href);
+    const u = new URL(mode === 'pptx' ? 'pptx.html' : 'remote.html', location.href);
     u.search = '';
     // Short names, and the server only when it isn't the default (the phone page works that
     // out from its own address): a shorter link makes a simpler, easier-to-scan QR code.
@@ -120,7 +124,7 @@
     sock.onopen = () => {
       retryDelay = 1000;
       const p = pairing();
-      sock.send(JSON.stringify({ type: 'host', room: p.room, key: p.key, viewKey: p.view, adminKey: p.admin, compKey: p.comp }));
+      sock.send(JSON.stringify({ type: 'host', room: p.room, key: p.key, viewKey: p.view, adminKey: p.admin, compKey: p.comp, pptxKey: p.pptx }));
     };
     sock.onmessage = ev => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
@@ -159,7 +163,7 @@
     removePeer(id);
     // 'view' only when the server says so; servers from before view-only keys send no role
     // (and reject view keys), so their phones joined with the control key.
-    const entry = { id, n: ++phoneCounter, role: ['view', 'admin', 'companion'].includes(role) ? role : 'control', sent: {}, peer: null, deck: false, faces: [],
+    const entry = { id, n: ++phoneCounter, role: ['view', 'admin', 'companion', 'pptx'].includes(role) ? role : 'control', sent: {}, peer: null, deck: false, faces: [],
       varsSent: {},                              // companion peers: the raw bus variables already sent
       join: RemotePeer.joiner(), rsSub: false, rsSent: {}, upload: null,
       approved: !pinRequired(), pin: null, tries: 0, rejected: false };
@@ -168,9 +172,10 @@
       relay: relayTo(id),
       onMessage: (msg, via) => onPhoneMessage(id, msg, via),
       onBinary: buf => onPhoneBinary(id, buf),
-      onModeChange: mode => { if (mode !== 'lan') dropUpload(entry, 'The direct link was lost'); renderPanel(); },
+      onModeChange: mode => { if (mode !== 'lan') dropUpload(entry, 'The direct link was lost'); if (entry.role === 'pptx' && hub()) hub().mode(entry); renderPanel(); },
     });
     peers.set(id, entry);
+    if (entry.role === 'pptx' && hub()) hub().join(entry);
     renderPanel();
   }
 
@@ -180,6 +185,7 @@
     dropUpload(e, null);
     e.peer.close();
     peers.delete(id);
+    if (e.role === 'pptx' && hub()) hub().leave(e);
     renderPanel();
   }
 
@@ -220,6 +226,13 @@
         renderPanel();
         return;
       } else return;
+    }
+    // A PowerPoint machine (receiver page or player script): only its own messages, all handled
+    // by pptx-hub.js. It gets no timer state and can't control anything.
+    if (e.role === 'pptx') {
+      if (m.t === 'hello') panelConnected();
+      if (hub() && typeof m.t === 'string' && /^(hello|pp-|pf-)/.test(m.t)) hub().message(e, m, via);
+      return;
     }
     if (m.t === 'hello' || m.t === 'deck') deckFaces = null;   // outside a push: work them out afresh
     if (m.t === 'hello') {
@@ -348,6 +361,7 @@
   function cleanSheet(s, current) {
     if (!s || typeof s !== 'object' || !Array.isArray(s.items) || s.items.length > 500) return null;
     const known = new Map((current.items || []).filter(it => it && it.video && it.video.key).map(it => [it.video.key, it.video]));
+    const knownDecks = new Map((current.items || []).filter(it => it && it.deck && it.deck.key).map(it => [it.deck.key, it.deck]));
     const ids = new Set();
     const items = [];
     const secs = (v, max) => (v == null ? null : num(v, 0, max));
@@ -361,6 +375,7 @@
         out.video = known.get(it.video.key);
         out.videoIdle = it.videoIdle === 'hide' ? 'hide' : 'show';
       }
+      if (it.deck && typeof it.deck === 'object' && knownDecks.has(it.deck.key)) out.deck = knownDecks.get(it.deck.key);   // likewise slides
       items.push(out);
     }
     return { title: typeof s.title === 'string' ? s.title.slice(0, 200) : '', perItem: num(s.perItem, 1, 600) || 20, items };
@@ -372,9 +387,11 @@
     if (window.runsheet && window.runsheet.sheetChanged) window.runsheet.sheetChanged();
     // Videos no longer on the sheet (or in Recent videos) are removed from this browser
     const keep = new Set(sheet.items.filter(it => it.video).map(it => it.video.key));
+    sheet.items.forEach(it => { if (it.deck) keep.add(it.deck.key); });
     parseOr(localStorage.getItem('video_history'), []).forEach(h => { if (h && h.key) keep.add(h.key); });
     (before.items || []).forEach(it => {
       if (it && it.video && !keep.has(it.video.key) && window.videoStore) window.videoStore.remove(it.video.key).catch(() => {});
+      if (it && it.deck && !keep.has(it.deck.key) && window.videoStore) window.videoStore.remove(it.deck.key).catch(() => {});
     });
     return text;
   }
@@ -412,7 +429,10 @@
     const norm = window.RunsheetCore ? RunsheetCore.normalise(sheet) : null;
     const row = norm && norm.items.find(it => it.id === m.id);
     const size = num(m.size, 1, MAX_VIDEO);
-    if (!row || row.isEnd || size === null || typeof m.type !== 'string' || !/^video\//.test(m.type) || !window.videoStore) return fail('bad');
+    const kind = m.kind === 'deck' ? 'deck' : 'video';
+    const typeOk = kind === 'deck' ? typeof m.name === 'string' && /\.(pptx|ppsx|pptm|ppsm|ppt|pps|potx)$/i.test(m.name)
+                                   : typeof m.type === 'string' && /^video\//.test(m.type);
+    if (!row || row.isEnd || size === null || !typeOk || !window.videoStore) return fail('bad');
     try {
       if (navigator.storage && navigator.storage.estimate) {
         const est = await navigator.storage.estimate();
@@ -420,7 +440,7 @@
       }
     } catch (_) { /* go ahead */ }
     if (e.upload) return fail('busy');
-    e.upload = { up, id: m.id, size, type: m.type.slice(0, 60),
+    e.upload = { up, id: m.id, size, kind, type: String(m.type || '').slice(0, 100),
       name: typeof m.name === 'string' ? m.name.slice(0, 200) : 'video',
       duration: num(m.duration, 0, 86400), got: 0, chunks: [], blobs: [], chunkBytes: 0 };
     e.upload.step = Math.max(256 << 10, Math.ceil(size / 50));    // progress reports: about every 2 %
@@ -447,7 +467,7 @@
   async function uploadFinish(e, u) {
     e.upload = null;
     const blob = new Blob(u.blobs.concat(u.chunks.length ? [new Blob(u.chunks)] : []), { type: u.type });
-    const key = 'rsvideo:' + u.id + ':' + Date.now();
+    const key = (u.kind === 'deck' ? 'rsdeck:' : 'rsvideo:') + u.id + ':' + Date.now();
     try {
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
       await window.videoStore.put(key, blob);
@@ -455,6 +475,13 @@
     const sheet = parseOr(localStorage.getItem('runsheet'), { title: '', perItem: 20, items: [] });
     const it = (sheet.items || []).find(x => x && x.id === u.id);
     if (!it) { window.videoStore.remove(key).catch(() => {}); e.peer.send({ t: 'vup-error', up: u.up, reason: 'gone' }); return; }
+    if (u.kind === 'deck') {                                  // slides: sent on to the PowerPoint computers by pptx-hub.js
+      it.deck = { key, name: u.name, size: u.size };
+      if (!it.name) it.name = u.name.replace(/\.[A-Za-z0-9]{1,5}$/, '');
+      writeSheet(sheet);
+      e.peer.send({ t: 'vup-done', up: u.up, key });
+      return;
+    }
     const secs = u.duration ? Math.max(1, Math.floor(u.duration + 0.25)) : null;
     it.video = { key, name: u.name, size: u.size, duration: secs };
     if (!it.videoIdle) it.videoIdle = 'show';
@@ -577,6 +604,7 @@
 
   // Sends only the fields that changed since the last message to this phone (low bandwidth)
   function pushTo(e, full) {
+    if (e.role === 'pptx') return;             // PowerPoint machines get no timer state
     const diff = {};
     let any = false;
     for (const [k, v] of Object.entries(state)) {
@@ -706,7 +734,7 @@
       ${TOUCH ? '<div class="pp-intro">They scan this code with their phone. Choose what their phone becomes:</div>' : ''}
       <div class="pp-status"></div>
       <div class="pp-modes" role="group" aria-label="What the QR code is for">
-        <button data-mode="control">${TOUCH ? 'Remote control' : 'Control'}</button><button data-mode="countdown">${TOUCH ? 'Countdown display' : 'Countdown'}</button>${TOUCH ? '' : '<button data-mode="runsheet">Run sheet</button><button data-mode="admin">Admin</button><button data-mode="companion">Companion</button>'}
+        <button data-mode="control">${TOUCH ? 'Remote control' : 'Control'}</button><button data-mode="countdown">${TOUCH ? 'Countdown display' : 'Countdown'}</button>${TOUCH ? '' : '<button data-mode="runsheet">Run sheet</button><button data-mode="admin">Admin</button><button data-mode="companion">Companion</button><button data-mode="pptx">PowerPoint</button>'}
       </div>
       <div class="pp-modehint"></div>
       <div class="pp-qr"></div>
@@ -828,7 +856,7 @@
   function renderPanel(force) {
     const el = document.getElementById('phone-panel');
     const btn = document.getElementById('btnshare');
-    const lanCount = [...peers.values()].filter(e => e.peer.mode === 'lan').length;
+    const lanCount = [...peers.values()].filter(e => e.peer.mode === 'lan' && e.role !== 'pptx').length;
     if (btn) btn.textContent = !enabled ? 'share' : peers.size ? `share ${peers.size}` : 'share ·';
     if (!el) return;
     const st = el.querySelector('.pp-status');
@@ -841,32 +869,35 @@
     // View-only links need pairing server protocol 2; an older server rejects their key
     const oldServer = hosted && serverProtocol < MIN_PROTOCOL[mode];
     el.querySelector('.pp-modehint').innerHTML = !enabled ? '' : oldServer
-      ? `<span class="pp-warn">The pairing server is out of date and will refuse ${mode === 'admin' ? 'admin' : mode === 'companion' ? 'Companion' : 'view-only'} links. Update remote-server.js on the server and restart it.</span>`
+      ? `<span class="pp-warn">The pairing server is out of date and will refuse ${mode === 'admin' ? 'admin' : mode === 'companion' ? 'Companion' : mode === 'pptx' ? 'PowerPoint' : 'view-only'} links. Update remote-server.js on the server and restart it.</span>`
       : TOUCH ? (mode === 'control'
           ? 'Their phone gets <b>Start</b>, <b>Pause</b>, ±1 min, presets and messages, a virtual Stream Deck, or a countdown display: they choose with ☰ View on their phone.'
           : '<b>View only</b>: a big countdown and messages on their phone. It can’t change the timer.')
       : LINK_MODES[mode].hint;
     el.querySelector('.pp-link').textContent = enabled ? phoneLink() : '';
-    el.querySelector('.pp-link').classList.toggle('pp-paste', mode === 'companion');   // meant to be copied, not scanned
-    if (enabled) drawQR(phoneLink());
+    const paste = PASTE_MODES.includes(mode);               // meant to be copied, not scanned
+    el.querySelector('.pp-link').classList.toggle('pp-paste', paste);
+    el.querySelector('.pp-qr').hidden = paste;
+    if (enabled && !paste) drawQR(phoneLink());
     el.querySelector('.pp-pin').style.display = enabled ? '' : 'none';
     el.querySelector('.pp-pin-box').checked = pinRequired();
     const pend = el.querySelector('.pp-pending');
     const rows = pending();
     const keep = {};
     pend.querySelectorAll('[data-id]').forEach(r => { keep[r.dataset.id] = r.querySelector('input').value; });
-    pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.role === 'view' ? 'A display' : e.role === 'companion' ? 'Companion' : 'A phone'} wants to connect.</b> Type the PIN it shows${e.role === 'companion' ? ' (in its connection log)' : ''}:
+    pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.role === 'view' ? 'A display' : e.role === 'companion' ? 'Companion' : e.role === 'pptx' ? 'A PowerPoint computer' : 'A phone'} wants to connect.</b> Type the PIN it shows${e.role === 'companion' ? ' (in its connection log)' : e.role === 'pptx' ? ' (on its receiver page or in the player window)' : ''}:
         <span class="pp-askrow"><input inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" placeholder="PIN" value="${keep[e.id] || ''}">
         <button data-act="ok">Let it in</button><button data-act="no">Refuse</button></span>${e.wrong ? '<div class="pp-warn">That’s not it. ' + (3 - e.tries) + ' more tr' + (e.tries === 2 ? 'y' : 'ies') + '.</div>' : ''}</div>`).join('');
     if (rows.length && !keep[rows[0].id]) { const i = pend.querySelector('input'); if (i && !TOUCH) i.focus(); }
     const srv = el.querySelector('.pp-server');
     if (force || document.activeElement !== srv) srv.value = serverUrl();
+    const pptxLines = hub() ? hub().summary().map(hub().describe).join('') : '';
     el.querySelector('.pp-peers').innerHTML = !peers.size ? (enabled ? '<i>No phones connected</i>' : '') :
-      [...peers.values()].filter(e => !e.rejected).map(e => `<div>${e.role === 'view' ? 'Display' : e.role === 'companion' ? 'Companion' : 'Phone'} ${e.n} · ` +
+      pptxLines + [...peers.values()].filter(e => !e.rejected && (e.role !== 'pptx' || !e.approved)).map(e => `<div>${e.role === 'view' ? 'Display' : e.role === 'companion' ? 'Companion' : e.role === 'pptx' ? 'PowerPoint' : 'Phone'} ${e.n} · ` +
         (!e.approved ? '<span class="pp-warn">waiting for its PIN</span> · ' : '') +
         (e.role === 'view' ? '<span class="pp-view">view only</span> · ' : e.role === 'admin' ? '<span class="pp-admin">admin</span> · ' : '') +
         `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : '<b class="pp-srv">via server</b>'}</div>`).join('') +
-      (lanCount < peers.size ? '<div class="pp-hint">"via server": not on the same network (or the Wi-Fi isolates devices).</div>' : '') +
+      (lanCount < [...peers.values()].filter(e => e.role !== 'pptx').length ? '<div class="pp-hint">"via server": not on the same network (or the Wi-Fi isolates devices).</div>' : '') +
       (shareNote ? `<div class="pp-hint">${shareNote}</div>` : '');
   }
 
@@ -960,7 +991,8 @@
     return false;
   });
 
-  window.remoteControl = { open: openPanel, toggle: togglePanel, enable, disable, get peers() { return peers; }, get state() { return state; } };
+  const hub = () => window.pptxHub || null;     // pptx-hub.js: the PowerPoint machines
+  window.remoteControl = { open: openPanel, toggle: togglePanel, enable, disable, refresh: () => renderPanel(), get peers() { return peers; }, get state() { return state; } };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
