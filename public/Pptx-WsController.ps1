@@ -259,7 +259,7 @@ public static class TimerWin {
 
 $ShowClass = 'screenClass'           # a slide show window (one per running show)
 $PvClass = 'PodiumParent'            # Presenter View (PowerPoint may hand it from one deck to the next)
-$SettleMs = 1000                     # after the new show's window appears, before the old deck is closed
+$SettleMs = 1000                     # after the new show's window appears, before Presenter View is turned on
 $script:Wallpaper = ''               # the holding slide (file in Show) set as wallpaper
 
 # PowerPoint windows: objects {h, cls, title}
@@ -336,31 +336,43 @@ function Set-PresenterView([string]$Leaf, [bool]$On) {
     return $has
 }
 
-# Switching decks, in this order (closing windows while PowerPoint was handing Presenter View
-# from one deck to the next took the new deck down with the old one):
-#   1. turn the previous deck's Presenter View off (keys sent to the Presenter View window, not closing it)
+# Starting a deck, from a clean slate each time (like an operator would, only faster; a seamless
+# switch isn't needed, and handing Presenter View from one deck to the next proved fragile):
+#   1. close every slide show (Presenter View goes with its show); wait until they've gone, and for
+#      PowerPoint to finish quitting if it's doing so
 #   2. open the new deck and wait for its slide show
-#   3. close the previous deck's slide show window
-#   4. turn Presenter View on for the new deck (keys)
+#   3. Presenter View on with the keys (only if it isn't already)
+function Clear-Shows {
+    $hs = @(Get-PptWindows | Where-Object { $_.cls -eq $ShowClass } | ForEach-Object { $_.h })
+    if ($hs.Count) {
+        Close-Windows $hs
+        $left = @(Wait-Gone $hs 5)
+        if ($left.Count) { Focus-Window $left[0]; [TimerWin]::Key(0x1B, $false); [void](Wait-Gone $left 3) }   # Esc
+    }
+    # Closing the last /S deck makes PowerPoint quit: let it finish, so the new deck isn't handed
+    # to a copy that's on its way out. (A PowerPoint with other windows, e.g. an editor, stays.)
+    $until = (Get-Date).AddSeconds(8)
+    while ((Get-Date) -lt $until) {
+        $procs = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue)
+        if (-not $procs.Count -or @(Get-PptWindows).Count) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    $script:Current = ''
+}
+
 function Start-Show([string]$Leaf) {
     $path = Join-Path $ShowFolder $Leaf
     if ($Simulate) { $script:Current = $Leaf; Log "[simulate] showing $Leaf$(if ($NoPresenterView) { '' } else { ' (Presenter View)' })" 'Cyan'; return }
-    $oldLeaf = $script:Current
-    $switching = $oldLeaf -and $oldLeaf -ne $Leaf -and (Get-ShowWindows $oldLeaf).Count
 
-    # 1. Previous deck's Presenter View off
-    if ($switching -and (Get-PvWindows).Count) {
-        if (Set-PresenterView $oldLeaf $false) { Log 'Presenter View of the previous deck did not close' 'Yellow' }
-        Start-Sleep -Milliseconds 300
-    }
+    # 1. Clean slate
+    Clear-Shows
 
     # 2. Open the new deck and wait for its slide show window
-    $before = @(Get-PptWindows | ForEach-Object { $_.h })
     Start-Process -FilePath 'powerpnt.exe' -ArgumentList '/S', ('"' + $path + '"')
     $new = @()
     $until = (Get-Date).AddSeconds(25)
     while ((Get-Date) -lt $until) {
-        $new = @(Get-ShowWindows $Leaf | Where-Object { $before -notcontains $_.h })
+        $new = @(Get-ShowWindows $Leaf)
         if ($new.Count) { break }
         Start-Sleep -Milliseconds 250
     }
@@ -372,17 +384,7 @@ function Start-Show([string]$Leaf) {
     $script:Current = $Leaf
     Start-Sleep -Milliseconds $SettleMs
 
-    # 3. Close the previous deck's slide show window (found now by its title: the old name, not the new)
-    if ($switching) {
-        $oldWins = @(Get-ShowWindows $oldLeaf | Where-Object { -not (Test-Names $_.title $Leaf) } | ForEach-Object { $_.h })
-        if ($oldWins.Count) {
-            Close-Windows $oldWins
-            if (@(Wait-Gone $oldWins 4).Count) { Log 'The previous deck is still open' 'Yellow' }
-        }
-        Start-Sleep -Milliseconds 500
-    }
-
-    # 4. Presenter View for the new deck (or off, with -NoPresenterView), only if it isn't already
+    # 3. Presenter View (or off, with -NoPresenterView), only if it isn't already
     $wantPv = -not $NoPresenterView
     $hasPv = Set-PresenterView $Leaf $wantPv
     if ($hasPv -ne $wantPv) { Log ("Presenter View may not have {0} (check the screen)" -f $(if ($wantPv) { 'opened' } else { 'closed' })) 'Yellow' }
@@ -422,7 +424,7 @@ function Invoke-TimerCommand($Cmd) {
                 Send-Ack $Cmd $true @{ result = $leaf }
             }
             'stop'   {
-                if ([string]$Cmd.arg -eq 'all') { Log 'Closing every slide show'; Close-Show -All } else { Log 'Slide show closed'; Close-Show }
+                if ([string]$Cmd.arg -eq 'all') { Log 'Closing every slide show'; if ($Simulate) { $script:Current = '' } else { Clear-Shows } } else { Log 'Slide show closed'; Close-Show }
                 Send-Ack $Cmd $true $null
             }
             'status' { $st = Get-ShowState; Send-Ack $Cmd $true $st }
