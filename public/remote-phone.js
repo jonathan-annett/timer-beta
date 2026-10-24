@@ -190,6 +190,8 @@
   }
 
   function render() {
+    if (editorMode()) postEditor({ t: 'rs-clock', remain: state.remain || '', over: !!state.over,
+      impending: !!state.impending, paused: !!state.paused });
     $('remain').textContent = (state.over ? '+' : '') + (state.remain || '–:––');
     document.body.classList.toggle('over', !!state.over);
     document.body.classList.toggle('impending', !!state.impending && !state.over);
@@ -674,6 +676,7 @@
     if (m.t === 'rs-ready') {
       editorReady = true;
       postLink();
+      render();                                    // the countdown preview
       if (peer && editorMode()) { editorSub = true; peer.send({ t: 'rs-sub', on: true }); }   // a fresh copy for it
     } else if (!peer || role === 'view') {
       return;

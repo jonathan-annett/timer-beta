@@ -113,6 +113,8 @@ The timer screen shows a three-line dashboard: **previous** (when it started and
 
 Ahead/behind is measured against the sheet's start times. If it has none, it's measured from when you started the first item.
 
+The top of the editor shows the timer's countdown as it is now (yellow under a minute, red when over, *Paused* when paused), with **Pause** / **Resume** and **Restart**. Restart starts the countdown again from the current item's full time (the default duration when the run sheet is off). It only touches the timer: it doesn't start the slides or the video again or add to the log, and it takes two clicks so a stray one can't reset a talk. The same bar is in the run sheet editor opened from another computer.
+
 The editor's **Show log** lists planned vs actual start times and how long each item ran, and **Export log CSV** saves it. **Export CSV** saves the sheet as Start, Name, Duration with every time filled in. **Fill in times** writes the calculated times into the table. **Reset show** clears the log to run it again, and the **Run sheet mode** switch turns the whole thing off without deleting the sheet.
 
 ## Stream Deck

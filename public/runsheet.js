@@ -105,6 +105,14 @@
     if ((it.deck || it.holding) && window.pptxHub) window.pptxHub.start(it);
   }
 
+  // The editor's Restart: the countdown again from the current item's full time (or the default
+  // duration outside the run sheet). Only the timer: no log entry, message, video or slides.
+  function restartCountdown() {
+    const it = isActive() && !state.finished ? norm.items.find(x => x.id === state.currentId) : null;
+    if (it) api({ cmd: 'start', msecs: it.eff * 1000 });
+    else api({ cmd: 'start' });
+  }
+
   function finishShow() {
     state.finished = true;
     const end = norm.endIdx >= 0 ? norm.items[norm.endIdx] : null;
@@ -269,6 +277,8 @@
       case 'reset':  resetShow(); break;
       case 'active': setActive(c.on); break;
       case 'pptxclose': if (window.pptxHub) window.pptxHub.close(); break;   // the editor's Close slides
+      case 'pause':  api({ cmd: 'pause' }); break;                           // toggles
+      case 'restart': restartCountdown(); break;
     }
   }
 
@@ -496,7 +506,7 @@
 
   // sheetChanged(): the sheet in localStorage was rewritten by this window (the remote editor,
   // remote-control.js); the storage event that the editor window's writes give doesn't fire then.
-  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive, sheetChanged: onSheetChanged, flash };
+  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive, sheetChanged: onSheetChanged, flash, restart: restartCountdown };
 
   // The dashboard sits just below the button bar, whose height depends on zoom and
   // window width (buttons wrap). Publish its bottom edge for the CSS.

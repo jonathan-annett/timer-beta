@@ -735,6 +735,58 @@
   });
   $('active').addEventListener('change', e => send('active', { on: e.target.checked }));
 
+  // ─── Countdown preview, Pause and Restart ─────────────────────────────────
+  // The timer's countdown as it shows it: here from the timer window's localStorage
+  // (remainDisp / remainDispClass, as the presenter window reads them); in remote mode from the
+  // page around this one (rs-clock, built from the timer's state).
+  let clock = { remain: '', over: false, impending: false, paused: false };
+  function readLocalClock() {
+    const cls = ' ' + (localStorage.getItem('remainDispClass') || '') + ' ';
+    clock = { remain: localStorage.getItem('remainDisp') || '', over: cls.includes(' over '),
+      impending: cls.includes(' impending '), paused: cls.includes(' paused ') };
+  }
+  function renderClock() {
+    const alive = controllerAlive() && !!clock.remain;
+    $('clock-remain').textContent = alive ? (clock.over ? '+' : '') + clock.remain : '–:––';
+    $('clock-state').textContent = alive && clock.paused ? 'paused' : '';
+    const el = $('clock');
+    el.classList.toggle('stale', !alive);
+    el.classList.toggle('over', alive && clock.over);
+    el.classList.toggle('impending', alive && clock.impending && !clock.over);
+    el.classList.toggle('paused', alive && clock.paused);
+    $('btn-pause').textContent = alive && clock.paused ? 'Resume' : 'Pause';
+  }
+  if (REMOTE) {
+    window.addEventListener('message', e => {
+      if (e.origin !== location.origin || e.source !== window.parent || !e.data || e.data.t !== 'rs-clock') return;
+      const m = e.data;
+      clock = { remain: String(m.remain || ''), over: !!m.over, impending: !!m.impending, paused: !!m.paused };
+      renderClock();
+    });
+  } else {
+    readLocalClock();
+    window.addEventListener('storage', ev => {
+      if (ev.key === 'remainDisp' || ev.key === 'remainDispClass') { readLocalClock(); renderClock(); }
+    });
+  }
+  setInterval(renderClock, 1000);   // notices the timer window closing
+  renderClock();
+
+  $('btn-pause').addEventListener('click', () => send('pause'));
+  // Restart needs a second click within 2 s: one stray click mid-talk would reset the countdown
+  let restartArmed = null;
+  $('btn-restart').addEventListener('click', () => {
+    const b = $('btn-restart');
+    if (restartArmed) {
+      clearTimeout(restartArmed); restartArmed = null;
+      b.classList.remove('armed'); b.textContent = 'Restart';
+      send('restart');
+      return;
+    }
+    b.classList.add('armed'); b.textContent = 'Click again';
+    restartArmed = setTimeout(() => { restartArmed = null; b.classList.remove('armed'); b.textContent = 'Restart'; }, 2000);
+  });
+
   // A presentation clicker pointed at this window should still drive the show
   document.addEventListener('keydown', e => {
     if (e.key !== 'PageDown' && e.key !== 'PageUp') return;
