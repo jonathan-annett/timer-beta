@@ -288,7 +288,15 @@ function Test-Names([string]$Title, [string]$Leaf) {
 function Get-ShowWindows([string]$Leaf) {
     @(Get-PptWindows | Where-Object { $_.cls -eq $ShowClass -and (Test-Names $_.title $Leaf) })
 }
-function Get-PvWindows { @(Get-PptWindows | Where-Object { $_.cls -eq $PvClass }) }
+# Presenter View windows: by class, or "Presenter View" in the title (the class name isn't confirmed)
+function Get-PvWindows { @(Get-PptWindows | Where-Object { $_.cls -eq $PvClass -or $_.title -match 'Presenter View' }) }
+# Is Presenter View up? Cautious: a Presenter View window, or two show windows for the deck
+# (pressing the toggle when it's already up closes it, which is worse than not pressing)
+function Test-PvUp([string]$Leaf) {
+    if ((Get-PvWindows).Count) { return $true }
+    if ($Leaf -and (Get-ShowWindows $Leaf).Count -ge 2) { return $true }
+    return $false
+}
 function Test-Alive([long]$H) { return [TimerWin]::IsWindow([IntPtr]$H) }
 function Close-Windows([long[]]$Handles) {
     foreach ($h in $Handles) { if (Test-Alive $h) { [void][TimerWin]::PostMessage([IntPtr]$h, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) } }   # WM_CLOSE
@@ -324,7 +332,12 @@ function Close-Show([switch]$All) {
 # Presenter View on/off: the show's context menu (the Menu key), then R. It's a toggle, so only
 # when it isn't already as wanted. Returns whether Presenter View is up afterwards.
 function Set-PresenterView([string]$Leaf, [bool]$On) {
-    $has = [bool](Get-PvWindows).Count
+    $has = Test-PvUp $Leaf
+    if ($On -and -not $has) {
+        # It may still be coming up (PowerPoint can open it by itself): look for a while first
+        $until = (Get-Date).AddSeconds(3)
+        while ((Get-Date) -lt $until -and -not $has) { Start-Sleep -Milliseconds 250; $has = Test-PvUp $Leaf }
+    }
     if ($has -eq $On) { return $has }
     # Turning it off: send the keys to the Presenter View window itself (same menu, and safer).
     # Turning it on: there's no Presenter View window yet, so to the deck's slide show window.
@@ -339,7 +352,7 @@ function Set-PresenterView([string]$Leaf, [bool]$On) {
     $until = (Get-Date).AddSeconds(3)
     while ((Get-Date) -lt $until) {
         Start-Sleep -Milliseconds 200
-        $has = [bool](Get-PvWindows).Count
+        $has = Test-PvUp $Leaf
         if ($has -eq $On) { break }
     }
     return $has
@@ -425,10 +438,15 @@ function Start-Show([string]$Leaf) {
     $script:Current = $Leaf
     Start-Sleep -Milliseconds $SettleMs
 
-    # 3. Presenter View (or off, with -NoPresenterView), only if it isn't already
-    $wantPv = -not $NoPresenterView
-    $hasPv = Set-PresenterView $Leaf $wantPv
-    if ($hasPv -ne $wantPv) { Log ("Presenter View may not have {0} (check the screen)" -f $(if ($wantPv) { 'opened' } else { 'closed' })) 'Yellow' }
+    # 3. Presenter View (or off, with -NoPresenterView), only if it isn't already. Not in rehearsal
+    #    mode: F5 from the editor already follows PowerPoint's own Presenter View setting.
+    if ($script:Edit) {
+        Log ("Rehearsal: Presenter View is " + $(if (Test-PvUp $Leaf) { 'up' } else { 'not up' }) + ' (as PowerPoint''s own setting has it)')
+    } else {
+        $wantPv = -not $NoPresenterView
+        $hasPv = Set-PresenterView $Leaf $wantPv
+        if ($hasPv -ne $wantPv) { Log ("Presenter View may not have {0} (check the screen)" -f $(if ($wantPv) { 'opened' } else { 'closed' })) 'Yellow' }
+    }
     # While this is new: list PowerPoint's windows (class | title), to check the class names used above
     Get-PptWindows | ForEach-Object { Log ("   window: {0} | {1}" -f $_.cls, $_.title) 'DarkGray' }
 }
