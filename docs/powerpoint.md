@@ -88,9 +88,13 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
   doesn't use it. It finds a deck's show by its window (class `screenClass`, the deck's name in
   the title), looked up afresh each time, and closes a show by sending that window `WM_CLOSE`
   (Esc if that doesn't work). It never kills PowerPoint.
-- **Switching decks:** the new deck starts first; 2 s after its window appears, the old deck's
-  slide show window is closed. Presenter View windows (class `PodiumParent`) are never closed in a
-  switch: PowerPoint hands Presenter View over to the new deck, and closing it ended both.
+- **Switching decks**, in this order (found by testing; closing windows while PowerPoint hands
+  Presenter View from one deck to the next took the new deck down too):
+  1. turn the previous deck's Presenter View off, with the keys (never by closing its window);
+  2. open the new deck and wait for its slide show (plus 1 s to settle);
+  3. close the previous deck's slide show window;
+  4. turn Presenter View on for the new deck, with the keys (only if it isn't already).
+  The new deck is up before the old one closes, so there's no desktop in between.
 - **Show ended by hand** (Esc, last slide): its window is gone, so the player reports
   `showing: false`.
 - **The show didn't appear** within 25 s (usually a PowerPoint dialog waiting for a click: sign-in,
