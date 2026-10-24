@@ -1,5 +1,6 @@
 import { combineRgb, type CompanionPresetDefinitions, type CompanionPresetSection } from '@companion-module/base'
 import type ModuleInstance from './main.js'
+import { DEFAULT_STYLES } from './feedbacks.js'
 
 const WHITE = combineRgb(255, 255, 255)
 const BLACK = combineRgb(0, 0, 0)
@@ -22,7 +23,11 @@ export function UpdatePresets(self: ModuleInstance): void {
 			name,
 			style: { text, size, color: WHITE, bgcolor: DARK },
 			steps: [{ down: actions as never, up: [] }],
-			feedbacks: feedbacks.map((f) => ({ feedbackId: f.feedbackId, options: f.options ?? {}, style: f.style })) as never,
+			feedbacks: feedbacks.map((f) => ({
+				feedbackId: f.feedbackId,
+				options: f.options ?? {},
+				style: f.style ?? { ...DEFAULT_STYLES[f.feedbackId as keyof typeof DEFAULT_STYLES] },
+			})) as never,
 		}
 		if (!groups.has(category)) groups.set(category, [])
 		groups.get(category)!.push(id)

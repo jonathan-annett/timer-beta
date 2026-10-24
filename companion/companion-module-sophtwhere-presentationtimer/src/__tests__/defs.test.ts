@@ -53,7 +53,7 @@ test('presets only use defined actions, feedbacks and options', () => {
 	UpdateVariableDefinitions(self, ['extra_one'])
 	const a = stub.a as Record<string, { options: { id: string }[] }>
 	const f = stub.f as Record<string, { options: { id: string }[] }>
-	const { s, p } = stub.p as { s: { definitions: { presets: string[] }[] }[]; p: Record<string, { steps: { down: { actionId: string; options: object }[] }[]; feedbacks: { feedbackId: string; options: object }[] }> }
+	const { s, p } = stub.p as { s: { definitions: { presets: string[] }[] }[]; p: Record<string, { steps: { down: { actionId: string; options: object }[] }[]; feedbacks: { feedbackId: string; options: object; style?: { bgcolor?: number } }[] }> }
 	for (const id of FEEDBACK_IDS) assert.ok(f[id], `feedback ${id}`)
 	for (const [id, preset] of Object.entries(p)) {
 		for (const act of preset.steps[0].down) {
@@ -62,6 +62,8 @@ test('presets only use defined actions, feedbacks and options', () => {
 		}
 		for (const fb of preset.feedbacks) {
 			assert.ok(f[fb.feedbackId], `${id}: feedback ${fb.feedbackId}`)
+			// a preset feedback without a style never changes the button
+			assert.ok(fb.style && typeof fb.style.bgcolor === 'number', `${id}: ${fb.feedbackId} has no style`)
 			for (const k of Object.keys(fb.options)) assert.ok(f[fb.feedbackId].options.some((o) => o.id === k), `${id}: option ${k}`)
 		}
 	}
