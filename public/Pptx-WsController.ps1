@@ -257,6 +257,30 @@ public static class TimerWin {
         SetForegroundWindow(h);
         return GetForegroundWindow() == h;
     }
+    // The window that has focus: "handle|class|title|pid"
+    public static string Foreground() {
+        IntPtr h = GetForegroundWindow();
+        if (h == IntPtr.Zero) return "";
+        uint pid; GetWindowThreadProcessId(h, out pid);
+        StringBuilder c = new StringBuilder(256), t = new StringBuilder(512);
+        GetClassName(h, c, 256); GetWindowText(h, t, 512);
+        return h.ToInt64() + "|" + c + "|" + t + "|" + pid;
+    }
+    [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc f, IntPtr l);
+    // Windows inside a window that have a title, or a dialog-like class: "class|title" (diagnostics)
+    public static string[] Children(IntPtr parent) {
+        List<string> res = new List<string>();
+        EnumChildWindows(parent, delegate (IntPtr h, IntPtr l) {
+            if (res.Count >= 40) return false;
+            StringBuilder c = new StringBuilder(256), t = new StringBuilder(512);
+            GetClassName(h, c, 256); GetWindowText(h, t, 512);
+            string cs = c.ToString(), ts = t.ToString();
+            if (IsWindowVisible(h) && (ts.Length > 0 || cs.IndexOf("Dialog", StringComparison.OrdinalIgnoreCase) >= 0 || cs == "#32770"))
+                res.Add(cs + "|" + ts);
+            return true;
+        }, IntPtr.Zero);
+        return res.ToArray();
+    }
     // A key with Ctrl held (Ctrl+Q)
     public static void CtrlKey(byte vk) {
         keybd_event(0x11, 0, 0, UIntPtr.Zero); keybd_event(vk, 0, 0, UIntPtr.Zero);
@@ -394,17 +418,42 @@ function Clear-Shows {
         [TimerWin]::Key(0x1B, $false)                # Esc: out of any text box or menu
         Start-Sleep -Milliseconds 150
         [TimerWin]::CtrlKey(0x51)                    # Ctrl+Q: quit PowerPoint
+        # The save prompt takes focus when it appears: S to the focused PowerPoint window (if
+        # there's nothing to save, PowerPoint just quits and the S goes nowhere)
+        Start-Sleep -Milliseconds 300
         $answered = @{}
-        $until = (Get-Date).AddMinutes(3); $nextNote = (Get-Date).AddSeconds(10)
+        $fg = [TimerWin]::Foreground().Split('|')
+        $pids = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.Id })
+        if ($fg.Count -ge 4 -and $pids -contains $fg[3]) {
+            $answered[[long]$fg[0]] = $true
+            [TimerWin]::Key(0x53, $false)            # S: Save
+            Log ("Answered the save prompt (S) in: {0} | {1}" -f $fg[1], $fg[2])
+        }
+        # More edited decks mean more prompts: a new PowerPoint window, or a new focused one, is one
+        $until = (Get-Date).AddMinutes(3); $nextNote = (Get-Date).AddSeconds(10); $diag = (Get-Date).AddSeconds(3)
         while ((Get-Date) -lt $until -and @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue).Count) {
             Start-Sleep -Milliseconds 150
             $prompt = @(Get-PptWindows | Where-Object { $before -notcontains $_.h -and $known -notcontains $_.cls -and -not $answered.ContainsKey($_.h) }) | Select-Object -First 1
+            $fg = [TimerWin]::Foreground().Split('|')
+            $pids = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.Id })
+            if (-not $prompt -and $fg.Count -ge 4 -and $pids -contains $fg[3] -and $before -notcontains [long]$fg[0] -and -not $answered.ContainsKey([long]$fg[0])) {
+                $prompt = [pscustomobject]@{ h = [long]$fg[0]; cls = $fg[1]; title = $fg[2] }
+            }
             if ($prompt) {
                 $answered[$prompt.h] = $true
                 Focus-Window $prompt.h
                 Start-Sleep -Milliseconds 100
                 [TimerWin]::Key(0x53, $false)        # S: Save
-                Log 'Saving an edited deck'
+                Log ("Answered a save prompt (S) in: {0} | {1}" -f $prompt.cls, $prompt.title)
+            }
+            if ($diag -and (Get-Date) -ge $diag) {
+                # Still running after a few seconds: show what's there, to see what the prompt looks like
+                $diag = $null
+                Log ("   focused: " + ([TimerWin]::Foreground() -replace '^\d+\|', '')) 'DarkGray'
+                foreach ($w in @(Get-PptWindows)) {
+                    Log ("   window: {0} | {1}" -f $w.cls, $w.title) 'DarkGray'
+                    foreach ($c in [TimerWin]::Children([IntPtr]$w.h)) { Log ("      inside: " + $c) 'DarkGray' }
+                }
             }
             if ((Get-Date) -ge $nextNote) { $nextNote = (Get-Date).AddSeconds(10); Log 'Still closing PowerPoint (saving)...' }
         }

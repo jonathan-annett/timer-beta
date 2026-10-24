@@ -103,8 +103,11 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
   follows PowerPoint's own setting. Step 1 then also closes the player's own decks left open for
   editing (an editor window, class `PPTFrameClass`, whose title names a file in Show; anything else
   open in PowerPoint is left alone): if there are any, the player quits PowerPoint with **Ctrl+Q**
-  (Ctrl+W closed the deck but left PowerPoint's empty window open) and answers each "Save changes to
-  this file?" prompt with **S** (Save), only once it has appeared. That closes everything open in
+  (Ctrl+W closed the deck but left PowerPoint's empty window open) and answers "Save changes to this
+  file?" with **S** (Save): 300 ms after Ctrl+Q to the focused PowerPoint window (the prompt takes
+  focus; with nothing to save PowerPoint just quits), then to any new PowerPoint window, or new
+  focused one, for further edited decks. If PowerPoint is still running after 3 s it logs the focused
+  window and PowerPoint's windows, including those inside them, to show what the prompt is. That closes everything open in
   PowerPoint, including anything opened there by hand: fine on a dedicated show machine. A big deck takes a while to save; PowerPoint closes the window when the
   save is done, so the player waits for the window to go (up to 3 minutes, logging "Still saving"),
   and the timer allows 5 minutes for `start` and `stop all`. `send` never
