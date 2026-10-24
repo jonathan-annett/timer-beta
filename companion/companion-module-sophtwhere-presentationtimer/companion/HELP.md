@@ -37,7 +37,7 @@ Everything the timer's keyboard does, plus some conveniences:
 
 Every value the timer publishes, as it publishes it (at most a few times a second):
 
-`remain` (the countdown as shown, `+` in overtime), `remain_actual`, `elapsed`, `default`, `startedAt`, `endsAt`, `pausing`, `paused`, `pauses`, `expired`, `impending`, `adjusting_up`, `adjusting_down`, `adjusting_delta`, `custommsg`, `showbar`, `showtimenow`, `showmessages`, `showpresenter`, `barpct`, `htmlclass`, `rs_active`, `rs_current`, `rs_next`, `rs_can_back`, `rs_status`, `rs_late`, `rs_title`, `rs_text`, `video_status`, `video_name`, and `link_status` for this connection. Anything new the timer sends appears automatically.
+`remain` (the countdown as shown, `+` in overtime), its parts for big multi-key displays — `remain_hours`, `remain_minutes`, `remain_seconds` (two digits), `remain_sign` (`+` in overtime), `remain_total` (whole seconds, negative in overtime) and `remain_major` / `remain_minor` (minutes + seconds under an hour, `1h` + `25m` from an hour up, like the timer's Stream Deck keys) — `remain_actual`, `elapsed`, `default`, `startedAt`, `endsAt`, `pausing`, `paused`, `pauses`, `expired`, `impending`, `adjusting_up`, `adjusting_down`, `adjusting_delta`, `custommsg`, `showbar`, `showtimenow`, `showmessages`, `showpresenter`, `barpct`, `htmlclass`, `rs_active`, `rs_current`, `rs_next`, `rs_can_back`, `rs_status`, `rs_late`, `rs_title`, `rs_text`, `video_status`, `video_name`, and `link_status` for this connection. Anything new the timer sends appears automatically.
 
 ## Feedbacks
 
@@ -45,9 +45,11 @@ Connected · Timer is paused · Under a minute left · Time is up · Catch up po
 
 ## Presets
 
-Ready-made buttons under **Countdown** (remaining time, with message, elapsed/ends at, connection status), **Controls**, **Durations**, **Messages**, **Display**, **Run sheet** and **Video**.
+Ready-made buttons under **Countdown** (remaining time, with message, **Big:** one value per key in 44-point digits for building a large display across several keys, elapsed/ends at, connection status), **Controls**, **Durations**, **Messages**, **Display**, **Run sheet** and **Video**.
 
 ## Notes
+
+- A time such as `1:02:03` can wrap at the colon on a small key. Use **Auto** size, or the **Big:** presets, which put one number on each key.
 
 - One Companion connection per timer. For two timers, add two connections.
 - Companion and the in-browser Stream Deck support can run at the same time; they are independent.

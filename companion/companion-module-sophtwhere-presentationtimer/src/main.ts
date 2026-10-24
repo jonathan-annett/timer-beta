@@ -1,6 +1,6 @@
 import { InstanceBase, InstanceStatus, type SomeCompanionConfigField } from '@companion-module/base'
 import { GetConfigFields, type ModuleConfig } from './config.js'
-import { UpdateVariableDefinitions } from './variables.js'
+import { UpdateVariableDefinitions, splitRemain } from './variables.js'
 import { UpdateActions } from './actions.js'
 import { UpdateFeedbacks, FEEDBACK_IDS } from './feedbacks.js'
 import { UpdatePresets } from './presets.js'
@@ -135,6 +135,7 @@ export default class ModuleInstance extends InstanceBase {
 			this.varTimer = null
 			const out: Record<string, string | number | boolean | undefined> = {}
 			for (const [k, v] of Object.entries(this.pendingVars)) out[k] = v === null ? '' : typeof v === 'boolean' ? (v ? 'true' : 'false') : v
+			if ('remain' in this.pendingVars) Object.assign(out, splitRemain(String(this.pendingVars.remain ?? '')))
 			this.pendingVars = {}
 			this.setVariableValues(out)
 			this.checkFeedbacks(...FEEDBACK_IDS)

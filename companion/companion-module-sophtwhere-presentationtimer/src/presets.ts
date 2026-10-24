@@ -39,6 +39,20 @@ export function UpdatePresets(self: ModuleInstance): void {
 		{ feedbackId: 'impending' },
 		{ feedbackId: 'expired' },
 	], 'auto')
+	// Big displays built from several keys (one value per key, so nothing wraps)
+	button('big_major', 'Countdown', 'Big: minutes (hours when over an hour)', '$(presentationtimer:remain_sign)$(presentationtimer:remain_major)', [{ actionId: 'pause', options: {} }], [
+		{ feedbackId: 'paused' },
+		{ feedbackId: 'impending' },
+		{ feedbackId: 'expired' },
+	], '44')
+	button('big_minor', 'Countdown', 'Big: seconds (minutes when over an hour)', '$(presentationtimer:remain_minor)', [{ actionId: 'pause', options: {} }], [
+		{ feedbackId: 'paused' },
+		{ feedbackId: 'impending' },
+		{ feedbackId: 'expired' },
+	], '44')
+	button('big_hours', 'Countdown', 'Big: hours', '$(presentationtimer:remain_sign)$(presentationtimer:remain_hours)', [], [{ feedbackId: 'expired' }], '44')
+	button('big_minutes', 'Countdown', 'Big: minutes', '$(presentationtimer:remain_minutes)', [], [{ feedbackId: 'expired' }], '44')
+	button('big_seconds', 'Countdown', 'Big: seconds', '$(presentationtimer:remain_seconds)', [], [{ feedbackId: 'expired' }], '44')
 	button('elapsed', 'Countdown', 'Elapsed / ends at', 'elapsed\\n$(presentationtimer:elapsed)\\nends $(presentationtimer:endsAt)', [], [], '7')
 
 	// Controls

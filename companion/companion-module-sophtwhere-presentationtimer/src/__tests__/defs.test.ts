@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { parseDuration, UpdateActions } from '../actions.js'
 import { remainSeconds, UpdateFeedbacks, FEEDBACK_IDS } from '../feedbacks.js'
 import { UpdatePresets } from '../presets.js'
-import { UpdateVariableDefinitions } from '../variables.js'
+import { UpdateVariableDefinitions, splitRemain } from '../variables.js'
 import { parseLink } from '../link.js'
 import type ModuleInstance from '../main.js'
 
@@ -22,6 +22,13 @@ test('remaining time text', () => {
 	assert.equal(remainSeconds('9:58'), 598)
 	assert.equal(remainSeconds('+1:02:03'), 3723)
 	assert.equal(remainSeconds(''), null)
+})
+
+test('split remaining time', () => {
+	assert.deepEqual(splitRemain('9:58'), { remain_sign: '', remain_hours: '0', remain_minutes: '09', remain_seconds: '58', remain_total: 598, remain_major: '09', remain_minor: '58' })
+	assert.deepEqual(splitRemain('1:02:03'), { remain_sign: '', remain_hours: '1', remain_minutes: '02', remain_seconds: '03', remain_total: 3723, remain_major: '1h', remain_minor: '02m' })
+	assert.deepEqual(splitRemain('+0:12'), { remain_sign: '+', remain_hours: '0', remain_minutes: '00', remain_seconds: '12', remain_total: -12, remain_major: '+00', remain_minor: '12' })
+	assert.equal(splitRemain('').remain_total, '')
 })
 
 test('links', () => {

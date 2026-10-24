@@ -7,6 +7,13 @@ import type ModuleInstance from './main.js'
  */
 export const KNOWN_VARIABLES: Record<string, string> = {
 	remain: 'Remaining time as shown (e.g. 9:58, 1:02:03; counts up after zero)',
+	remain_sign: 'Remaining: "+" in overtime, else empty',
+	remain_hours: 'Remaining: hours (no padding)',
+	remain_minutes: 'Remaining: minutes, 00–59',
+	remain_seconds: 'Remaining: seconds, 00–59',
+	remain_total: 'Remaining: whole seconds (negative in overtime)',
+	remain_major: 'Remaining, big part: minutes under an hour (01), hours from an hour up (1h)',
+	remain_minor: 'Remaining, small part: seconds under an hour (30), minutes from an hour up (25m)',
 	remain_actual: 'Remaining time without the catch-up easing',
 	elapsed: 'Elapsed time',
 	default: 'Default duration (what Start uses)',
@@ -45,4 +52,26 @@ export function UpdateVariableDefinitions(self: ModuleInstance, extra: string[])
 	for (const [id, name] of Object.entries(KNOWN_VARIABLES)) defs[id] = { name }
 	for (const id of extra) if (!KNOWN_VARIABLES[id]) defs[id] = { name: `Timer: ${id}` }
 	self.setVariableDefinitions(defs)
+}
+
+/**
+ * Splits the timer's remaining-time text ("9:58", "1:02:03", "+0:12") into parts that fit on one
+ * button each, so a big display can be built from several keys. Mirrors the Stream Deck
+ * countdown_major/countdown_minor keys.
+ */
+export function splitRemain(text: string): Record<string, string | number> {
+	const m = String(text ?? '').trim().match(/^(\+?)(?:(\d+):)?(\d{1,2}):(\d{2})$/)
+	if (!m) return { remain_sign: '', remain_hours: '', remain_minutes: '', remain_seconds: '', remain_total: '', remain_major: '', remain_minor: '' }
+	const sign = m[1], h = Number(m[2] ?? 0), mi = Number(m[3]), se = Number(m[4])
+	const total = h * 3600 + mi * 60 + se
+	const pad = (n: number) => String(n).padStart(2, '0')
+	return {
+		remain_sign: sign,
+		remain_hours: String(h),
+		remain_minutes: pad(mi),
+		remain_seconds: pad(se),
+		remain_total: sign ? -total : total,
+		remain_major: h ? `${sign}${h}h` : `${sign}${pad(mi)}`,
+		remain_minor: h ? `${pad(mi)}m` : pad(se),
+	}
 }
