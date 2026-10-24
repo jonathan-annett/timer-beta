@@ -451,11 +451,15 @@
     return (projectedEnd - plannedEnd) / 1000;
   }
 
-  // When the show is behind, everything still to come moves by the same amount: a pause keeps
-  // adding to it (lateness() counts the pause so far), and so does a Restart. Ahead of time,
-  // the planned times stand (the next item is held for its time, or started early by hand).
-  function shiftMs(late) {
-    return late != null && late >= ON_TIME_SEC ? late * 1000 : 0;
+  // Once the show is under way, when everything still to come should start: each item follows
+  // on from the one before, starting from when the item running now is due to end (its countdown,
+  // pauses and changes included; now, if it's over time). An item with its own start time waits
+  // for it if that's later. The editor works it out the same way (RunsheetCore.project).
+  function projections() {
+    if (!isActive() || state.finished || state.index < 0 || !norm.items[state.index]) return null;
+    const s = api({ cmd: 'snapshot' }), e = state.log[state.log.length - 1];
+    const end = s ? Math.max(now(), timerEndMs(s)) : (e ? e.actual + norm.items[state.index].eff * 1000 : now());
+    return C.project(norm, state.index, end, plannedMs);
   }
   function pausedFor() {
     const s = api({ cmd: 'snapshot' });
@@ -465,7 +469,8 @@
   function statusInfo() {
     const late = lateness();
     const pf = plannedFinishMs();
-    const finishEta = (pf != null && late != null) ? pf + late * 1000 : pf;
+    const proj = projections();
+    const finishEta = proj ? proj.finish : (pf != null && late != null) ? pf + late * 1000 : pf;
     let text = '', short = '', kind = 'none';
     if (!isActive()) return { text, short, kind, late: null };
 
@@ -552,11 +557,13 @@
 
       const nj = state.finished ? -1 : nextIndex(state.index);
       if (nj >= 0) {
-        const it = norm.items[nj], p = plannedStartMs(nj), sh = shiftMs(info.late);
-        setRow('next', it.name, C.formatDuration(it.eff) + (p != null ? ` · planned ${clockOf(p)}` + (sh ? ` · now ≈ ${clockOf(p + sh)}` : '') : ''));
+        const it = norm.items[nj], p = plannedStartMs(nj), proj = projections(), x = proj && proj.get(nj);
+        setRow('next', it.name, C.formatDuration(it.eff) + (x != null ? ` · ≈ ${clockOf(x)}` + (p != null && clockOf(p) !== clockOf(x) ? ` (planned ${clockOf(p)})` : '')
+                                                                       : p != null ? ` · planned ${clockOf(p)}` : ''));
       } else if (!state.finished && norm.items.length) {
-        const pf = plannedFinishMs(), sh = shiftMs(info.late);
-        setRow('next', norm.endIdx >= 0 ? norm.items[norm.endIdx].name : 'End of show', pf != null ? `planned ${clockOf(pf)}` + (sh ? ` · now ≈ ${clockOf(pf + sh)}` : '') : '');
+        const pf = plannedFinishMs(), proj = projections(), x = proj && proj.finish;
+        setRow('next', norm.endIdx >= 0 ? norm.items[norm.endIdx].name : 'End of show',
+               x != null ? `≈ ${clockOf(x)}` + (pf != null && clockOf(pf) !== clockOf(x) ? ` (planned ${clockOf(pf)})` : '') : pf != null ? `planned ${clockOf(pf)}` : '');
       } else setRow('next', '', '');
 
       const pos = state.index >= 0 ? `${Math.min(state.index + 1, norm.timedCount)}/${norm.timedCount}` : `0/${norm.timedCount}`;
@@ -576,11 +583,11 @@
 
   // The schedule as compact JSON, for display-only phones (e.g. a green room screen):
   // rows {n: name, p: planned clock, d: duration, s: 'done'|'now'|'next', a: actual start, e: 1 = finish row,
-  // x: expected clock when the show is running behind (rows still to come)}.
+  // x: estimated clock for rows still to come, when it isn't the planned one}.
   // A few rows before the current one and up to 40 after, so a message stays small.
-  function scheduleList(late) {
+  function scheduleList() {
     if (!isActive()) return '';
-    const sh = state.finished ? 0 : shiftMs(late);
+    const proj = projections();
     const startedAt = new Map();
     state.log.forEach(e => { if (e.id !== 'end') startedAt.set(e.id, e.actual); });
     const endLog = state.finished ? state.log[state.log.length - 1] : null;
@@ -596,7 +603,8 @@
       else if (startedAt.has(it.id) || (isEnd && endLog)) r.s = 'done';
       const a = isEnd ? (endLog && endLog.actual) : startedAt.get(it.id);
       if (a) r.a = clockOf(a);
-      if (sh && p != null && i > cur && r.s !== 'done') r.x = clockOf(p + sh);
+      const x = proj && (isEnd ? proj.finish : proj.get(i));
+      if (x != null && i > cur && r.s !== 'done' && clockOf(x) !== r.p) { r.x = clockOf(x); if (p != null && x < p) r.xe = 1; }   // xe: earlier than planned
       return r;
     });
     if (!state.finished && nj < 0 && norm.endIdx >= 0 && rows[norm.endIdx]) rows[norm.endIdx].s = 'next';
@@ -620,7 +628,7 @@
       rs_late: info.late == null ? '' : String(Math.round(info.late)),
       rs_title: isActive() ? (sheet.title || '') : '',
       rs_text: info.text,
-      rs_list: scheduleList(info.late),
+      rs_list: scheduleList(),
     };
     const v = JSON.stringify(vars);
     if ((force || v !== lastVars) && window.timerAPI) {

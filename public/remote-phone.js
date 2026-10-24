@@ -813,7 +813,7 @@
     $('rsvnow').textContent = state.rsOn ? (state.rsNow || (rows.some(r => r.s === 'done') ? 'Show finished' : 'Not started')) : '—';
     $('rsvremain').textContent = state.rsOn && state.rsNow ? remain : '';
     $('rsvnext').textContent = state.rsOn ? (state.rsNext || '—') : '—';
-    $('rsvnexttime').textContent = nextRow && nextRow.p ? (nextRow.x ? `≈ ${nextRow.x} (planned ${nextRow.p})` : nextRow.p) : '';
+    $('rsvnexttime').textContent = nextRow && (nextRow.x || nextRow.p) ? (nextRow.x ? `≈ ${nextRow.x}` + (nextRow.p ? ` (planned ${nextRow.p})` : '') : nextRow.p) : '';
     const late = state.rsLate;
     const st = $('rsvstatus');
     st.textContent = state.rsOn ? (state.rsText || '') : '';
@@ -833,8 +833,8 @@
         for (const r of rows) {
           const d = document.createElement('div');
           d.className = 'rl' + (r.s ? ' ' + r.s : '') + (r.e ? ' end' : '');
-          const t = document.createElement('span'); t.className = 't' + (r.x ? ' late' : ''); t.textContent = r.x || r.p || '';
-          if (r.x) t.title = 'Planned ' + r.p;          // running behind: the expected time
+          const t = document.createElement('span'); t.className = 't' + (r.x ? (r.xe ? ' early' : ' late') : ''); t.textContent = r.x || r.p || '';
+          if (r.x) t.title = 'Planned ' + r.p;          // the estimated time, now the show is under way
           const n = document.createElement('span'); n.className = 'n'; n.textContent = r.n || '';
           const x = document.createElement('span'); x.className = 'd';
           x.textContent = r.s === 'done' && r.a ? 'started ' + r.a : (r.e ? 'finish' : (r.d || ''));

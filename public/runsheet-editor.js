@@ -132,6 +132,21 @@
     const d = new Date(ms);
     return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   }
+  function clockSec(ms) {
+    if (ms == null) return '';
+    const d = new Date(ms);
+    return [d.getHours(), d.getMinutes(), d.getSeconds()].map(v => String(v).padStart(2, '0')).join(':');
+  }
+  // While an item is running: when it's due to end (its countdown, as runsheet.js reports it;
+  // now, if it's over) and when each item after it should start (as runsheet.js works it out)
+  function projNow() {
+    const cur = liveIndex();
+    if (cur < 0) return null;
+    const log = state.log || [], e = log[log.length - 1];
+    const timerEnd = live.curId && live.curId === state.currentId ? live.curEnd : null;
+    const end = timerEnd != null ? Math.max(timerEnd, editorNow()) : e && e.id === state.currentId ? e.actual + norm.items[cur].eff * 1000 : null;
+    return end == null ? null : { end, proj: C.project(norm, cur, end, plannedMs) };
+  }
   function signed(sec) {
     if (sec == null || Math.abs(sec) < ON_TIME_SEC) return '';
     return (sec > 0 ? '+' : '−') + C.formatSpan(sec);
@@ -220,31 +235,54 @@
       }
     }
 
-    // Running behind (a pause keeps adding to it, as does a Restart): everything still to come
-    // moves by the same amount. runsheet.js works out the lateness; ahead, planned times stand.
-    const shift = active && !state.finished && live.late != null && live.late >= ON_TIME_SEC ? live.late * 1000 : 0;
+    // Once the show is under way the Start and Ends columns are what happened (started items)
+    // and what's expected (the rest, see projNow()); planned times move to the Status column.
     const curIdx = curId ? norm.items.findIndex(it => it.id === curId) : (state.index == null ? -1 : state.index);
-    const exp = ms => `<span class="st-late" title="Expected, running ${C.formatSpan(live.late)} behind">≈ ${clockOf(ms)}</span>`;
     const curEnd = live.curId && live.curId === curId ? live.curEnd : null;
+    const pn = projNow(), proj = pn && pn.proj;
+    const focused = document.activeElement;
+    const show = (inp, value, placeholder) => {
+      if (!inp) return;
+      if (inp !== focused && !inp.classList.contains('invalid')) inp.value = value;   // not under the user's fingers
+      inp.placeholder = placeholder;
+    };
 
     document.querySelectorAll('#rs-table tbody tr').forEach(tr => {
       const i = norm.items.findIndex(it => it.id === tr.dataset.id);
       const it = norm.items[i];
       if (!it) return;
+      const src = sheet.items[i];
       const p = plannedMs(it.planned);
-      tr.querySelector('[data-field=start]').placeholder = p != null ? clockOf(p) : '';
-      // The end is worked out (start + duration), never stored: shown as the placeholder; typing one sets the duration
-      const endIn = tr.querySelector('[data-field=end]');
-      if (endIn) endIn.placeholder = p == null ? '' : clockOf(p + it.eff * 1000);
-
       const k = lastById[it.id];
+      const role = rowRole(i);
+      const startIn = tr.querySelector('[data-field=start]');
+      const endIn = tr.querySelector('[data-field=end]');   // worked out (start + duration), never stored; typing one sets the duration
+      const typed = src.start != null ? C.formatClock(src.start) : '';
+      // The next item starting before the current one is due to end (saved anyway, knowingly)
+      const overlap = role === 'next' && src.start != null && curEnd != null && p != null ? (curEnd - p) / 1000 : 0;
+      const x = proj ? proj.get(i) : undefined;
+      if ((role === 'done' || role === 'now') && k != null) {
+        const a = log[k].actual;                   // when it really started (Restart and ▶ included), to the second
+        show(startIn, clockSec(a), '');
+        if (role === 'now') show(endIn, '', clockOf(pn ? pn.end : a + it.eff * 1000));
+        else show(endIn, log[k + 1] ? clockOf(log[k + 1].actual) : '', '');
+      } else if (it.isEnd && state.finished && log.length) {
+        show(startIn, clockSec(log[log.length - 1].actual), '');
+      } else if (x != null) {
+        // Expected: its own start time when that's what it waits for (or a clash saved knowingly)
+        show(startIn, src.start != null && (x === p || overlap >= 1) ? typed : '', clockOf(x));
+        show(endIn, '', clockOf(x + it.eff * 1000));
+      } else {
+        show(startIn, typed, p != null ? clockOf(p) : '');
+        show(endIn, '', p == null ? '' : clockOf(p + it.eff * 1000));
+      }
+
       const done = k != null && it.id !== curId;
       tr.classList.toggle('current', it.id === curId);
       tr.classList.toggle('done', done);
       tr.classList.toggle('next', it.id === nextId);
 
       // Completed items are kept as they happened; the item running now keeps its start
-      const role = rowRole(i);
       tr.classList.toggle('locked', role === 'done' || it.hidden);
       tr.querySelectorAll('input[data-field]').forEach(inp => {
         const ro = role === 'done' || it.hidden || (role === 'now' && inp.dataset.field === 'start');
@@ -254,9 +292,6 @@
       tr.querySelectorAll('td.vid button, td.vid select, td.deck button').forEach(b => { b.disabled = role === 'done' || it.hidden; });
       const del = tr.querySelector('button[data-act=del]');
       if (del) del.title = role === 'done' ? 'Delete (hidden from the run sheet; it stays in the log)' : 'Delete';
-      // The next item starting before the current one is due to end (saved anyway, knowingly)
-      const startIn = tr.querySelector('[data-field=start]');
-      const overlap = role === 'next' && sheet.items[i].start != null && curEnd != null && p != null ? (curEnd - p) / 1000 : 0;
       startIn.classList.toggle('conflict', overlap >= 1);
 
       const status = tr.querySelector('.status');
@@ -264,8 +299,7 @@
         const e = log[k];
         const v = e && e.planned != null ? signed((e.actual - e.planned) / 1000) : '';
         status.innerHTML = `<span class="st-now">▶ Now</span> ${clockOf(e && e.actual)} ` +
-          (v ? `<span class="${v[0] === '+' ? 'st-late' : 'st-early'}">${v}</span>` : '') +
-          (shift && p != null ? `<br>ends ${exp(p + it.eff * 1000 + shift)}` : '');
+          (v ? `<span class="${v[0] === '+' ? 'st-late' : 'st-early'}">${v}</span>` : '');
       } else if (done) {
         const e = log[k], ran = log[k + 1] ? (log[k + 1].actual - e.actual) / 1000 : null;
         const v = e.planned != null ? signed((e.actual - e.planned) / 1000) : '';
@@ -278,7 +312,8 @@
       } else {
         const gap = it.gapAfter > 59 || it.gapAfter < -59
           ? `<span class="st-gap">${it.gapAfter > 0 ? 'gap' : 'overlaps'} ${C.formatDuration(Math.abs(it.gapAfter))}</span>` : '';
-        const ahead = shift && p != null && i > curIdx && !done ? exp(p + shift) + (it.isEnd ? ' finish' : '') : '';
+        const ahead = x != null && p != null && clockOf(x) !== clockOf(p) && overlap < 1   // (a clash shows its own time already)
+          ? `<span class="${x > p ? 'st-late' : 'st-early'}" title="The planned time">planned ${clockOf(p)}</span>` : '';
         const clash = overlap >= 1 ? `<span class="st-conflict" title="${esc(norm.items[curIdx] ? norm.items[curIdx].name : '')} is due to end at ${clockOf(curEnd)}">starts ${C.formatSpan(overlap)} before the current item ends</span>` : '';
         status.innerHTML = [clash, ahead, gap].filter(Boolean).join(' · ');
       }
@@ -708,7 +743,8 @@
   // whether the sheet has start times or is pinned to when the show began); or why not.
   function endToDuration(i, sec) {
     const it = norm.items[i];
-    const startMs = it ? plannedMs(it.planned) : null;
+    const pn = projNow();
+    const startMs = !it ? null : pn && pn.proj.has(i) ? pn.proj.get(i) : plannedMs(it.planned);   // the start the row shows
     if (startMs == null) return `There’s no start time to count from yet (the sheet has no start times and the show hasn’t started), so give <b>${esc(it ? it.name || 'this item' : 'this item')}</b> a duration instead.`;
     // From the start as the row shows it (hh:mm, seconds dropped as clockOf does): 10 minutes
     // later on screen is 10 minutes more, even when the show began at 9:00:40

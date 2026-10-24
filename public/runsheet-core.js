@@ -213,6 +213,25 @@ var RunsheetCore = (function () {
     return d;
   }
 
+  // Once the show is under way: when each row after `cur` should start, given when row `cur`
+  // ends (ms). Each follows on from the one before; a row with its own start time waits for it if
+  // that's later (a gap). plannedMsOf turns normalise()'s planned seconds into a timestamp.
+  // Returns a Map row index → ms (hidden rows skipped), with .finish.
+  function project(norm, cur, endMs, plannedMsOf) {
+    const out = new Map();
+    let t = endMs;
+    for (let j = cur + 1; j < norm.items.length; j++) {
+      const it = norm.items[j];
+      if (it.hidden) continue;
+      const own = it.start != null ? plannedMsOf(it.planned) : null;
+      const s = own != null && own > t ? own : t;
+      out.set(j, s);
+      t = s + (it.isEnd ? 0 : it.eff * 1000);
+    }
+    out.finish = t;                               // when the whole show would end
+    return out;
+  }
+
   function standardise(sheet) {
     const norm = normalise(sheet);
     return Object.assign({}, sheet, {
@@ -363,7 +382,7 @@ var RunsheetCore = (function () {
   return {
     parseClock, parseDuration,
     formatClock, formatDuration, formatSpan, formatHMS,
-    shiftStarts, dayDelta,
+    shiftStarts, dayDelta, project,
     normalise, standardise, parseText, toCSV, csvCell, newId,
   };
 })();
