@@ -48,7 +48,14 @@
     u.hash = new URLSearchParams({ r: cfg.room, p: cfg.key, s: cfg.server }).toString();
     return u.toString();
   })();
-  $('cmd').textContent = `powershell -ExecutionPolicy Bypass -File .\\Pptx-WsController.ps1 -Link "${fullLink}"`;
+  // Presenter View is on unless unticked (the player's -NoPresenterView)
+  const presenterBox = $('presenter');
+  presenterBox.checked = store.get('pptx_presenter') !== '0';
+  const showCmd = () => {
+    $('cmd').textContent = `powershell -ExecutionPolicy Bypass -File .\\Pptx-WsController.ps1 -Link "${fullLink}"` + (presenterBox.checked ? '' : ' -NoPresenterView');
+  };
+  presenterBox.addEventListener('change', () => { store.set('pptx_presenter', presenterBox.checked ? '1' : '0'); showCmd(); });
+  showCmd();
   $('copycmd').addEventListener('click', () => navigator.clipboard && navigator.clipboard.writeText($('cmd').textContent));
 
   // Our id, written into the inbox for the player to find

@@ -11,7 +11,7 @@ A PowerPoint computer runs two things, both joined to the timer with its **Power
 | Piece | What it does |
 |---|---|
 | **Receiver page** `pptx.html` (Chrome or Edge) | Receives the decks over the direct LAN link and saves them into a folder chosen once (File System Access API). Shows the player command to run. |
-| **Player** `Pptx-WsController.ps1` (Windows PowerShell 5.1 or 7) | Copies decks from that folder (its *Inbox*) into its *Show* folder and drives PowerPoint through COM automation: open, start, close, change slide. |
+| **Player** `Pptx-WsController.ps1` (Windows PowerShell 5.1 or 7) | Copies decks from that folder (its *Inbox*) into its *Show* folder and starts them with `powerpnt.exe /S`, then works the show's window: Presenter View (context menu, R), slide keys, close. No COM. |
 
 Why two pieces: a PowerShell script can't make the LAN WebRTC link (and decks are too big for the
 pairing server, which only relays small messages), and a web page can't start PowerPoint.
@@ -32,7 +32,7 @@ pairing server, which only relays small messages), and a web page can't start Po
    also from the remote run sheet editor, over the LAN only).
 
 The timer's share panel shows a line per machine: receiver (LAN direct / no folder / via server),
-player, *n/m decks ready*, what's showing (slide x/y), and any error. The run sheet dashboard says
+player (and whether it uses Presenter View), *n/m decks ready*, what's showing, and any error. The run sheet dashboard says
 when the next item's deck isn't ready, or no PowerPoint computer is connected.
 
 If the page says the player **uses a different folder**, the folder chosen in the browser isn't
@@ -62,7 +62,23 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
 - **Protected View:** files saved by a browser carry the "downloaded from the internet" mark,
   which would make PowerPoint open them in Protected View (no slide show). The player removes it
   from its copy (`Unblock-File`); the files come from the operator's own timer.
-- **Show ended by hand** (Esc, last slide): the player notices (COM) and reports `showing: false`.
+- **Presenter View** is on by default (`-NoPresenterView` turns it off; the receiver page's tick box
+  adds it to the command). In practice every show runs in Presenter View, whether or not it's put
+  on the confidence monitor: it gives the control room reliable slide progress, and some videos
+  don't play properly outside it (a PowerPoint optimisation bug). Starting from the command line, the only way into it is the show's
+  context menu: the player focuses the show window and sends the Menu key, then **R**
+  (*Show Presenter View*). It logs a warning if no Presenter View window (class `PodiumParent`)
+  appears.
+- **No COM:** PowerPoint's COM automation caused trouble when closing files, so the player
+  doesn't use it. It tracks the show by its windows (class `screenClass` / `PodiumParent`, the
+  deck's name in the title), closes a show by sending its window `WM_CLOSE` (Esc if that doesn't
+  work), and changes slides with keystrokes (Page Down/Up, Home, End, B, W, number + Enter) after
+  focusing the show. It never kills PowerPoint. Slide numbers aren't known (`slide`/`slides`
+  are 0).
+- **Show ended by hand** (Esc, last slide): its window is gone, so the player reports
+  `showing: false`.
+- **The show didn't appear** within 25 s (usually a PowerPoint dialog waiting for a click: sign-in,
+  activation, repair): `start` fails and the player logs every PowerPoint window it can see.
 - **Timer API:** `{cmd:'pptxslide', action: next|prev|first|last|black|white|resume|<n>}`,
   `{cmd:'pptxstop'}`. Bus variables: `pptx_machines`, `pptx_current`, `pptx_showing`,
   `pptx_slide`, `pptx_slides`, `pptx_next_ready`. The Companion module has actions, feedbacks and
@@ -91,7 +107,7 @@ no timer state.
 Player → timer:
 
 ```
-{t:'hello', kind:'player', name, version, pair, inbox, token, current, showing, slide, slides, simulate}
+{t:'hello', kind:'player', name, version, pair, inbox, token, current, showing, slide, slides, simulate, presenter}
 {t:'pp-ack', req, verb, ok, result?, note?, error?, …}      one per command, in order
 {t:'pp-state', current, showing, slide, slides}              when what's on screen changes (polled each second)
 ```
@@ -102,7 +118,7 @@ Timer → player: `{t:'pp', req, verb, arg, keep?}`, one at a time (the timer wa
 |---|---|---|---|
 | `check` | | reads `<inbox>\.timer-pair` again | `result`: the receiver id in it |
 | `send` | file name in Inbox | copies it into Show (in the background; never overwrites: a changed file gets `name v2.ext`) | `result`: the name in Show; `note:'unchanged'` if already there |
-| `start` | file name in Show | opens and starts it (COM: read-only, no editing window, then closes the previous show) | `result`; a missing file fails without touching the current show |
+| `start` | file name in Show | `powerpnt.exe /S`, waits for the show window, Presenter View if on, then closes the previous deck's show | `result`; a missing file fails without touching the current show |
 | `stop` | | closes the show | |
 | `slide` | `next` `prev` `first` `last` `black` `white` `resume` or a number | changes slide | |
 | `status` | | | `current`, `showing`, `slide`, `slides` |

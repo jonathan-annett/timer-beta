@@ -136,6 +136,7 @@
       e.pp.name = typeof m.name === 'string' && m.name.trim() ? m.name.trim().slice(0, 40) : 'PowerPoint';
       e.pp.version = String(m.version || '').slice(0, 10);
       e.pp.simulate = !!m.simulate;
+      e.pp.presenter = m.presenter !== false;          // decks open in Presenter View (the player's default)
       e.pp.inbox = typeof m.inbox === 'string' ? m.inbox.slice(0, 300) : '';     // its Inbox path, shown when the pairing fails
       setShowState(e, m);
       rejectQueue(e, 'reconnected');
@@ -362,7 +363,7 @@
       const t = M.transfer;
       out.push({
         name: label(M), receiver: M.receiver ? M.receiver.peer.mode : null, folder: !!(M.receiver && M.receiver.pp.folder),
-        player: !!M.player, simulate: !!(M.player && M.player.pp.simulate),
+        player: !!M.player, simulate: !!(M.player && M.player.pp.simulate), presenter: !!(M.player && M.player.pp.presenter),
         ready: list.filter(d => M.prepared.has(d.key)).length, total: list.length,
         transfer: t ? { name: t.name, pct: t.size ? Math.floor(t.acked / t.size * 100) : 0 } : null,
         current: M.player ? M.player.pp.current : '', showing: !!(M.player && M.player.pp.showing),
@@ -383,7 +384,7 @@
       bits.push(!s.receiver ? '<span class="pp-warn">receiver page not open</span>'
         : s.receiver === 'lan' ? (s.folder ? 'receiver <b class="pp-lan">LAN direct</b>' : '<span class="pp-warn">receiver: no folder chosen</span>')
         : '<span class="pp-warn">receiver via server: decks need the same network</span>');
-      bits.push(s.player ? (s.simulate ? 'player (simulating)' : 'player ✓') : '<span class="pp-warn">player not running</span>');
+      bits.push(s.player ? (s.simulate ? 'player (simulating)' : 'player ✓') + (s.presenter ? ', Presenter View' : '') : '<span class="pp-warn">player not running</span>');
       if (s.total) bits.push(s.transfer ? `sending ${esc(s.transfer.name)} ${s.transfer.pct}%` : `${s.ready}/${s.total} decks ready`);
     }
     if (s.current) bits.push((s.showing ? 'showing ' : 'last: ') + esc(s.current.replace(/ ~[0-9a-z]{1,6}(?=\.\w+$)/, '')) + (s.showing && s.slides ? ` (${s.slide}/${s.slides})` : ''));

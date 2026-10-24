@@ -106,7 +106,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 	button('video_rewind', 'Video', 'Rewind video', '⟲ Rewind', [{ actionId: 'video', options: { what: 'videorewind' } }], [{ feedbackId: 'video_playing' }])
 
 	// PowerPoint (share → PowerPoint on the timer)
-	button('sl_next', 'Slides', 'Next slide', 'Slide ▶\\n$(presentationtimer:pptx_slide)/$(presentationtimer:pptx_slides)', [{ actionId: 'slides', options: { action: 'next', slide: '1' } }], [{ feedbackId: 'slides_showing' }], '14')
+	button('sl_next', 'Slides', 'Next slide', 'Slide ▶', [{ actionId: 'slides', options: { action: 'next', slide: '1' } }], [{ feedbackId: 'slides_showing' }], '14')
 	button('sl_prev', 'Slides', 'Previous slide', '◀ Slide', [{ actionId: 'slides', options: { action: 'prev', slide: '1' } }], [{ feedbackId: 'slides_showing' }])
 	button('sl_black', 'Slides', 'Black screen', 'Black', [{ actionId: 'slides', options: { action: 'black', slide: '1' } }])
 	button('sl_resume', 'Slides', 'Back from black', 'Unblack', [{ actionId: 'slides', options: { action: 'resume', slide: '1' } }])

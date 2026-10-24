@@ -16,6 +16,7 @@
                        Show   decks are copied here and opened from here
         -Inbox       Use another folder as the inbox
         -Name        This computer's name in the timer (default: the computer name)
+        -NoPresenterView   Show decks without Presenter View (it's on by default)
         -AllowSelfSignedCert   For a test pairing server only
         -Simulate    Don't open PowerPoint; just log what would happen (testing)
 
@@ -29,6 +30,7 @@ param(
     [string]$WorkFolder = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Presentation Timer'),
     [string]$Inbox,
     [string]$Name = $env:COMPUTERNAME,
+    [switch]$NoPresenterView,
     [switch]$AllowSelfSignedCert,
     [switch]$Simulate
 )
@@ -84,9 +86,6 @@ if ($AllowSelfSignedCert) {
 # ---- State -------------------------------------------------------------------
 $script:ws = $null
 $script:Running = $true
-$script:Ppt = $null           # PowerPoint.Application (COM), when available
-$script:Pres = $null          # the presentation being shown (COM)
-$script:Proc = $null          # fallback without COM: the PowerPoint process we started
 $script:Current = ''          # file name (in Show) being shown
 $script:Copy = $null          # a copy in progress: @{ ps; async; req; name; temp; dest; src }
 $script:LastState = ''
@@ -124,7 +123,7 @@ function Send-Hello {
     $st = Get-ShowState
     Send-Timer @{ t = 'hello'; kind = 'player'; name = $Name; version = $Version; pair = (Get-PairId);
         inbox = $Inbox; token = (Get-Token); current = $st.current; showing = $st.showing; slide = $st.slide; slides = $st.slides;
-        simulate = [bool]$Simulate }
+        simulate = [bool]$Simulate; presenter = -not $NoPresenterView }
 }
 
 function Send-Ack($Cmd, [bool]$Ok, $Extra) {
@@ -198,93 +197,178 @@ function Watch-Copy {
 }
 
 # ---- PowerPoint --------------------------------------------------------------
-function Get-Ppt {
-    if ($Simulate) { return $null }
-    if ($script:Ppt) {
-        try { [void]$script:Ppt.Version; return $script:Ppt } catch { $script:Ppt = $null; $script:Pres = $null }
+# No COM: decks are started as "powerpnt.exe /S <file>" (a full-screen show, no editor), and
+# everything else is done to the show's window: Presenter View is the window's context menu
+# then R (the only way into Presenter View from the command line), slides are keystrokes,
+# closing is WM_CLOSE. The show is tracked by its window handles, not by process: PowerPoint is
+# single-instance, so a second /S is handed to the copy that's already running.
+
+if ($env:OS -eq 'Windows_NT' -and -not ('TimerWin' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+public static class TimerWin {
+    public delegate bool EnumProc(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int c);
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern bool SystemParametersInfo(int a, int b, string c, int d);
+
+    // Visible top-level windows of the given processes: "handle|class|title"
+    public static string[] List(int[] pids) {
+        List<string> res = new List<string>();
+        HashSet<uint> want = new HashSet<uint>();
+        foreach (int p in pids) want.Add((uint)p);
+        EnumWindows(delegate (IntPtr h, IntPtr l) {
+            uint pid; GetWindowThreadProcessId(h, out pid);
+            if (want.Contains(pid) && IsWindowVisible(h)) {
+                StringBuilder c = new StringBuilder(256), t = new StringBuilder(512);
+                GetClassName(h, c, 256); GetWindowText(h, t, 512);
+                res.Add(h.ToInt64() + "|" + c + "|" + t);
+            }
+            return true;
+        }, IntPtr.Zero);
+        return res.ToArray();
     }
-    try { $script:Ppt = New-Object -ComObject PowerPoint.Application } catch { $script:Ppt = $null }
-    return $script:Ppt
+    // Bring a window to the front. Windows only lets the foreground app do that; a tap of Alt
+    // first is the usual way round it.
+    public static bool Focus(IntPtr h) {
+        if (IsIconic(h)) ShowWindow(h, 9);
+        keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero);
+        SetForegroundWindow(h);
+        return GetForegroundWindow() == h;
+    }
+    public static void Key(byte vk, bool extended) {
+        uint f = extended ? 1u : 0u;
+        keybd_event(vk, 0, f, UIntPtr.Zero); keybd_event(vk, 0, f | 2u, UIntPtr.Zero);
+    }
+}
+'@
+}
+
+$ShowClasses = @('screenClass', 'PodiumParent')    # the slide show window, and Presenter View's
+$script:ShowWindows = @()                          # handles of the deck on screen
+$script:Blank = ''                                 # 'black' / 'white' while blanked
+
+# PowerPoint windows: objects {h, cls, title}
+function Get-PptWindows {
+    $pids = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
+    if (-not $pids.Count) { return @() }
+    foreach ($line in [TimerWin]::List([int[]]$pids)) {
+        $parts = $line.Split('|', 3)
+        [pscustomobject]@{ h = [long]$parts[0]; cls = $parts[1]; title = $parts[2] }
+    }
+}
+# The slide show (and Presenter View) windows of one deck: by class, and its name in the title
+function Get-ShowWindows([string]$Leaf) {
+    $base = [IO.Path]::GetFileNameWithoutExtension($Leaf)
+    @(Get-PptWindows | Where-Object { $ShowClasses -contains $_.cls -and $_.title.IndexOf($base, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
+}
+function Test-Alive([long]$H) { return [TimerWin]::IsWindow([IntPtr]$H) }
+function Close-Windows([long[]]$Handles) {
+    foreach ($h in $Handles) { if (Test-Alive $h) { [void][TimerWin]::PostMessage([IntPtr]$h, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) } }   # WM_CLOSE
+}
+function Focus-Show {
+    $h = @($script:ShowWindows | Where-Object { Test-Alive $_ }) | Select-Object -First 1
+    if (-not $h) { throw 'no slide show on screen' }
+    if (-not [TimerWin]::Focus([IntPtr]$h)) { Start-Sleep -Milliseconds 150; [void][TimerWin]::Focus([IntPtr]$h) }
+    Start-Sleep -Milliseconds 150
 }
 
 function Close-Show {
-    if ($script:Pres) { try { $script:Pres.Close() } catch {} }
-    $script:Pres = $null
-    if ($script:Proc -and -not $script:Proc.HasExited) {
-        try { [void]$script:Proc.CloseMainWindow() } catch {}
-        if (-not $script:Proc.WaitForExit(3000)) { try { $script:Proc.Kill() } catch {} }
+    if (-not $Simulate) {
+        $hs = @($script:ShowWindows)
+        if ($script:Current) { $hs += @(Get-ShowWindows $script:Current | ForEach-Object { $_.h }) }
+        Close-Windows $hs
+        # If a window is still there after a few seconds, Esc ends the show
+        $until = (Get-Date).AddSeconds(3)
+        while ((Get-Date) -lt $until -and @($hs | Where-Object { Test-Alive $_ }).Count) { Start-Sleep -Milliseconds 200 }
+        $left = @($hs | Where-Object { Test-Alive $_ }) | Select-Object -First 1
+        if ($left) { [void][TimerWin]::Focus([IntPtr]$left); Start-Sleep -Milliseconds 150; [TimerWin]::Key(0x1B, $false) }
     }
-    $script:Proc = $null
+    $script:ShowWindows = @()
     $script:Current = ''
+    $script:Blank = ''
 }
 
 function Start-Show([string]$Leaf) {
     $path = Join-Path $ShowFolder $Leaf
-    if ($Simulate) { $script:Current = $Leaf; Log "[simulate] showing $Leaf" 'Cyan'; return }
-    $app = Get-Ppt
-    if ($app) {
-        # Open the new deck and start it before closing the old one: no desktop in between
-        $old = $script:Pres
-        $pres = $app.Presentations.Open($path, -1, 0, 0)      # read-only, not untitled, no editing window
-        $settings = $pres.SlideShowSettings
-        $settings.ShowType = 1                                 # presenter (full screen)
-        [void]$settings.Run()
-        $script:Pres = $pres
-        $script:Current = $Leaf
-        if ($old) { try { $old.Close() } catch {} }
-        return
+    if ($Simulate) { $script:Current = $Leaf; Log "[simulate] showing $Leaf$(if ($NoPresenterView) { '' } else { ' (Presenter View)' })" 'Cyan'; return }
+    $old = @($script:ShowWindows)
+    $before = @(Get-PptWindows | ForEach-Object { $_.h })
+    Start-Process -FilePath 'powerpnt.exe' -ArgumentList '/S', ('"' + $path + '"')
+    # Wait for this deck's slide show window
+    $new = @()
+    $until = (Get-Date).AddSeconds(25)
+    while ((Get-Date) -lt $until) {
+        $new = @(Get-ShowWindows $Leaf | Where-Object { $before -notcontains $_.h })
+        if ($new.Count) { break }
+        Start-Sleep -Milliseconds 250
     }
-    # No COM (PowerPoint Viewer, unusual installs): start it as a program instead
-    Close-Show
-    $before = @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id)
-    $p = Start-Process -FilePath 'powerpnt.exe' -ArgumentList '/S', "`"$path`"" -PassThru
-    Start-Sleep -Seconds 3
-    if ($p -and -not $p.HasExited) { $script:Proc = $p }
-    else { $script:Proc = Get-Process -Name POWERPNT -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id } | Select-Object -First 1 }
+    if (-not $new.Count) {
+        Log 'The slide show window did not appear. PowerPoint windows now:' 'Red'
+        Get-PptWindows | ForEach-Object { Log ("   {0} | {1}" -f $_.cls, $_.title) 'Red' }
+        throw 'the slide show did not start (is a PowerPoint dialog waiting for a click?)'
+    }
+    $script:ShowWindows = @($new | ForEach-Object { $_.h })
     $script:Current = $Leaf
+    $script:Blank = ''
+    if (-not $NoPresenterView) {
+        # Presenter View: the show's context menu (the Menu key), then R ("Show Presenter View")
+        Start-Sleep -Milliseconds 900
+        Focus-Show
+        [TimerWin]::Key(0x5D, $true)              # VK_APPS
+        Start-Sleep -Milliseconds 400
+        [TimerWin]::Key(0x52, $false)             # R
+        Start-Sleep -Milliseconds 900
+        $script:ShowWindows = @($script:ShowWindows + @(Get-ShowWindows $Leaf | Where-Object { $before -notcontains $_.h } | ForEach-Object { $_.h }) | Select-Object -Unique)
+        if (-not @(Get-ShowWindows $Leaf | Where-Object { $_.cls -eq 'PodiumParent' }).Count) { Log 'Presenter View may not have opened (no Presenter View window seen)' 'Yellow' }
+    }
+    # Now the previous deck can go: the new one is already up, so no desktop in between
+    Close-Windows ($old | Where-Object { $script:ShowWindows -notcontains $_ })
 }
 
-# What's on screen: the deck, whether its slide show is still running, and the slide
+# What's on screen: the deck, and whether its show is still up (ended by hand: Esc, last slide).
+# Slide numbers aren't available without COM.
 function Get-ShowState {
     $st = @{ current = $script:Current; showing = $false; slide = 0; slides = 0 }
     if (-not $script:Current) { return $st }
     if ($Simulate) { $st.showing = $true; return $st }
-    if ($script:Pres) {
-        try {
-            $view = $script:Pres.SlideShowWindow.View
-            $st.showing = $true
-            $st.slide = [int]$view.CurrentShowPosition
-            $st.slides = [int]$script:Pres.Slides.Count
-        } catch { $st.showing = $false }       # the show was ended (Esc, or the last slide)
-        return $st
-    }
-    $st.showing = [bool]($script:Proc -and -not $script:Proc.HasExited)
+    $st.showing = [bool](@($script:ShowWindows | Where-Object { Test-Alive $_ }).Count)
     return $st
 }
 
 function Set-Slide([string]$Arg) {
-    if (-not $script:Pres) { throw 'no slide show' }
-    $view = $script:Pres.SlideShowWindow.View
+    if ($Simulate) { Log "[simulate] slide $Arg" 'Cyan'; return }
+    Focus-Show
     switch -regex ($Arg) {
-        '^next$'   { $view.Next(); break }
-        '^prev$'   { $view.Previous(); break }
-        '^first$'  { $view.First(); break }
-        '^last$'   { $view.Last(); break }
-        '^black$'  { $view.State = 3; break }          # ppSlideShowBlackScreen
-        '^white$'  { $view.State = 4; break }
-        '^resume$' { $view.State = 1; break }
-        '^\d+$'    { $view.GotoSlide([int]$Arg); break }
+        '^next$'   { [TimerWin]::Key(0x22, $true); break }     # Page Down
+        '^prev$'   { [TimerWin]::Key(0x21, $true); break }     # Page Up
+        '^first$'  { [TimerWin]::Key(0x24, $true); break }     # Home
+        '^last$'   { [TimerWin]::Key(0x23, $true); break }     # End
+        '^black$'  { if ($script:Blank -ne 'black') { if ($script:Blank) { [TimerWin]::Key($(if ($script:Blank -eq 'white') { 0x57 } else { 0x42 }), $false) }; [TimerWin]::Key(0x42, $false); $script:Blank = 'black' }; break }   # B
+        '^white$'  { if ($script:Blank -ne 'white') { if ($script:Blank) { [TimerWin]::Key(0x42, $false) }; [TimerWin]::Key(0x57, $false); $script:Blank = 'white' }; break }   # W
+        '^resume$' { if ($script:Blank) { [TimerWin]::Key($(if ($script:Blank -eq 'white') { 0x57 } else { 0x42 }), $false); $script:Blank = '' }; break }
+        '^\d+$'    { foreach ($ch in $Arg.ToCharArray()) { [TimerWin]::Key([byte][char]$ch, $false) }; [TimerWin]::Key(0x0D, $false); break }   # number, Enter
         default    { throw "unknown slide action: $Arg" }
     }
 }
 
 function Set-Wallpaper([string]$Path) {
-    if (-not ('Win32.Native' -as [type])) {
-        Add-Type -Name Native -Namespace Win32 -MemberDefinition '[DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)] public static extern bool SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);'
-    }
     Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name WallpaperStyle -Value '10'
     Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name TileWallpaper -Value '0'
-    [void][Win32.Native]::SystemParametersInfo(0x0014, 0, $Path, 0x03)
+    [void][TimerWin]::SystemParametersInfo(0x0014, 0, $Path, 0x03)
 }
 
 # ---- Commands from the timer: {t:'pp', req, verb, arg, keep} -----------------------
@@ -397,8 +481,9 @@ Write-Host "  Server : $Server   Room: $Room   Name: $Name"
 Write-Host "  Inbox  : $Inbox" -ForegroundColor White
 Write-Host "           (in the receiver page in Chrome or Edge on this computer, choose this folder)"
 Write-Host "  Show   : $ShowFolder"
+Write-Host ("  Presenter View: " + $(if ($NoPresenterView) { 'off' } else { 'on (-NoPresenterView turns it off)' }))
 if ($Simulate) { Write-Host '  Simulating: PowerPoint will not be opened.' -ForegroundColor Yellow }
-elseif (-not (Get-Ppt)) { Write-Host '  PowerPoint automation not available: decks will be started as programs instead.' -ForegroundColor Yellow }
+elseif ($env:OS -ne 'Windows_NT') { Write-Host 'This needs Windows (or -Simulate).' -ForegroundColor Red; exit 1 }
 
 while ($script:Running) {
     $script:Retry = 5
