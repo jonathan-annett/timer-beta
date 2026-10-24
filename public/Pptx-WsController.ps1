@@ -257,6 +257,11 @@ public static class TimerWin {
         SetForegroundWindow(h);
         return GetForegroundWindow() == h;
     }
+    // A key with Ctrl held (Ctrl+S)
+    public static void CtrlKey(byte vk) {
+        keybd_event(0x11, 0, 0, UIntPtr.Zero); keybd_event(vk, 0, 0, UIntPtr.Zero);
+        keybd_event(vk, 0, 2, UIntPtr.Zero); keybd_event(0x11, 0, 2, UIntPtr.Zero);
+    }
     public static void Key(byte vk, bool extended) {
         uint f = extended ? 1u : 0u;
         keybd_event(vk, 0, f, UIntPtr.Zero); keybd_event(vk, 0, f | 2u, UIntPtr.Zero);
@@ -360,7 +365,8 @@ function Set-PresenterView([string]$Leaf, [bool]$On) {
 
 # Starting a deck, from a clean slate each time (like an operator would, only faster; a seamless
 # switch isn't needed, and handing Presenter View from one deck to the next proved fragile):
-#   1. close every slide show (Presenter View goes with its show); wait until they've gone, and for
+#   1. close every slide show (Presenter View goes with its show), then our decks left open for
+#      editing (rehearsal): saved with Ctrl+S, then closed; wait until they've gone, and for
 #      PowerPoint to finish quitting if it's doing so
 #   2. open the new deck and wait for its slide show
 #   3. Presenter View on with the keys (only if it isn't already)
@@ -370,6 +376,25 @@ function Clear-Shows {
         Close-Windows $hs
         $left = @(Wait-Gone $hs 5)
         if ($left.Count) { Focus-Window $left[0]; [TimerWin]::Key(0x1B, $false); [void](Wait-Gone $left 3) }   # Esc
+    }
+    # Our decks open for editing (rehearsal mode): an editor window whose title names a file in the
+    # Show folder. Anything else open in PowerPoint is left alone. Each is saved first (Ctrl+S; the
+    # edits stay on this computer), so closing it doesn't stop at a "Save changes?" prompt.
+    $ours = @(Get-ChildItem -LiteralPath $ShowFolder -File -ErrorAction SilentlyContinue | Where-Object { -not $_.Name.EndsWith('.partial') } |
+              ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.Name) })
+    $eds = @(Get-PptWindows | Where-Object { $_.cls -eq $EditClass } | Where-Object {
+        $t = $_.title; @($ours | Where-Object { $t.IndexOf($_, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count })
+    foreach ($e in $eds) {
+        Focus-Window $e.h
+        [TimerWin]::Key(0x1B, $false)                # Esc: out of any text box or menu
+        Start-Sleep -Milliseconds 150
+        [TimerWin]::CtrlKey(0x53)                    # Ctrl+S
+        Start-Sleep -Milliseconds 1000
+        Close-Windows @($e.h)
+    }
+    if ($eds.Count) {
+        $left = @(Wait-Gone @($eds | ForEach-Object { $_.h }) 6)
+        if ($left.Count) { Log 'A deck opened for editing did not close: PowerPoint may be asking something (check its window)' 'Yellow' }
     }
     # Closing the last /S deck makes PowerPoint quit: let it finish, so the new deck isn't handed
     # to a copy that's on its way out. (A PowerPoint with other windows, e.g. an editor, stays.)
@@ -392,9 +417,8 @@ function Start-Show([string]$Leaf) {
     # 2. Open the new deck and wait for its slide show window
     $new = @()
     if ($script:Edit) {
-        # Rehearsal: open it as a normal, editable window, then F5 once it has focus. Edited decks
-        # aren't closed when moving on (only their slide show), so nothing is lost and no
-        # "Save changes?" prompt gets in the way; opening one again just brings it forward.
+        # Rehearsal: open it as a normal, editable window, then F5 once it has focus. (Step 1
+        # saved and closed the decks opened for editing before.)
         Start-Process -FilePath 'powerpnt.exe' -ArgumentList ('"' + $path + '"')
         $ed = $null
         $until = (Get-Date).AddSeconds(30)
@@ -441,7 +465,10 @@ function Start-Show([string]$Leaf) {
     # 3. Presenter View (or off, with -NoPresenterView), only if it isn't already. Not in rehearsal
     #    mode: F5 from the editor already follows PowerPoint's own Presenter View setting.
     if ($script:Edit) {
-        Log ("Rehearsal: Presenter View is " + $(if (Test-PvUp $Leaf) { 'up' } else { 'not up' }) + ' (as PowerPoint''s own setting has it)')
+        $pvUp = Test-PvUp $Leaf
+        $until = (Get-Date).AddSeconds(3)
+        while ((Get-Date) -lt $until -and -not $pvUp) { Start-Sleep -Milliseconds 250; $pvUp = Test-PvUp $Leaf }   # PowerPoint opens it a moment after the show
+        Log ("Rehearsal: Presenter View is " + $(if ($pvUp) { 'up' } else { 'not up' }) + ' (as PowerPoint''s own setting has it)')
     } else {
         $wantPv = -not $NoPresenterView
         $hasPv = Set-PresenterView $Leaf $wantPv
