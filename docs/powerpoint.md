@@ -103,7 +103,9 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
   follows PowerPoint's own setting. Step 1 then also closes the player's own decks left open for
   editing (an editor window, class `PPTFrameClass`, whose title names a file in Show; anything else
   open in PowerPoint is left alone): each is saved first with Ctrl+S, so no "Save changes?" prompt
-  stops it, then closed. `send` never
+  stops it, then closed. A big deck takes a while to save; PowerPoint closes the window when the
+  save is done, so the player waits for the window to go (up to 3 minutes, logging "Still saving"),
+  and the timer allows 5 minutes for `start` and `stop all`. `send` never
   overwrites a copy in Show that's newer than the one the timer sent (`note: 'edited here'`), so
   edits survive re-syncs; they stay on that computer, the timer's copy isn't changed. The share
   panel shows *rehearsal* for a machine in this mode.

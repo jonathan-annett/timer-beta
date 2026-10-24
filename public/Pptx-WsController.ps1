@@ -393,8 +393,19 @@ function Clear-Shows {
         Close-Windows @($e.h)
     }
     if ($eds.Count) {
-        $left = @(Wait-Gone @($eds | ForEach-Object { $_.h }) 6)
-        if ($left.Count) { Log 'A deck opened for editing did not close: PowerPoint may be asking something (check its window)' 'Yellow' }
+        # A big deck takes a while to save (it's a zip file). PowerPoint closes the window once the
+        # save has finished, so the window going away means saved and closed: wait for that.
+        $hs = @($eds | ForEach-Object { $_.h })
+        $until = (Get-Date).AddMinutes(3); $nextNote = (Get-Date).AddSeconds(10)
+        while ((Get-Date) -lt $until -and @($hs | Where-Object { Test-Alive $_ }).Count) {
+            Start-Sleep -Milliseconds 250
+            if ((Get-Date) -ge $nextNote) {
+                $nextNote = (Get-Date).AddSeconds(10)
+                $still = @($eds | Where-Object { Test-Alive $_.h } | ForEach-Object { $_.title -replace ' - PowerPoint$', '' })
+                Log ("Still saving: " + ($still -join ', '))
+            }
+        }
+        if (@($hs | Where-Object { Test-Alive $_ }).Count) { Log 'A deck opened for editing did not close: PowerPoint may be asking something (check its window)' 'Yellow' }
     }
     # Closing the last /S deck makes PowerPoint quit: let it finish, so the new deck isn't handed
     # to a copy that's on its way out. (A PowerPoint with other windows, e.g. an editor, stays.)

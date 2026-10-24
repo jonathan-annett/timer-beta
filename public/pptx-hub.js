@@ -360,7 +360,7 @@
     const name = M.prepared.get(key);
     if (!name) { M.pendingStart = key; sync(M); return; }
     M.pendingStart = '';
-    cmd(M.player, 'start', name, null, 60000).then(a => {
+    cmd(M.player, 'start', name, null, 5 * 60000).then(a => {      // long: closing decks opened for editing saves them first
       if (!a.ok) M.error = `Couldn’t start the deck: ${a.error || 'error'}`;
       refreshPanel();
     }).catch(err => { M.error = err.message; refreshPanel(); });
@@ -402,8 +402,8 @@
   // by hand. A machine connecting later isn't told to open the last deck again.
   function close() {
     lastKey = ''; localStorage.removeItem(LAST_KEY);
-    for (const M of machines.values()) { M.pendingStart = ''; if (M.player) cmd(M.player, 'stop', 'all').catch(() => {}); }
-    for (const p of loose) cmd(p, 'stop', 'all').catch(() => {});
+    for (const M of machines.values()) { M.pendingStart = ''; if (M.player) cmd(M.player, 'stop', 'all', null, 5 * 60000).catch(() => {}); }
+    for (const p of loose) cmd(p, 'stop', 'all', null, 5 * 60000).catch(() => {});
     if (!machines.size && !loose.size) flash('No PowerPoint computer is connected');
   }
   const flash = text => { if (window.runsheet && window.runsheet.flash) window.runsheet.flash(text); };
