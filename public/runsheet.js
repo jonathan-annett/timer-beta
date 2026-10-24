@@ -100,9 +100,9 @@
     api({ cmd: 'custommessage', text: it.name });
     if (it.video) playItemVideo(it);              // the player restarts the timer at the video's length
     else stopRunsheetVideo();                     // moving on from a video item stops its video
-    // Slides: every PowerPoint machine opens the item's deck. An item without one leaves the
-    // last deck on screen.
-    if (it.deck && window.pptxHub) window.pptxHub.start(it);
+    // Slides: every PowerPoint machine sets the item's holding slide as its wallpaper and opens its
+    // deck. An item without a deck leaves the last one on screen.
+    if ((it.deck || it.holding) && window.pptxHub) window.pptxHub.start(it);
   }
 
   function finishShow() {
@@ -268,6 +268,7 @@
       case 'goto':   goTo(c.id); break;
       case 'reset':  resetShow(); break;
       case 'active': setActive(c.on); break;
+      case 'pptxclose': if (window.pptxHub) window.pptxHub.close(); break;   // the editor's Close slides
     }
   }
 

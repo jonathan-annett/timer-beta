@@ -692,8 +692,8 @@
   let upload = null, upSeq = 0;
   const CHUNK = 64 * 1024;
   function uploadVideo(m) {
-    const kind = m.kind === 'deck' ? 'deck' : 'video';      // a video, or a PowerPoint deck (the same path)
-    const what = kind === 'deck' ? 'slides' : 'video';
+    const kind = m.kind === 'deck' || m.kind === 'holding' ? m.kind : 'video';   // a video, a PowerPoint deck or a holding slide (the same path)
+    const what = kind === 'deck' ? 'slides' : kind === 'holding' ? 'holding slide' : 'video';
     const end = error => { if (upload && upload.id === m.id) upload = null; postEditor({ t: 'rs-vend', kind, id: m.id, error }); };
     if (upload) return end('Wait for the file being sent to finish first.');
     if (!peer || peer.mode !== 'lan') return end(`The ${what} can only be sent over a direct link on the same network as the timer.`);

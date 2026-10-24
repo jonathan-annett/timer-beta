@@ -89,6 +89,8 @@ function processTimerApiMessage(msg) {
         case "videoplay":   { if (window.videoPlayer) return window.videoPlayer.play(); break; }
         case "videostop":   { if (window.videoPlayer) return window.videoPlayer.stop(); break; }
         case "videorewind": { if (window.videoPlayer) return window.videoPlayer.rewind(); break; }
+        // PowerPoint computers (pptx-hub.js): close every slide show, so the holding slide shows
+        case "pptxclose":   { if (window.pptxHub) window.pptxHub.close(); break; }
 
         case "adjust": {
             if (msg.addtime) {

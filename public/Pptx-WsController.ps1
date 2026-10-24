@@ -259,6 +259,7 @@ public static class TimerWin {
 
 $ShowClasses = @('screenClass', 'PodiumParent')    # the slide show window, and Presenter View's
 $script:ShowWindows = @()                          # handles of the deck on screen
+$script:Wallpaper = ''                             # the holding slide (file in Show) set as wallpaper
 
 # PowerPoint windows: objects {h, cls, title}
 function Get-PptWindows {
@@ -285,10 +286,13 @@ function Focus-Show {
     Start-Sleep -Milliseconds 150
 }
 
-function Close-Show {
+# Close the deck on screen; with -All, every PowerPoint slide show (one opened by hand too), so
+# the holding slide (the wallpaper) shows
+function Close-Show([switch]$All) {
     if (-not $Simulate) {
         $hs = @($script:ShowWindows)
         if ($script:Current) { $hs += @(Get-ShowWindows $script:Current | ForEach-Object { $_.h }) }
+        if ($All) { $hs += @(Get-PptWindows | Where-Object { $ShowClasses -contains $_.cls } | ForEach-Object { $_.h }) }
         Close-Windows $hs
         # If a window is still there after a few seconds, Esc ends the show
         $until = (Get-Date).AddSeconds(3)
@@ -384,7 +388,10 @@ function Invoke-TimerCommand($Cmd) {
                 Start-Show $leaf
                 Send-Ack $Cmd $true @{ result = $leaf }
             }
-            'stop'   { Log 'Slide show closed'; Close-Show; Send-Ack $Cmd $true $null }
+            'stop'   {
+                if ([string]$Cmd.arg -eq 'all') { Log 'Closing every slide show'; Close-Show -All } else { Log 'Slide show closed'; Close-Show }
+                Send-Ack $Cmd $true $null
+            }
             'status' { $st = Get-ShowState; Send-Ack $Cmd $true $st }
             'delete' {
                 $leaf = Get-Leaf $Cmd.arg
@@ -400,7 +407,7 @@ function Invoke-TimerCommand($Cmd) {
                 foreach ($k in @($Cmd.keep)) { if ($k) { $keep[([string]$k).ToLower()] = $true } }
                 $removed = 0
                 Get-ChildItem -LiteralPath $ShowFolder -File | ForEach-Object {
-                    if (-not $keep.ContainsKey($_.Name.ToLower()) -and $_.Name -ine $script:Current -and -not $_.Name.EndsWith('.partial')) {
+                    if (-not $keep.ContainsKey($_.Name.ToLower()) -and $_.Name -ine $script:Current -and $_.Name -ine $script:Wallpaper -and -not $_.Name.EndsWith('.partial')) {
                         try { Remove-Item -LiteralPath $_.FullName -Force; $removed++ } catch {}
                     }
                 }
@@ -410,7 +417,9 @@ function Invoke-TimerCommand($Cmd) {
                 $leaf = Get-Leaf $Cmd.arg
                 $path = if ($leaf) { Join-Path $ShowFolder $leaf } else { $null }
                 if (-not $path -or -not (Test-Path -LiteralPath $path)) { Send-Ack $Cmd $false @{ error = "not found: $leaf" }; return }
-                Set-Wallpaper $path; Send-Ack $Cmd $true @{ result = $leaf }
+                if ($Simulate) { Log "[simulate] holding slide $leaf" 'Cyan' } else { Log "Holding slide: $leaf" 'Green'; Set-Wallpaper $path }
+                $script:Wallpaper = $leaf
+                Send-Ack $Cmd $true @{ result = $leaf }
             }
             'quit'   { Send-Ack $Cmd $true $null; $script:Running = $false }
             default  { Send-Ack $Cmd $false @{ error = 'unknown verb' } }

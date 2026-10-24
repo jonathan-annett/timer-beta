@@ -362,6 +362,7 @@
     if (!s || typeof s !== 'object' || !Array.isArray(s.items) || s.items.length > 500) return null;
     const known = new Map((current.items || []).filter(it => it && it.video && it.video.key).map(it => [it.video.key, it.video]));
     const knownDecks = new Map((current.items || []).filter(it => it && it.deck && it.deck.key).map(it => [it.deck.key, it.deck]));
+    const knownHolds = new Map((current.items || []).filter(it => it && it.holding && it.holding.key).map(it => [it.holding.key, it.holding]));
     const ids = new Set();
     const items = [];
     const secs = (v, max) => (v == null ? null : num(v, 0, max));
@@ -376,6 +377,7 @@
         out.videoIdle = it.videoIdle === 'hide' ? 'hide' : 'show';
       }
       if (it.deck && typeof it.deck === 'object' && knownDecks.has(it.deck.key)) out.deck = knownDecks.get(it.deck.key);   // likewise slides
+      if (it.holding && typeof it.holding === 'object' && knownHolds.has(it.holding.key)) out.holding = knownHolds.get(it.holding.key);
       items.push(out);
     }
     return { title: typeof s.title === 'string' ? s.title.slice(0, 200) : '', perItem: num(s.perItem, 1, 600) || 20, items };
@@ -387,11 +389,12 @@
     if (window.runsheet && window.runsheet.sheetChanged) window.runsheet.sheetChanged();
     // Videos no longer on the sheet (or in Recent videos) are removed from this browser
     const keep = new Set(sheet.items.filter(it => it.video).map(it => it.video.key));
-    sheet.items.forEach(it => { if (it.deck) keep.add(it.deck.key); });
+    sheet.items.forEach(it => { if (it.deck) keep.add(it.deck.key); if (it.holding) keep.add(it.holding.key); });
     parseOr(localStorage.getItem('video_history'), []).forEach(h => { if (h && h.key) keep.add(h.key); });
     (before.items || []).forEach(it => {
       if (it && it.video && !keep.has(it.video.key) && window.videoStore) window.videoStore.remove(it.video.key).catch(() => {});
       if (it && it.deck && !keep.has(it.deck.key) && window.videoStore) window.videoStore.remove(it.deck.key).catch(() => {});
+      if (it && it.holding && !keep.has(it.holding.key) && window.videoStore) window.videoStore.remove(it.holding.key).catch(() => {});
     });
     return text;
   }
@@ -409,6 +412,7 @@
       case 'goto':   if (typeof m.id === 'string' && ID_RE.test(m.id)) rs.goTo(m.id); break;
       case 'reset':  rs.reset(); break;
       case 'active': rs.setActive(!!m.on); break;
+      case 'pptxclose': if (window.pptxHub) window.pptxHub.close(); break;
     }
   }
 
@@ -429,9 +433,10 @@
     const norm = window.RunsheetCore ? RunsheetCore.normalise(sheet) : null;
     const row = norm && norm.items.find(it => it.id === m.id);
     const size = num(m.size, 1, MAX_VIDEO);
-    const kind = m.kind === 'deck' ? 'deck' : 'video';
+    const kind = m.kind === 'deck' || m.kind === 'holding' ? m.kind : 'video';
     const typeOk = kind === 'deck' ? typeof m.name === 'string' && /\.(pptx|ppsx|pptm|ppsm|ppt|pps|potx)$/i.test(m.name)
-                                   : typeof m.type === 'string' && /^video\//.test(m.type);
+                 : kind === 'holding' ? typeof m.name === 'string' && /\.(png|jpe?g|bmp)$/i.test(m.name)
+                 : typeof m.type === 'string' && /^video\//.test(m.type);
     if (!row || row.isEnd || size === null || !typeOk || !window.videoStore) return fail('bad');
     try {
       if (navigator.storage && navigator.storage.estimate) {
@@ -467,7 +472,7 @@
   async function uploadFinish(e, u) {
     e.upload = null;
     const blob = new Blob(u.blobs.concat(u.chunks.length ? [new Blob(u.chunks)] : []), { type: u.type });
-    const key = (u.kind === 'deck' ? 'rsdeck:' : 'rsvideo:') + u.id + ':' + Date.now();
+    const key = (u.kind === 'deck' ? 'rsdeck:' : u.kind === 'holding' ? 'rsimg:' : 'rsvideo:') + u.id + ':' + Date.now();
     try {
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
       await window.videoStore.put(key, blob);
@@ -475,9 +480,9 @@
     const sheet = parseOr(localStorage.getItem('runsheet'), { title: '', perItem: 20, items: [] });
     const it = (sheet.items || []).find(x => x && x.id === u.id);
     if (!it) { window.videoStore.remove(key).catch(() => {}); e.peer.send({ t: 'vup-error', up: u.up, reason: 'gone' }); return; }
-    if (u.kind === 'deck') {                                  // slides: sent on to the PowerPoint computers by pptx-hub.js
-      it.deck = { key, name: u.name, size: u.size };
-      if (!it.name) it.name = u.name.replace(/\.[A-Za-z0-9]{1,5}$/, '');
+    if (u.kind === 'deck' || u.kind === 'holding') {          // slides: sent on to the PowerPoint computers by pptx-hub.js
+      it[u.kind] = { key, name: u.name, size: u.size };
+      if (!it.name && u.kind === 'deck') it.name = u.name.replace(/\.[A-Za-z0-9]{1,5}$/, '');
       writeSheet(sheet);
       e.peer.send({ t: 'vup-done', up: u.up, key });
       return;

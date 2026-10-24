@@ -94,6 +94,7 @@
     video_play:       { label: '▶ Play\nvideo',   group: 'Video', cmd: () => _sendCmd({ cmd: 'videoplay' }) },
     video_stop:       { label: '■ Stop\nvideo',   group: 'Video', cmd: () => _sendCmd({ cmd: 'videostop' }) },
     video_rewind:     { label: '⟲ Rewind\nvideo', group: 'Video', cmd: () => _sendCmd({ cmd: 'videorewind' }) },
+    pptx_close:       { label: '✕ Close\nslides', group: 'Video', cmd: () => _sendCmd({ cmd: 'pptxclose' }) },   // PowerPoint computers: holding slide shows
     empty:            { label: '',          group: 'Other',     cmd: null },
   };
 

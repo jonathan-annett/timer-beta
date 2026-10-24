@@ -172,6 +172,7 @@ var RunsheetCore = (function () {
       video: it.video || null,                  // {key, name, size, duration} (run sheet videos)
       videoIdle: it.videoIdle === 'hide' ? 'hide' : 'show',
       deck: it.deck || null,                    // {key, name, size} (PowerPoint decks, pptx-hub.js)
+      holding: it.holding || null,              // {key, name, size} (holding slide: an image set as the PowerPoint computers' wallpaper)
       planned: planned[i],
       eff: eff[i],
       isEnd: i === endIdx,
@@ -204,6 +205,7 @@ var RunsheetCore = (function () {
         duration: it.isEnd ? null : it.eff,
         ...(it.video ? { video: it.video, videoIdle: it.videoIdle } : {}),
         ...(it.deck ? { deck: it.deck } : {}),
+        ...(it.holding ? { holding: it.holding } : {}),
       })),
     });
   }

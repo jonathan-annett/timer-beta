@@ -215,12 +215,12 @@
 
   // ─── Receiving a deck ─────────────────────────────────────────────────────
   // Names come from the timer; only plain PowerPoint file names are written, nothing else.
-  const NAME_RE = /^[^\\/:*?"<>|\u0000-\u001f]{1,160}\.(pptx|ppsx|pptm|ppsm|ppt|pps|potx)$/i;
+  const NAME_RE = /^[^\\/:*?"<>|\u0000-\u001f]{1,160}\.(pptx|ppsx|pptm|ppsm|ppt|pps|potx|png|jpe?g|bmp)$/i;   // decks and holding slides
   const MAX_SIZE = 8e9;
   let xfer = null;               // {x, key, name, size, got, written, writable, chain, nextProg}
   async function offer(m) {
     const reply = extra => peer && peer.send(Object.assign({ x: m.x, key: m.key }, extra));
-    if (typeof m.key !== 'string' || !/^rsdeck:[\w-]{1,40}:\d{1,16}$/.test(m.key) || typeof m.name !== 'string' || !NAME_RE.test(m.name) ||
+    if (typeof m.key !== 'string' || !/^rs(deck|img):[\w-]{1,40}:\d{1,16}$/.test(m.key) || typeof m.name !== 'string' || !NAME_RE.test(m.name) ||
         typeof m.size !== 'number' || !(m.size > 0 && m.size <= MAX_SIZE) || !Number.isInteger(m.x)) return reply({ t: 'pf-error', reason: 'bad' });
     if (!dir) return reply({ t: 'pf-error', reason: 'no-folder' });
     if (!peer || peer.mode !== 'lan') return reply({ t: 'pf-error', reason: 'not-lan' });
@@ -306,7 +306,7 @@
     $('files').querySelector('tbody').innerHTML = [...all.values()].map(r =>
       `<tr><td>${esc(r.name)}</td><td class="sz">${mb(r.size)}</td><td class="st ${r.state === 'saved' ? 'ok' : r.state === 'failed' || r.state === 'interrupted' ? 'bad' : 'warn'}">${esc(r.state)}</td></tr>`).join('');
     const n = Object.keys(files).length;
-    $('summary').textContent = info && info.total ? `${info.ready} of ${info.total} decks ready to show on this computer` + (info.player ? '' : ' (the player isn’t connected)') :
+    $('summary').textContent = info && info.total ? `${info.ready} of ${info.total} files (decks and holding slides) ready on this computer` + (info.player ? '' : ' (the player isn’t connected)') :
       n ? `${n} deck${n > 1 ? 's' : ''} saved here.` : 'Nothing received yet.';
   }
   // A player is connected but doesn't see our .timer-pair file: say exactly which folder it uses

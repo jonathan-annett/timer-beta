@@ -30,6 +30,7 @@ Everything the timer's keyboard does, plus some conveniences:
 - **Toggle a display switch** / **Set a display switch** — progress bar, time of day, messages, presenter mode
 - **Run sheet: Next / Back**
 - **Video player** — play the cued video, stop, rewind
+- **PowerPoint: close slides** — closes whatever slide show is up on the PowerPoint computers, so their holding slide shows
 - **Send keystrokes** — any keys from the timer's keyboard reference (`1,0,Enter`; `~` prefix = key up)
 - **Send a raw timer API command** — the JSON object for `processTimerApiMessage` (see `timerapi.js` in the timer's source). `redirect` is refused.
 

@@ -14,6 +14,10 @@
  *
  * remote-control.js hands over the PowerPoint peers: join(e), leave(e), message(e, m, via),
  * mode(e). runsheet.js calls changed(), start(item), current(item) and hint().
+ * An item can also carry a holding slide (item.holding {key, name, size}: an image, e.g. the
+ * event logo): sent ahead the same way, and set as each machine's Windows wallpaper when the item
+ * starts, so it shows whenever no deck is up. close() closes every slide show on every machine
+ * (revealing the holding slide).
  * The timer only gets decks there and starts them: slides are advanced on each machine itself.
  * Bus variables: pptx_machines, pptx_current, pptx_showing, pptx_next_ready.
  * Protocol: docs/powerpoint.md. MIT Licensed
@@ -30,54 +34,65 @@
   const loose = new Set();          // players whose inbox no receiver has claimed yet
   const PAIR_RE = /^[a-z0-9]{8,40}$/;
   const LAST_KEY = 'pptx_last';     // the deck last started, for machines that connect later
+  const HOLD_KEY = 'pptx_holding';  // the holding slide last set (wallpaper), likewise
   let lastKey = localStorage.getItem(LAST_KEY) || '';
+  let lastHolding = localStorage.getItem(HOLD_KEY) || '';
 
   const readJSON = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (_) { return d; } };
   const refreshPanel = () => { if (window.remoteControl && window.remoteControl.refresh) window.remoteControl.refresh(); };
 
   // ─── The decks on the sheet ───────────────────────────────────────────────
   const DECK_EXT = /\.(pptx|ppsx|pptm|ppsm|ppt|pps|potx)$/i;
+  const IMG_EXT = /\.(png|jpe?g|bmp)$/i;
   // The file name in the machines' folders: the deck's name plus a tag from its key, so two
   // items with "slides.pptx" never collide and a replaced deck gets a new name.
   function fileName(deck) {
-    const m = String(deck.name || 'deck.pptx').match(DECK_EXT);
-    const ext = m ? m[0].toLowerCase() : '.pptx';
-    let base = String(deck.name || 'deck').replace(DECK_EXT, '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/[. ]+$/, '').slice(0, 120) || 'deck';
+    const img = /^rsimg:/.test(String(deck.key));
+    const re = img ? IMG_EXT : DECK_EXT;
+    const m = String(deck.name || '').match(re);
+    const ext = m ? m[0].toLowerCase() : img ? '.png' : '.pptx';
+    let base = String(deck.name || 'deck').replace(re, '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/[. ]+$/, '').slice(0, 120) || 'deck';
     const tag = Number(String(deck.key).split(':')[2] || 0).toString(36).slice(-6);
     return `${base} ~${tag}${ext}`;
   }
-  // Decks in the order they're needed: the current item, the next, the rest after, then before
+  // Files in the order they're needed: the current item's, the next item's, the rest after, then
+  // before. Each item's holding slide comes before its deck. Entries: {key, name, size, file, kind}.
+  const filesOf = it => [it && it.holding, it && it.deck].filter(f => f && typeof f.key === 'string');
   function deckList() {
     const sheet = readJSON('runsheet', { items: [] });
     const st = readJSON('runsheet_state', {});
-    const items = (sheet.items || []).filter(it => it && it.deck && typeof it.deck.key === 'string');
     const all = (sheet.items || []);
     const cur = Math.max(0, all.findIndex(it => it && it.id === st.currentId));
-    const order = all.map((it, i) => [it, i]).filter(([it]) => items.includes(it))
+    const order = all.map((it, i) => [it, i]).filter(([it]) => filesOf(it).length)
       .sort((a, b) => ((a[1] - cur + all.length) % all.length) - ((b[1] - cur + all.length) % all.length));
     const seen = new Set(), out = [];
-    for (const [it] of order) if (!seen.has(it.deck.key)) { seen.add(it.deck.key); out.push(Object.assign({ file: fileName(it.deck), item: it.name }, it.deck)); }
+    for (const [it] of order) for (const f of filesOf(it)) {
+      if (seen.has(f.key)) continue;
+      seen.add(f.key);
+      out.push(Object.assign({ file: fileName(f), item: it.name, kind: f === it.deck ? 'deck' : 'holding' }, f));
+    }
     return out;
   }
-  const nextDeck = () => {
+  // The next item's files (holding slide and/or deck), for "ready" checks
+  const nextFiles = () => {
     const sheet = readJSON('runsheet', { items: [] });
     const st = readJSON('runsheet_state', {});
-    if (!st.active || st.finished || !window.RunsheetCore) return null;
+    if (!st.active || st.finished || !window.RunsheetCore) return [];
     const norm = RunsheetCore.normalise(sheet);
     for (let j = (st.index == null ? -1 : st.index) + 1; j < norm.items.length; j++) {
       if (j === norm.endIdx) continue;
-      const it = (sheet.items || []).find(x => x && x.id === norm.items[j].id);
-      return it && it.deck ? it.deck : null;
+      return filesOf((sheet.items || []).find(x => x && x.id === norm.items[j].id));
     }
-    return null;
+    return [];
   };
+
 
   // ─── Machines ─────────────────────────────────────────────────────────────
   function machine(id) {
     let M = machines.get(id);
     if (!M) {
       M = { id, receiver: null, player: null, have: new Map(), prepared: new Map(), syncing: false, again: false,
-        transfer: null, pendingStart: '', error: '', blocked: '', tidied: '' };
+        transfer: null, pendingStart: '', pendingHolding: '', error: '', blocked: '', tidied: '' };
       machines.set(id, M);
     }
     return M;
@@ -157,7 +172,8 @@
     if (M.player && M.player !== e) { rejectQueue(M.player, 'replaced'); loose.add(M.player); }
     M.player = e;
     M.prepared = new Map();
-    if (lastKey) M.pendingStart = lastKey;          // a late (or backup) machine catches up with what's showing
+    if (lastHolding) M.pendingHolding = lastHolding;   // a late (or backup) machine catches up: the holding slide,
+    if (lastKey) M.pendingStart = lastKey;              // and the deck that's showing
     sync(M);
   }
 
@@ -294,6 +310,7 @@
             if (a.ok && typeof a.result === 'string') { M.prepared.set(deck.key, a.result); M.error = ''; }
             else { M.error = `Couldn’t prepare “${deck.name}”: ${a.error || 'error'}`; complete = false; continue; }
           }
+          if (M.pendingHolding === deck.key) holdingOn(M, deck.key);
           if (M.pendingStart === deck.key) startOn(M, deck.key);
           refreshPanel(); infoAll(); announce();
         }
@@ -329,9 +346,28 @@
       refreshPanel();
     }).catch(err => { M.error = err.message; refreshPanel(); });
   }
-  // Next reached an item with a deck: every machine starts it, at once where it's ready
+  // The holding slide becomes the machine's wallpaper (shown whenever no deck is up)
+  function holdingOn(M, key) {
+    if (!M.player) { M.pendingHolding = key; return; }
+    const name = M.prepared.get(key);
+    if (!name) { M.pendingHolding = key; sync(M); return; }
+    M.pendingHolding = '';
+    cmd(M.player, 'wallpaper', name, null, 30000).then(a => {
+      if (!a.ok) M.error = `Couldn’t set the holding slide: ${a.error || 'error'}`;
+      refreshPanel();
+    }).catch(err => { M.error = err.message; refreshPanel(); });
+  }
+  function setHolding(item) {
+    lastHolding = item.holding.key;
+    localStorage.setItem(HOLD_KEY, lastHolding);
+    for (const M of machines.values()) holdingOn(M, lastHolding);
+  }
+  // Next reached an item with slides: its holding slide (if any) becomes the wallpaper, then
+  // its deck (if any) starts, on every machine, at once where it's ready
   function start(item) {
-    if (!item || !item.deck || !item.deck.key) return;
+    if (!item) return;
+    if (item.holding && item.holding.key) setHolding(item);
+    if (!item.deck || !item.deck.key) return;
     lastKey = item.deck.key;
     localStorage.setItem(LAST_KEY, lastKey);
     for (const M of machines.values()) startOn(M, lastKey);
@@ -340,7 +376,16 @@
   }
   // Back (or a sheet edit) made `item` the current one: show its deck, unless it's already up
   function current(item) {
-    if (item && item.deck && item.deck.key && item.deck.key !== lastKey) start(item);
+    if (item && item.holding && item.holding.key && item.holding.key !== lastHolding) setHolding(item);
+    if (item && item.deck && item.deck.key && item.deck.key !== lastKey) start({ name: item.name, deck: item.deck });
+  }
+  // Close every slide show on every machine (the holding slide shows), including one opened there
+  // by hand. A machine connecting later isn't told to open the last deck again.
+  function close() {
+    lastKey = ''; localStorage.removeItem(LAST_KEY);
+    for (const M of machines.values()) { M.pendingStart = ''; if (M.player) cmd(M.player, 'stop', 'all').catch(() => {}); }
+    for (const p of loose) cmd(p, 'stop', 'all').catch(() => {});
+    if (!machines.size && !loose.size) flash('No PowerPoint computer is connected');
   }
   const flash = text => { if (window.runsheet && window.runsheet.flash) window.runsheet.flash(text); };
 
@@ -373,7 +418,7 @@
         : s.receiver === 'lan' ? (s.folder ? 'receiver <b class="pp-lan">LAN direct</b>' : '<span class="pp-warn">receiver: no folder chosen</span>')
         : '<span class="pp-warn">receiver via server: decks need the same network</span>');
       bits.push(s.player ? (s.simulate ? 'player (simulating)' : 'player ✓') + (s.presenter ? ', Presenter View' : '') : '<span class="pp-warn">player not running</span>');
-      if (s.total) bits.push(s.transfer ? `sending ${esc(s.transfer.name)} ${s.transfer.pct}%` : `${s.ready}/${s.total} decks ready`);
+      if (s.total) bits.push(s.transfer ? `sending ${esc(s.transfer.name)} ${s.transfer.pct}%` : `${s.ready}/${s.total} files ready`);
     }
     if (s.current) bits.push((s.showing ? 'showing ' : 'last: ') + esc(s.current.replace(/ ~[0-9a-z]{1,6}(?=\.\w+$)/, '')));
     let line = bits.join(' · ');
@@ -382,14 +427,14 @@
   }
   // Status line for the run sheet dashboard, when the next item has slides
   function hint() {
-    const d = nextDeck();
-    if (!d) return '';
+    const fs = nextFiles();
+    if (!fs.length) return '';
     if (!machines.size && !loose.size) return 'next has slides: no PowerPoint computer connected';
-    const notReady = [...machines.values()].filter(M => !M.prepared.has(d.key));
+    const notReady = [...machines.values()].filter(M => fs.some(f => !M.prepared.has(f.key)));
     if (!notReady.length) return '';
     const M = notReady[0];
     const t = M.transfer;
-    return `slides for next not ready on ${label(M)}` + (t && t.key === d.key ? ` (sending ${t.size ? Math.floor(t.acked / t.size * 100) : 0}%)` : '');
+    return `slides for next not ready on ${label(M)}` + (t && fs.some(f => f.key === t.key) ? ` (sending ${t.size ? Math.floor(t.acked / t.size * 100) : 0}%)` : '');
   }
   // What each receiver page shows about its machine
   function infoAll() {
@@ -408,18 +453,18 @@
   function announce() {
     const s = summary().filter(x => x.player);
     const first = s[0];
-    const d = nextDeck();
+    const fs = nextFiles();
     const vars = {
       pptx_machines: String(s.length),
       pptx_current: first && first.current ? first.current.replace(/ ~[0-9a-z]{1,6}(?=\.\w+$)/, '') : '',
       pptx_showing: first && first.showing ? '1' : '0',
-      pptx_next_ready: d ? ([...machines.values()].every(M => M.prepared.has(d.key)) && machines.size ? '1' : '0') : '',
+      pptx_next_ready: fs.length ? ([...machines.values()].every(M => fs.every(f => M.prepared.has(f.key))) && machines.size ? '1' : '0') : '',
     };
     const v = JSON.stringify(vars);
     if (v !== lastVars && window.timerAPI && window.timerAPI.send) { lastVars = v; window.timerAPI.send({ setVariableValues: vars }); }
   }
   function opened() { lastVars = ''; announce(); }
 
-  window.pptxHub = { join, leave, message, mode, changed, start, current, summary, describe, hint, opened, fileName,
+  window.pptxHub = { join, leave, message, mode, changed, start, current, close, summary, describe, hint, opened, fileName,
     get count() { return machines.size + loose.size; } };
 })();

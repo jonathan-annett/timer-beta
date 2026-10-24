@@ -59,6 +59,17 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
   starts as soon as it is. The new show starts before the old one is closed (no desktop flash).
 - **Item without a deck:** nothing; the last deck stays up. **Back** onto a deck item shows it
   again if another deck is up.
+- **Holding slides:** an item can carry an image (`item.holding`, key `rsimg:…`; PNG, JPG or BMP),
+  sent ahead like decks. When the item starts, every machine sets it as the Windows desktop
+  wallpaper (`wallpaper`, style Fill), so it shows whenever no deck is up (breaks, introducing a
+  speaker without showing their title). With a deck as well, the wallpaper is set first. A machine
+  connecting later gets the last holding slide. The player never tidies away the wallpaper in use.
+  On a typical setup the projector is the second display, which shows the wallpaper without the
+  taskbar or desktop icons.
+- **Close slides** (`{cmd:'pptxclose'}`: the run sheet editor's *Close slides* button, the Stream
+  Deck key *Close slides*, Companion): `stop all` on every machine, which closes every PowerPoint
+  slide show there (one opened by hand too), so the holding slide shows. A machine connecting
+  afterwards isn't told to open the last deck.
 - **Protected View:** files saved by a browser carry the "downloaded from the internet" mark,
   which would make PowerPoint open them in Protected View (no slide show). The player removes it
   from its copy (`Unblock-File`); the files come from the operator's own timer.
@@ -85,7 +96,8 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
   advanced on each machine itself (the presenter's clicker, the operator there); the timer never
   sends slide changes.
 - **Bus variables:** `pptx_machines`, `pptx_current`, `pptx_showing`, `pptx_next_ready` (the
-  Companion module has feedbacks and presets for them).
+  next item's deck and holding slide are ready everywhere). The Companion module has feedbacks,
+  presets and a *close slides* action.
 
 ## Protocol
 
@@ -122,11 +134,11 @@ Timer → player: `{t:'pp', req, verb, arg, keep?}`, one at a time (the timer wa
 | `check` | | reads `<inbox>\.timer-pair` again | `result`: the receiver id in it |
 | `send` | file name in Inbox | copies it into Show (in the background; never overwrites: a changed file gets `name v2.ext`) | `result`: the name in Show; `note:'unchanged'` if already there |
 | `start` | file name in Show | `powerpnt.exe /S`, waits for the show window, Presenter View if on, then closes the previous deck's show | `result`; a missing file fails without touching the current show |
-| `stop` | | closes the show | |
+| `stop` | `all` or nothing | closes the deck's show; `all`: every PowerPoint slide show on the machine | |
 | `status` | | | `current`, `showing` |
 | `delete` | file name in Show | closes it if showing, deletes it | |
 | `tidy` | `keep`: names | deletes other files in Show (not the current one) | `result`: how many |
-| `wallpaper` | image name in Show | sets the desktop wallpaper | |
+| `wallpaper` | image name in Show | sets the desktop wallpaper (the holding slide); `tidy` keeps it | |
 | `quit` | | acks, then the player exits (the show stays up) | |
 
 File names are leaf names only (`[IO.Path]::GetFileName`; names starting with `.` are refused).
@@ -155,7 +167,8 @@ The receiver answers an offer with `pf-have` (it has that key, same name and siz
 `pf-prog {got}` every 2 MB written; the timer keeps at most 16 MB unacknowledged. The browser
 writes to a temporary file and only replaces the real name when the whole file is in, so the
 player never sees half a deck. Names must be plain PowerPoint file names
-(`.pptx .ppsx .pptm .ppsm .ppt .pps .potx`); keys `rsdeck:<id>:<time>`.
+(`.pptx .ppsx .pptm .ppsm .ppt .pps .potx`) or holding-slide images (`.png .jpg .jpeg .bmp`);
+keys `rsdeck:<id>:<time>` / `rsimg:<id>:<time>`.
 
 ### Testing without Windows
 

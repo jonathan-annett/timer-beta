@@ -228,6 +228,14 @@ export function UpdateActions(self: ModuleInstance): void {
 				await api({ cmd: String(ev.options.what) })
 			},
 		},
+		slides_close: {
+			name: 'PowerPoint: close slides (show the holding slide)',
+			description: 'Closes whatever slide show is up on every PowerPoint computer connected to the timer, so its holding slide (wallpaper) shows.',
+			options: [],
+			callback: async () => {
+				await api({ cmd: 'pptxclose' })
+			},
+		},
 		keys: {
 			name: 'Send keystrokes to the timer',
 			description: 'Keys as the timer’s keyboard reference lists them, separated by commas, e.g. "1,0,Enter" or "Control,ArrowUp,~Control" (~ = key up). Careful: this does whatever the keys do.',
