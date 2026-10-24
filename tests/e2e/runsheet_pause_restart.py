@@ -15,7 +15,7 @@ def h(route, req):
     return route.abort()
 errs=[]
 with sync_playwright() as p:
-    b=p.chromium.launch(args=["--no-proxy-server"])
+    b=p.chromium.launch(args=["--no-proxy-server","--disable-features=LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets"])
     c=b.new_context(ignore_https_errors=True, viewport={"width":1440,"height":900})
     c.clock.install()
     c.add_init_script("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';localStorage.runsheet=%s}" % json.dumps(json.dumps(SHEET)))
@@ -40,7 +40,7 @@ with sync_playwright() as p:
     print("resumed:", st()[1], "|", e.text_content("#live"))
     c.clock.fast_forward("04:00"); e.wait_for_timeout(2500)
     before=json.loads(t.evaluate("localStorage.runsheet_state"))["log"][0]
-    e.click("#btn-restart"); e.click("#btn-restart"); e.wait_for_timeout(2500)
+    e.click("#btn-restart"); e.wait_for_timeout(2500)
     after=json.loads(t.evaluate("localStorage.runsheet_state"))["log"][0]
     print("restart: log actual moved by", (after["actual"]-before["actual"])/1000, "s; orig kept:", after.get("orig")==before["actual"], "restarts:", after.get("restarts"))
     print("after restart:", st()); print("  live:", e.text_content("#live")); print("  dashboard cur:", t.text_content("#rs_cur"), "| next:", t.text_content("#rs_next"))

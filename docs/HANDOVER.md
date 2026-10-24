@@ -73,6 +73,11 @@ relayed through the user). Suggested setup and loop:
 
 ## What was built recently (newest first)
 
+- **Restart guard is opt-in** (24 Oct): the editor's Restart now acts on one click; the
+  two-clicks-within-2-s guard is the *Options* panel's **Restart needs a second click**
+  (`runsheet_restart_confirm`, per computer, off by default; the remote editor keeps it in its
+  own computer's localStorage).
+
 - **Cache busting** (24 Oct): `tools/stamp-versions.mjs` stamps `?v=<content hash>` on every
   script/style link in `public/*.html`; committed, so the manual copy deploys it. Only changed
   files get new URLs. The host already sends `max-age=0` on everything, so the HTML is re-checked;
@@ -102,7 +107,7 @@ the remote path in `remote-control.js`/`remote-phone.js`):
 - **Restart / pause semantics** (`9af8b59`): Restart = the presenter gets their full allotted
   time from now; the item's logged start moves and the show runs late. A pause makes every
   later time tick up (status line *Paused m:ss · …*).
-- **Editor header** (`8e850e8`): countdown preview, Pause/Resume, Restart (two clicks).
+- **Editor header** (`8e850e8`): countdown preview, Pause/Resume, Restart.
 
 PowerPoint machines (`pptx-hub.js`, `pptx.html`/`pptx-receiver.js`, `Pptx-WsController.ps1`):
 
@@ -155,7 +160,6 @@ Run sheet:
 
 ## Offers made but not taken up (ask before doing)
 
-- Restart with a single click (currently two within 2 s).
 - Ripple when editing the start of items other than the next one (currently only the next).
 - A provisional schedule counted from "now" before a start-time-less show begins (currently no
   times until the first Next).

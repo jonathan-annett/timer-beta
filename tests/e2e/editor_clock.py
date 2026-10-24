@@ -15,7 +15,7 @@ def h(route, req):
     return route.abort()
 errs=[]
 with sync_playwright() as p:
-    b=p.chromium.launch(args=["--no-proxy-server","--disable-features=WebRtcHideLocalIpsWithMdns"])
+    b=p.chromium.launch(args=["--no-proxy-server","--disable-features=WebRtcHideLocalIpsWithMdns,LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets"])
     c=b.new_context(ignore_https_errors=True, viewport={"width":1440,"height":900})
     c.add_init_script("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';localStorage.runsheet=%s}" % json.dumps(json.dumps(SHEET)))
     c.route("**/*",h)
@@ -31,14 +31,20 @@ with sync_playwright() as p:
     e.screenshot(path=OUT+"/rsclock_paused.png", clip={"x":0,"y":0,"width":1440,"height":140})
     e.click("#btn-pause"); e.wait_for_timeout(1500); print("after Resume:", clk(e))
     t.evaluate("processTimerApiMessage({cmd:'start', msecs: 42000})"); e.wait_for_timeout(1500); print("timer at 42 s (impending):", clk(e))
-    e.click("#btn-restart"); e.wait_for_timeout(300); print("one click:", e.text_content("#btn-restart"), "| timer:", t.text_content("#remain_disp"))
-    e.click("#btn-restart"); e.wait_for_timeout(1500); print("two clicks:", clk(e), "| timer:", t.text_content("#remain_disp"),
+    print("second-click option by default:", e.is_checked("#opt-restart-confirm"))
+    e.click("#btn-restart"); e.wait_for_timeout(1500); print("one click (option off) restarts:", clk(e), "| timer:", t.text_content("#remain_disp"),
         "| msg:", t.evaluate("processTimerApiMessage({cmd:'snapshot'}).message"), "| log len:", len(json.loads(t.evaluate("localStorage.runsheet_state"))["log"]))
+    t.evaluate("processTimerApiMessage({cmd:'start', msecs: 42000})"); e.wait_for_timeout(1200)
+    e.click("#opts summary"); e.check("#opt-restart-confirm"); print("option on, stored:", e.evaluate("localStorage.runsheet_restart_confirm"))
+    e.click("#btn-restart"); e.wait_for_timeout(300); print("one click (option on):", e.text_content("#btn-restart"), "| timer:", t.text_content("#remain_disp"))
+    e.wait_for_timeout(2200); print("2 s later, disarmed:", e.text_content("#btn-restart"))
+    e.click("#btn-restart"); e.click("#btn-restart"); e.wait_for_timeout(1500); print("two clicks (option on):", clk(e), "| timer:", t.text_content("#remain_disp"))
+    e.uncheck("#opt-restart-confirm"); print("option off, stored:", e.evaluate("localStorage.runsheet_restart_confirm"))
     e.screenshot(path=OUT+"/rsclock.png", clip={"x":0,"y":0,"width":1440,"height":140})
     # outside run sheet: default duration
     e.uncheck("#active"); e.wait_for_timeout(500)
     t.evaluate("processTimerApiMessage({cmd:'default', msecs: 600000})")
-    e.click("#btn-restart"); e.click("#btn-restart"); e.wait_for_timeout(1500); print("run sheet off, restart -> default 10 min:", clk(e))
+    e.click("#btn-restart"); e.wait_for_timeout(1500); print("run sheet off, restart -> default 10 min:", clk(e))
     e.check("#active"); e.wait_for_timeout(500)
     # remote editor
     t.click("#btnshare"); t.wait_for_timeout(1500)
@@ -53,7 +59,7 @@ with sync_playwright() as p:
     F().click("#btn-pause"); d.wait_for_timeout(1500); print("remote Pause -> timer paused:", t.evaluate("document.documentElement.classList.contains('paused')"), clk(F()))
     F().click("#btn-pause"); d.wait_for_timeout(1500); print("remote Resume:", t.evaluate("document.documentElement.classList.contains('paused')"), clk(F()))
     t.evaluate("processTimerApiMessage({cmd:'start', msecs: 20000})"); d.wait_for_timeout(1500)
-    F().click("#btn-restart"); F().click("#btn-restart"); d.wait_for_timeout(1500); print("remote Restart -> timer:", t.text_content("#remain_disp"), clk(F()))
+    F().click("#btn-restart"); d.wait_for_timeout(1500); print("remote Restart -> timer:", t.text_content("#remain_disp"), clk(F()))
     d.screenshot(path=OUT+"/rsclock_remote.png", clip={"x":0,"y":0,"width":1400,"height":160})
     # timer closed -> stale
     t.close(); e.wait_for_timeout(5500); print("timer closed, local:", clk(e))

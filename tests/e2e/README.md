@@ -24,7 +24,7 @@ is stopped after 2 hours at most; restart it if a test can't connect.
 `./run_all.sh` runs them all (or `./run_all.sh runsheet_*` for some), starting the pairing
 server for the run if none is listening, and prints `ok` / `FAIL` per script (FAIL = page errors
 or a crash; logs in `$E2E_OUT`). It also warns if the `?v=` stamps from `tools/stamp-versions.mjs`
-are out of date. On a Mac: `pip3 install playwright && python3 -m playwright install chromium` first.
+are out of date. On a Mac (Homebrew Python won't install packages system-wide), use a venv here, which `run_all.sh` picks up by itself: `python3 -m venv tests/e2e/.venv && tests/e2e/.venv/bin/pip install playwright && tests/e2e/.venv/bin/python -m playwright install chromium`. Run a single script with `tests/e2e/.venv/bin/python tests/e2e/<name>.py`.
 
 The same certificate and pairing server also back the local preview, `node tools/serve-local.mjs`
 (https://localhost:8444/, no caching).
@@ -57,3 +57,7 @@ command as a JSON line). The real player has only been run by the user on Window
 - Headless Chromium needs `--no-proxy-server`; WebRTC LAN tests add
   `--disable-features=WebRtcHideLocalIpsWithMdns`. Disabling `RTCPeerConnection` on a phone
   page forces the server fallback.
+
+The scripts launch Chromium with `--disable-features=LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets`:
+newer Chromium (156 here) blocks a public site (the tests pose as timer.sophtwhere.com) from opening
+`wss://localhost:8443/`, so every share test failed with *no timer with this code*. Keep it in new scripts.

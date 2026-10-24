@@ -15,7 +15,7 @@ def h(route, req):
     return route.abort()
 errs=[]
 with sync_playwright() as p:
-    b=p.chromium.launch(args=["--no-proxy-server"])
+    b=p.chromium.launch(args=["--no-proxy-server","--disable-features=LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets"])
     c=b.new_context(ignore_https_errors=True, viewport={"width":1440,"height":900})
     c.add_init_script("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';localStorage.runsheet=%s}" % json.dumps(json.dumps(SHEET)))
     c.route("**/*",h)

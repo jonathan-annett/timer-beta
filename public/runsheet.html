@@ -122,6 +122,7 @@
     .panel .row { display: flex; gap: 0.571rem; align-items: center; margin-top: 0.571rem; flex-wrap: wrap; }
     .panel label.inline { display: flex; align-items: center; gap: 0.571rem; color: var(--dim); }
     .panel label.inline input { width: 5rem; border-color: var(--line2); }
+    .panel label.check { display: flex; align-items: center; gap: 0.571rem; }
     #imp-msg { font-size: 0.857rem; margin-top: 0.571rem; color: var(--dim); white-space: pre-line; }
     #imp-msg.ok { color: var(--now-text); } #imp-msg.warn { color: var(--warn); }
     .sep { border: 0; border-top: 1px solid var(--line); margin: 1rem 0 0.429rem; }
@@ -162,7 +163,7 @@
       <input id="title" placeholder="Show title" aria-label="Show title">
       <div id="clock" class="stale" title="The timer's countdown"><span id="clock-remain">–:––</span><span id="clock-state"></span></div>
       <button id="btn-pause" title="Pause or resume the countdown">Pause</button>
-      <button id="btn-restart" title="Restart the countdown with the current item's full time (the default outside the run sheet). Only the timer: slides, video and the log are left alone. Click twice.">Restart</button>
+      <button id="btn-restart" title="Restart the countdown with the current item's full time (the default outside the run sheet). Only the timer: slides, video and the log are left alone.">Restart</button>
       <label class="mode" title="When on, Page Down / Next advances the run sheet"><input type="checkbox" id="active"> Run sheet mode</label>
       <span id="live"></span>
       <button id="btn-help" title="Help (? or F1)" aria-label="Help">?</button>
@@ -225,6 +226,14 @@
             <div class="row"><button id="log-export">Export log CSV</button></div>
           </div>
         </details>
+
+        <details id="opts">
+          <summary>Options</summary>
+          <div class="panel">
+            <label class="check"><input type="checkbox" id="opt-restart-confirm"> Restart needs a second click</label>
+            <p class="hint">Click Restart again within 2 seconds to restart, so a stray click can't reset a talk. Kept on this computer only.</p>
+          </div>
+        </details>
       </aside>
     </div>
   </div>
@@ -233,6 +242,6 @@
   <script src="help-overlay.js?v=8a5dbd9d"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="runsheet-core.js?v=485855db"></script>
-  <script src="runsheet-editor.js?v=a882b8e1"></script>
+  <script src="runsheet-editor.js?v=1ea8f972"></script>
 </body>
 </html>

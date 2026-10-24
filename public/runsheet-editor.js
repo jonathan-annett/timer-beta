@@ -7,8 +7,9 @@
  * Remote mode (runsheet.html?remote inside remote.html, on a computer that controls a timer
  * elsewhere): the same editor, but the sheet, state and status come from the page around it
  * (postMessage, relayed from the timer over the phone-control link) and edits and commands go
- * back the same way. This computer's own localStorage and video store aren't touched. Videos
- * are sent to the timer's computer, and only over a direct (same network) link.
+ * back the same way. This computer's own localStorage and video store aren't touched (except for
+ * the editor's own Options preference). Videos are sent to the timer's computer, and only over a
+ * direct (same network) link.
  * MIT Licensed
  */
 
@@ -1058,11 +1059,20 @@
   renderClock();
 
   $('btn-pause').addEventListener('click', () => send('pause'));
-  // Restart needs a second click within 2 s: one stray click mid-talk would reset the countdown
+  // Options > "Restart needs a second click" (off by default): then a second click within 2 s, so
+  // one stray click mid-talk can't reset the countdown. A preference of this computer, so it's kept
+  // in its own localStorage in remote mode too (the only key the remote editor touches).
+  const RESTART_CONFIRM_KEY = 'runsheet_restart_confirm';
+  const restartConfirm = () => { try { return localStorage.getItem(RESTART_CONFIRM_KEY) === '1'; } catch (_) { return false; } };
+  $('opt-restart-confirm').checked = restartConfirm();
+  $('opt-restart-confirm').addEventListener('change', e => {
+    try { if (e.target.checked) localStorage.setItem(RESTART_CONFIRM_KEY, '1'); else localStorage.removeItem(RESTART_CONFIRM_KEY); } catch (_) { /* ignore */ }
+  });
+  window.addEventListener('storage', e => { if (e.key === RESTART_CONFIRM_KEY) $('opt-restart-confirm').checked = restartConfirm(); });
   let restartArmed = null;
   $('btn-restart').addEventListener('click', () => {
     const b = $('btn-restart');
-    if (restartArmed) {
+    if (restartArmed || !restartConfirm()) {
       clearTimeout(restartArmed); restartArmed = null;
       b.classList.remove('armed'); b.textContent = 'Restart';
       send('restart');

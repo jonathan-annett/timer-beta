@@ -12,11 +12,12 @@ if ! (echo > /dev/tcp/127.0.0.1/8443) 2>/dev/null && ! nc -z 127.0.0.1 8443 2>/d
   sleep 1.5
 fi
 if [ $# -gt 0 ]; then set -- $(for p in "$@"; do ls $p.py 2>/dev/null; done); else set -- *.py; fi
+PY=python3; [ -x .venv/bin/python ] && PY=.venv/bin/python   # tests/e2e/.venv: Playwright installed there (see README)
 TO="$(command -v timeout || command -v gtimeout || true)"   # macOS has neither unless coreutils is installed
 fails=0
 for t in "$@"; do
   name="${t%.py}"
-  if ${TO:+$TO 600} python3 "$t" > "$OUT/$name.log" 2>&1 && grep -q '^errors: \[\]' "$OUT/$name.log"; then
+  if ${TO:+$TO 600} $PY "$t" > "$OUT/$name.log" 2>&1 && grep -q '^errors: \[\]' "$OUT/$name.log"; then
     echo "ok    $name"
   else
     echo "FAIL  $name   (see $OUT/$name.log)"; fails=$((fails + 1))

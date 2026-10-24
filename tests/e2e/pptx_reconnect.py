@@ -12,7 +12,7 @@ def h(route, req):
         if os.path.isfile(fp): return route.fulfill(status=200, body=open(fp, "rb").read(), headers={"content-type": mimetypes.guess_type(fp)[0] or "text/plain"})
         return route.fulfill(status=404, body=b"")
     return route.abort()
-ARGS = ["--no-proxy-server", "--disable-features=WebRtcHideLocalIpsWithMdns"]
+ARGS = ["--no-proxy-server", "--disable-features=WebRtcHideLocalIpsWithMdns,LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets"]
 errs = []
 player_log = []
 def run_player(link, pair, name="Stage"):
