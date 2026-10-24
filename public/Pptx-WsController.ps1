@@ -257,9 +257,10 @@ public static class TimerWin {
 '@
 }
 
-$ShowClasses = @('screenClass', 'PodiumParent')    # the slide show window, and Presenter View's
-$script:ShowWindows = @()                          # handles of the deck on screen
-$script:Wallpaper = ''                             # the holding slide (file in Show) set as wallpaper
+$ShowClass = 'screenClass'           # a slide show window (one per running show)
+$PvClass = 'PodiumParent'            # Presenter View (PowerPoint may hand it from one deck to the next)
+$SettleMs = 2000                     # after the new show's window appears, before the old deck is closed
+$script:Wallpaper = ''               # the holding slide (file in Show) set as wallpaper
 
 # PowerPoint windows: objects {h, cls, title}
 function Get-PptWindows {
@@ -270,44 +271,51 @@ function Get-PptWindows {
         [pscustomobject]@{ h = [long]$parts[0]; cls = $parts[1]; title = $parts[2] }
     }
 }
-# The slide show (and Presenter View) windows of one deck: by class, and its name in the title
-function Get-ShowWindows([string]$Leaf) {
-    $base = [IO.Path]::GetFileNameWithoutExtension($Leaf)
-    @(Get-PptWindows | Where-Object { $ShowClasses -contains $_.cls -and $_.title.IndexOf($base, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
+function Test-Names([string]$Title, [string]$Leaf) {
+    return $Title.IndexOf([IO.Path]::GetFileNameWithoutExtension($Leaf), [StringComparison]::OrdinalIgnoreCase) -ge 0
 }
+# A deck's slide show windows, found by class and its name in the title, every time (never by a
+# remembered handle: PowerPoint reuses windows between decks)
+function Get-ShowWindows([string]$Leaf) {
+    @(Get-PptWindows | Where-Object { $_.cls -eq $ShowClass -and (Test-Names $_.title $Leaf) })
+}
+function Get-PvWindows { @(Get-PptWindows | Where-Object { $_.cls -eq $PvClass }) }
 function Test-Alive([long]$H) { return [TimerWin]::IsWindow([IntPtr]$H) }
 function Close-Windows([long[]]$Handles) {
     foreach ($h in $Handles) { if (Test-Alive $h) { [void][TimerWin]::PostMessage([IntPtr]$h, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) } }   # WM_CLOSE
 }
-function Focus-Show {
-    $h = @($script:ShowWindows | Where-Object { Test-Alive $_ }) | Select-Object -First 1
-    if (-not $h) { throw 'no slide show on screen' }
-    if (-not [TimerWin]::Focus([IntPtr]$h)) { Start-Sleep -Milliseconds 150; [void][TimerWin]::Focus([IntPtr]$h) }
+function Wait-Gone([long[]]$Handles, [int]$Seconds) {
+    $until = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Date) -lt $until -and @($Handles | Where-Object { Test-Alive $_ }).Count) { Start-Sleep -Milliseconds 200 }
+    return @($Handles | Where-Object { Test-Alive $_ })
+}
+function Focus-Window([long]$H) {
+    if (-not [TimerWin]::Focus([IntPtr]$H)) { Start-Sleep -Milliseconds 150; [void][TimerWin]::Focus([IntPtr]$H) }
     Start-Sleep -Milliseconds 150
 }
 
 # Close the deck on screen; with -All, every PowerPoint slide show (one opened by hand too), so
-# the holding slide (the wallpaper) shows
+# the holding slide (the wallpaper) shows. Only slide show windows are closed: Presenter View
+# goes with its show (it's closed directly only if one is left over afterwards).
 function Close-Show([switch]$All) {
     if (-not $Simulate) {
-        $hs = @($script:ShowWindows)
-        if ($script:Current) { $hs += @(Get-ShowWindows $script:Current | ForEach-Object { $_.h }) }
-        if ($All) { $hs += @(Get-PptWindows | Where-Object { $ShowClasses -contains $_.cls } | ForEach-Object { $_.h }) }
+        $hs = if ($All) { @(Get-PptWindows | Where-Object { $_.cls -eq $ShowClass } | ForEach-Object { $_.h }) }
+              elseif ($script:Current) { @(Get-ShowWindows $script:Current | ForEach-Object { $_.h }) } else { @() }
         Close-Windows $hs
-        # If a window is still there after a few seconds, Esc ends the show
-        $until = (Get-Date).AddSeconds(3)
-        while ((Get-Date) -lt $until -and @($hs | Where-Object { Test-Alive $_ }).Count) { Start-Sleep -Milliseconds 200 }
-        $left = @($hs | Where-Object { Test-Alive $_ }) | Select-Object -First 1
-        if ($left) { [void][TimerWin]::Focus([IntPtr]$left); Start-Sleep -Milliseconds 150; [TimerWin]::Key(0x1B, $false) }
+        $left = @(Wait-Gone $hs 3)
+        if ($left.Count) { Focus-Window $left[0]; [TimerWin]::Key(0x1B, $false); [void](Wait-Gone $left 2) }   # Esc
+        if ($All) {
+            $pv = @(Get-PvWindows | ForEach-Object { $_.h })
+            if ($pv.Count) { Start-Sleep -Milliseconds 500; Close-Windows @(Get-PvWindows | ForEach-Object { $_.h }) }
+        }
     }
-    $script:ShowWindows = @()
     $script:Current = ''
 }
 
 function Start-Show([string]$Leaf) {
     $path = Join-Path $ShowFolder $Leaf
     if ($Simulate) { $script:Current = $Leaf; Log "[simulate] showing $Leaf$(if ($NoPresenterView) { '' } else { ' (Presenter View)' })" 'Cyan'; return }
-    $old = @($script:ShowWindows)
+    $oldLeaf = $script:Current
     $before = @(Get-PptWindows | ForEach-Object { $_.h })
     Start-Process -FilePath 'powerpnt.exe' -ArgumentList '/S', ('"' + $path + '"')
     # Wait for this deck's slide show window
@@ -323,38 +331,41 @@ function Start-Show([string]$Leaf) {
         Get-PptWindows | ForEach-Object { Log ("   {0} | {1}" -f $_.cls, $_.title) 'Red' }
         throw 'the slide show did not start (is a PowerPoint dialog waiting for a click?)'
     }
-    $script:ShowWindows = @($new | ForEach-Object { $_.h })
     $script:Current = $Leaf
-    $base = [IO.Path]::GetFileNameWithoutExtension($Leaf)
 
-    # Close the previous deck now that the new one is up (no desktop in between). PowerPoint may
-    # have handed a window over to the new deck (its title then names the new deck): leave those.
-    $nowTitles = @{}
-    foreach ($w in @(Get-PptWindows)) { $nowTitles[$w.h] = $w.title }
-    $closing = @($old | Where-Object { $script:ShowWindows -notcontains $_ -and -not ($nowTitles.ContainsKey($_) -and $nowTitles[$_].IndexOf($base, [StringComparison]::OrdinalIgnoreCase) -ge 0) })
-    Close-Windows $closing
-    $until = (Get-Date).AddSeconds(4)
-    while ((Get-Date) -lt $until -and @($closing | Where-Object { Test-Alive $_ }).Count) { Start-Sleep -Milliseconds 200 }
+    # Let the new deck settle, then close the previous deck's slide show window: found now by its
+    # title (the old name, not the new one), never Presenter View, which PowerPoint may already
+    # have handed to the new deck. The new show is up first, so there's no desktop in between.
+    if ($oldLeaf -and $oldLeaf -ne $Leaf) {
+        Start-Sleep -Milliseconds $SettleMs
+        $oldWins = @(Get-ShowWindows $oldLeaf | Where-Object { -not (Test-Names $_.title $Leaf) } | ForEach-Object { $_.h })
+        if ($oldWins.Count) {
+            Close-Windows $oldWins
+            $left = @(Wait-Gone $oldWins 4)
+            if ($left.Count) { Log 'The previous deck is still open' 'Yellow' }
+        }
+    }
 
     # Presenter View is a toggle (context menu, R), and a deck opened while another was in
-    # Presenter View comes up in Presenter View too. So look first, once the old deck has gone:
-    # any Presenter View window left now is the new deck's. Press only if it isn't as wanted.
+    # Presenter View comes up in Presenter View too. So look first, once the old deck has gone,
+    # and press only if it isn't as wanted.
     Start-Sleep -Milliseconds 1200
-    $hasPv = [bool]@(Get-PptWindows | Where-Object { $_.cls -eq 'PodiumParent' }).Count
+    $hasPv = [bool](Get-PvWindows).Count
     $wantPv = -not $NoPresenterView
     if ($hasPv -ne $wantPv) {
-        Focus-Show
-        [TimerWin]::Key(0x5D, $true)              # VK_APPS: the show's context menu
-        Start-Sleep -Milliseconds 400
-        [TimerWin]::Key(0x52, $false)             # R: Show / Hide Presenter View
-        Start-Sleep -Milliseconds 1200
-        $hasPv = [bool]@(Get-PptWindows | Where-Object { $_.cls -eq 'PodiumParent' }).Count
+        $show = @(Get-ShowWindows $Leaf) | Select-Object -First 1
+        if ($show) {
+            Focus-Window $show.h
+            [TimerWin]::Key(0x5D, $true)          # VK_APPS: the show's context menu
+            Start-Sleep -Milliseconds 400
+            [TimerWin]::Key(0x52, $false)         # R: Show / Hide Presenter View
+            Start-Sleep -Milliseconds 1200
+            $hasPv = [bool](Get-PvWindows).Count
+        }
         if ($hasPv -ne $wantPv) { Log ("Presenter View may not have {0} (check the screen)" -f $(if ($wantPv) { 'opened' } else { 'closed' })) 'Yellow' }
     } elseif ($wantPv) { Log 'Already in Presenter View' }
     # While this is new: list PowerPoint's windows (class | title), to check the class names used above
     Get-PptWindows | ForEach-Object { Log ("   window: {0} | {1}" -f $_.cls, $_.title) 'DarkGray' }
-    # Track every window of this deck now (the Presenter View window may be new)
-    $script:ShowWindows = @($script:ShowWindows + @(Get-ShowWindows $Leaf | ForEach-Object { $_.h }) + @(Get-PptWindows | Where-Object { $_.cls -eq 'PodiumParent' } | ForEach-Object { $_.h }) | Select-Object -Unique)
 }
 
 # What's on screen: the deck, and whether its show is still up (ended by hand: Esc, last slide)
@@ -362,7 +373,7 @@ function Get-ShowState {
     $st = @{ current = $script:Current; showing = $false }
     if (-not $script:Current) { return $st }
     if ($Simulate) { $st.showing = $true; return $st }
-    $st.showing = [bool](@($script:ShowWindows | Where-Object { Test-Alive $_ }).Count)
+    $st.showing = [bool](Get-ShowWindows $script:Current).Count
     return $st
 }
 

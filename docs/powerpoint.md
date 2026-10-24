@@ -85,9 +85,12 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
   `-NoPresenterView`). It logs a warning if the state still isn't right afterwards, and (for now)
   lists PowerPoint's windows after each start so the class names can be checked.
 - **No COM:** PowerPoint's COM automation caused trouble when closing files, so the player
-  doesn't use it. It tracks the show by its windows (class `screenClass` / `PodiumParent`, the
-  deck's name in the title), closes a show by sending its window `WM_CLOSE` (Esc if that doesn't
-  work). It never kills PowerPoint.
+  doesn't use it. It finds a deck's show by its window (class `screenClass`, the deck's name in
+  the title), looked up afresh each time, and closes a show by sending that window `WM_CLOSE`
+  (Esc if that doesn't work). It never kills PowerPoint.
+- **Switching decks:** the new deck starts first; 2 s after its window appears, the old deck's
+  slide show window is closed. Presenter View windows (class `PodiumParent`) are never closed in a
+  switch: PowerPoint hands Presenter View over to the new deck, and closing it ended both.
 - **Show ended by hand** (Esc, last slide): its window is gone, so the player reports
   `showing: false`.
 - **The show didn't appear** within 25 s (usually a PowerPoint dialog waiting for a click: sign-in,
