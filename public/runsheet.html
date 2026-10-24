@@ -139,6 +139,18 @@
     #clock.stale { background: transparent; } #clock.stale #clock-remain { color: var(--faint); }
     #btn-pause, #btn-restart { padding: 0.429rem 1rem; }
     #btn-restart.armed { background: #3a2a10; border-color: #8a6a20; color: var(--warn); }
+    tr.locked input { color: var(--dim); cursor: default; }
+    tr.locked input:hover { border-color: transparent; }
+    tr.hiddenrow td { opacity: 0.45; font-style: italic; }
+    tr.hiddenrow td.acts { opacity: 1; font-style: normal; }
+    input.conflict, input.conflict:hover { border-color: var(--behind); background: #3a1414; color: #ffb3b3; }
+    .st-conflict { color: var(--behind); font-weight: bold; white-space: normal; }
+    .show-hidden { margin: 0.4rem 0 0 0.6rem; background: transparent; border-color: transparent; color: var(--dim); font-size: 0.857rem; text-decoration: underline; }
+    .ask { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 50; }
+    .ask-box { background: var(--panel); border: 1px solid var(--line2); border-radius: 0.6rem; padding: 1.4rem 1.6rem; max-width: 38rem; box-shadow: 0 0.6rem 2rem rgba(0,0,0,0.6); }
+    .ask-text { font-size: 1.07rem; line-height: 1.5; margin-bottom: 1.2rem; }
+    .ask-btns { display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
+    .ask-btns button { padding: 0.5rem 1rem; }
     #btn-help { width: 2.2rem; padding: 0.3rem 0; font-weight: bold; }
   </style>
 </head>
@@ -172,6 +184,7 @@
         </table>
         <div class="empty" id="empty">No items yet. Paste a run sheet into <b>Add items</b> on the right, or add items one by one.</div>
         <button class="add-row" id="add-row">+ Add item</button>
+        <button class="show-hidden" id="show-hidden" hidden></button>
       </section>
 
       <aside>

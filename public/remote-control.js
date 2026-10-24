@@ -371,6 +371,7 @@
       ids.add(it.id);
       const out = { id: it.id, name: typeof it.name === 'string' ? it.name.slice(0, 300) : '',
         start: secs(it.start, 2 * 86400), duration: secs(it.duration, 86400) };
+      if (it.hidden === true) out.hidden = true;    // deleted after it ran: kept for the log
       // A video can stay (or move to another row), never be made up: only keys already on the sheet
       if (it.video && typeof it.video === 'object' && known.has(it.video.key)) {
         out.video = known.get(it.video.key);
@@ -415,6 +416,23 @@
       case 'pptxclose': if (window.pptxHub) window.pptxHub.close(); break;
       case 'pause':  processTimerApiMessage({ cmd: 'pause' }); break;
       case 'restart': if (rs.restart) rs.restart(); break;
+      // The item running now: a new duration, a new end (with the next item's start), its name on screen
+      case 'curdur':
+        if (rs.curDuration && typeof m.id === 'string' && ID_RE.test(m.id) && (m.duration === null || num(m.duration, 1, 86400) !== null))
+          rs.curDuration(m.id, m.duration);
+        break;
+      case 'curend': {
+        const t = Date.now();
+        if (rs.curEnd && typeof m.id === 'string' && ID_RE.test(m.id) && num(m.end, t - 86400e3, t + 2 * 86400e3) !== null &&
+            (m.nextId == null || (typeof m.nextId === 'string' && ID_RE.test(m.nextId))) &&
+            (m.nextStart == null || num(m.nextStart, 0, 2 * 86400) !== null))
+          rs.curEnd(m.id, m.end, m.nextId || null, m.nextStart == null ? null : m.nextStart);
+        break;
+      }
+      case 'livename':
+        if (rs.liveName && typeof m.id === 'string' && ID_RE.test(m.id) && typeof m.name === 'string' && m.name.length <= 300)
+          rs.liveName(m.id, m.name);
+        break;
     }
   }
 

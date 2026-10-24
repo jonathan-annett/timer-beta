@@ -173,6 +173,7 @@ var RunsheetCore = (function () {
       videoIdle: it.videoIdle === 'hide' ? 'hide' : 'show',
       deck: it.deck || null,                    // {key, name, size} (PowerPoint decks, pptx-hub.js)
       holding: it.holding || null,              // {key, name, size} (holding slide: an image set as the PowerPoint computers' wallpaper)
+      hidden: !!it.hidden,                      // a completed item "deleted" in the editor: kept for the record, not shown or run
       planned: planned[i],
       eff: eff[i],
       isEnd: i === endIdx,
@@ -206,6 +207,7 @@ var RunsheetCore = (function () {
         ...(it.video ? { video: it.video, videoIdle: it.videoIdle } : {}),
         ...(it.deck ? { deck: it.deck } : {}),
         ...(it.holding ? { holding: it.holding } : {}),
+        ...(it.hidden ? { hidden: true } : {}),
       })),
     });
   }

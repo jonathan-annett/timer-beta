@@ -51,7 +51,7 @@
 
   // First item to run after index `from` (skips the finish marker); -1 if none.
   function nextIndex(from) {
-    for (let j = from + 1; j < norm.items.length; j++) if (j !== norm.endIdx) return j;
+    for (let j = from + 1; j < norm.items.length; j++) if (j !== norm.endIdx && !norm.items[j].hidden) return j;
     return -1;
   }
 
@@ -97,6 +97,7 @@
     const ms = it.eff * 1000;
     api({ cmd: 'default', msecs: ms });
     api({ cmd: 'start', msecs: ms });
+    noteTimerStart();
     api({ cmd: 'custommessage', text: it.name });
     if (it.video) playItemVideo(it);              // the player restarts the timer at the video's length
     else stopRunsheetVideo();                     // moving on from a video item stops its video
@@ -113,6 +114,7 @@
     const it = isActive() && !state.finished ? norm.items.find(x => x.id === state.currentId) : null;
     if (!it) { api({ cmd: 'start' }); return; }
     api({ cmd: 'start', msecs: it.eff * 1000 });
+    noteTimerStart();
     const e = state.log[state.log.length - 1];
     if (e && e.id === it.id) {
       if (e.orig == null) e.orig = e.actual;      // keeps an unanchored sheet pinned to the first start
@@ -143,7 +145,7 @@
   function goTo(id) {
     if (!isActive()) return false;
     const i = idxOf(id);
-    if (i < 0 || i === norm.endIdx) return false;
+    if (i < 0 || i === norm.endIdx || norm.items[i].hidden) return false;
     pushHistory();
     startItem(i);
     commit();
@@ -160,6 +162,10 @@
     state.index = h.index; state.currentId = h.currentId; state.finished = h.finished;
     state.log.length = Math.min(state.log.length, h.logLen);
     state.dayBase = h.dayBase;
+    state.timerStart = h.timer ? h.timer.startedAt : null;
+    // Back onto an item that was hidden after it ran: it's live again, so it shows again
+    const back = !state.finished && state.index >= 0 ? sheet.items.find(x => x.id === state.currentId) : null;
+    if (back && back.hidden) { delete back.hidden; writeSheet(); }
     // Back onto an item with slides shows them again (if another deck is up)
     const it = !state.finished && state.index >= 0 ? norm.items[state.index] : null;
     if (it && window.pptxHub) window.pptxHub.current(it);
@@ -169,6 +175,120 @@
 
   function resetShow() {
     state = Object.assign(emptyState(), { active: state.active });
+    // Hidden items were deleted after they ran; kept only for the log, which a reset clears
+    if (sheet.items.some(x => x.hidden)) { sheet.items = sheet.items.filter(x => !x.hidden); writeSheet(); }
+    commit();
+  }
+
+  // ─── Changing the current item's time ─────────────────────────────────────
+  // The run sheet and the countdown are kept in step: a new duration (or end) for the item
+  // running now moves the timer's end, and time added or taken off on the timer (Ctrl+arrows,
+  // ↑/↓, a phone, Companion) becomes the item's duration. A pause is neither: it doesn't change
+  // the time allotted (seekEndsAt − startedAt − pauseAcum), it makes the show late.
+
+  function writeSheet() {
+    localStorage.setItem(SHEET_KEY, JSON.stringify(sheet));
+    norm = C.normalise(sheet);
+  }
+  function noteTimerStart() {
+    const s = api({ cmd: 'snapshot' });
+    state.timerStart = s ? s.startedAt : null;
+  }
+  const allottedMs = s => s.seekEndsAt - s.startedAt - (s.pauseAcum || 0);
+  const timerEndMs = s => s.seekEndsAt + (s.pausedAt != null ? now() - s.pausedAt : 0);
+  function liveItem(id) {
+    if (!isActive() || state.finished || state.index < 0 || (id && id !== state.currentId)) return null;
+    return sheet.items.find(x => x.id === state.currentId) || null;
+  }
+  // The item's new duration; the start times written on later rows move by the same amount
+  // (shift), so the rest of the day follows. curEnd (a new end time) leaves them alone: the
+  // editor has just set the next start itself.
+  function setLiveDuration(src, sec, shift) {
+    const i = sheet.items.indexOf(src);
+    const oldEff = norm.items[i] ? norm.items[i].eff : sec;
+    src.duration = sec;
+    if (shift) {
+      const delta = sec - oldEff;
+      for (let j = i + 1; j < sheet.items.length; j++) {
+        const x = sheet.items[j];
+        if (x.start != null && !x.hidden) x.start = ((x.start + delta) % 86400 + 86400) % 86400;
+      }
+    }
+    writeSheet();
+  }
+  function bumpTimer(ms) {
+    if (Math.abs(ms) >= 1) api({ cmd: 'adjust', addtime: ms > 0, msecs: Math.abs(ms) });
+  }
+  // A new duration for the item running now (null: back to the planned one)
+  function curDuration(id, sec) {
+    const src = liveItem(id);
+    const s = api({ cmd: 'snapshot' });
+    if (!src || !s) return false;
+    if (sec == null) {                              // cleared: what the sheet would give it
+      const copy = JSON.parse(JSON.stringify(sheet));
+      copy.items.find(x => x.id === src.id).duration = null;
+      sec = C.normalise(copy).items[sheet.items.indexOf(src)].eff;
+    }
+    const bump = sec * 1000 - allottedMs(s);
+    if (timerEndMs(s) + bump <= now() + 1000) { flash('Too late for that duration: more of it has already gone'); return false; }
+    bumpTimer(bump);
+    setLiveDuration(src, Math.round(sec), true);
+    syncSeen = null;
+    commit();
+    return true;
+  }
+  // The item running now ends at endMs; the next item (nextId) starts at nextStart (seconds of the day)
+  // A time of day (seconds) as a timestamp: the one nearest the item running now (past midnight too)
+  function clockToMs(sec) {
+    const DAY = 86400e3, e = state.log[state.log.length - 1];
+    const ref = e ? e.actual : now();
+    let t = (state.dayBase != null ? state.dayBase : dayBaseNow()) + (sec % 86400) * 1000;
+    while (t < ref - DAY / 4) t += DAY;
+    while (t > ref + DAY * 3 / 4) t -= DAY;
+    return t;
+  }
+  function curEnd(id, endMs, nextId, nextStart) {
+    const src = liveItem(id);
+    const s = api({ cmd: 'snapshot' });
+    if (nextStart != null) endMs = clockToMs(nextStart);       // this computer's clock, not the editor's
+    if (!src || !s || !(endMs > now() + 1000)) { flash('That end time has already passed'); return false; }
+    const bump = endMs - timerEndMs(s);
+    bumpTimer(bump);
+    const nx = nextId ? sheet.items.find(x => x.id === nextId) : null;
+    if (nx && !nx.hidden && nextStart != null) nx.start = nextStart;
+    setLiveDuration(src, Math.max(1, Math.round((allottedMs(s) + bump) / 1000)), false);
+    syncSeen = null;
+    commit();
+    return true;
+  }
+  // The live item's new name on the presenter's screen, if its name is what's showing there
+  function liveName(id, name) {
+    const src = liveItem(id);
+    if (!src || typeof name !== 'string') return false;
+    name = name.trim().slice(0, 300);
+    const e = state.log[state.log.length - 1];
+    const s = api({ cmd: 'snapshot' });
+    const shown = s ? s.message : null;
+    if (e && e.id === src.id && (shown === e.name || shown === src.name)) api({ cmd: 'custommessage', text: name });
+    if (e && e.id === src.id) e.name = name;
+    if (src.name !== name) { src.name = name; writeSheet(); }
+    commit();
+    return true;
+  }
+  // Time changed on the timer → the item's duration. Only for the countdown this run sheet
+  // started (a new one typed on the timer isn't the item's), not for video items (their timer is
+  // the video's length), and once the value has held for two checks (keys held down).
+  let syncSeen = null;
+  function syncFromTimer() {
+    const src = liveItem();
+    const s = src ? api({ cmd: 'snapshot' }) : null;
+    if (!src || !s || src.video || state.timerStart == null || s.startedAt !== state.timerStart) { syncSeen = null; return; }
+    const sec = Math.round(allottedMs(s) / 1000);
+    const it = norm.items[sheet.items.indexOf(src)];
+    if (!it || Math.abs(sec - it.eff) < 1 || sec < 1) { syncSeen = null; return; }
+    if (syncSeen !== sec) { syncSeen = sec; return; }
+    syncSeen = null;
+    setLiveDuration(src, sec, true);
     commit();
   }
 
@@ -288,6 +408,9 @@
       case 'pptxclose': if (window.pptxHub) window.pptxHub.close(); break;   // the editor's Close slides
       case 'pause':  api({ cmd: 'pause' }); break;                           // toggles
       case 'restart': restartCountdown(); break;
+      case 'curdur': curDuration(c.id, c.duration == null ? null : Number(c.duration)); break;
+      case 'curend': curEnd(c.id, Number(c.end), c.nextId, c.nextStart == null ? null : Number(c.nextStart)); break;
+      case 'livename': liveName(c.id, c.name); break;
     }
   }
 
@@ -456,8 +579,9 @@
     const startedAt = new Map();
     state.log.forEach(e => { if (e.id !== 'end') startedAt.set(e.id, e.actual); });
     const endLog = state.finished ? state.log[state.log.length - 1] : null;
-    const cur = state.finished ? -1 : state.index, nj = state.finished ? -1 : nextIndex(state.index);
+    let cur = state.finished ? -1 : state.index, nj = state.finished ? -1 : nextIndex(state.index);
     const rows = norm.items.map((it, i) => {
+      if (it.hidden) return null;                 // deleted after it ran
       const isEnd = i === norm.endIdx;
       const p = isEnd ? plannedFinishMs() : plannedStartMs(i);
       const r = { n: String(it.name || '').slice(0, 80), p: p != null ? clockOf(p) : '' };
@@ -471,6 +595,9 @@
       return r;
     });
     if (!state.finished && nj < 0 && norm.endIdx >= 0 && rows[norm.endIdx]) rows[norm.endIdx].s = 'next';
+    const shown = rows.filter(Boolean), curRow = rows[cur] ? shown.indexOf(rows[cur]) : -1;
+    rows.length = 0; rows.push(...shown);
+    cur = curRow;
     const from = Math.max(0, (cur >= 0 ? cur : 0) - 3), to = Math.min(rows.length, from + 44);
     return JSON.stringify({ rows: rows.slice(from, to), before: from, after: rows.length - to });
   }
@@ -495,7 +622,10 @@
       lastVars = v;
       window.timerAPI.send({ setVariableValues: vars });
     }
-    const live = JSON.stringify({ text: info.text, kind: info.kind, late: info.late == null ? null : Math.round(info.late) });
+    // curEnd: when the item running now is due to end (the timer's end, pauses included), for the editor's checks
+    const ts = isActive() && !state.finished && state.index >= 0 ? api({ cmd: 'snapshot' }) : null;
+    const live = JSON.stringify({ text: info.text, kind: info.kind, late: info.late == null ? null : Math.round(info.late),
+      curId: ts ? state.currentId : null, curEnd: ts ? Math.round(timerEndMs(ts) / 1000) * 1000 : null });
     if (live !== lastLive) { lastLive = live; localStorage.setItem(LIVE_KEY, live); }
   }
 
@@ -531,7 +661,8 @@
 
   // sheetChanged(): the sheet in localStorage was rewritten by this window (the remote editor,
   // remote-control.js); the storage event that the editor window's writes give doesn't fire then.
-  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive, sheetChanged: onSheetChanged, flash, restart: restartCountdown };
+  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive, sheetChanged: onSheetChanged, flash, restart: restartCountdown,
+    curDuration, curEnd, liveName };
 
   // The dashboard sits just below the button bar, whose height depends on zoom and
   // window width (buttons wrap). Publish its bottom edge for the CSS.
@@ -556,7 +687,7 @@
     // every timer window running this code, whether in controller or presenter (P) mode.
     const heartbeat = () => localStorage.setItem('runsheet_alive', String(Date.now()));
     heartbeat();
-    setInterval(() => { heartbeat(); render(); }, 1000);
+    setInterval(() => { heartbeat(); syncFromTimer(); render(); }, 1000);
     window.addEventListener('pagehide', () => localStorage.removeItem('runsheet_alive'));
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

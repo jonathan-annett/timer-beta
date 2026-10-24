@@ -683,7 +683,10 @@
     } else if (m.t === 'rs-save' && m.sheet && typeof m.sheet === 'object') {
       RemotePeer.sendBig(peer, { t: 'rs-save', sheet: m.sheet });
     } else if (m.t === 'rs-cmd' && typeof m.cmd === 'string') {
-      peer.send({ t: 'rs-cmd', cmd: m.cmd, id: typeof m.id === 'string' ? m.id : undefined, on: m.on });
+      const out = { t: 'rs-cmd', cmd: m.cmd, id: typeof m.id === 'string' ? m.id : undefined, on: m.on };
+      for (const k of ['duration', 'end', 'nextStart']) if (typeof m[k] === 'number' || m[k] === null) out[k] = m[k];   // the timer checks them
+      for (const k of ['nextId', 'name']) if (typeof m[k] === 'string') out[k] = m[k];
+      peer.send(out);
     } else if (m.t === 'rs-video' && m.file instanceof Blob) {
       uploadVideo(m);
     }

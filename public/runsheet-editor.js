@@ -30,6 +30,7 @@
   let sheet = REMOTE ? { title: '', perItem: 20, items: [] } : readJSON(SHEET_KEY, { title: '', perItem: 20, items: [] });
   let state = REMOTE ? {} : readJSON(STATE_KEY, {});
   let live = REMOTE ? {} : readJSON(LIVE_KEY, {});
+  let showHidden = false;                            // show the completed items deleted (hidden) from the sheet
   let norm;
 
   // Older/hand-made sheets may lack ids
@@ -159,11 +160,17 @@
 
     const tbody = document.querySelector('#rs-table tbody');
     tbody.innerHTML = '';
+    const nHidden = sheet.items.filter(x => x.hidden).length;
+    if (!nHidden) showHidden = false;
+    $('show-hidden').hidden = !nHidden;
+    $('show-hidden').textContent = showHidden ? `Hide the ${nHidden} deleted` : `Show ${nHidden} deleted (already run)`;
     norm.items.forEach((it, i) => {
       const src = sheet.items[i];
+      if (src.hidden && !showHidden) return;       // deleted after it ran: kept for the record
       const tr = document.createElement('tr');
       tr.dataset.id = it.id;
       if (it.isEnd) tr.classList.add('endrow');
+      if (src.hidden) tr.classList.add('hiddenrow');
       tr.innerHTML =
         `<td class="num">${it.isEnd ? 'End' : i + 1}</td>` +
         `<td class="start"><input data-field="start" aria-label="Start time"></td>` +
@@ -175,7 +182,8 @@
           // tabindex -1: Tab moves between the cells (start → name → duration → next row)
           (it.isEnd ? '' : `<button class="go" data-act="go" tabindex="-1" title="Start this item now">▶</button>`) +
           `<button data-act="up" tabindex="-1" title="Move up">↑</button><button data-act="down" tabindex="-1" title="Move down">↓</button>` +
-          `<button data-act="del" tabindex="-1" title="Delete">✕</button></td>`;
+          (src.hidden ? `<button data-act="unhide" tabindex="-1" title="Show it in the run sheet again">↺</button>`
+                      : `<button data-act="del" tabindex="-1" title="Delete">✕</button>`) + `</td>`;
       const [start, name, dur] = FIELDS.map(f => tr.querySelector(`[data-field=${f}]`));
       start.value = src.start != null ? C.formatClock(src.start) : '';
       name.value = src.name || '';
@@ -217,6 +225,7 @@
     const shift = active && !state.finished && live.late != null && live.late >= ON_TIME_SEC ? live.late * 1000 : 0;
     const curIdx = curId ? norm.items.findIndex(it => it.id === curId) : (state.index == null ? -1 : state.index);
     const exp = ms => `<span class="st-late" title="Expected, running ${C.formatSpan(live.late)} behind">≈ ${clockOf(ms)}</span>`;
+    const curEnd = live.curId && live.curId === curId ? live.curEnd : null;
 
     document.querySelectorAll('#rs-table tbody tr').forEach(tr => {
       const i = norm.items.findIndex(it => it.id === tr.dataset.id);
@@ -231,6 +240,22 @@
       tr.classList.toggle('current', it.id === curId);
       tr.classList.toggle('done', done);
       tr.classList.toggle('next', it.id === nextId);
+
+      // Completed items are kept as they happened; the item running now keeps its start
+      const role = rowRole(i);
+      tr.classList.toggle('locked', role === 'done' || it.hidden);
+      tr.querySelectorAll('input[data-field]').forEach(inp => {
+        const ro = role === 'done' || it.hidden || (role === 'now' && inp.dataset.field === 'start');
+        inp.readOnly = ro;
+        inp.title = ro ? (role === 'now' ? 'Running now: it started when it started' : 'Already run: kept as it happened') : (inp.classList.contains('invalid') ? inp.title : '');
+      });
+      tr.querySelectorAll('td.vid button, td.vid select, td.deck button').forEach(b => { b.disabled = role === 'done' || it.hidden; });
+      const del = tr.querySelector('button[data-act=del]');
+      if (del) del.title = role === 'done' ? 'Delete (hidden from the run sheet; it stays in the log)' : 'Delete';
+      // The next item starting before the current one is due to end (saved anyway, knowingly)
+      const startIn = tr.querySelector('[data-field=start]');
+      const overlap = role === 'next' && sheet.items[i].start != null && curEnd != null && p != null ? (curEnd - p) / 1000 : 0;
+      startIn.classList.toggle('conflict', overlap >= 1);
 
       const status = tr.querySelector('.status');
       if (it.id === curId) {
@@ -252,9 +277,10 @@
         const gap = it.gapAfter > 59 || it.gapAfter < -59
           ? `<span class="st-gap">${it.gapAfter > 0 ? 'gap' : 'overlaps'} ${C.formatDuration(Math.abs(it.gapAfter))}</span>` : '';
         const ahead = shift && p != null && i > curIdx && !done ? exp(p + shift) + (it.isEnd ? ' finish' : '') : '';
-        status.innerHTML = [ahead, gap].filter(Boolean).join(' · ');
+        const clash = overlap >= 1 ? `<span class="st-conflict" title="${esc(norm.items[curIdx] ? norm.items[curIdx].name : '')} is due to end at ${clockOf(curEnd)}">starts ${C.formatSpan(overlap)} before the current item ends</span>` : '';
+        status.innerHTML = [clash, ahead, gap].filter(Boolean).join(' · ');
       }
-      tr.querySelectorAll('button.go').forEach(b => { b.disabled = !active; });
+      tr.querySelectorAll('button.go').forEach(b => { b.disabled = !active || it.hidden; });
       // Order is fixed up to and including the item running now, and nothing moves above it:
       // the dashboard, the phones and the log all follow the live order. To stop an item,
       // delete it instead.
@@ -283,6 +309,27 @@
     $('now-next').innerHTML = parts.join(' &nbsp;·&nbsp; ');
 
     renderLog();
+  }
+
+  // What row i is to the show: 'done' (ran, and the show has moved past it), 'now' (running),
+  // 'next' (the first row after the running one, finish marker included) or null.
+  function liveIndex() {
+    if (!state.active || state.finished || !(state.index >= 0) || !state.currentId) return -1;
+    return norm.items.findIndex(x => x.id === state.currentId);
+  }
+  function nextRow(cur) {
+    for (let j = cur + 1; j < norm.items.length; j++) if (!norm.items[j].hidden) return j;
+    return -1;
+  }
+  function rowRole(i) {
+    const it = norm.items[i];
+    if (!it) return null;
+    const cur = liveIndex();
+    if (cur >= 0 && i === cur) return 'now';
+    const ran = (state.log || []).some(e => e.id === it.id);
+    if (ran && (state.finished || (cur >= 0 && i < cur) || (cur < 0 && state.currentId && i < norm.items.findIndex(x => x.id === state.currentId)))) return 'done';
+    if (cur >= 0 && i === nextRow(cur)) return 'next';
+    return null;
   }
 
   // Why item i can't move: 'ran' (already run), 'now' (running), 'next' (can't go above the
@@ -529,7 +576,7 @@
   const tbodyEl = document.querySelector('#rs-table tbody');
   tbodyEl.addEventListener('dragover', e => {
     const tr = e.target.closest('tr');
-    if (!tr || tr.classList.contains('endrow') || !Array.from(e.dataTransfer.types).includes('Files')) return;
+    if (!tr || tr.classList.contains('endrow') || tr.classList.contains('locked') || !Array.from(e.dataTransfer.types).includes('Files')) return;
     e.preventDefault();
     tbodyEl.querySelectorAll('tr.vdrop').forEach(r => r !== tr && r.classList.remove('vdrop'));
     tr.classList.add('vdrop');
@@ -538,7 +585,7 @@
   tbodyEl.addEventListener('drop', e => {
     const tr = e.target.closest('tr');
     tbodyEl.querySelectorAll('tr.vdrop').forEach(r => r.classList.remove('vdrop'));
-    if (!tr || tr.classList.contains('endrow')) return;
+    if (!tr || tr.classList.contains('endrow') || tr.classList.contains('locked')) return;
     const list = Array.from(e.dataTransfer.files || []);
     const f = list.find(x => x.type.startsWith('video/')) || list.find(isDeck) || list.find(isHolding);
     if (!f) return;
@@ -560,10 +607,15 @@
     const input = e.target;
     const field = input.dataset.field;
     if (!field) return;
-    const item = sheet.items.find(it => it.id === input.closest('tr').dataset.id);
+    const i = sheet.items.findIndex(it => it.id === input.closest('tr').dataset.id);
+    const item = sheet.items[i];
     if (!item) return;
+    const role = rowRole(i);
+    if (role === 'done' || item.hidden || (role === 'now' && field === 'start')) { renderAll(); return; }   // read-only (belt and braces)
     if (field === 'name') {
-      item.name = input.value.trim();
+      const v = input.value.trim();
+      if (role === 'now' && v !== item.name) return liveRename(item, v);
+      item.name = v;
     } else {
       const v = field === 'start' ? C.parseClock(input.value) : C.parseDuration(input.value);
       if (Number.isNaN(v)) {
@@ -573,10 +625,132 @@
       }
       input.classList.remove('invalid');
       input.title = '';
+      if (role === 'now' && field === 'duration') return liveDuration(i, v);
+      if (role === 'next' && field === 'start' && v != null && v !== item.start) return nextStart(i, v);
       item[field] = v;
     }
     saveSheet();
   });
+
+  // ─── Editing the item running now (and the next one's start) ──────────────
+  // These change what the presenter sees, so they go to the timer window as commands
+  // (runsheet.js changes the sheet and the countdown together), after a check here.
+
+  // A dialog with a few choices; resolves with the chosen button's value (Escape: the cancel one)
+  function ask(html, buttons) {
+    return new Promise(resolve => {
+      const wrap = document.createElement('div');
+      wrap.className = 'ask';
+      wrap.innerHTML = '<div class="ask-box" role="alertdialog" aria-modal="true"><div class="ask-text"></div><div class="ask-btns"></div></div>';
+      wrap.querySelector('.ask-text').innerHTML = html;
+      const cancel = (buttons.find(b => b.cancel) || buttons[buttons.length - 1]).value;
+      const done = v => { document.removeEventListener('keydown', onKey, true); wrap.remove(); resolve(v); };
+      const onKey = e => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(cancel); }
+        else if (e.key === 'PageDown' || e.key === 'PageUp') e.stopPropagation();   // not Next/Back behind a question
+      };
+      let first = null;
+      buttons.forEach(b => {
+        const el = document.createElement('button');
+        el.textContent = b.label;
+        if (b.kind) el.className = b.kind;
+        el.addEventListener('click', () => done(b.value));
+        wrap.querySelector('.ask-btns').appendChild(el);
+        if (b.kind === 'primary' || (!first && !b.cancel)) first = b.kind === 'primary' ? el : first || el;
+      });
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(wrap);
+      (first || wrap.querySelector('button')).focus();
+    });
+  }
+  const editorNow = () => Date.now() + (REMOTE ? 0 : Number(localStorage.getItem('internetTimeError')) || 0);
+  // Seconds left on the countdown, from the preview (the timer's own figure); null if unknown
+  function remainingSec() {
+    if (!controllerAlive() || !clock.remain) return null;
+    const p = clock.remain.split(':').map(Number);
+    if (p.some(Number.isNaN)) return null;
+    const sec = p.reduce((a, v) => a * 60 + v, 0);
+    return clock.over ? -sec : sec;
+  }
+  // A time of day as a timestamp: the one nearest the item running now (as runsheet.js does)
+  function clockNear(sec) {
+    const DAY = 86400e3, log = state.log || [], e = log[log.length - 1];
+    const ref = e ? e.actual : editorNow();
+    let t = dayBase() + (sec % 86400) * 1000;
+    while (t < ref - DAY / 4) t += DAY;
+    while (t > ref + DAY * 3 / 4) t -= DAY;
+    return t;
+  }
+
+  // The live item's name is on the presenter's screen: change it there only when asked
+  function liveRename(item, name) {
+    ask(`<b>${esc(item.name || 'This item')}</b> is on now. The presenter's screen will show the new name, ` +
+        `<b>${esc(name || '(no name)')}</b>, as soon as you confirm.`,
+      [{ label: 'Change it', value: true, kind: 'primary' }, { label: 'Cancel', value: false, cancel: true }])
+      .then(ok => {
+        if (!ok) { renderAll(); return; }            // back to the name that's showing
+        item.name = name;
+        saveSheet();
+        send('livename', { id: item.id, name });
+      });
+  }
+
+  // A new duration for the live item: refused if more than that has already gone; otherwise
+  // the countdown and every start time after it move.
+  function liveDuration(i, sec) {
+    const item = sheet.items[i], it = norm.items[i];
+    let eff = sec;
+    if (eff == null) {                                 // cleared: back to what the sheet gives it
+      const copy = JSON.parse(JSON.stringify(sheet));
+      copy.items[i].duration = null;
+      eff = C.normalise(copy).items[i].eff;
+    }
+    const left = remainingSec();
+    if (left != null && left + (eff - it.eff) <= 1) {
+      const gone = Math.max(0, it.eff - left);
+      ask(`<b>${esc(item.name || 'This item')}</b> has already run for ${C.formatSpan(gone)}, so it can’t be given ` +
+          `${C.formatDuration(eff)} in all. The duration wasn’t changed.`, [{ label: 'OK', value: 0, kind: 'primary' }])
+        .then(() => renderAll());
+      return;
+    }
+    send('curdur', { id: item.id, duration: sec });
+  }
+
+  // The next item's new start is the live item's new end: ask whether the countdown moves too
+  function nextStart(i, sec) {
+    const item = sheet.items[i];
+    const cur = norm.items[liveIndex()];
+    const curName = esc((cur && cur.name) || 'The current item');
+    const label = C.formatClock(sec);
+    const T = clockNear(sec);
+    const curEnd = cur && live.curId === cur.id ? live.curEnd : null;
+    const save = () => { item.start = sec; saveSheet(); };
+    const endAt = () => send('curend', { id: cur.id, end: T, nextId: item.id, nextStart: sec });
+    if (T <= editorNow() + 1000) {
+      ask(`${label} has already gone (it’s ${clockOf(editorNow())} now). The start time wasn’t changed.`,
+        [{ label: 'OK', value: 0, kind: 'primary' }]).then(() => renderAll());
+      return;
+    }
+    if (!cur) { save(); return; }
+    ask(`<b>${esc(item.name || 'The next item')}</b> starting at <b>${label}</b> means <b>${curName}</b> ends then` +
+        (curEnd != null ? ` (it’s due to end at ${clockOf(curEnd)})` : '') + `.<br>Change the countdown so it ends at ${label} too?`,
+      [{ label: `Yes, end the countdown at ${label}`, value: 'end', kind: 'primary' },
+       { label: 'No, just the start time', value: 'start' },
+       { label: 'Cancel', value: null, cancel: true }])
+      .then(a => {
+        if (a === 'end') return endAt();
+        if (a !== 'start') return renderAll();
+        if (curEnd != null && T < curEnd - 1000) {
+          return ask(`<b>${curName}</b> is due to end at <b>${clockOf(curEnd)}</b>, after ${label}: ` +
+                     `<b>${esc(item.name || 'the next item')}</b> would start before it finishes.`,
+            [{ label: 'Do nothing', value: null, cancel: true },
+             { label: `End the countdown at ${label}`, value: 'end' },
+             { label: 'Save the start time anyway', value: 'clash', kind: 'danger' }])
+            .then(b => { if (b === 'end') endAt(); else if (b === 'clash') save(); else renderAll(); });
+        }
+        save();
+      });
+  }
 
   // Enter moves to the same field in the next row; on the last row it adds a new item
   tbody.addEventListener('keydown', e => {
@@ -627,7 +801,13 @@
       case 'down':
         if (i < sheet.items.length - 1 && !['ran', 'now'].includes(moveLock(i))) { [sheet.items[i + 1], sheet.items[i]] = [sheet.items[i], sheet.items[i + 1]]; saveSheet(); }
         break;
+      case 'unhide':
+        delete sheet.items[i].hidden;
+        saveSheet();
+        break;
       case 'del':
+        // Already run: hidden, not wiped (the record of the day keeps it)
+        if (rowRole(i) === 'done') { sheet.items[i].hidden = true; saveSheet(); break; }
         if (id === state.currentId && !state.finished && !confirm('This item is running now. Delete it anyway?')) return;
         if (sheet.items[i].video && !confirm(`This item has a video ("${sheet.items[i].video.name}"). Delete the item and its video?`)) return;
         if ((sheet.items[i].deck || sheet.items[i].holding) && !confirm(`This item has slides ("${(sheet.items[i].deck || sheet.items[i].holding).name}"). Delete the item and its slides?`)) return;
@@ -664,7 +844,7 @@
       return;
     }
     if (mode === 'replace' && sheet.items.length && !confirm(`Replace all ${sheet.items.length} items with the ${res.items.length} pasted?`)) return;
-    sheet.items = mode === 'replace' ? res.items : sheet.items.concat(res.items);
+    sheet.items = mode === 'replace' ? keptItems().concat(res.items) : sheet.items.concat(res.items);
     saveSheet();
     if (mode === 'replace' && (state.log || []).length && confirm('Also reset the show? This clears the log and starts again from the top.')) send('reset');
 
@@ -674,7 +854,12 @@
       (res.warnings.length ? '\n' + res.warnings.slice(0, 5).join('\n') : '');
     $('imp-text').value = '';
   }
+  // Items that have already run survive Replace and Clear, hidden, for the record (Reset show drops them)
+  function keptItems() {
+    return sheet.items.filter((x, i) => x.hidden || rowRole(i) === 'done').map(x => Object.assign({}, x, { hidden: true }));
+  }
   $('imp-replace').addEventListener('click', () => importText('replace'));
+  $('show-hidden').addEventListener('click', () => { showHidden = !showHidden; renderAll(); });
   $('imp-append').addEventListener('click', () => importText('append'));
 
   $('imp-file').addEventListener('click', () => $('imp-file-input').click());
@@ -711,8 +896,8 @@
   });
 
   $('clear-all').addEventListener('click', () => {
-    if (!sheet.items.length || !confirm('Delete every item in the run sheet?')) return;
-    sheet.items = [];
+    if (!sheet.items.length || !confirm('Delete every item in the run sheet?' + (keptItems().length ? ' Items that have already run stay in the record, hidden.' : ''))) return;
+    sheet.items = keptItems();
     saveSheet();
   });
 
