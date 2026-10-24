@@ -102,9 +102,10 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
   F5 once more if no show appears. It doesn't touch Presenter View: F5 from the editor already
   follows PowerPoint's own setting. Step 1 then also closes the player's own decks left open for
   editing (an editor window, class `PPTFrameClass`, whose title names a file in Show; anything else
-  open in PowerPoint is left alone): each is closed with Ctrl+W (that presentation only; Ctrl+Q would
-  quit all of PowerPoint), and if PowerPoint asks "Save changes to this file?" (a new PowerPoint
-  window appears within 1.5 s) the player presses **S** (Save) there; S is never pressed otherwise. A big deck takes a while to save; PowerPoint closes the window when the
+  open in PowerPoint is left alone): if there are any, the player quits PowerPoint with **Ctrl+Q**
+  (Ctrl+W closed the deck but left PowerPoint's empty window open) and answers each "Save changes to
+  this file?" prompt with **S** (Save), only once it has appeared. That closes everything open in
+  PowerPoint, including anything opened there by hand: fine on a dedicated show machine. A big deck takes a while to save; PowerPoint closes the window when the
   save is done, so the player waits for the window to go (up to 3 minutes, logging "Still saving"),
   and the timer allows 5 minutes for `start` and `stop all`. `send` never
   overwrites a copy in Show that's newer than the one the timer sent (`note: 'edited here'`), so

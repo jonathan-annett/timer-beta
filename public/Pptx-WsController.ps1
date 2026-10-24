@@ -257,7 +257,7 @@ public static class TimerWin {
         SetForegroundWindow(h);
         return GetForegroundWindow() == h;
     }
-    // A key with Ctrl held (Ctrl+W)
+    // A key with Ctrl held (Ctrl+Q)
     public static void CtrlKey(byte vk) {
         keybd_event(0x11, 0, 0, UIntPtr.Zero); keybd_event(vk, 0, 0, UIntPtr.Zero);
         keybd_event(vk, 0, 2, UIntPtr.Zero); keybd_event(0x11, 0, 2, UIntPtr.Zero);
@@ -365,8 +365,8 @@ function Set-PresenterView([string]$Leaf, [bool]$On) {
 
 # Starting a deck, from a clean slate each time (like an operator would, only faster; a seamless
 # switch isn't needed, and handing Presenter View from one deck to the next proved fragile):
-#   1. close every slide show (Presenter View goes with its show), then our decks left open for
-#      editing (rehearsal): Ctrl+W, and S if PowerPoint asks to save; wait until they've gone, and for
+#   1. close every slide show (Presenter View goes with its show); if decks we opened for editing
+#      (rehearsal) are open, quit PowerPoint (Ctrl+Q, S to each save prompt); wait until they've gone, and for
 #      PowerPoint to finish quitting if it's doing so
 #   2. open the new deck and wait for its slide show
 #   3. Presenter View on with the keys (only if it isn't already)
@@ -378,47 +378,37 @@ function Clear-Shows {
         if ($left.Count) { Focus-Window $left[0]; [TimerWin]::Key(0x1B, $false); [void](Wait-Gone $left 3) }   # Esc
     }
     # Our decks open for editing (rehearsal mode): an editor window whose title names a file in the
-    # Show folder. Anything else open in PowerPoint is left alone. Each is closed with Ctrl+W (this
-    # presentation only; Ctrl+Q would quit all of PowerPoint); if PowerPoint asks "Save changes to
-    # this file?", S answers Save. S is only pressed once that prompt has appeared.
+    # Show folder. If there are any, PowerPoint is quit with Ctrl+Q (Ctrl+W closed the deck but left
+    # PowerPoint's empty window behind), which closes everything open in it; each "Save changes to
+    # this file?" prompt is answered S (Save), and only once it has appeared. A big deck takes a
+    # while to save (it's a zip file), so wait as long as that takes: until PowerPoint has quit.
     $ours = @(Get-ChildItem -LiteralPath $ShowFolder -File -ErrorAction SilentlyContinue | Where-Object { -not $_.Name.EndsWith('.partial') } |
               ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.Name) })
     $eds = @(Get-PptWindows | Where-Object { $_.cls -eq $EditClass } | Where-Object {
         $t = $_.title; @($ours | Where-Object { $t.IndexOf($_, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count })
-    $known = @($ShowClass, $PvClass, $EditClass)
-    foreach ($e in $eds) {
-        if (-not (Test-Alive $e.h)) { continue }
+    if ($eds.Count) {
+        $known = @($ShowClass, $PvClass, $EditClass)
         $before = @(Get-PptWindows | ForEach-Object { $_.h })
-        Focus-Window $e.h
+        Log 'Closing PowerPoint (Ctrl+Q), saving decks edited in rehearsal'
+        Focus-Window $eds[0].h
         [TimerWin]::Key(0x1B, $false)                # Esc: out of any text box or menu
         Start-Sleep -Milliseconds 150
-        [TimerWin]::CtrlKey(0x57)                    # Ctrl+W: close this presentation
-        $until = (Get-Date).AddSeconds(1.5)
-        while ((Get-Date) -lt $until -and (Test-Alive $e.h)) {
-            Start-Sleep -Milliseconds 100
-            $prompt = @(Get-PptWindows | Where-Object { $before -notcontains $_.h -and $known -notcontains $_.cls }) | Select-Object -First 1
-            if ($prompt) {
-                Focus-Window $prompt.h
-                [TimerWin]::Key(0x53, $false)        # S: Save
-                Log ("Saving " + ($e.title -replace ' - PowerPoint$', ''))
-                break
-            }
-        }
-    }
-    if ($eds.Count) {
-        # A big deck takes a while to save (it's a zip file). PowerPoint closes the window once the
-        # save has finished, so the window going away means saved and closed: wait for that.
-        $hs = @($eds | ForEach-Object { $_.h })
+        [TimerWin]::CtrlKey(0x51)                    # Ctrl+Q: quit PowerPoint
+        $answered = @{}
         $until = (Get-Date).AddMinutes(3); $nextNote = (Get-Date).AddSeconds(10)
-        while ((Get-Date) -lt $until -and @($hs | Where-Object { Test-Alive $_ }).Count) {
-            Start-Sleep -Milliseconds 250
-            if ((Get-Date) -ge $nextNote) {
-                $nextNote = (Get-Date).AddSeconds(10)
-                $still = @($eds | Where-Object { Test-Alive $_.h } | ForEach-Object { $_.title -replace ' - PowerPoint$', '' })
-                Log ("Still saving: " + ($still -join ', '))
+        while ((Get-Date) -lt $until -and @(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue).Count) {
+            Start-Sleep -Milliseconds 150
+            $prompt = @(Get-PptWindows | Where-Object { $before -notcontains $_.h -and $known -notcontains $_.cls -and -not $answered.ContainsKey($_.h) }) | Select-Object -First 1
+            if ($prompt) {
+                $answered[$prompt.h] = $true
+                Focus-Window $prompt.h
+                Start-Sleep -Milliseconds 100
+                [TimerWin]::Key(0x53, $false)        # S: Save
+                Log 'Saving an edited deck'
             }
+            if ((Get-Date) -ge $nextNote) { $nextNote = (Get-Date).AddSeconds(10); Log 'Still closing PowerPoint (saving)...' }
         }
-        if (@($hs | Where-Object { Test-Alive $_ }).Count) { Log 'A deck opened for editing did not close: PowerPoint may be asking something (check its window)' 'Yellow' }
+        if (@(Get-Process -Name POWERPNT -ErrorAction SilentlyContinue).Count) { Log 'PowerPoint did not quit: it may be asking something (check its window)' 'Yellow' }
     }
     # Closing the last /S deck makes PowerPoint quit: let it finish, so the new deck isn't handed
     # to a copy that's on its way out. (A PowerPoint with other windows, e.g. an editor, stays.)
