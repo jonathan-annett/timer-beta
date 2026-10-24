@@ -72,17 +72,16 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
 - **No COM:** PowerPoint's COM automation caused trouble when closing files, so the player
   doesn't use it. It tracks the show by its windows (class `screenClass` / `PodiumParent`, the
   deck's name in the title), closes a show by sending its window `WM_CLOSE` (Esc if that doesn't
-  work), and changes slides with keystrokes (Page Down/Up, Home, End, B, W, number + Enter) after
-  focusing the show. It never kills PowerPoint. Slide numbers aren't known (`slide`/`slides`
-  are 0).
+  work). It never kills PowerPoint.
 - **Show ended by hand** (Esc, last slide): its window is gone, so the player reports
   `showing: false`.
 - **The show didn't appear** within 25 s (usually a PowerPoint dialog waiting for a click: sign-in,
   activation, repair): `start` fails and the player logs every PowerPoint window it can see.
-- **Timer API:** `{cmd:'pptxslide', action: next|prev|first|last|black|white|resume|<n>}`,
-  `{cmd:'pptxstop'}`. Bus variables: `pptx_machines`, `pptx_current`, `pptx_showing`,
-  `pptx_slide`, `pptx_slides`, `pptx_next_ready`. The Companion module has actions, feedbacks and
-  presets for these.
+- **Only load and start:** the timer gets each deck onto the machines and starts it. Slides are
+  advanced on each machine itself (the presenter's clicker, the operator there); the timer never
+  sends slide changes.
+- **Bus variables:** `pptx_machines`, `pptx_current`, `pptx_showing`, `pptx_next_ready` (the
+  Companion module has feedbacks and presets for them).
 
 ## Protocol
 
@@ -107,9 +106,9 @@ no timer state.
 Player → timer:
 
 ```
-{t:'hello', kind:'player', name, version, pair, inbox, token, current, showing, slide, slides, simulate, presenter}
+{t:'hello', kind:'player', name, version, pair, inbox, token, current, showing, simulate, presenter}
 {t:'pp-ack', req, verb, ok, result?, note?, error?, …}      one per command, in order
-{t:'pp-state', current, showing, slide, slides}              when what's on screen changes (polled each second)
+{t:'pp-state', current, showing}                            when what's on screen changes (polled each second)
 ```
 
 Timer → player: `{t:'pp', req, verb, arg, keep?}`, one at a time (the timer waits for each ack):
@@ -120,8 +119,7 @@ Timer → player: `{t:'pp', req, verb, arg, keep?}`, one at a time (the timer wa
 | `send` | file name in Inbox | copies it into Show (in the background; never overwrites: a changed file gets `name v2.ext`) | `result`: the name in Show; `note:'unchanged'` if already there |
 | `start` | file name in Show | `powerpnt.exe /S`, waits for the show window, Presenter View if on, then closes the previous deck's show | `result`; a missing file fails without touching the current show |
 | `stop` | | closes the show | |
-| `slide` | `next` `prev` `first` `last` `black` `white` `resume` or a number | changes slide | |
-| `status` | | | `current`, `showing`, `slide`, `slides` |
+| `status` | | | `current`, `showing` |
 | `delete` | file name in Show | closes it if showing, deletes it | |
 | `tidy` | `keep`: names | deletes other files in Show (not the current one) | `result`: how many |
 | `wallpaper` | image name in Show | sets the desktop wallpaper | |

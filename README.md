@@ -236,7 +236,7 @@ The PowerPoint computer needs Windows with PowerPoint, Chrome or Edge, and the s
 2. On that page, click **Download the player** and run the command it shows in PowerShell. The player is a small script that opens the decks in PowerPoint; keep its window open during the show. It shows its *Inbox* folder.
 3. On the page, click **Choose folder…** and pick that Inbox folder.
 
-Then attach decks in the run sheet editor: **+ slides** in the **Slides** column, or drop a .pptx file on a row (from a remote run sheet editor too, when it's on the same network). The share panel shows each PowerPoint computer and how many decks are ready on it, and the run sheet dashboard warns if the next item's slides aren't ready yet. Slides can also be changed from the timer API, Companion or a Stream Deck via Companion (next, previous, black screen…). The details, including the player's protocol, are in [`docs/powerpoint.md`](docs/powerpoint.md).
+Then attach decks in the run sheet editor: **+ slides** in the **Slides** column, or drop a .pptx file on a row (from a remote run sheet editor too, when it's on the same network). The share panel shows each PowerPoint computer and how many decks are ready on it, and the run sheet dashboard warns if the next item's slides aren't ready yet. The timer only loads and starts each deck; slides are advanced on the PowerPoint computer itself, with the presenter's clicker as usual. The details, including the player's protocol, are in [`docs/powerpoint.md`](docs/powerpoint.md).
 
 ### Pairing server
 

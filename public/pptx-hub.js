@@ -14,7 +14,8 @@
  *
  * remote-control.js hands over the PowerPoint peers: join(e), leave(e), message(e, m, via),
  * mode(e). runsheet.js calls changed(), start(item), current(item) and hint().
- * Bus variables: pptx_machines, pptx_current, pptx_slide, pptx_slides, pptx_next_ready.
+ * The timer only gets decks there and starts them: slides are advanced on each machine itself.
+ * Bus variables: pptx_machines, pptx_current, pptx_showing, pptx_next_ready.
  * Protocol: docs/powerpoint.md. MIT Licensed
  */
 
@@ -201,8 +202,6 @@
   function setShowState(p, m) {
     p.pp.current = typeof m.current === 'string' ? m.current.slice(0, 200) : '';
     p.pp.showing = !!m.showing;
-    p.pp.slide = Number.isInteger(m.slide) ? m.slide : 0;
-    p.pp.slides = Number.isInteger(m.slides) ? m.slides : 0;
   }
   function onShowState(p, m) { setShowState(p, m); announce(); refreshPanel(); }
 
@@ -343,16 +342,6 @@
   function current(item) {
     if (item && item.deck && item.deck.key && item.deck.key !== lastKey) start(item);
   }
-  function stop() {
-    lastKey = ''; localStorage.removeItem(LAST_KEY);
-    for (const M of machines.values()) { M.pendingStart = ''; if (M.player) cmd(M.player, 'stop').catch(() => {}); }
-  }
-  function slide(action) {
-    const a = String(action || '');
-    if (!/^(next|prev|first|last|black|white|resume|\d{1,4})$/.test(a)) return false;
-    for (const M of machines.values()) if (M.player) cmd(M.player, 'slide', a).catch(() => {});
-    return true;
-  }
   const flash = text => { if (window.runsheet && window.runsheet.flash) window.runsheet.flash(text); };
 
   // ─── Status ───────────────────────────────────────────────────────────────
@@ -367,12 +356,11 @@
         ready: list.filter(d => M.prepared.has(d.key)).length, total: list.length,
         transfer: t ? { name: t.name, pct: t.size ? Math.floor(t.acked / t.size * 100) : 0 } : null,
         current: M.player ? M.player.pp.current : '', showing: !!(M.player && M.player.pp.showing),
-        slide: M.player ? M.player.pp.slide : 0, slides: M.player ? M.player.pp.slides : 0,
         error: M.error, blocked: M.blocked,
       });
     }
     for (const p of loose) out.push({ name: p.pp.name || 'PowerPoint', receiver: null, player: true, unpaired: true, inbox: p.pp.inbox || '', ready: 0, total: list.length,
-      current: p.pp.current, showing: p.pp.showing, slide: p.pp.slide, slides: p.pp.slides });
+      current: p.pp.current, showing: p.pp.showing });
     return out;
   }
   // One line per machine, for the share panel
@@ -387,7 +375,7 @@
       bits.push(s.player ? (s.simulate ? 'player (simulating)' : 'player ✓') + (s.presenter ? ', Presenter View' : '') : '<span class="pp-warn">player not running</span>');
       if (s.total) bits.push(s.transfer ? `sending ${esc(s.transfer.name)} ${s.transfer.pct}%` : `${s.ready}/${s.total} decks ready`);
     }
-    if (s.current) bits.push((s.showing ? 'showing ' : 'last: ') + esc(s.current.replace(/ ~[0-9a-z]{1,6}(?=\.\w+$)/, '')) + (s.showing && s.slides ? ` (${s.slide}/${s.slides})` : ''));
+    if (s.current) bits.push((s.showing ? 'showing ' : 'last: ') + esc(s.current.replace(/ ~[0-9a-z]{1,6}(?=\.\w+$)/, '')));
     let line = bits.join(' · ');
     if (s.error) line += `<div class="pp-warn">${esc(s.error)}</div>`;
     return `<div>${line}</div>`;
@@ -425,8 +413,6 @@
       pptx_machines: String(s.length),
       pptx_current: first && first.current ? first.current.replace(/ ~[0-9a-z]{1,6}(?=\.\w+$)/, '') : '',
       pptx_showing: first && first.showing ? '1' : '0',
-      pptx_slide: first ? String(first.slide || 0) : '0',
-      pptx_slides: first ? String(first.slides || 0) : '0',
       pptx_next_ready: d ? ([...machines.values()].every(M => M.prepared.has(d.key)) && machines.size ? '1' : '0') : '',
     };
     const v = JSON.stringify(vars);
@@ -434,6 +420,6 @@
   }
   function opened() { lastVars = ''; announce(); }
 
-  window.pptxHub = { join, leave, message, mode, changed, start, current, stop, slide, summary, describe, hint, opened, fileName,
+  window.pptxHub = { join, leave, message, mode, changed, start, current, summary, describe, hint, opened, fileName,
     get count() { return machines.size + loose.size; } };
 })();

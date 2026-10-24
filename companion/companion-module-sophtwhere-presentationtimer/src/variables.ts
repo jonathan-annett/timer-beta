@@ -46,8 +46,6 @@ export const KNOWN_VARIABLES: Record<string, string> = {
 	pptx_machines: 'PowerPoint: computers connected (players)',
 	pptx_current: 'PowerPoint: the deck on screen (or last shown)',
 	pptx_showing: 'PowerPoint: a slide show is running (1/0)',
-	pptx_slide: 'PowerPoint: current slide (0 when the player can’t tell)',
-	pptx_slides: 'PowerPoint: slides in the deck (0 when the player can’t tell)',
 	pptx_next_ready: 'PowerPoint: the next item’s deck is ready on every computer (1/0; empty when it has none)',
 	video_name: 'Video player: the video',
 	link_status: 'This connection: online, offline, waiting, pin, …',

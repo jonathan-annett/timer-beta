@@ -122,7 +122,7 @@ function Send-Timer($Data) { Send-Raw @{ type = 'up'; msg = @{ k = 'data'; d = $
 function Send-Hello {
     $st = Get-ShowState
     Send-Timer @{ t = 'hello'; kind = 'player'; name = $Name; version = $Version; pair = (Get-PairId);
-        inbox = $Inbox; token = (Get-Token); current = $st.current; showing = $st.showing; slide = $st.slide; slides = $st.slides;
+        inbox = $Inbox; token = (Get-Token); current = $st.current; showing = $st.showing;
         simulate = [bool]$Simulate; presenter = -not $NoPresenterView }
 }
 
@@ -199,8 +199,8 @@ function Watch-Copy {
 # ---- PowerPoint --------------------------------------------------------------
 # No COM: decks are started as "powerpnt.exe /S <file>" (a full-screen show, no editor), and
 # everything else is done to the show's window: Presenter View is the window's context menu
-# then R (the only way into Presenter View from the command line), slides are keystrokes,
-# closing is WM_CLOSE. The show is tracked by its window handles, not by process: PowerPoint is
+# then R (the only way into Presenter View from the command line), closing is WM_CLOSE.
+# Slides are advanced on this machine itself (clicker, operator), never from the timer. The show is tracked by its window handles, not by process: PowerPoint is
 # single-instance, so a second /S is handed to the copy that's already running.
 
 if ($env:OS -eq 'Windows_NT' -and -not ('TimerWin' -as [type])) {
@@ -259,7 +259,6 @@ public static class TimerWin {
 
 $ShowClasses = @('screenClass', 'PodiumParent')    # the slide show window, and Presenter View's
 $script:ShowWindows = @()                          # handles of the deck on screen
-$script:Blank = ''                                 # 'black' / 'white' while blanked
 
 # PowerPoint windows: objects {h, cls, title}
 function Get-PptWindows {
@@ -299,7 +298,6 @@ function Close-Show {
     }
     $script:ShowWindows = @()
     $script:Current = ''
-    $script:Blank = ''
 }
 
 function Start-Show([string]$Leaf) {
@@ -323,7 +321,6 @@ function Start-Show([string]$Leaf) {
     }
     $script:ShowWindows = @($new | ForEach-Object { $_.h })
     $script:Current = $Leaf
-    $script:Blank = ''
     if (-not $NoPresenterView) {
         # Presenter View: the show's context menu (the Menu key), then R ("Show Presenter View")
         Start-Sleep -Milliseconds 900
@@ -339,30 +336,13 @@ function Start-Show([string]$Leaf) {
     Close-Windows ($old | Where-Object { $script:ShowWindows -notcontains $_ })
 }
 
-# What's on screen: the deck, and whether its show is still up (ended by hand: Esc, last slide).
-# Slide numbers aren't available without COM.
+# What's on screen: the deck, and whether its show is still up (ended by hand: Esc, last slide)
 function Get-ShowState {
-    $st = @{ current = $script:Current; showing = $false; slide = 0; slides = 0 }
+    $st = @{ current = $script:Current; showing = $false }
     if (-not $script:Current) { return $st }
     if ($Simulate) { $st.showing = $true; return $st }
     $st.showing = [bool](@($script:ShowWindows | Where-Object { Test-Alive $_ }).Count)
     return $st
-}
-
-function Set-Slide([string]$Arg) {
-    if ($Simulate) { Log "[simulate] slide $Arg" 'Cyan'; return }
-    Focus-Show
-    switch -regex ($Arg) {
-        '^next$'   { [TimerWin]::Key(0x22, $true); break }     # Page Down
-        '^prev$'   { [TimerWin]::Key(0x21, $true); break }     # Page Up
-        '^first$'  { [TimerWin]::Key(0x24, $true); break }     # Home
-        '^last$'   { [TimerWin]::Key(0x23, $true); break }     # End
-        '^black$'  { if ($script:Blank -ne 'black') { if ($script:Blank) { [TimerWin]::Key($(if ($script:Blank -eq 'white') { 0x57 } else { 0x42 }), $false) }; [TimerWin]::Key(0x42, $false); $script:Blank = 'black' }; break }   # B
-        '^white$'  { if ($script:Blank -ne 'white') { if ($script:Blank) { [TimerWin]::Key(0x42, $false) }; [TimerWin]::Key(0x57, $false); $script:Blank = 'white' }; break }   # W
-        '^resume$' { if ($script:Blank) { [TimerWin]::Key($(if ($script:Blank -eq 'white') { 0x57 } else { 0x42 }), $false); $script:Blank = '' }; break }
-        '^\d+$'    { foreach ($ch in $Arg.ToCharArray()) { [TimerWin]::Key([byte][char]$ch, $false) }; [TimerWin]::Key(0x0D, $false); break }   # number, Enter
-        default    { throw "unknown slide action: $Arg" }
-    }
 }
 
 function Set-Wallpaper([string]$Path) {
@@ -388,7 +368,6 @@ function Invoke-TimerCommand($Cmd) {
                 Send-Ack $Cmd $true @{ result = $leaf }
             }
             'stop'   { Log 'Slide show closed'; Close-Show; Send-Ack $Cmd $true $null }
-            'slide'  { Set-Slide ([string]$Cmd.arg); Send-Ack $Cmd $true $null }
             'status' { $st = Get-ShowState; Send-Ack $Cmd $true $st }
             'delete' {
                 $leaf = Get-Leaf $Cmd.arg
@@ -515,14 +494,14 @@ while ($script:Running) {
                 $recv = $script:ws.ReceiveAsync($seg, [Threading.CancellationToken]::None)
             }
             Watch-Copy
-            # Tell the timer when what's on screen changes (a show ended, the slide moved)
+            # Tell the timer when what's on screen changes (a deck started, a show was ended)
             if (([DateTime]::UtcNow - $lastPoll).TotalMilliseconds -ge 1000) {
                 $lastPoll = [DateTime]::UtcNow
                 $st = Get-ShowState
-                $sig = '{0}|{1}|{2}|{3}' -f $st.current, $st.showing, $st.slide, $st.slides
+                $sig = '{0}|{1}' -f $st.current, $st.showing
                 if ($sig -ne $script:LastState) {
                     $script:LastState = $sig
-                    Send-Timer @{ t = 'pp-state'; current = $st.current; showing = $st.showing; slide = $st.slide; slides = $st.slides }
+                    Send-Timer @{ t = 'pp-state'; current = $st.current; showing = $st.showing }
                 }
             }
         }

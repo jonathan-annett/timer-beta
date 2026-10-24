@@ -90,11 +90,6 @@ function processTimerApiMessage(msg) {
         case "videostop":   { if (window.videoPlayer) return window.videoPlayer.stop(); break; }
         case "videorewind": { if (window.videoPlayer) return window.videoPlayer.rewind(); break; }
 
-        // PowerPoint machines (pptx-hub.js): {cmd:'pptxslide', action: next|prev|first|last|black|white|resume|<slide number>},
-        // {cmd:'pptxstop'} closes the slide show on every machine
-        case "pptxslide":   { if (window.pptxHub) return window.pptxHub.slide(msg.action); break; }
-        case "pptxstop":    { if (window.pptxHub) window.pptxHub.stop(); break; }
-
         case "adjust": {
             if (msg.addtime) {
                 bumpEnd(msg.msecs, msg.msecs);
