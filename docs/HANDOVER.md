@@ -9,12 +9,13 @@ setup and protocol; `tests/e2e/README.md` is how to test.
 
 - Repo: `github.com/jonathan-annett/timer-beta`. Commit straight to `main` and push (the user
   asked for this). End commit messages with the attribution lines the session gives you.
-- Deploy is manual, by the user: copy `public/` + `README.md` to https://timer.sophtwhere.com/beta/.
-  The pairing server (`remote-server.js`, protocol 5) runs as the systemd service `timer-remote`
-  on the same VPS; it only needs redeploying when `remote-server.js` changes (it hasn't since
-  protocol 5).
-- At the end of each change, tell the user which files to copy and to **Ctrl+F5** the affected
-  pages (or have them try it first in the local preview, see below). Stale cached scripts have caused "it doesn't work" reports several times (most recently
+- Deploy is by the user, from GitHub: https://timer.sophtwhere.com/beta/ is served from a clone of
+  the repo on the VPS, and the user's local `update-server.sh` (untracked, not for the repo) runs
+  `git pull` there over SSH and restarts `timer-remote`. So a pushed commit is deployed once they
+  run it. The pairing server (`remote-server.js`, protocol 5) is the systemd service
+  `timer-remote` on the same VPS.
+- At the end of each change, say it's pushed and ready for `./update-server.sh`, and which pages to
+  reload (or have them try it first in the local preview, see below). Stale cached scripts have caused "it doesn't work" reports several times (most recently
   holding slides not syncing: an old `pptx-hub.js`/`pptx-receiver.js`). Script/style links now
   carry `?v=` content-hash stamps (`tools/stamp-versions.mjs`), so a plain reload is enough;
   pages left open since before a deploy still need one.
@@ -55,12 +56,9 @@ relayed through the user). Suggested setup and loop:
    connects to the local pairing server by itself, so phones-on-the-Mac, the remote editor,
    Companion (point a test connection at the local link) and PowerPoint (*Simulate*) can all be
    tried locally. This should replace most "deploy, Ctrl+F5, report back" round trips.
-4. Commit and push to `main`; tell the user which files to copy to /beta (or the whole `public/`).
+4. Commit and push to `main`; the user deploys with `./update-server.sh` (git pull on the VPS).
 
 **Ideas to streamline further (ask the user first)**
-- A deploy script (`tools/deploy.sh`: rsync `public/` + `README.md` to the VPS over the user's
-  SSH key). Needs the host and path from the user. It could also stamp `?v=<commit>` on the
-  script and style links in the deployed copy, which would end the stale-cache problem for good.
 - Companion lives on the same Mac: if Companion's developer modules path points at this clone,
   `npm run build` in the module is all a change needs (restart the connection, or Companion, if
   it doesn't pick it up). `npm test` there checks the preset/action definitions.
