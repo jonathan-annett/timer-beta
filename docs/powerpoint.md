@@ -42,7 +42,11 @@ folder picker can just as easily land in `C:\Users\<you>\Documents`. Choosing th
 pairs them straight away; nothing needs restarting.
 
 A backup machine is set up the same way, with the same link. Every machine gets the same
-commands at the same moment; one joining late is caught up with the deck already showing.
+commands at the same moment. Connecting or reconnecting (a machine, its player, or the timer page
+reloading) never opens, closes or changes anything on screen: decks and wallpapers change only
+when someone presses Next, Back or Close slides. A machine that wasn't connected at that moment
+misses it (it's sent the decks, so the next Next works); one still being sent the deck starts it
+as soon as it's ready, if its player stays connected.
 
 Player options: `-WorkFolder` (holds `Inbox`, `Show` and `.timer-token`), `-Inbox` (use another
 folder as the inbox), `-Name` (the name shown in the timer; default the computer name),
@@ -62,8 +66,7 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
 - **Holding slides:** an item can carry an image (`item.holding`, key `rsimg:…`; PNG, JPG or BMP),
   sent ahead like decks. When the item starts, every machine sets it as the Windows desktop
   wallpaper (`wallpaper`, style Fill), so it shows whenever no deck is up (breaks, introducing a
-  speaker without showing their title). With a deck as well, the wallpaper is set first. A machine
-  connecting later gets the last holding slide. The player never tidies away the wallpaper in use.
+  speaker without showing their title). With a deck as well, the wallpaper is set first. The player never tidies away the wallpaper in use.
   On a typical setup the projector is the second display, which shows the wallpaper without the
   taskbar or desktop icons.
 - **Close slides** (`{cmd:'pptxclose'}`: the run sheet editor's *Close slides* button, the Stream

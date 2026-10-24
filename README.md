@@ -238,7 +238,7 @@ It connects within a second or two. If **Require a PIN** is on, Companion's stat
 
 ### Slides on a PowerPoint computer
 
-Give a run sheet item a PowerPoint deck and it opens as a full-screen slide show on the computer that shows the slides when **Next** reaches that item. Decks are sent to that computer ahead of time, so the switch is instant. An item without slides leaves the last deck on screen; **Back** onto an item with slides shows them again. You can have a backup computer too: every PowerPoint computer gets the same decks and opens them at the same moment, and one that's switched on late catches up with the deck that's showing.
+Give a run sheet item a PowerPoint deck and it opens as a full-screen slide show on the computer that shows the slides when **Next** reaches that item. Decks are sent to that computer ahead of time, so the switch is instant. An item without slides leaves the last deck on screen; **Back** onto an item with slides shows them again. You can have a backup computer too: every PowerPoint computer gets the same decks and opens them at the same moment. Decks only open or close when you press **Next**, **Back** or **Close slides**: a computer that connects or reconnects (or the timer page being reloaded) never changes what's on screen.
 
 The PowerPoint computer needs Windows with PowerPoint, Chrome or Edge, and the same network as the timer's computer. To set it up:
 

@@ -33,7 +33,7 @@
   const machines = new Map();       // pair id → machine {id, receiver, player, have, prepared, ...}
   const loose = new Set();          // players whose inbox no receiver has claimed yet
   const PAIR_RE = /^[a-z0-9]{8,40}$/;
-  const LAST_KEY = 'pptx_last';     // the deck last started, for machines that connect later
+  const LAST_KEY = 'pptx_last';     // the deck last started (so Back knows whether it's already up)
   const HOLD_KEY = 'pptx_holding';  // the holding slide last set (wallpaper), likewise
   let lastKey = localStorage.getItem(LAST_KEY) || '';
   let lastHolding = localStorage.getItem(HOLD_KEY) || '';
@@ -107,7 +107,7 @@
     loose.delete(e);
     const M = machineOf(e);
     if (M && M.receiver === e) { M.receiver = null; failTransfer(M, 'The receiver page closed'); M.have.clear(); }
-    if (M && M.player === e) { M.player = null; M.prepared.clear(); }
+    if (M && M.player === e) { M.player = null; M.prepared.clear(); M.pendingStart = M.pendingHolding = ''; }   // nothing saved up for a reconnect
     rejectQueue(e, 'disconnected');
     if (M) forget(M);
     announce(); refreshPanel(); infoAll();
@@ -177,8 +177,9 @@
     M.player = e;
     M.prepared = new Map();
     applyMode(M);                                      // rehearsal or show, as its receiver page says
-    if (lastHolding) M.pendingHolding = lastHolding;   // a late (or backup) machine catches up: the holding slide,
-    if (lastKey) M.pendingStart = lastKey;              // and the deck that's showing
+    // Connecting (or reconnecting) never opens, closes or changes anything on screen: decks and
+    // wallpapers change only when someone presses Next, Back or Close slides.
+    M.pendingStart = M.pendingHolding = '';
     sync(M);
   }
 
@@ -355,8 +356,10 @@
   }
 
   // ─── Showing ──────────────────────────────────────────────────────────────
+  // Only ever from Next/Back. A machine whose player isn't connected misses it (it isn't replayed
+  // when it reconnects); one still being sent the deck starts it as soon as it's ready.
   function startOn(M, key) {
-    if (!M.player) { M.pendingStart = key; return; }
+    if (!M.player) return;
     const name = M.prepared.get(key);
     if (!name) { M.pendingStart = key; sync(M); return; }
     M.pendingStart = '';
@@ -367,7 +370,7 @@
   }
   // The holding slide becomes the machine's wallpaper (shown whenever no deck is up)
   function holdingOn(M, key) {
-    if (!M.player) { M.pendingHolding = key; return; }
+    if (!M.player) return;
     const name = M.prepared.get(key);
     if (!name) { M.pendingHolding = key; sync(M); return; }
     M.pendingHolding = '';
@@ -399,7 +402,7 @@
     if (item && item.deck && item.deck.key && item.deck.key !== lastKey) start({ name: item.name, deck: item.deck });
   }
   // Close every slide show on every machine (the holding slide shows), including one opened there
-  // by hand. A machine connecting later isn't told to open the last deck again.
+  // by hand.
   function close() {
     lastKey = ''; localStorage.removeItem(LAST_KEY);
     for (const M of machines.values()) { M.pendingStart = ''; if (M.player) cmd(M.player, 'stop', 'all', null, 5 * 60000).catch(() => {}); }
