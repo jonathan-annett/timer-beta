@@ -66,6 +66,7 @@
     } else if (ev.key === LIVE_KEY) {
       live = readJSON(LIVE_KEY, {});
       renderLive();
+      renderStatus();                                // expected times follow the lateness
     }
   });
 
@@ -123,7 +124,7 @@
     const first = log.find(e => e.id !== 'end');
     const fi = first ? norm.items.findIndex(it => it.id === first.id) : -1;
     if (fi < 0) return null;
-    return first.actual + (sec - norm.items[fi].planned) * 1000;
+    return (first.orig != null ? first.orig : first.actual) + (sec - norm.items[fi].planned) * 1000;   // orig: before a Restart
   }
   function clockOf(ms) {
     if (ms == null) return '';
@@ -211,6 +212,12 @@
       }
     }
 
+    // Running behind (a pause keeps adding to it, as does a Restart): everything still to come
+    // moves by the same amount. runsheet.js works out the lateness; ahead, planned times stand.
+    const shift = active && !state.finished && live.late != null && live.late >= ON_TIME_SEC ? live.late * 1000 : 0;
+    const curIdx = curId ? norm.items.findIndex(it => it.id === curId) : (state.index == null ? -1 : state.index);
+    const exp = ms => `<span class="st-late" title="Expected, running ${C.formatSpan(live.late)} behind">≈ ${clockOf(ms)}</span>`;
+
     document.querySelectorAll('#rs-table tbody tr').forEach(tr => {
       const i = norm.items.findIndex(it => it.id === tr.dataset.id);
       const it = norm.items[i];
@@ -230,7 +237,8 @@
         const e = log[k];
         const v = e && e.planned != null ? signed((e.actual - e.planned) / 1000) : '';
         status.innerHTML = `<span class="st-now">▶ Now</span> ${clockOf(e && e.actual)} ` +
-          (v ? `<span class="${v[0] === '+' ? 'st-late' : 'st-early'}">${v}</span>` : '');
+          (v ? `<span class="${v[0] === '+' ? 'st-late' : 'st-early'}">${v}</span>` : '') +
+          (shift && p != null ? `<br>ends ${exp(p + it.eff * 1000 + shift)}` : '');
       } else if (done) {
         const e = log[k], ran = log[k + 1] ? (log[k + 1].actual - e.actual) / 1000 : null;
         const v = e.planned != null ? signed((e.actual - e.planned) / 1000) : '';
@@ -240,10 +248,11 @@
         const e = log[log.length - 1];
         const v = e && e.planned != null ? signed((e.actual - e.planned) / 1000) : '';
         status.innerHTML = `■ ${clockOf(e && e.actual)} ` + (v ? `<span class="${v[0] === '+' ? 'st-late' : 'st-early'}">${v}</span>` : '');
-      } else if (it.gapAfter > 59 || it.gapAfter < -59) {
-        status.innerHTML = `<span class="st-gap">${it.gapAfter > 0 ? 'gap' : 'overlaps'} ${C.formatDuration(Math.abs(it.gapAfter))}</span>`;
       } else {
-        status.textContent = '';
+        const gap = it.gapAfter > 59 || it.gapAfter < -59
+          ? `<span class="st-gap">${it.gapAfter > 0 ? 'gap' : 'overlaps'} ${C.formatDuration(Math.abs(it.gapAfter))}</span>` : '';
+        const ahead = shift && p != null && i > curIdx && !done ? exp(p + shift) + (it.isEnd ? ' finish' : '') : '';
+        status.innerHTML = [ahead, gap].filter(Boolean).join(' · ');
       }
       tr.querySelectorAll('button.go').forEach(b => { b.disabled = !active; });
       // Order is fixed up to and including the item running now, and nothing moves above it:
