@@ -407,19 +407,25 @@
     const model = MODELS[modelKey];
     if (!model) return;
     for (let i = 0; i < model.keyCount; i++) dirtyKeys.add(i);
-    if (!drawScheduled) {
-      drawScheduled = true;
-      requestAnimationFrame(flushDraw);
-    }
+    scheduleFlush();
   }
 
   function scheduleRedrawKey(index) {
     dirtyKeys.add(index);
-    if (!drawScheduled) {
-      drawScheduled = true;
-      requestAnimationFrame(flushDraw);
-    }
+    scheduleFlush();
   }
+
+  // Animation frames don't run at all in a background tab, so with the timer behind another tab
+  // the keys stopped updating (presses still worked). Hidden: flush straight after the current
+  // task instead (still one flush for a burst of changes).
+  function scheduleFlush() {
+    if (drawScheduled) return;
+    drawScheduled = true;
+    if (document.hidden) Promise.resolve().then(flushDraw);
+    else requestAnimationFrame(flushDraw);
+  }
+  // A frame asked for just before the tab was hidden won't come until it's shown again
+  document.addEventListener('visibilitychange', () => { if (document.hidden && drawScheduled) Promise.resolve().then(flushDraw); });
 
   let drawing = false;
   async function flushDraw() {

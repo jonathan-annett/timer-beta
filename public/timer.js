@@ -228,7 +228,7 @@ custom_message.addEventListener('focus', function(){
 	  }
   })();
   
-  setInterval(displayUpdate,100);
+  startTicker(displayUpdate,100);
   doc.addEventListener("keyup",onDocKeyUp);
   doc.addEventListener("keydown",onDocKeyDown);
   
@@ -321,6 +321,23 @@ custom_message.addEventListener('focus', function(){
 	  else if (msg.length > 28) { setHtmlClass("msg-long"); clearHtmlClass("msg-xlong"); }
 	  else { clearHtmlClass("msg-long"); clearHtmlClass("msg-xlong"); }
 	  if (timerAPI) timerAPI.send({ setVariableValues: { custommsg: msg } });
+  }
+
+  // The tick that drives everything (display, bus, Stream Deck, phones, Companion). In a
+  // background tab browsers slow setInterval to once a second, and after a few minutes Chrome
+  // can stretch chained timers to once a minute, so the deck keys and remotes froze unless the
+  // PiP overlay (media playing) kept the page awake. Timers in a worker aren't throttled like
+  // that, so a tiny worker sends the ticks; setInterval is the fallback.
+  function startTicker(fn, ms) {
+	  try {
+		  const src = 'setInterval(function(){postMessage(0)},' + ms + ');';
+		  const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+		  const w = new Worker(url);
+		  w.onmessage = function () { fn(); };
+		  w.onerror = function () { w.terminate(); setInterval(fn, ms); };
+		  return;
+	  } catch (e) { /* no workers (or blocked): plain timer */ }
+	  setInterval(fn, ms);
   }
 
   function displayUpdate() {
