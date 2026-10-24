@@ -212,14 +212,6 @@ var RunsheetCore = (function () {
     if (d > DAY / 2) d -= DAY;
     return d;
   }
-  // A new end (time of day) for row i: its duration from its planned start, or null when that
-  // end isn't after the start (within 12 h)
-  function durationToEnd(norm, i, endSec) {
-    const it = norm.items[i];
-    if (!it || it.planned == null) return null;
-    const d = ((endSec - it.planned) % DAY + DAY) % DAY;
-    return d > 0 && d <= DAY / 2 ? d : null;
-  }
 
   function standardise(sheet) {
     const norm = normalise(sheet);
@@ -371,7 +363,7 @@ var RunsheetCore = (function () {
   return {
     parseClock, parseDuration,
     formatClock, formatDuration, formatSpan, formatHMS,
-    shiftStarts, dayDelta, durationToEnd,
+    shiftStarts, dayDelta,
     normalise, standardise, parseText, toCSV, csvCell, newId,
   };
 })();

@@ -619,19 +619,18 @@
       if (role === 'now' && v !== item.name) return liveRename(item, v);
       item.name = v;
     } else {
-      const v = field === 'duration' ? C.parseDuration(input.value) : C.parseClock(input.value);
+      const v = field === 'duration' ? C.parseDuration(input.value) : readClock(input.value);
       if (Number.isNaN(v)) {
-        input.classList.add('invalid');
-        input.title = field !== 'duration' ? 'Couldn’t read that time — try 9:30, 9:30am or 14:00' : 'Couldn’t read that duration — try 20, 1:30, 20 min or 1 h 30 min';
-        return;
+        return refuse(input, field !== 'duration' ? `Couldn’t read “${esc(input.value)}” as a time. Try 9:30, 930, 9:30am or 14:00.`
+                                                  : `Couldn’t read “${esc(input.value)}” as a duration. Try 20, 1:30, 20 min or 1 h 30 min.`);
       }
       input.classList.remove('invalid');
       input.title = '';
       if (field === 'end') {                         // an end time is another way of giving the duration
         if (v == null) { renderAll(); return; }
         if (role === 'now') return liveEnd(i, v);
-        const d = C.durationToEnd(norm, i, v);
-        if (d == null) { input.classList.add('invalid'); input.title = 'That’s not after the item starts'; return; }
+        const d = endToDuration(i, v);
+        if (typeof d === 'string') return refuse(input, d);
         return setDuration(i, d);
       }
       if (role === 'now' && field === 'duration') return liveDuration(i, v);
@@ -690,6 +689,33 @@
     while (t < ref - DAY / 4) t += DAY;
     while (t > ref + DAY * 3 / 4) t -= DAY;
     return t;
+  }
+
+  // A time typed into a cell: as the import reads them, plus 930 / 1815 (no colon)
+  function readClock(text) {
+    const t = String(text == null ? '' : text).trim();
+    const m = t.match(/^(\d{1,2})(\d{2})( ?(?:am|pm|a|p))?$/i);
+    return C.parseClock(m ? `${m[1]}:${m[2]}${m[3] || ''}` : t);
+  }
+  // Says why a typed value wasn't used; the cell stays red with it as the tooltip until fixed
+  function refuse(input, html) {
+    input.classList.add('invalid');
+    const tmp = document.createElement('div'); tmp.innerHTML = html;
+    input.title = tmp.textContent;
+    ask(html, [{ label: 'OK', value: 0, kind: 'primary' }]).then(() => { input.focus(); input.select && input.select(); });
+  }
+  // An end time (time of day) for row i as its duration, from its start as shown (a clock time,
+  // whether the sheet has start times or is pinned to when the show began); or why not.
+  function endToDuration(i, sec) {
+    const it = norm.items[i];
+    const startMs = it ? plannedMs(it.planned) : null;
+    if (startMs == null) return `There’s no start time to count from yet (the sheet has no start times and the show hasn’t started), so give <b>${esc(it ? it.name || 'this item' : 'this item')}</b> a duration instead.`;
+    // From the start as the row shows it (hh:mm, seconds dropped as clockOf does): 10 minutes
+    // later on screen is 10 minutes more, even when the show began at 9:00:40
+    const DAY = 86400e3, shown = Math.floor(startMs / 60000) * 60000;
+    const d = Math.round(((sec * 1000 - (shown - dayBase())) % DAY + DAY) % DAY / 1000);
+    if (d < 1 || d > 43200) return `${C.formatClock(sec)} isn’t after <b>${esc(it.name || 'this item')}</b> starts (${clockOf(startMs)}).`;
+    return d;
   }
 
   // A new duration (or end) for an item still to come: everything after it moves by as much.
