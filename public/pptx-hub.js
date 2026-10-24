@@ -136,6 +136,7 @@
       e.pp.name = typeof m.name === 'string' && m.name.trim() ? m.name.trim().slice(0, 40) : 'PowerPoint';
       e.pp.version = String(m.version || '').slice(0, 10);
       e.pp.simulate = !!m.simulate;
+      e.pp.inbox = typeof m.inbox === 'string' ? m.inbox.slice(0, 300) : '';     // its Inbox path, shown when the pairing fails
       setShowState(e, m);
       rejectQueue(e, 'reconnected');
       attachPlayer(e, typeof m.pair === 'string' && PAIR_RE.test(m.pair) ? m.pair : '');
@@ -369,7 +370,7 @@
         error: M.error, blocked: M.blocked,
       });
     }
-    for (const p of loose) out.push({ name: p.pp.name || 'PowerPoint', receiver: null, player: true, unpaired: true, ready: 0, total: list.length,
+    for (const p of loose) out.push({ name: p.pp.name || 'PowerPoint', receiver: null, player: true, unpaired: true, inbox: p.pp.inbox || '', ready: 0, total: list.length,
       current: p.pp.current, showing: p.pp.showing, slide: p.pp.slide, slides: p.pp.slides });
     return out;
   }
@@ -377,7 +378,7 @@
   function describe(s) {
     const esc = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const bits = [`PowerPoint “${esc(s.name)}”`];
-    if (s.unpaired) bits.push('<span class="pp-warn">player only: its receiver page isn’t open (or uses another folder)</span>');
+    if (s.unpaired) bits.push('<span class="pp-warn">player only: its receiver page isn’t open, or uses another folder</span>' + (s.inbox ? ` (the player’s inbox is <code>${esc(s.inbox)}</code>)` : ''));
     else {
       bits.push(!s.receiver ? '<span class="pp-warn">receiver page not open</span>'
         : s.receiver === 'lan' ? (s.folder ? 'receiver <b class="pp-lan">LAN direct</b>' : '<span class="pp-warn">receiver: no folder chosen</span>')
@@ -406,7 +407,8 @@
     const list = deckList();
     for (const M of machines.values()) {
       if (!M.receiver) continue;
-      const msg = { t: 'pp-info', player: M.player ? label(M) : '', unpaired: !M.player && loose.size > 0,
+      const strays = [...loose].map(p => ({ name: p.pp.name || 'PowerPoint', inbox: p.pp.inbox || '' }));
+      const msg = { t: 'pp-info', player: M.player ? label(M) : '', unpaired: !M.player && loose.size > 0, strays: M.player ? [] : strays,
         ready: list.filter(d => M.prepared.has(d.key)).length, total: list.length };
       const sig = JSON.stringify(msg);
       if (M.receiver.pp.infoSent !== sig) { M.receiver.pp.infoSent = sig; M.receiver.peer.send(msg); }

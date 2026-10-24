@@ -35,6 +35,12 @@ The timer's share panel shows a line per machine: receiver (LAN direct / no fold
 player, *n/m decks ready*, what's showing (slide x/y), and any error. The run sheet dashboard says
 when the next item's deck isn't ready, or no PowerPoint computer is connected.
 
+If the page says the player **uses a different folder**, the folder chosen in the browser isn't
+the player's Inbox (it names the exact path to pick). Watch out for OneDrive: on many Windows
+computers Documents is `C:\Users\<you>\OneDrive\Documents`, and the player uses that, while the
+folder picker can just as easily land in `C:\Users\<you>\Documents`. Choosing the right folder
+pairs them straight away; nothing needs restarting.
+
 A backup machine is set up the same way, with the same link. Every machine gets the same
 commands at the same moment; one joining late is caught up with the deck already showing.
 

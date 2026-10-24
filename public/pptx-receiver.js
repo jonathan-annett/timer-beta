@@ -302,13 +302,23 @@
     $('summary').textContent = info && info.total ? `${info.ready} of ${info.total} decks ready to show on this computer` + (info.player ? '' : ' (the player isn’t connected)') :
       n ? `${n} deck${n > 1 ? 's' : ''} saved here.` : 'Nothing received yet.';
   }
+  // A player is connected but doesn't see our .timer-pair file: say exactly which folder it uses
+  function strayText() {
+    const s = (info && Array.isArray(info.strays) ? info.strays : []).filter(x => x && x.inbox);
+    if (!s.length) return 'A player is connected but uses a different inbox: choose the Inbox folder it shows when it starts.';
+    const one = s[0];
+    return (dir ? `The player “${esc(one.name)}” is connected but uses a different folder. Click <b>Choose another folder…</b> and pick exactly `
+                : `The player “${esc(one.name)}” is connected. Now click <b>Choose folder…</b> and pick its inbox: `) +
+      `<code>${esc(one.inbox)}</code>` + (dir && dir.name ? ` (this page is saving into a folder called “${esc(dir.name)}”)` : '') + '.' +
+      (/\\OneDrive\\/i.test(one.inbox) ? ' It’s in <b>OneDrive</b>: Documents on this computer is the OneDrive one, not C:\\Users\\…\\Documents.' : '');
+  }
   function renderAll() {
     $('s-folder').className = dir ? 'done' : 'need';
     $('folder').textContent = dir ? (dir.name ? `Saving into “${dir.name}”` : 'Saving into the chosen folder') : pendingHandle ? `“${pendingHandle.name}” needs permission again` : 'No folder chosen yet';
     const paired = info && info.player;
     $('s-player').className = paired ? 'done' : 'need';
     $('playerst').innerHTML = paired ? `<span class="ok">Player “${esc(info.player)}” is connected and uses this folder.</span>`
-      : info && info.unpaired ? '<span class="warn">A player is connected but uses a different inbox: choose the folder it shows.</span>'
+      : info && info.unpaired ? '<span class="warn">' + strayText() + '</span>'
       : 'Not started yet.';
     renderFiles();
   }
