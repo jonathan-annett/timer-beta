@@ -67,8 +67,12 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
   on the confidence monitor: it gives the control room reliable slide progress, and some videos
   don't play properly outside it (a PowerPoint optimisation bug). Starting from the command line, the only way into it is the show's
   context menu: the player focuses the show window and sends the Menu key, then **R**
-  (*Show Presenter View*). It logs a warning if no Presenter View window (class `PodiumParent`)
-  appears.
+  (*Show Presenter View*). That's a toggle, and a deck opened while another is in Presenter View
+  comes up in Presenter View too, so the player looks first: after the old deck's windows have
+  closed, it checks for a Presenter View window (class `PodiumParent`) and presses only if the
+  state isn't the one wanted (this also turns off an inherited Presenter View with
+  `-NoPresenterView`). It logs a warning if the state still isn't right afterwards, and (for now)
+  lists PowerPoint's windows after each start so the class names can be checked.
 - **No COM:** PowerPoint's COM automation caused trouble when closing files, so the player
   doesn't use it. It tracks the show by its windows (class `screenClass` / `PodiumParent`, the
   deck's name in the title), closes a show by sending its window `WM_CLOSE` (Esc if that doesn't

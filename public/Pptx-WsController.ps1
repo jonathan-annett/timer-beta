@@ -321,19 +321,36 @@ function Start-Show([string]$Leaf) {
     }
     $script:ShowWindows = @($new | ForEach-Object { $_.h })
     $script:Current = $Leaf
-    if (-not $NoPresenterView) {
-        # Presenter View: the show's context menu (the Menu key), then R ("Show Presenter View")
-        Start-Sleep -Milliseconds 900
+    $base = [IO.Path]::GetFileNameWithoutExtension($Leaf)
+
+    # Close the previous deck now that the new one is up (no desktop in between). PowerPoint may
+    # have handed a window over to the new deck (its title then names the new deck): leave those.
+    $nowTitles = @{}
+    foreach ($w in @(Get-PptWindows)) { $nowTitles[$w.h] = $w.title }
+    $closing = @($old | Where-Object { $script:ShowWindows -notcontains $_ -and -not ($nowTitles.ContainsKey($_) -and $nowTitles[$_].IndexOf($base, [StringComparison]::OrdinalIgnoreCase) -ge 0) })
+    Close-Windows $closing
+    $until = (Get-Date).AddSeconds(4)
+    while ((Get-Date) -lt $until -and @($closing | Where-Object { Test-Alive $_ }).Count) { Start-Sleep -Milliseconds 200 }
+
+    # Presenter View is a toggle (context menu, R), and a deck opened while another was in
+    # Presenter View comes up in Presenter View too. So look first, once the old deck has gone:
+    # any Presenter View window left now is the new deck's. Press only if it isn't as wanted.
+    Start-Sleep -Milliseconds 1200
+    $hasPv = [bool]@(Get-PptWindows | Where-Object { $_.cls -eq 'PodiumParent' }).Count
+    $wantPv = -not $NoPresenterView
+    if ($hasPv -ne $wantPv) {
         Focus-Show
-        [TimerWin]::Key(0x5D, $true)              # VK_APPS
+        [TimerWin]::Key(0x5D, $true)              # VK_APPS: the show's context menu
         Start-Sleep -Milliseconds 400
-        [TimerWin]::Key(0x52, $false)             # R
-        Start-Sleep -Milliseconds 900
-        $script:ShowWindows = @($script:ShowWindows + @(Get-ShowWindows $Leaf | Where-Object { $before -notcontains $_.h } | ForEach-Object { $_.h }) | Select-Object -Unique)
-        if (-not @(Get-ShowWindows $Leaf | Where-Object { $_.cls -eq 'PodiumParent' }).Count) { Log 'Presenter View may not have opened (no Presenter View window seen)' 'Yellow' }
-    }
-    # Now the previous deck can go: the new one is already up, so no desktop in between
-    Close-Windows ($old | Where-Object { $script:ShowWindows -notcontains $_ })
+        [TimerWin]::Key(0x52, $false)             # R: Show / Hide Presenter View
+        Start-Sleep -Milliseconds 1200
+        $hasPv = [bool]@(Get-PptWindows | Where-Object { $_.cls -eq 'PodiumParent' }).Count
+        if ($hasPv -ne $wantPv) { Log ("Presenter View may not have {0} (check the screen)" -f $(if ($wantPv) { 'opened' } else { 'closed' })) 'Yellow' }
+    } elseif ($wantPv) { Log 'Already in Presenter View' }
+    # While this is new: list PowerPoint's windows (class | title), to check the class names used above
+    Get-PptWindows | ForEach-Object { Log ("   window: {0} | {1}" -f $_.cls, $_.title) 'DarkGray' }
+    # Track every window of this deck now (the Presenter View window may be new)
+    $script:ShowWindows = @($script:ShowWindows + @(Get-ShowWindows $Leaf | ForEach-Object { $_.h }) + @(Get-PptWindows | Where-Object { $_.cls -eq 'PodiumParent' } | ForEach-Object { $_.h }) | Select-Object -Unique)
 }
 
 # What's on screen: the deck, and whether its show is still up (ended by hand: Esc, last slide)
