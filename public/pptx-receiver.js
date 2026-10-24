@@ -55,6 +55,13 @@
     $('cmd').textContent = `powershell -ExecutionPolicy Bypass -File .\\Pptx-WsController.ps1 -Link "${fullLink}"` + (presenterBox.checked ? '' : ' -NoPresenterView');
   };
   presenterBox.addEventListener('change', () => { store.set('pptx_presenter', presenterBox.checked ? '1' : '0'); showCmd(); });
+  // Rehearsal: the player opens decks for editing (switched live, through the timer)
+  const rehearsalBox = $('rehearsal');
+  rehearsalBox.checked = store.get('pptx_rehearsal') === '1';
+  rehearsalBox.addEventListener('change', () => {
+    store.set('pptx_rehearsal', rehearsalBox.checked ? '1' : '0');
+    if (peer) peer.send({ t: 'pf-mode', edit: rehearsalBox.checked });
+  });
   showCmd();
   $('copycmd').addEventListener('click', () => navigator.clipboard && navigator.clipboard.writeText($('cmd').textContent));
 
@@ -152,7 +159,7 @@
   }
   function sendHello() {
     if (!peer) return;
-    peer.send({ t: 'hello', kind: 'receiver', pair: pairId, folder: !!dir, folderName: dir ? dir.name : '',
+    peer.send({ t: 'hello', kind: 'receiver', pair: pairId, folder: !!dir, folderName: dir ? dir.name : '', edit: $('rehearsal').checked,
       files: Object.entries(files).map(([key, f]) => ({ key, name: f.name, size: f.size })),
       token: store.get('pptx_token_' + cfg.room) || undefined });
   }

@@ -17,6 +17,8 @@
         -Inbox       Use another folder as the inbox
         -Name        This computer's name in the timer (default: the computer name)
         -NoPresenterView   Show decks without Presenter View (it's on by default)
+        -EditMode    Rehearsal: open decks as normal (editable) PowerPoint windows, then F5. Also
+                     switched on and off from the receiver page while running.
         -AllowSelfSignedCert   For a test pairing server only
         -Simulate    Don't open PowerPoint; just log what would happen (testing)
 
@@ -31,6 +33,7 @@ param(
     [string]$Inbox,
     [string]$Name = $env:COMPUTERNAME,
     [switch]$NoPresenterView,
+    [switch]$EditMode,
     [switch]$AllowSelfSignedCert,
     [switch]$Simulate
 )
@@ -90,6 +93,7 @@ $script:Current = ''          # file name (in Show) being shown
 $script:Copy = $null          # a copy in progress: @{ ps; async; req; name; temp; dest; src }
 $script:LastState = ''
 $script:PinCode = $null
+$script:Edit = [bool]$EditMode    # rehearsal: decks open for editing, shows started with F5
 
 function Get-Token {
     try {
@@ -123,7 +127,7 @@ function Send-Hello {
     $st = Get-ShowState
     Send-Timer @{ t = 'hello'; kind = 'player'; name = $Name; version = $Version; pair = (Get-PairId);
         inbox = $Inbox; token = (Get-Token); current = $st.current; showing = $st.showing;
-        simulate = [bool]$Simulate; presenter = -not $NoPresenterView }
+        simulate = [bool]$Simulate; presenter = -not $NoPresenterView; edit = $script:Edit }
 }
 
 function Send-Ack($Cmd, [bool]$Ok, $Extra) {
@@ -162,6 +166,10 @@ function Start-CopyIn($Cmd) {
     $main = Join-Path $ShowFolder $leaf
     if (Test-Path -LiteralPath $main -PathType Leaf) {
         if (Test-SameFile $src $main) { Send-Ack $Cmd $true @{ result = $leaf; note = 'unchanged' }; return }
+        # Edited here (rehearsal): the copy in Show is newer than the one the timer sent. Keep it.
+        if ((Get-Item -LiteralPath $main).LastWriteTimeUtc -gt (Get-Item -LiteralPath $src).LastWriteTimeUtc.AddSeconds(2)) {
+            Send-Ack $Cmd $true @{ result = $leaf; note = 'edited here' }; return
+        }
         $leaf = Get-FreeName $leaf          # never overwrite a deck that may be on screen
     }
     $dest = Join-Path $ShowFolder $leaf
@@ -259,6 +267,7 @@ public static class TimerWin {
 
 $ShowClass = 'screenClass'           # a slide show window (one per running show)
 $PvClass = 'PodiumParent'            # Presenter View (PowerPoint may hand it from one deck to the next)
+$EditClass = 'PPTFrameClass'         # a normal PowerPoint (editing) window: rehearsal mode
 $SettleMs = 1000                     # after the new show's window appears, before Presenter View is turned on
 $script:Wallpaper = ''               # the holding slide (file in Show) set as wallpaper
 
@@ -368,13 +377,45 @@ function Start-Show([string]$Leaf) {
     Clear-Shows
 
     # 2. Open the new deck and wait for its slide show window
-    Start-Process -FilePath 'powerpnt.exe' -ArgumentList '/S', ('"' + $path + '"')
     $new = @()
-    $until = (Get-Date).AddSeconds(25)
-    while ((Get-Date) -lt $until) {
-        $new = @(Get-ShowWindows $Leaf)
-        if ($new.Count) { break }
-        Start-Sleep -Milliseconds 250
+    if ($script:Edit) {
+        # Rehearsal: open it as a normal, editable window, then F5 once it has focus. Edited decks
+        # aren't closed when moving on (only their slide show), so nothing is lost and no
+        # "Save changes?" prompt gets in the way; opening one again just brings it forward.
+        Start-Process -FilePath 'powerpnt.exe' -ArgumentList ('"' + $path + '"')
+        $ed = $null
+        $until = (Get-Date).AddSeconds(30)
+        while ((Get-Date) -lt $until) {
+            $ed = @(Get-PptWindows | Where-Object { $_.cls -eq $EditClass -and (Test-Names $_.title $Leaf) }) | Select-Object -First 1
+            if ($ed) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        if (-not $ed) {
+            Log 'The deck''s window did not appear. PowerPoint windows now:' 'Red'
+            Get-PptWindows | ForEach-Object { Log ("   {0} | {1}" -f $_.cls, $_.title) 'Red' }
+            throw 'the deck did not open (is a PowerPoint dialog waiting for a click?)'
+        }
+        Start-Sleep -Milliseconds 1500                  # let it finish loading
+        for ($try = 0; $try -lt 2 -and -not $new.Count; $try++) {
+            Focus-Window $ed.h
+            [TimerWin]::Key(0x1B, $false)               # Esc: nothing selected, no key tips
+            Start-Sleep -Milliseconds 150
+            [TimerWin]::Key(0x74, $false)               # F5: slide show from the start
+            $until = (Get-Date).AddSeconds(10)
+            while ((Get-Date) -lt $until) {
+                $new = @(Get-ShowWindows $Leaf)
+                if ($new.Count) { break }
+                Start-Sleep -Milliseconds 250
+            }
+        }
+    } else {
+        Start-Process -FilePath 'powerpnt.exe' -ArgumentList '/S', ('"' + $path + '"')
+        $until = (Get-Date).AddSeconds(25)
+        while ((Get-Date) -lt $until) {
+            $new = @(Get-ShowWindows $Leaf)
+            if ($new.Count) { break }
+            Start-Sleep -Milliseconds 250
+        }
     }
     if (-not $new.Count) {
         Log 'The slide show window did not appear. PowerPoint windows now:' 'Red'
@@ -413,6 +454,11 @@ function Invoke-TimerCommand($Cmd) {
     try {
         switch ($verb) {
             'check'  { Send-Ack $Cmd $true @{ result = (Get-PairId) } }
+            'mode'   {
+                $script:Edit = ([string]$Cmd.arg -eq 'edit')
+                Log ("Mode: " + $(if ($script:Edit) { 'rehearsal (decks open for editing, shows start with F5)' } else { 'show (decks open straight into the slide show)' })) 'Cyan'
+                Send-Ack $Cmd $true @{ result = $(if ($script:Edit) { 'edit' } else { 'show' }) }
+            }
             'send'   { Start-CopyIn $Cmd }
             'start'  {
                 $leaf = Get-Leaf $Cmd.arg
@@ -522,6 +568,7 @@ Write-Host "  Inbox  : $Inbox" -ForegroundColor White
 Write-Host "           (in the receiver page in Chrome or Edge on this computer, choose this folder)"
 Write-Host "  Show   : $ShowFolder"
 Write-Host ("  Presenter View: " + $(if ($NoPresenterView) { 'off' } else { 'on (-NoPresenterView turns it off)' }))
+Write-Host ("  Mode   : " + $(if ($script:Edit) { 'rehearsal (decks open for editing)' } else { 'show' }) + '  (the receiver page''s Rehearsal box switches it)')
 if ($Simulate) { Write-Host '  Simulating: PowerPoint will not be opened.' -ForegroundColor Yellow }
 elseif ($env:OS -ne 'Windows_NT') { Write-Host 'This needs Windows (or -Simulate).' -ForegroundColor Red; exit 1 }
 

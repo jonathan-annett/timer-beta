@@ -126,6 +126,7 @@
     if (m.t === 'hello') return hello(e, m);
     if (m.t === 'pp-ack') return onAck(e, m);
     if (m.t === 'pp-state') return onShowState(e, m);
+    if (m.t === 'pf-mode') return onReceiverMode(e, m);
     if (/^pf-/.test(m.t)) return onReceiverReply(e, m, via);
   }
 
@@ -135,6 +136,7 @@
       const old = machineOf(e);
       if (old && old.id !== m.pair) { old.receiver = null; forget(old); }
       e.pp.kind = 'receiver'; e.pp.folder = !!m.folder;
+      e.pp.edit = !!m.edit;                              // the page's Rehearsal box: decks open for editing
       const M = machine(m.pair);
       if (M.receiver && M.receiver !== e) failTransfer(M, 'replaced');
       M.receiver = e;
@@ -146,6 +148,7 @@
       // an old one this page has just replaced): ask them to look again
       for (const p of [...loose]) checkPair(p);
       for (const other of machines.values()) if (other !== M && !other.receiver && other.player) checkPair(other.player);
+      applyMode(M);
       sync(M);
     } else if (m.kind === 'player') {
       e.pp.kind = 'player';
@@ -153,6 +156,7 @@
       e.pp.version = String(m.version || '').slice(0, 10);
       e.pp.simulate = !!m.simulate;
       e.pp.presenter = m.presenter !== false;          // decks open in Presenter View (the player's default)
+      e.pp.edit = !!m.edit;
       e.pp.inbox = typeof m.inbox === 'string' ? m.inbox.slice(0, 300) : '';     // its Inbox path, shown when the pairing fails
       setShowState(e, m);
       rejectQueue(e, 'reconnected');
@@ -172,6 +176,7 @@
     if (M.player && M.player !== e) { rejectQueue(M.player, 'replaced'); loose.add(M.player); }
     M.player = e;
     M.prepared = new Map();
+    applyMode(M);                                      // rehearsal or show, as its receiver page says
     if (lastHolding) M.pendingHolding = lastHolding;   // a late (or backup) machine catches up: the holding slide,
     if (lastKey) M.pendingStart = lastKey;              // and the deck that's showing
     sync(M);
@@ -276,6 +281,20 @@
     refreshPanel(); infoAll();
   }
   function failTransfer(M, why) { if (M.transfer) finish(M, M.transfer, Object.assign(new Error(why), { soft: true })); }
+  // Rehearsal mode is switched on the PowerPoint computer itself, with its receiver page's box; the
+  // player there opens decks for editing (then F5) instead of straight into the show
+  function applyMode(M) {
+    if (!M.receiver || !M.player || !!M.player.pp.edit === !!M.receiver.pp.edit) return;
+    const want = !!M.receiver.pp.edit;
+    cmd(M.player, 'mode', want ? 'edit' : 'show').then(a => { if (a.ok && M.player) M.player.pp.edit = want; refreshPanel(); }).catch(() => {});
+  }
+  function onReceiverMode(e, m) {
+    const M = machineOf(e);
+    if (!M || M.receiver !== e) return;
+    e.pp.edit = !!m.edit;
+    applyMode(M);
+    refreshPanel();
+  }
   function onReceiverReply(e, m) {
     const M = machineOf(e);
     const t = M && M.transfer;
@@ -398,6 +417,7 @@
       out.push({
         name: label(M), receiver: M.receiver ? M.receiver.peer.mode : null, folder: !!(M.receiver && M.receiver.pp.folder),
         player: !!M.player, simulate: !!(M.player && M.player.pp.simulate), presenter: !!(M.player && M.player.pp.presenter),
+        edit: !!(M.player && M.player.pp.edit),
         ready: list.filter(d => M.prepared.has(d.key)).length, total: list.length,
         transfer: t ? { name: t.name, pct: t.size ? Math.floor(t.acked / t.size * 100) : 0 } : null,
         current: M.player ? M.player.pp.current : '', showing: !!(M.player && M.player.pp.showing),
@@ -417,7 +437,7 @@
       bits.push(!s.receiver ? '<span class="pp-warn">receiver page not open</span>'
         : s.receiver === 'lan' ? (s.folder ? 'receiver <b class="pp-lan">LAN direct</b>' : '<span class="pp-warn">receiver: no folder chosen</span>')
         : '<span class="pp-warn">receiver via server: decks need the same network</span>');
-      bits.push(s.player ? (s.simulate ? 'player (simulating)' : 'player ✓') + (s.presenter ? ', Presenter View' : '') : '<span class="pp-warn">player not running</span>');
+      bits.push(s.player ? (s.simulate ? 'player (simulating)' : 'player ✓') + (s.presenter ? ', Presenter View' : '') + (s.edit ? ', <b>rehearsal</b> (decks open for editing)' : '') : '<span class="pp-warn">player not running</span>');
       if (s.total) bits.push(s.transfer ? `sending ${esc(s.transfer.name)} ${s.transfer.pct}%` : `${s.ready}/${s.total} files ready`);
     }
     if (s.current) bits.push((s.showing ? 'showing ' : 'last: ') + esc(s.current.replace(/ ~[0-9a-z]{1,6}(?=\.\w+$)/, '')));

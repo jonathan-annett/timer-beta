@@ -38,6 +38,9 @@
   code, pre { font: 12.5px/1.4 ui-monospace, Consolas, monospace; }
   pre { background: #000; border: 1px solid #333; border-radius: 5px; padding: 8px; white-space: pre-wrap; word-break: break-all; user-select: all; margin: 6px 0; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .check { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; cursor: pointer; }
+  .check input { margin: 3px 0 0; flex: none; }
+  .check .hint { display: block; margin-top: 2px; }
   .ok { color: #7fdc7f; }
   .warn { color: #ffcc33; }
   .bad { color: #ff8080; }
@@ -70,9 +73,15 @@
     <p>The player is a small PowerShell script that opens each deck in PowerPoint when the run sheet reaches it.
       <a class="btn" id="dl" href="Pptx-WsController.ps1" download="Pptx-WsController.ps1">Download the player</a></p>
     <p class="hint">Then run this in PowerShell, in the folder you downloaded it to (it stays open while the show runs):</p>
-    <label class="row hint"><input type="checkbox" id="presenter" checked> Presenter View (the speaker's screen with notes and the next slide; untick to show just the slides)</label>
+    <label class="check hint"><input type="checkbox" id="presenter" checked> <span>Presenter View (the speaker's screen with notes and the next slide; untick to show just the slides)</span></label>
     <pre id="cmd"></pre>
     <div class="row"><button id="copycmd">Copy command</button><span id="playerst" class="hint"></span></div>
+  </section>
+
+  <section id="s-mode">
+    <h2>Rehearsal</h2>
+    <label class="check"><input type="checkbox" id="rehearsal"> <span><b>Open decks for editing</b>: a normal PowerPoint window, then the show with F5, so changes can be made here during a rehearsal.
+      <span class="hint">Edits stay on this computer (the timer's copy isn't changed). Takes effect from the next deck; untick for the show itself.</span></span></label>
   </section>
 
   <section id="s-status">

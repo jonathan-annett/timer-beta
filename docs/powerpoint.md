@@ -96,6 +96,14 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
   2. open the new deck with `/S` and wait for its slide show;
   3. Presenter View on with the keys (only if it isn't already).
   *Close slides* (`stop all`) is step 1 on its own.
+- **Rehearsal mode** (the receiver page's *Open decks for editing* box, live; `-EditMode` to start
+  in it): step 2 opens the deck as a normal, editable PowerPoint window (no `/S`), waits for it
+  (class `PPTFrameClass`, its name in the title), focuses it, presses Esc then **F5**, and tries
+  F5 once more if no show appears. Step 1 still closes only slide shows, so edited decks stay open
+  (no "Save changes?" prompt in the way; opening one again brings it forward). `send` never
+  overwrites a copy in Show that's newer than the one the timer sent (`note: 'edited here'`), so
+  edits survive re-syncs; they stay on that computer, the timer's copy isn't changed. The share
+  panel shows *rehearsal* for a machine in this mode.
 - **Show ended by hand** (Esc, last slide): its window is gone, so the player reports
   `showing: false`.
 - **The show didn't appear** within 25 s (usually a PowerPoint dialog waiting for a click: sign-in,
@@ -130,7 +138,7 @@ no timer state.
 Player → timer:
 
 ```
-{t:'hello', kind:'player', name, version, pair, inbox, token, current, showing, simulate, presenter}
+{t:'hello', kind:'player', name, version, pair, inbox, token, current, showing, simulate, presenter, edit}
 {t:'pp-ack', req, verb, ok, result?, note?, error?, …}      one per command, in order
 {t:'pp-state', current, showing}                            when what's on screen changes (polled each second)
 ```
@@ -140,6 +148,7 @@ Timer → player: `{t:'pp', req, verb, arg, keep?}`, one at a time (the timer wa
 | verb | arg | does | ack |
 |---|---|---|---|
 | `check` | | reads `<inbox>\.timer-pair` again | `result`: the receiver id in it |
+| `mode` | `edit` or `show` | rehearsal (decks open for editing, then F5) or show (`/S`) | `result`: the mode |
 | `send` | file name in Inbox | copies it into Show (in the background; never overwrites: a changed file gets `name v2.ext`) | `result`: the name in Show; `note:'unchanged'` if already there |
 | `start` | file name in Show | `powerpnt.exe /S`, waits for the show window, Presenter View if on, then closes the previous deck's show | `result`; a missing file fails without touching the current show |
 | `stop` | `all` or nothing | closes the deck's show; `all`: every PowerPoint slide show on the machine | |
@@ -156,7 +165,8 @@ File names are leaf names only (`[IO.Path]::GetFileName`; names starting with `.
 Receiver → timer:
 
 ```
-{t:'hello', kind:'receiver', pair, folder, folderName, files:[{key, name, size}], token}
+{t:'hello', kind:'receiver', pair, folder, folderName, edit, files:[{key, name, size}], token}
+{t:'pf-mode', edit}                    the Rehearsal box changed (the timer tells the paired player: mode)
 {t:'pf-ok' | 'pf-have' | 'pf-prog' | 'pf-saved' | 'pf-error', x, key, got?, name?, reason?, detail?}
 ```
 
