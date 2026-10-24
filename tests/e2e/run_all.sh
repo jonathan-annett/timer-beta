@@ -23,4 +23,5 @@ for t in "$@"; do
   fi
 done
 [ -n "$started" ] && kill "$started" 2>/dev/null
+node ../../tools/stamp-versions.mjs --check > /dev/null || echo "NOTE  version stamps out of date: run node tools/stamp-versions.mjs before committing"
 exit $fails

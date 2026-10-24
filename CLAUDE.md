@@ -35,6 +35,7 @@ timer_build/
 ├── docs/                  HANDOVER.md (state of play for the next session), powerpoint.md (PowerPoint machines: setup + protocol), glasses-g2-plan.md (Even Realities G2 app, not started)
 ├── tests/e2e/             Playwright end-to-end scripts, local pairing server (server.sh), run_all.sh (see its README)
 ├── tools/serve-local.mjs  Local HTTPS preview of public/ at https://localhost:8444/ (no caching; same cert as the tests)
+├── tools/stamp-versions.mjs  Cache busting: stamps ?v=<content hash> on the HTML pages' script/style links (run before each commit)
 ├── companion/             Bitfocus Companion module (TypeScript, its own npm project; see "Bitfocus Companion" below)
 ├── package.json           Dependency: ws (for remote-server.js)
 └── public/                Served as static files
@@ -86,7 +87,7 @@ timer_build/
 
 ## Deployment
 
-`public/` is a static site: copy it (and `README.md`, for the in-app help) to any HTTPS host. The **share** features also need the pairing server, `remote-server.js`, reachable at `wss://<timer host>:8443/` by default (another server via `?remote=` or the panel's *Server* field):
+`public/` is a static site: copy it (and `README.md`, for the in-app help) to any HTTPS host. Its HTML pages load their scripts and styles as `name.js?v=<hash>` (first 8 hex of the file's SHA-256), written by `node tools/stamp-versions.mjs` and committed, so a changed file gets a new URL and browsers can't use a stale cached copy (the HTML itself is revalidated: the host sends `max-age=0`). **After changing any `.js`/`.css` file in `public/`, run the stamper before committing** (`--check` only reports; `tests/e2e/run_all.sh` warns when stamps are stale). Scripts loaded by script (`qrcode.min.js`, `jsQR.js`) and pages opened by script (`display.html`, `runsheet.html`, `?presenter`) aren't stamped; the vendored ones never change, and the pages are HTML, revalidated like any other. The **share** features also need the pairing server, `remote-server.js`, reachable at `wss://<timer host>:8443/` by default (another server via `?remote=` or the panel's *Server* field):
 
 ```bash
 npm install          # just ws

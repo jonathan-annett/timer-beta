@@ -15,8 +15,9 @@ setup and protocol; `tests/e2e/README.md` is how to test.
   protocol 5).
 - At the end of each change, tell the user which files to copy and to **Ctrl+F5** the affected
   pages (or have them try it first in the local preview, see below). Stale cached scripts have caused "it doesn't work" reports several times (most recently
-  holding slides not syncing: an old `pptx-hub.js`/`pptx-receiver.js`). Adding version query
-  strings to the script tags was offered and not yet taken up.
+  holding slides not syncing: an old `pptx-hub.js`/`pptx-receiver.js`). Script/style links now
+  carry `?v=` content-hash stamps (`tools/stamp-versions.mjs`), so a plain reload is enough;
+  pages left open since before a deploy still need one.
 - User setup: Companion 5.1 on a Mac (Node 24, developer modules path → `timer-beta/companion`);
   a Windows test PC with PowerPoint running `Pptx-WsController.ps1` + `pptx.html`.
 - The user is in Melbourne (UTC+11). They test as they go and report back in short messages;
@@ -42,7 +43,8 @@ relayed through the user). Suggested setup and loop:
 
 **The loop for each change**
 1. Make the change; keep `CLAUDE.md` (architecture) and this file (state of play) up to date in
-   the same commit.
+   the same commit. If any `.js`/`.css` in `public/` changed, run `node tools/stamp-versions.mjs`
+   (cache-busting `?v=` stamps in the HTML) and commit the HTML with it.
 2. `tests/e2e/run_all.sh` (or just the relevant ones, e.g. `tests/e2e/run_all.sh runsheet_*`):
    one line per script, logs in `/tmp/timer-e2e/`. The scripts print what they saw rather than
    asserting, so also read the log of the test for the feature you changed. Add or extend a
@@ -72,6 +74,12 @@ relayed through the user). Suggested setup and loop:
   short messages.
 
 ## What was built recently (newest first)
+
+- **Cache busting** (24 Oct): `tools/stamp-versions.mjs` stamps `?v=<content hash>` on every
+  script/style link in `public/*.html`; committed, so the manual copy deploys it. Only changed
+  files get new URLs. The host already sends `max-age=0` on everything, so the HTML is re-checked;
+  remaining staleness comes from pages left open (e.g. the PowerPoint receiver page): those still
+  need a reload after a deploy.
 
 Run sheet (all in `runsheet.js`, `runsheet-editor.js`, `runsheet-core.js`, `runsheet.html`, plus
 the remote path in `remote-control.js`/`remote-phone.js`):
@@ -149,7 +157,6 @@ Run sheet:
 
 ## Offers made but not taken up (ask before doing)
 
-- Cache-busting version tags on script/style links.
 - Restart with a single click (currently two within 2 s).
 - Ripple when editing the start of items other than the next one (currently only the next).
 - A provisional schedule counted from "now" before a start-time-less show begins (currently no
