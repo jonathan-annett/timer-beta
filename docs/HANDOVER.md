@@ -14,15 +14,62 @@ setup and protocol; `tests/e2e/README.md` is how to test.
   on the same VPS; it only needs redeploying when `remote-server.js` changes (it hasn't since
   protocol 5).
 - At the end of each change, tell the user which files to copy and to **Ctrl+F5** the affected
-  pages. Stale cached scripts have caused "it doesn't work" reports several times (most recently
+  pages (or have them try it first in the local preview, see below). Stale cached scripts have caused "it doesn't work" reports several times (most recently
   holding slides not syncing: an old `pptx-hub.js`/`pptx-receiver.js`). Adding version query
   strings to the script tags was offered and not yet taken up.
 - User setup: Companion 5.1 on a Mac (Node 24, developer modules path → `timer-beta/companion`);
   a Windows test PC with PowerPoint running `Pptx-WsController.ps1` + `pptx.html`.
 - The user is in Melbourne (UTC+11). They test as they go and report back in short messages;
   answer with what changed and what to deploy, not a recap.
-- Don't run downloaded binaries in the sandbox (a PowerShell download was blocked by the
-  classifier earlier; don't work around it). The `.ps1` is tested by the user only.
+- In the cloud sandbox a downloaded PowerShell binary was blocked; don't work around such blocks.
+  On the Mac, installing PowerShell with Homebrew is the user's call (suggest it, see below).
+
+## Working from the Mac (Claude Code on the command line)
+
+The next sessions run in Claude Code on the user's MacBook, in a local clone. That removes most
+of the friction this session had (cloud container, background jobs killed after 2 h, everything
+relayed through the user). Suggested setup and loop:
+
+**Set up once**
+- `git clone` the repo (or use the existing clone), `npm install` at the root (just `ws`).
+- Python 3 + Playwright for the e2e scripts: `pip3 install playwright && python3 -m playwright install chromium`
+  (the cloud's pre-installed Chromium doesn't exist on the Mac).
+- Node 22 or newer for the Companion module (the user has Node 24; `nvm` if needed).
+- Optional: `brew install powershell` (see *PowerPoint player* below) and `brew install coreutils`
+  (gives `gtimeout`, which `run_all.sh` uses when present).
+- In Claude Code, allow the routine commands (`git`, `npm`, `node`, `python3`, `tests/e2e/*.sh`)
+  so each test run and push doesn't stop for a permission prompt.
+
+**The loop for each change**
+1. Make the change; keep `CLAUDE.md` (architecture) and this file (state of play) up to date in
+   the same commit.
+2. `tests/e2e/run_all.sh` (or just the relevant ones, e.g. `tests/e2e/run_all.sh runsheet_*`):
+   one line per script, logs in `/tmp/timer-e2e/`. The scripts print what they saw rather than
+   asserting, so also read the log of the test for the feature you changed. Add or extend a
+   script for new behaviour (copy the closest one).
+3. **Local preview before deploying:** `tests/e2e/server.sh &` then `node tools/serve-local.mjs`,
+   and the user opens https://localhost:8444/ (accept the self-signed certificate once there and
+   once at https://localhost:8443/). It serves `public/` with caching off, and the share panel
+   connects to the local pairing server by itself, so phones-on-the-Mac, the remote editor,
+   Companion (point a test connection at the local link) and PowerPoint (*Simulate*) can all be
+   tried locally. This should replace most "deploy, Ctrl+F5, report back" round trips.
+4. Commit and push to `main`; tell the user which files to copy to /beta (or the whole `public/`).
+
+**Ideas to streamline further (ask the user first)**
+- A deploy script (`tools/deploy.sh`: rsync `public/` + `README.md` to the VPS over the user's
+  SSH key). Needs the host and path from the user. It could also stamp `?v=<commit>` on the
+  script and style links in the deployed copy, which would end the stale-cache problem for good.
+- Companion lives on the same Mac: if Companion's developer modules path points at this clone,
+  `npm run build` in the module is all a change needs (restart the connection, or Companion, if
+  it doesn't pick it up). `npm test` there checks the preset/action definitions.
+- **PowerPoint player:** the agent still can't reach the Windows PC, but the real
+  `Pptx-WsController.ps1` runs on macOS with `pwsh -File public/Pptx-WsController.ps1 -Link '<pptx link>' -Simulate -AllowSelfSignedCert`
+  (its Windows-only parts are skipped off Windows; untried so far). With the local preview's
+  PowerPoint link that tests the script's own protocol handling, not just `fake_player.mjs`.
+  For real-PowerPoint problems, ask the user for the player's console output; a `-LogFile`
+  option on the player would make that easier to send.
+- Keep using small commits with a test run each; the user tests between them and reports in
+  short messages.
 
 ## What was built recently (newest first)
 
@@ -140,5 +187,6 @@ Run sheet:
 
 `tests/e2e/` (moved out of the session scratchpad so it survives): Playwright scripts for the
 run sheet editor, the remote editor, the PowerPoint machines (with `fake_player.mjs`) and the
-Companion link, plus `server.sh` for a local pairing server. See its README. Unit-ish checks:
+Companion link, `server.sh` for a local pairing server and `run_all.sh` to run them. See its
+README. `tools/serve-local.mjs` is the local HTTPS preview of `public/`. Unit-ish checks:
 `runsheet-core.js` and `markdown-lite.js` load in node; the Companion module has `npm test`.

@@ -33,7 +33,8 @@ timer_build/
 ├── remote-server.js       Pairing server for share (phones, displays, Companion): wss, port 8443, standalone
 ├── deploy/                systemd unit + certbot hook for remote-server.js
 ├── docs/                  HANDOVER.md (state of play for the next session), powerpoint.md (PowerPoint machines: setup + protocol), glasses-g2-plan.md (Even Realities G2 app, not started)
-├── tests/e2e/             Playwright end-to-end scripts + local pairing server script (see its README)
+├── tests/e2e/             Playwright end-to-end scripts, local pairing server (server.sh), run_all.sh (see its README)
+├── tools/serve-local.mjs  Local HTTPS preview of public/ at https://localhost:8444/ (no caching; same cert as the tests)
 ├── companion/             Bitfocus Companion module (TypeScript, its own npm project; see "Bitfocus Companion" below)
 ├── package.json           Dependency: ws (for remote-server.js)
 └── public/                Served as static files

@@ -21,6 +21,13 @@ tests/e2e/server.sh &             # local pairing server on wss://localhost:8443
 Tests marked *server* need `server.sh` running. In the cloud workspace a background command
 is stopped after 2 hours at most; restart it if a test can't connect.
 
+`./run_all.sh` runs them all (or `./run_all.sh runsheet_*` for some), starting the pairing
+server for the run if none is listening, and prints `ok` / `FAIL` per script (FAIL = page errors
+or a crash; logs in `$E2E_OUT`). On a Mac: `pip3 install playwright && python3 -m playwright install chromium` first.
+
+The same certificate and pairing server also back the local preview, `node tools/serve-local.mjs`
+(https://localhost:8444/, no caching).
+
 ## Tests
 
 | Script | Server | What it checks |
