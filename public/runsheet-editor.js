@@ -32,7 +32,8 @@
   let state = REMOTE ? {} : readJSON(STATE_KEY, {});
   let live = REMOTE ? {} : readJSON(LIVE_KEY, {});
   let showHidden = false;                            // show the completed items deleted (hidden) from the sheet
-  let norm;
+  let norm;                                          // the sheet as shown: normalise(view)
+  let view;                                          // the sheet as shown: the sheet, or a scaling preview of it
 
   // Older/hand-made sheets may lack ids
   sheet.items.forEach(it => { if (!it.id) it.id = C.newId(); });
@@ -119,14 +120,26 @@
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   }
-  function plannedMs(sec) {
+  // n: the normalised sheet the time belongs to (default the one shown; scaling previews pass theirs)
+  function plannedMs(sec, n) {
+    n = n || norm;
     if (sec == null) return null;
-    if (norm.anchored) return dayBase() + sec * 1000;
+    if (n.anchored) return dayBase() + sec * 1000;
+    if (provisional(n)) {                              // not started: as if it started now
+      const f = n.items.find(x => !x.hidden);
+      return f ? editorNow() + (sec - f.planned) * 1000 : null;
+    }
     const log = state.log || [];
     const first = log.find(e => e.id !== 'end');
-    const fi = first ? norm.items.findIndex(it => it.id === first.id) : -1;
+    const fi = first ? n.items.findIndex(it => it.id === first.id) : -1;
     if (fi < 0) return null;
-    return (first.orig != null ? first.orig : first.actual) + (sec - norm.items[fi].planned) * 1000;   // orig: before a Restart
+    return (first.orig != null ? first.orig : first.actual) + (sec - n.items[fi].planned) * 1000;   // orig: before a Restart
+  }
+  // A sheet without start times that hasn't started yet: its times count from now (they move on
+  // as the clock does, until the first Next pins them to when the show really began)
+  function provisional(n) {
+    n = n || norm;
+    return !n.anchored && !state.finished && !(state.log || []).some(e => e.id !== 'end');
   }
   function clockOf(ms) {
     if (ms == null) return '';
@@ -140,13 +153,14 @@
   }
   // While an item is running: when it's due to end (its countdown, as runsheet.js reports it;
   // now, if it's over) and when each item after it should start (as runsheet.js works it out)
-  function projNow() {
+  function projNow(n) {
+    n = n || norm;
     const cur = liveIndex();
     if (cur < 0) return null;
     const log = state.log || [], e = log[log.length - 1];
     const timerEnd = live.curId && live.curId === state.currentId ? live.curEnd : null;
-    const end = timerEnd != null ? Math.max(timerEnd, editorNow()) : e && e.id === state.currentId ? e.actual + norm.items[cur].eff * 1000 : null;
-    return end == null ? null : { end, proj: C.project(norm, cur, end, plannedMs) };
+    const end = timerEnd != null ? Math.max(timerEnd, editorNow()) : e && e.id === state.currentId ? e.actual + n.items[cur].eff * 1000 : null;
+    return end == null ? null : { end, proj: C.project(n, cur, end, sec => plannedMs(sec, n)) };
   }
   function signed(sec) {
     if (sec == null || Math.abs(sec) < ON_TIME_SEC) return '';
@@ -157,6 +171,10 @@
 
   function renderAll() {
     norm = C.normalise(sheet);
+    view = sheet;
+    prunePicked();
+    scaling = previewing();
+    if (scaling) { view = scaledCopy(norm); norm = C.normalise(view); }
     if (document.activeElement !== $('title')) $('title').value = sheet.title || '';
     if (document.activeElement !== $('per-item')) $('per-item').value = sheet.perItem || 20;
     document.title = 'Run sheet' + (sheet.title ? ' — ' + sheet.title : '');
@@ -176,12 +194,12 @@
 
     const tbody = document.querySelector('#rs-table tbody');
     tbody.innerHTML = '';
-    const nHidden = sheet.items.filter(x => x.hidden).length;
+    const nHidden = view.items.filter(x => x.hidden).length;
     if (!nHidden) showHidden = false;
     $('show-hidden').hidden = !nHidden;
     $('show-hidden').textContent = showHidden ? `Hide the ${nHidden} deleted` : `Show ${nHidden} deleted (already run)`;
     norm.items.forEach((it, i) => {
-      const src = sheet.items[i];
+      const src = view.items[i];
       if (src.hidden && !showHidden) return;       // deleted after it ran: kept for the record
       const tr = document.createElement('tr');
       tr.dataset.id = it.id;
@@ -224,6 +242,7 @@
 
   // Row highlights, status column and times that depend on the show's progress.
   function renderStatus() {
+    if (picked.size && prunePicked()) { renderAll(); return; }   // the show moved on to a selected row
     const log = state.log || [];
     const lastById = {};
     log.forEach((e, k) => { lastById[e.id] = k; });
@@ -252,7 +271,7 @@
       const i = norm.items.findIndex(it => it.id === tr.dataset.id);
       const it = norm.items[i];
       if (!it) return;
-      const src = sheet.items[i];
+      const src = view.items[i];
       const p = plannedMs(it.planned);
       const k = lastById[it.id];
       const role = rowRole(i);
@@ -285,12 +304,16 @@
 
       // Completed items are kept as they happened; the item running now keeps its start
       tr.classList.toggle('locked', role === 'done' || it.hidden);
+      tr.classList.toggle('picked', picked.has(it.id));
+      tr.classList.toggle('scaled', scaling && picked.has(it.id));
+      tr.querySelector('td.num').classList.toggle('pickable', canPick(i));
+      tr.querySelector('td.num').title = canPick(i) ? 'Click to select it for scaling (Shift+click: a range)' : '';
       tr.querySelectorAll('input[data-field]').forEach(inp => {
         const ro = role === 'done' || it.hidden || (role === 'now' && inp.dataset.field === 'start');
-        inp.readOnly = ro;
-        inp.title = ro ? (role === 'now' ? 'Running now: it started when it started' : 'Already run: kept as it happened') : (inp.classList.contains('invalid') ? inp.title : '');
+        inp.readOnly = ro || scaling;
+        inp.title = scaling ? 'Apply or cancel the scaling first' : ro ? (role === 'now' ? 'Running now: it started when it started' : 'Already run: kept as it happened') : (inp.classList.contains('invalid') ? inp.title : '');
       });
-      tr.querySelectorAll('td.vid button, td.vid select, td.deck button').forEach(b => { b.disabled = role === 'done' || it.hidden; });
+      tr.querySelectorAll('td.vid button, td.vid select, td.deck button').forEach(b => { b.disabled = role === 'done' || it.hidden || scaling; });
       const del = tr.querySelector('button[data-act=del]');
       if (del) del.title = role === 'done' ? 'Delete (hidden from the run sheet; it stays in the log)' : 'Delete';
       startIn.classList.toggle('conflict', overlap >= 1);
@@ -319,12 +342,13 @@
         status.innerHTML = [clash, ahead, gap].filter(Boolean).join(' · ');
       }
       tr.querySelectorAll('button.go').forEach(b => { b.disabled = !active || it.hidden; });
+      tr.querySelectorAll('td.acts button:not(.go)').forEach(b => { if (scaling) b.disabled = true; });
       // Order is fixed up to and including the item running now, and nothing moves above it:
       // the dashboard, the phones and the log all follow the live order. To stop an item,
       // delete it instead.
       const lock = moveLock(i);
       const up = tr.querySelector('button[data-act=up]'), down = tr.querySelector('button[data-act=down]');
-      up.disabled = !!lock || i === 0; down.disabled = lock === 'ran' || lock === 'now' || i === norm.items.length - 1;
+      up.disabled = !!lock || i === 0 || scaling; down.disabled = lock === 'ran' || lock === 'now' || i === norm.items.length - 1 || scaling;
       up.title = lock ? LOCK_TEXT[lock] : 'Move up';
       down.title = lock === 'ran' || lock === 'now' ? LOCK_TEXT[lock] : 'Move down';
     });
@@ -344,8 +368,10 @@
       parts.push(norm.endIdx >= 0 ? `Next: <b>${esc(norm.items[norm.endIdx].name)}</b> (finish)` : 'Next: <b>end of show</b>');
     }
     if (!active && norm.items.length) parts.push('Run sheet mode is off');
+    if (provisional() && norm.items.length) parts.push('<span class="prov" title="The sheet has no start times, so its times count from now until the first Next">times as if it started now</span>');
     $('now-next').innerHTML = parts.join(' &nbsp;·&nbsp; ');
 
+    renderScaleBar();
     renderLog();
   }
 
@@ -649,7 +675,7 @@
     const item = sheet.items[i];
     if (!item) return;
     const role = rowRole(i);
-    if (role === 'done' || item.hidden || (role === 'now' && field === 'start')) { renderAll(); return; }   // read-only (belt and braces)
+    if (role === 'done' || item.hidden || (role === 'now' && field === 'start') || scaling) { renderAll(); return; }   // read-only (belt and braces)
     if (field === 'name') {
       const v = input.value.trim();
       if (role === 'now' && v !== item.name) return liveRename(item, v);
@@ -672,9 +698,158 @@
       if (role === 'now' && field === 'duration') return liveDuration(i, v);
       if (role === 'next' && field === 'start' && v != null && v !== item.start) return nextStart(i, v);
       if (field === 'duration') return setDuration(i, v);
+      if (field === 'start') return setStart(i, v);
       item[field] = v;
     }
     saveSheet();
+  });
+
+  // ─── Scaling a selection ──────────────────────────────────────────────────
+  // Running late? Select two or more items still to come (click their numbers; Shift+click for a
+  // range) and drag the slider to shorten (or lengthen) them all by the same percentage. The table
+  // previews it; nothing is saved until Apply. Within the selection the start times move with
+  // the new lengths; items after the last one selected keep theirs (lunch at 12:30 is the target),
+  // so the time saved closes up lateness or becomes a gap. Videos keep their length.
+
+  const picked = new Set();                          // ids of the selected rows
+  let lastPicked = null;                             // for Shift+click ranges
+  let scalePct = 100;
+  let scaling = false;                               // a preview is showing (2+ selected, not 100 %): the table is read-only
+
+  function canPick(i) {
+    const it = norm.items[i];
+    if (!it || it.isEnd || it.hidden || it.video || state.finished) return false;
+    const role = rowRole(i);
+    return role !== 'done' && role !== 'now';
+  }
+  // Drops rows that can't be scaled any more (the show moved on to them, deleted...); true if any went
+  function prunePicked() {
+    let gone = false;
+    picked.forEach(id => {
+      const i = norm.items.findIndex(it => it.id === id);
+      if (i < 0 || !canPick(i)) { picked.delete(id); gone = true; }
+    });
+    if (picked.size < 2) scalePct = 100;
+    return gone;
+  }
+  const previewing = () => picked.size >= 2 && scalePct !== 100;
+
+  function pickRow(id, range) {
+    const i = norm.items.findIndex(it => it.id === id);
+    if (i < 0 || !canPick(i)) return;
+    if (range && lastPicked) {
+      const j = norm.items.findIndex(it => it.id === lastPicked);
+      if (j >= 0) for (let k = Math.min(i, j); k <= Math.max(i, j); k++) if (canPick(k)) picked.add(norm.items[k].id);
+    } else if (picked.has(id)) picked.delete(id);
+    else picked.add(id);
+    lastPicked = id;
+    renderAll();
+  }
+
+  // The new length of one item at pct %: whole seconds, rounded to 15 s (to the second under a minute)
+  function scaledDur(sec, pct) {
+    if (pct === 100) return sec;
+    const v = sec * pct / 100;
+    return Math.max(1, v < 60 ? Math.round(v) : Math.round(v / 15) * 15);
+  }
+  // Applies the scaling to target (the sheet, or a copy), from the times n gives the rows now
+  function scaleInto(target, n, pct) {
+    const rows = n.items.map((it, i) => picked.has(it.id) ? i : -1).filter(i => i >= 0);
+    const last = rows[rows.length - 1];
+    rows.forEach(i => {
+      const old = n.items[i].eff, d = scaledDur(old, pct);
+      target.items[i].duration = d;
+      C.shiftStarts(target, i, d - old, last);       // up to the last selected; the rest keep their times
+    });
+  }
+  // n = the real sheet's normalised form (renderAll has it before the preview replaces it)
+  function scaledCopy(n, pct) {
+    const copy = JSON.parse(JSON.stringify(sheet));
+    scaleInto(copy, n, pct == null ? scalePct : pct);
+    return copy;
+  }
+
+  // What the scaling does, for the bar: the selection's total, when its last item ends, and the
+  // item after it with the time it should start (its own start time, or the plan)
+  function scaleFacts(pct) {
+    const real = C.normalise(sheet);
+    const n = pct === 100 ? real : C.normalise(scaledCopy(real, pct));
+    const rows = real.items.map((it, i) => picked.has(it.id) ? i : -1).filter(i => i >= 0);
+    const last = rows[rows.length - 1];
+    const pn = projNow(n);
+    const startOf = i => pn && pn.proj.has(i) ? pn.proj.get(i) : plannedMs(n.items[i].planned, n);
+    const s = startOf(last);
+    let after = -1;
+    for (let j = last + 1; j < real.items.length; j++) if (!real.items[j].hidden) { after = j; break; }
+    const target = after >= 0 ? plannedMs(real.items[after].planned, real) : null;
+    return {
+      total: rows.reduce((a, i) => a + n.items[i].eff, 0),
+      lastEnd: s == null ? null : s + n.items[last].eff * 1000,
+      after: after >= 0 ? real.items[after] : null,
+      target,                                        // when the item after the selection should start (ms)
+      fixed: after >= 0 && real.items[after].start != null,
+    };
+  }
+
+  function renderScaleBar() {
+    const bar = $('scalebar');
+    bar.hidden = !picked.size;
+    if (!picked.size) return;
+    const ready = picked.size >= 2;
+    bar.classList.toggle('ready', ready);
+    $('scale-pct').value = scalePct;
+    $('scale-pct').disabled = !ready;
+    $('scale-apply').disabled = !scaling;
+    if (!ready) {
+      $('scale-info').innerHTML = '1 item selected: select at least one more to scale them together (click a number; Shift+click for a range).';
+      $('scale-fit').hidden = true;
+      $('scale-label').textContent = '100 %';
+      return;
+    }
+    const was = scaleFacts(100), now = scalePct === 100 ? was : scaleFacts(scalePct);
+    const diff = now.total - was.total;
+    const parts = [`<b>${picked.size} items</b> ${C.formatDuration(was.total)}` +
+      (diff ? ` → <b>${C.formatDuration(now.total)}</b> <span class="${diff < 0 ? 'st-early' : 'st-late'}">(${diff < 0 ? '−' : '+'}${C.formatSpan(diff)})</span>` : '')];
+    if (now.lastEnd != null) parts.push(`last one ends ${clockOf(was.lastEnd)}` + (now.lastEnd !== was.lastEnd ? ` → <b>${clockOf(now.lastEnd)}</b>` : ''));
+    if (now.after && now.target != null && now.lastEnd != null) {
+      const late = Math.round((now.lastEnd - now.target) / 1000);
+      const name = esc(now.after.isEnd ? (now.after.name || 'the finish') : now.after.name || 'the next item');
+      parts.push(`${name} ${now.fixed ? 'at' : 'planned'} ${clockOf(now.target)}: ` +
+        (late >= ON_TIME_SEC ? `<span class="st-late">${C.formatSpan(late)} late</span>`
+          : late <= -ON_TIME_SEC ? `<span class="st-early">${C.formatSpan(late)} to spare</span>` : 'on time'));
+    }
+    $('scale-info').innerHTML = parts.join(' · ');
+    $('scale-label').textContent = scalePct + ' %';
+    // Fit: the gentlest scaling that gets the item after the selection started on time
+    const fit = was.after && was.target != null && was.lastEnd != null && was.lastEnd - was.target >= ON_TIME_SEC * 1000;
+    $('scale-fit').hidden = !fit;
+    if (fit) $('scale-fit').textContent = `Fit to ${clockOf(was.target)}`;
+  }
+
+  function fitPct() {
+    let lo = Number($('scale-pct').min), hi = 100;
+    const fits = p => { const f = scaleFacts(p); return f.lastEnd == null || f.lastEnd - f.target < ON_TIME_SEC * 1000; };
+    if (!fits(lo)) return lo;                        // can't make it all up: as far as the slider goes
+    while (hi - lo > 1) { const mid = Math.floor((lo + hi) / 2); if (fits(mid)) lo = mid; else hi = mid; }
+    return lo;
+  }
+
+  function endScaling(save) {
+    if (save && scaling) {
+      scaleInto(sheet, C.normalise(sheet), scalePct);
+      picked.clear(); scalePct = 100;
+      saveSheet();
+      return;
+    }
+    picked.clear(); scalePct = 100;
+    renderAll();
+  }
+  $('scale-pct').addEventListener('input', e => { scalePct = Number(e.target.value) || 100; renderAll(); });
+  $('scale-fit').addEventListener('click', () => { scalePct = fitPct(); renderAll(); });
+  $('scale-apply').addEventListener('click', () => endScaling(true));
+  $('scale-cancel').addEventListener('click', () => endScaling(false));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && picked.size && !document.querySelector('.ask')) { e.preventDefault(); endScaling(false); }
   });
 
   // ─── Editing the item running now (and the next one's start) ──────────────
@@ -761,6 +936,14 @@
     const oldEff = norm.items[i].eff;
     sheet.items[i].duration = sec;
     if (sec != null) C.shiftStarts(sheet, i, sec - oldEff);
+    saveSheet();
+  }
+  // A new start time: the start times after it move by as much (from the time the row had, typed
+  // or worked out). Cleared, or the sheet's first start time (no times to measure from), moves nothing.
+  function setStart(i, sec) {
+    const old = norm.anchored ? norm.items[i].planned : null;
+    sheet.items[i].start = sec;
+    if (sec != null && old != null) C.shiftStarts(sheet, i, C.dayDelta(old, sec));
     saveSheet();
   }
   // A new end for the live item: its countdown ends then, and the rest of the day moves
@@ -863,8 +1046,10 @@
   });
 
   tbody.addEventListener('click', e => {
+    const num = e.target.closest('td.num');
+    if (num) { pickRow(num.closest('tr').dataset.id, e.shiftKey); return; }
     const btn = e.target.closest('button[data-act]');
-    if (!btn) return;
+    if (!btn || (scaling && btn.dataset.act !== 'go')) return;
     const id = btn.closest('tr').dataset.id;
     const i = sheet.items.findIndex(it => it.id === id);
     if (i < 0) return;
@@ -1108,5 +1293,6 @@
   }
   renderAll();
   setInterval(renderLive, 2000);
+  setInterval(() => { if (norm.items.length && provisional()) renderStatus(); }, 5000);   // times as if it started now
   setTimeout(cleanUpVideos, 3000);   // remove stored videos the sheet no longer uses
 })();

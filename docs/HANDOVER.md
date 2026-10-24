@@ -73,6 +73,13 @@ relayed through the user). Suggested setup and loop:
 
 ## What was built recently (newest first)
 
+- **Run sheet: start ripple, provisional times, scaling** (24 Oct): any start edit now shifts the
+  start times after it (not just the next item's); a sheet without start times shows times "as
+  if it started now" before the first Next (editor, phones' list, *finish ≈ … if started now*);
+  select 2+ upcoming items (click their numbers) and scale them with a slider (preview, Apply /
+  Cancel, *Fit to hh:mm*): starts move within the selection, items after it keep theirs.
+  Test: `tests/e2e/runsheet_scale.py`. Also: long Status notes wrap (they squeezed the Item column).
+
 - **Restart guard is opt-in** (24 Oct): the editor's Restart now acts on one click; the
   two-clicks-within-2-s guard is the *Options* panel's **Restart needs a second click**
   (`runsheet_restart_confirm`, per computer, off by default; the remote editor keeps it in its
@@ -160,10 +167,9 @@ Run sheet:
 
 ## Offers made but not taken up (ask before doing)
 
-- Ripple when editing the start of items other than the next one (currently only the next).
-- A provisional schedule counted from "now" before a start-time-less show begins (currently no
-  times until the first Next).
 - Show early (ahead-of-plan) estimates for items with typed start times (currently they hold).
+- Scaling: an option to move the items after the selection too (currently they keep their start
+  times, which is what makes *Fit to* work against lunch or the finish).
 
 ## Backlog (from CLAUDE.md, still open)
 
@@ -191,6 +197,9 @@ Run sheet:
 - Background tabs: no `requestAnimationFrame`, throttled timers; the timer tick comes from a
   worker. Don't drive deck/phone/Companion updates from animation frames.
 - The pairing server must answer every socket's `error` (an oversized frame once crashed it).
+- On the Mac: Playwright lives in `tests/e2e/.venv`, the root needs `npm install` (the pairing
+  server's `ws`), and Chromium 156 blocks the test pages (posing as timer.sophtwhere.com) from
+  `wss://localhost:8443/` unless launched with `--disable-features=LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets`.
 
 ## Testing
 

@@ -29,7 +29,8 @@ with sync_playwright() as p:
     def edit(rid, field, val):
         sel=f"#rs-table tr[data-id={rid}] [data-field={field}]"; e.fill(sel, val); e.press(sel, "Tab"); e.wait_for_timeout(500)
     e.check("#active"); e.wait_for_timeout(300)
-    edit("b","end","18:00"); print("not started:", msg()); e.click(".ask button:has-text('OK')"); e.wait_for_timeout(200)
+    hh,mm=map(int,ph("b").split(":")); new=(hh*60+mm+10)%1440   # not started: times are provisional (as if it started now)
+    edit("b","end","%d:%02d"%(new//60,new%60)); print("not started, b end +10 (provisional) ->", msg(), "| b dur:", dur()["b"]/60)
     e.click("#btn-next"); e.wait_for_timeout(1500)
     print("started, b ends:", ph("b"))
     hh,mm=map(int,ph("b").split(":")); new=(hh*60+mm+10)%1440

@@ -67,6 +67,13 @@
   }
   const plannedStartMs = i => (norm.items[i] ? plannedMs(norm.items[i].planned) : null);
   const plannedFinishMs = () => plannedMs(norm.finishPlanned);
+  // A sheet without start times before its first Next: its times as if it started now. For showing
+  // only (the phones' list, the status line); lateness and the log never use them.
+  function provisionalMs(plannedSec) {
+    if (plannedSec == null || norm.anchored || state.finished || state.log.some(e => e.id !== 'end')) return null;
+    const f = nextIndex(-1);
+    return f < 0 ? null : now() + (plannedSec - norm.items[f].planned) * 1000;
+  }
 
   // ─── Actions ──────────────────────────────────────────────────────────────
 
@@ -477,7 +484,11 @@
     const first = nextIndex(-1);
     if (state.index < 0 && !state.finished) {
       const p0 = norm.anchored && first >= 0 ? plannedStartMs(first) : null;
-      if (p0 == null) { text = 'Ready — press Next (Page Down) to start'; short = 'Ready'; }
+      if (p0 == null) {
+        const pf0 = provisionalMs(norm.finishPlanned);
+        text = 'Ready — press Next (Page Down) to start' + (pf0 != null ? ` · finish ≈ ${clockOf(pf0)} if started now` : '');
+        short = 'Ready';
+      }
       else if (now() < p0) { text = `Starts ${clockOf(p0)} (in ${C.formatSpan((p0 - now()) / 1000)})`; short = clockOf(p0); }
       else { text = `Late start: ${C.formatSpan(late)}`; short = '+' + C.formatSpan(late); kind = 'behind'; }
       return { text, short, kind, late };
@@ -595,7 +606,7 @@
     const rows = norm.items.map((it, i) => {
       if (it.hidden) return null;                 // deleted after it ran
       const isEnd = i === norm.endIdx;
-      const p = isEnd ? plannedFinishMs() : plannedStartMs(i);
+      const p = isEnd ? plannedFinishMs() : plannedStartMs(i) ?? provisionalMs(it.planned);   // (provisional: before a sheet without times starts)
       const r = { n: String(it.name || '').slice(0, 80), p: p != null ? clockOf(p) : '' };
       if (isEnd) r.e = 1; else r.d = C.formatDuration(it.eff);
       if (i === cur) r.s = 'now';

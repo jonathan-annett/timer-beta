@@ -197,11 +197,13 @@ var RunsheetCore = (function () {
 
   // Bake derived values into the sheet so every row has start (if anchored), name and duration.
   // ─── Rippling changes down the day ────────────────────────────────────────
-  // A new duration, end or next start moves everything after it: start times written on later
+  // A new duration, end or start moves everything after it: start times written on later
   // rows shift by the same amount (rows without one follow anyway). Hidden rows (already run) stay.
-  function shiftStarts(sheet, from, delta) {
+  // `to` (a row index, optional) stops there: rows after it keep their times (scaling a selection).
+  function shiftStarts(sheet, from, delta, to) {
     if (!delta) return;
-    for (let j = from + 1; j < sheet.items.length; j++) {
+    const last = to == null ? sheet.items.length - 1 : Math.min(to, sheet.items.length - 1);
+    for (let j = from + 1; j <= last; j++) {
       const x = sheet.items[j];
       if (x.start != null && isFinite(x.start) && !x.hidden) x.start = ((x.start + delta) % DAY + DAY) % DAY;
     }

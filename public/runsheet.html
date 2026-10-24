@@ -41,7 +41,7 @@
     input.invalid { border-color: var(--behind); background: #2a1212; }
     textarea { border-color: var(--line2); background: #101010; resize: vertical; }
 
-    .app { display: grid; grid-template-rows: auto auto 1fr; height: 100%; }
+    .app { display: grid; grid-template-rows: auto auto auto 1fr; height: 100%; }
 
     header { display: flex; align-items: center; gap: 1rem; padding: 0.714rem 1.143rem; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
     #title { font-size: 1.286rem; font-weight: bold; max-width: 30rem; flex: 0 1 22rem; min-width: 8rem; width: 0; }
@@ -58,8 +58,22 @@
     .transport .now-next { margin-left: 0.857rem; color: var(--dim); min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .transport .now-next b { color: var(--text); }
     .transport .hint { color: var(--faint); font-size: 0.857rem; }
+    .transport .prov { color: var(--warn); font-size: 0.857rem; }
+    /* Scaling a selection (click the row numbers) */
+    .scalebar { display: flex; align-items: center; gap: 0.714rem; padding: 0.571rem 1.143rem; border-bottom: 1px solid var(--line);
+      background: #14202c; flex-wrap: wrap; }
+    .scalebar[hidden] { display: none; }
+    .scalebar input[type=range] { width: 14rem; padding: 0; accent-color: var(--accent); }
+    .scalebar #scale-label { min-width: 3.4rem; font-weight: bold; text-align: right; }
+    .scalebar #scale-info { flex: 1; min-width: 12rem; color: var(--dim); font-size: 0.929rem; }
+    .scalebar #scale-info b { color: var(--text); }
+    .scalebar:not(.ready) input[type=range], .scalebar:not(.ready) #scale-label { opacity: .35; }
+    #rs-table td.num.pickable { cursor: pointer; }
+    #rs-table td.num.pickable:hover { color: var(--accent); }
+    #rs-table tr.picked td.num { color: #fff; background: #1d4f7a; font-weight: bold; }
+    #rs-table tr.scaled td.dur input { color: var(--accent); font-weight: bold; }
 
-    .main { display: grid; grid-template-columns: 1fr 21rem; min-height: 0; }
+    .main { display: grid; grid-template-columns: 1fr 21rem; min-height: 0; grid-row: 4; }
     .sheet { overflow: auto; padding: 0.286rem 0.571rem 2.857rem; }
     aside { border-left: 1px solid var(--line); overflow: auto; background: var(--panel); }
 
@@ -92,7 +106,8 @@
     #rs-table td.deck .ddel { background: transparent; border-color: transparent; color: var(--dim); }
     #rs-table td.deck .vbusy { font-style: italic; }
     #rs-table td.deck .dmore { padding: 0.143rem 0.3rem; }
-    #rs-table td.status { width: 9rem; font-size: 0.857rem; color: var(--dim); white-space: nowrap; }
+    #rs-table td.status { width: 9rem; font-size: 0.857rem; color: var(--dim); }   /* wraps: long notes mustn't squeeze the Item column */
+    #rs-table td.name { min-width: 9rem; }
     #rs-table td.acts { width: 6.6rem; white-space: nowrap; text-align: right; }
     #rs-table td.acts button { padding: 0.143rem 0.3rem; font-size: 0.857rem; background: transparent; border-color: transparent; color: var(--dim); }
     #rs-table td.acts button:hover { border-color: var(--line2); color: var(--text); }
@@ -179,6 +194,16 @@
       <button id="btn-reset" class="danger" title="Clear the log and start the show again">Reset show…</button>
     </div>
 
+    <div class="scalebar" id="scalebar" hidden>
+      <span>Scale</span>
+      <input type="range" id="scale-pct" min="50" max="150" step="1" value="100" aria-label="Scale the selected items (%)">
+      <span id="scale-label">100 %</span>
+      <span id="scale-info"></span>
+      <button id="scale-fit" hidden title="The smallest change that gets the item after the selection started on time"></button>
+      <button id="scale-apply" class="primary">Apply</button>
+      <button id="scale-cancel" title="Clear the selection (Esc)">Cancel</button>
+    </div>
+
     <div class="main">
       <section class="sheet">
         <table id="rs-table">
@@ -241,7 +266,7 @@
   <script src="markdown-lite.js?v=938fee93"></script>
   <script src="help-overlay.js?v=8a5dbd9d"></script>
   <script src="video-store.js?v=069f77d9"></script>
-  <script src="runsheet-core.js?v=485855db"></script>
-  <script src="runsheet-editor.js?v=1ea8f972"></script>
+  <script src="runsheet-core.js?v=2a42c0bc"></script>
+  <script src="runsheet-editor.js?v=00ce21a1"></script>
 </body>
 </html>
