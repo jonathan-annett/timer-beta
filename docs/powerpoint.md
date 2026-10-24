@@ -90,7 +90,8 @@ folder as the inbox), `-Name` (the name shown in the timer; default the computer
   (Esc if that doesn't work). It never kills PowerPoint.
 - **Switching decks**, in this order (found by testing; closing windows while PowerPoint hands
   Presenter View from one deck to the next took the new deck down too):
-  1. turn the previous deck's Presenter View off, with the keys (never by closing its window);
+  1. turn the previous deck's Presenter View off, with the keys sent to the Presenter View window
+     itself (its context menu has the same item; never by closing the window);
   2. open the new deck and wait for its slide show (plus 1 s to settle);
   3. close the previous deck's slide show window;
   4. turn Presenter View on for the new deck, with the keys (only if it isn't already).

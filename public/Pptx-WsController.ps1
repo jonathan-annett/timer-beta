@@ -317,10 +317,13 @@ function Close-Show([switch]$All) {
 function Set-PresenterView([string]$Leaf, [bool]$On) {
     $has = [bool](Get-PvWindows).Count
     if ($has -eq $On) { return $has }
-    $show = @(Get-ShowWindows $Leaf) | Select-Object -First 1
-    if (-not $show) { $show = @(Get-PptWindows | Where-Object { $_.cls -eq $ShowClass }) | Select-Object -First 1 }
-    if (-not $show) { return $has }
-    Focus-Window $show.h
+    # Turning it off: send the keys to the Presenter View window itself (same menu, and safer).
+    # Turning it on: there's no Presenter View window yet, so to the deck's slide show window.
+    $target = if (-not $On) { @(Get-PvWindows) | Select-Object -First 1 } else { $null }
+    if (-not $target) { $target = @(Get-ShowWindows $Leaf) | Select-Object -First 1 }
+    if (-not $target) { $target = @(Get-PptWindows | Where-Object { $_.cls -eq $ShowClass }) | Select-Object -First 1 }
+    if (-not $target) { return $has }
+    Focus-Window $target.h
     [TimerWin]::Key(0x5D, $true)                  # VK_APPS: the show's context menu
     Start-Sleep -Milliseconds 400
     [TimerWin]::Key(0x52, $false)                 # R: Show / Hide Presenter View
@@ -335,7 +338,7 @@ function Set-PresenterView([string]$Leaf, [bool]$On) {
 
 # Switching decks, in this order (closing windows while PowerPoint was handing Presenter View
 # from one deck to the next took the new deck down with the old one):
-#   1. turn the previous deck's Presenter View off (keys, not by closing its window)
+#   1. turn the previous deck's Presenter View off (keys sent to the Presenter View window, not closing it)
 #   2. open the new deck and wait for its slide show
 #   3. close the previous deck's slide show window
 #   4. turn Presenter View on for the new deck (keys)
