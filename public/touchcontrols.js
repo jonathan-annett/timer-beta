@@ -13,8 +13,6 @@
   // Only activate on genuine touch devices
   if (!('ontouchstart' in window)) return;
 
-  // Not needed on audience page (no controls there)
-  if (new URLSearchParams(location.search).has('audience')) return;
 
   const PRESETS = [
     { label: '10 min', ms: 600000   },

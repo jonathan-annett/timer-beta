@@ -25,7 +25,7 @@
   'use strict';
 
   const params = new URLSearchParams(location.search);
-  if (params.has('presenter') || params.has('audience')) return;   // controller window only
+  if (params.has('presenter')) return;   // controller window only
   if (typeof RemotePeer === 'undefined') return;
 
   const SERVER_KEY = 'remote_server', PAIR_KEY = 'remote_pairing', ENABLED_KEY = 'remote_enabled';
@@ -702,7 +702,7 @@
     el.hidden = true;
     if (TOUCH) el.classList.add('pp-touch');
     el.innerHTML = `
-      <div class="pp-head"><b>${TOUCH ? 'Let a friend control this timer' : 'Phone control'}</b> <span class="pp-exp">experimental</span><button class="pp-close" aria-label="Close">✕</button></div>
+      <div class="pp-head"><b>${TOUCH ? 'Let a friend control this timer' : 'Share this timer'}</b> <span class="pp-exp">experimental</span><button class="pp-close" aria-label="Close">✕</button></div>
       ${TOUCH ? '<div class="pp-intro">They scan this code with their phone. Choose what their phone becomes:</div>' : ''}
       <div class="pp-status"></div>
       <div class="pp-modes" role="group" aria-label="What the QR code is for">
@@ -827,9 +827,9 @@
 
   function renderPanel(force) {
     const el = document.getElementById('phone-panel');
-    const btn = document.getElementById('btnphone');
+    const btn = document.getElementById('btnshare');
     const lanCount = [...peers.values()].filter(e => e.peer.mode === 'lan').length;
-    if (btn) btn.textContent = !enabled ? 'phone' : peers.size ? `phone ${peers.size}` : 'phone ·';
+    if (btn) btn.textContent = !enabled ? 'share' : peers.size ? `share ${peers.size}` : 'share ·';
     if (!el) return;
     const st = el.querySelector('.pp-status');
     st.textContent = statusText; st.dataset.kind = statusKind;
@@ -898,7 +898,7 @@
   }
 
   // Once a phone is connected (and approved), the code is put away: it needn't stay on screen
-  // for anyone walking past to scan. Opened again with the phone button when wanted.
+  // for anyone walking past to scan. Opened again with the share button when wanted.
   function panelConnected() {
     const el = document.getElementById('phone-panel');
     if (!el || el.hidden || pending().length) return;
@@ -944,7 +944,7 @@
 
   function init() {
     installBus();
-    document.getElementById('btnphone')?.addEventListener('click', togglePanel);
+    document.getElementById('btnshare')?.addEventListener('click', togglePanel);
     document.addEventListener('timer-panel', e => { const el = document.getElementById('phone-panel'); if (e.detail !== 'phone' && el) el.hidden = true; });
     if (localStorage.getItem(ENABLED_KEY) === '1') { panel(); enable(); }
     renderPanel();

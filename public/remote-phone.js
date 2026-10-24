@@ -544,7 +544,7 @@
     }
     const helpBtn = document.createElement('button');
     helpBtn.innerHTML = 'Help<small>The timer’s guide (phone remote, run sheet, Stream Deck…)</small>';
-    helpBtn.addEventListener('click', () => { $('viewmenu').hidden = true; help.open('phone-remote-control-experimental'); });
+    helpBtn.addEventListener('click', () => { $('viewmenu').hidden = true; help.open('sharing-with-phones-displays-and-companion-experimental'); });
     list.appendChild(helpBtn);
     installOption(list);
     $('viewmenu').hidden = false;
@@ -562,7 +562,7 @@
       return false;
     });
   }
-  const help = HelpOverlay.install({ section: 'phone-remote-control-experimental' });
+  const help = HelpOverlay.install({ section: 'sharing-with-phones-displays-and-companion-experimental' });
   $('viewbtn').addEventListener('click', openViewMenu);
   $('viewcancel').addEventListener('click', () => { $('viewmenu').hidden = true; });
 
@@ -837,7 +837,7 @@
   }
 
   // ─── Admin: set up another computer ──────────────────────────────────────
-  // 1. Scan the QR code another computer shows in its phone panel (its Control code, which lets
+  // 1. Scan the QR code another computer shows in its share panel (its Control code, which lets
   //    this phone send it commands). It must be a different timer from ours.
   // 2. Choose what it should become. Ask OUR timer for that link (it only answers controllers).
   // 3. Join the other computer's room with its key and hand it the link; it shows a notice and,
@@ -932,7 +932,7 @@
     const room = f.r || f.room, key = f.k || f.key || f.a;
     if (!room) return reject('That isn’t a timer phone code.');
     if (room === cfg.room) return reject('That’s this timer’s own code. Scan the code on the other computer.');
-    if (!key) return reject('That’s a view-only code. On the other computer choose Control (or Admin) in the phone panel, then scan again.');
+    if (!key) return reject('That’s a view-only code. On the other computer choose Control (or Admin) under share, then scan again.');
     target = { room, key, server: f.s || f.server || `wss://${u.hostname}:8443/` };
     lastRejected = '';
     stopScan();

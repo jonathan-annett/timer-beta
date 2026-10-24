@@ -159,7 +159,7 @@
     const prev = window.timerAPI;
     window.timerAPI = {
       send(msg) {
-        if (prev && prev.send) prev.send(msg); // chain (relay.js may also be installed)
+        if (prev && prev.send) prev.send(msg); // chain (remote-control.js and others chain onto this too)
         if (msg && msg.setVariableValues) {
           const v = Object.assign({}, msg.setVariableValues);
           if ('video_status' in v) {          // one status → the two flags the video keys draw from

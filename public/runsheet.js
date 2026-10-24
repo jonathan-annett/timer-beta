@@ -22,7 +22,7 @@
   'use strict';
 
   const params = new URLSearchParams(location.search);
-  if (params.has('presenter') || params.has('audience')) return;   // controller only
+  if (params.has('presenter')) return;   // controller only
   if (typeof RunsheetCore === 'undefined') return;
 
   const C = RunsheetCore;

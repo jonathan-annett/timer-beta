@@ -21,7 +21,7 @@
       <script src="fsapi.js"></script>
       <script src="inettime.js"></script>
       <script src="tsview.js"></script>
-      <script>var timerAPI = null; /* populated by streamdeck.js and/or relay.js */</script>
+      <script>var timerAPI = null; /* populated by streamdeck.js, remote-control.js and the others (each chains the previous one) */</script>
       <script src="timeroverlaypip.js"></script>
       <script src="elementcolors.js"></script>
       <script src="timerapi.js"></script>
@@ -32,7 +32,6 @@
       <script src="video-library.js" defer></script>
       <script src="deck-face.js" defer></script>
       <script src="streamdeck.js" defer></script>
-      <script src="relay.js" defer></script>
       <script src="back-guard.js" defer></script>
       <script src="touchcontrols.js" defer></script>
       <script src="runsheet-core.js" defer></script>
@@ -112,7 +111,7 @@
           <div id="btnfloat" class="btn btn2" data-keys="o">
             overlay
          </div>
-          <div id="btnshare" class="btn btn2">
+          <div id="btnshare" class="btn btn2" title="Share: phones and tablets as remotes or displays, other computers, Bitfocus Companion">
             share
           </div>
           <div id="btndeck" class="btn btn2">
@@ -123,9 +122,6 @@
           </div>
           <div id="btnvideo" class="btn btn2" title="Video: the player window (drag it to the video screen, F for full screen), browse for a video, recent videos">
             video
-          </div>
-          <div id="btnphone" class="btn btn2" title="Control the timer from a phone (experimental)">
-            phone
           </div>
           
       </div>
@@ -178,23 +174,6 @@
        <div id="video-track">Video Assist</div>
        <div id="video-auto">Auto Zoom</div>
 
-      <!-- Share / Remote panel -->
-      <div id="share-panel" class="share-panel" style="display:none">
-        <div class="share-panel-header">
-          <span>Remote Display</span>
-          <button id="share-close" class="share-close-btn">✕</button>
-        </div>
-        <div class="share-panel-body">
-          <div class="share-room-code" id="share-room-code">––––––</div>
-          <canvas id="share-qr" width="160" height="160"></canvas>
-          <div class="share-status" id="share-status">Connecting…</div>
-          <div class="share-link" id="share-link"></div>
-          <div class="share-actions">
-            <button id="share-copy-btn">Copy link</button>
-            <button id="share-stop-btn">Stop sharing</button>
-          </div>
-        </div>
-      </div>
 
       <!-- Stream Deck editor overlay -->
       <div id="deck-editor" style="display:none">

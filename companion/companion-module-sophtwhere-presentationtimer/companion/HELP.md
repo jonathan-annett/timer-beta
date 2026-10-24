@@ -4,7 +4,7 @@ Controls the [Presentation Timer](https://timer.sophtwhere.com/) — a browser-b
 
 ## Connecting
 
-1. Open the timer in Chrome or Edge and click **phone** in its button bar.
+1. Open the timer in Chrome or Edge and click **share** in its button bar.
 2. Pick **Companion** as the link type. The panel shows a link instead of a QR code.
 3. Copy that link into **Link from the timer** in this connection's settings and save.
 
@@ -12,7 +12,7 @@ The connection shows **Connected** within a second or two. The panel on the time
 
 The link carries a key: anyone with it can control that timer, so treat it like a password. **New code** in the timer's panel revokes every link, including this one.
 
-**Require a PIN:** if that box is ticked on the timer, Companion's status reads *PIN needed on the timer* and the log shows a 4-digit PIN; type it in the timer's phone panel. The approval is remembered (the token is kept in this connection's config), so a restart doesn't ask again.
+**Require a PIN:** if that box is ticked on the timer, Companion's status reads *PIN needed on the timer* and the log shows a 4-digit PIN; type it in the timer’s share panel. The approval is remembered (the token is kept in this connection's config), so a restart doesn't ask again.
 
 **Server:** leave blank. The link says which pairing server the timer uses (normally `wss://<timer host>:8443/`). Fill it in only for your own copy of the timer on a different server. **Allow self-signed certificates** is for a test server only.
 

@@ -40,7 +40,7 @@ export interface ParsedLink {
 	kind: 'companion' | 'admin' | 'control' | 'view'
 }
 
-/** Parses a link copied from the timer's phone panel: a whole URL, or just the part after '#'. */
+/** Parses a link copied from the timer's share panel: a whole URL, or just the part after '#'. */
 export function parseLink(text: string, defaultServer?: string): ParsedLink | null {
 	let frag = text.trim()
 	const hash = frag.indexOf('#')
@@ -273,7 +273,7 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 			case 'pin-required': {
 				// The timer wants the operator to let us in: show a PIN for them to type there
 				if (!this.pinCode) this.pinCode = String(1000 + (randomBytes(4).readUInt32BE(0) % 9000))
-				this.setStatus('pin', `enter PIN ${this.pinCode} in the timer's phone panel`)
+				this.setStatus('pin', `enter PIN ${this.pinCode} in the timer's share panel`)
 				this.emit('pin', this.pinCode)
 				this.up({ t: 'pin', code: this.pinCode })
 				break

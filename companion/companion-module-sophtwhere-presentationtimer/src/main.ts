@@ -9,7 +9,7 @@ import { TimerLink, parseLink, type LinkStatus } from './link.js'
 /**
  * Presentation Timer connection. The timer (timer.sophtwhere.com, or your own copy) runs in a
  * browser; this module joins it through its pairing server with the Companion link from the
- * timer's phone panel, runs commands on it and mirrors its variables. See HELP.md.
+ * timer's share panel, runs commands on it and mirrors its variables. See HELP.md.
  */
 export default class ModuleInstance extends InstanceBase {
 	config!: ModuleConfig
@@ -56,7 +56,7 @@ export default class ModuleInstance extends InstanceBase {
 	private connect(): void {
 		const parsed = parseLink(this.config.link ?? '')
 		if (!parsed) {
-			this.updateStatus(InstanceStatus.BadConfig, 'Paste the Companion link from the timer’s phone panel')
+			this.updateStatus(InstanceStatus.BadConfig, 'Paste the Companion link from the timer’s share panel')
 			return
 		}
 		if (parsed.kind === 'view') {
@@ -90,7 +90,7 @@ export default class ModuleInstance extends InstanceBase {
 			this.config.token = token
 			this.saveConfig({ ...this.config, token }, undefined)
 		})
-		link.on('pin', (code) => this.log('info', `The timer wants a PIN: enter ${code} in its phone panel to let Companion in`))
+		link.on('pin', (code) => this.log('info', `The timer wants a PIN: enter ${code} in its share panel to let Companion in`))
 		link.start()
 	}
 

@@ -1,7 +1,7 @@
 import type { SomeCompanionConfigField } from '@companion-module/base'
 
 export interface ModuleConfig {
-	/** The Companion link copied from the timer's phone panel (Companion mode), or just the part after '#' */
+	/** The Companion link copied from the timer's share panel (Companion mode), or just the part after '#' */
 	link: string
 	/** Pairing server override (normally taken from the link; default wss://<timer host>:8443/) */
 	server: string
@@ -19,8 +19,8 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			width: 12,
 			label: 'How to connect',
 			value:
-				'On the timer, click <b>phone</b>, choose <b>Companion</b> and copy the link shown under the code (<b>Copy link</b>). Paste it below. ' +
-				'If the timer has <b>Require a PIN</b> on, this connection shows a PIN in its status; type it into the timer’s phone panel once.',
+				'On the timer, click <b>share</b>, choose <b>Companion</b> and copy the link shown under the code (<b>Copy link</b>). Paste it below. ' +
+				'If the timer has <b>Require a PIN</b> on, this connection shows a PIN in its status; type it into the timer’s share panel once.',
 		},
 		{
 			type: 'textinput',

@@ -1,6 +1,6 @@
 # Presentation Timer (beta)
 
-A keyboard-driven countdown timer for talks, conferences and live events. One window is the operator's controller; a second window shows a clean countdown on the stage display. It can step through a run sheet, play videos on another screen, and work with a Stream Deck (directly or through Bitfocus Companion), a remote display over the network, phones and tablets (as remote controls or extra displays).
+A keyboard-driven countdown timer for talks, conferences and live events. One window is the operator's controller; a second window shows a clean countdown on the stage display. It can step through a run sheet, play videos on another screen, and work with a Stream Deck (directly or through Bitfocus Companion) and with phones, tablets and other computers as remote controls or extra displays.
 
 **Try it:** https://timer.sophtwhere.com/beta/
 
@@ -174,19 +174,11 @@ During the show:
 
 The player window has to be open (click **video** once before the show); if it isn't when a video is coming up, the dashboard says so. While a run sheet video plays, the controls at the bottom right of the timer show **⟲** (rewind) and **■** (stop); once it has been rewound or has finished, **▶** plays it again. The Stream Deck keys do the same. The next item's video, waiting in the player, gets no controls: **Next** plays it.
 
-## Remote display
+## Sharing with phones, displays and Companion (experimental)
 
-Click **share** to get a room code (e.g. `TIGER-7`), a QR code and a link. Anyone opening the link sees a read-only countdown on their phone, tablet or another computer, on any network. On the same Wi-Fi it switches to a direct peer-to-peer connection automatically.
+Click **share** in the button bar to let other devices in. Control the timer from a phone or tablet: start, pause, ±1 minute, catch up, presets, messages, run sheet Back/Next, and a virtual Stream Deck XL. The phone shows the live countdown. Phones and tablets can also be **view-only displays**: a big countdown, or the run sheet status for a green room.
 
-> This needs the relay server (see below). It does not work on a plain static host such as the beta site.
-
----
-
-## Phone remote control (experimental)
-
-Control the timer from a phone or tablet: start, pause, ±1 minute, catch up, presets, messages, run sheet Back/Next, and a virtual Stream Deck XL. The phone shows the live countdown. Phones and tablets can also be **view-only displays**: a big countdown, or the run sheet status for a green room.
-
-1. Click **phone** in the timer's button bar. A panel shows a QR code.
+1. Click **share** in the timer's button bar. A panel shows a QR code.
 2. Choose what the code is for:
    - **Control**: the phone can control the timer.
    - **Countdown**: a view-only countdown and message display. On a computer (a confidence monitor, a screen in another room) it looks exactly like the timer's presenter screen, and **F** toggles full screen; move the mouse to see its controls. On a phone or tablet it uses a touch-friendly layout that follows the timer's **B** (progress bar), **T** (time of day) and **M** (messages: the *Paused* notice) switches.
@@ -195,7 +187,7 @@ Control the timer from a phone or tablet: start, pause, ±1 minute, catch up, pr
    - **Companion**: for Bitfocus Companion (below) and other automation. The panel shows a link to copy instead of a QR code.
 3. Scan it with the phone or tablet. The page opens and connects.
 
-Each kind of code has its own key, and the timer enforces what each can do, even if someone fiddles with the page: view-only devices can't send anything, and only admin phones can set up other computers. The phone panel lists each device as *Phone*, *Phone · admin* or *Display · view only*.
+Each kind of code has its own key, and the timer enforces what each can do, even if someone fiddles with the page: view-only devices can't send anything, and only admin phones can set up other computers. The share panel lists each device as *Phone*, *Phone · admin* or *Display · view only*.
 
 The badge at the top of the phone shows how it's connected:
 
@@ -212,30 +204,30 @@ The **run sheet display** shows the time of day, what's on now with its countdow
 
 **Setting up another computer (Admin):** to make another computer, say a laptop in another room, a remote control or display of this timer without typing a link into it:
 
-1. On that computer, open the timer, click **phone** and choose **Control**.
+1. On that computer, open the timer, click **share** and choose **Control**.
 2. On a phone paired with this timer's **Admin** code, choose **☰ View → Admin: set up another computer** and scan the other computer's QR code.
 3. Choose **A remote control**, **A run sheet editor**, **A countdown display** or **A run sheet display**.
 
-The phone gets the link from this timer and passes it to the other computer, which shows a notice for 8 seconds (anyone there can **Cancel**) and then opens it. It's then listed in this timer's phone panel, and it remembers the link. The phone needs the other computer's *Control* code because it is telling that computer what to do; a view-only code won't work. The phone uses the browser's built-in QR reader where there is one (Chrome on Android) and otherwise a small bundled reader (jsQR), so iPhones work too.
+The phone gets the link from this timer and passes it to the other computer, which shows a notice for 8 seconds (anyone there can **Cancel**) and then opens it. It's then listed in this timer's share panel, and it remembers the link. The phone needs the other computer's *Control* code because it is telling that computer what to do; a view-only code won't work. The phone uses the browser's built-in QR reader where there is one (Chrome on Android) and otherwise a small bundled reader (jsQR), so iPhones work too.
 
 **For a multi-day event:** the timer keeps the same codes until someone presses **New code**, and each phone remembers the last link it opened. Install the remote as an app (**☰ View → Install as an app** on Android and in desktop Chrome/Edge; on iPhone, **Share → Add to Home Screen**) and it opens straight into the remote, full screen, already paired. If the timer computer is shut down overnight, phones show *timer offline* and reconnect by themselves when it's opened again the next day. After **New code**, every phone needs the new QR code.
 
 Buttons and deck keys buzz as soon as you press them (on phones that can vibrate) and act when you lift your finger. Slide off the button before lifting to cancel the press. If you'd rather Restart and the presets need a second tap within 2 seconds, so a stray touch can't restart a talk, turn on **Second tap** in the ☰ View menu (each phone remembers its own setting; off by default). The phone screen stays on while the page is open. Up to 16 phones and displays can connect at once.
 
-The QR code contains a secret key: anyone with the link can control the timer, so the panel closes itself as soon as a phone connects (open it again with **phone** when you want to add another). For more protection tick **Require a PIN** under the code: each new phone then shows a 4-digit PIN, and it isn't let in until you type that PIN into the panel (three wrong tries refuse it). Phones you've let in stay approved until you make a new code. **New code** disconnects every phone and makes a new link. **Turn off** stops phone control. 
+The QR code contains a secret key: anyone with the link can control the timer, so the panel closes itself as soon as a phone connects (open it again with **share** when you want to add another). For more protection tick **Require a PIN** under the code: each new phone then shows a 4-digit PIN, and it isn't let in until you type that PIN into the panel (three wrong tries refuse it). Phones you've let in stay approved until you make a new code. **New code** disconnects every phone and makes a new link. **Turn off** stops phone control. 
 
 ### Bitfocus Companion
 
 [Bitfocus Companion](https://bitfocus.io/companion) (Stream Deck and other control surfaces, on any computer) can run the timer through a connection module in `companion/`. It joins the timer like a phone does, so Companion can be on another computer, or on the same one alongside the timer's own Stream Deck support. Companion gets every timer command as an action (start a countdown of any length with a message, pause, nudge, catch up, messages, display switches, run sheet Next/Back, video, keystrokes, raw API commands) and every value the timer publishes as a variable, with feedbacks for paused, under a minute, time up, message showing, behind schedule and so on. Companion can also drive the timer from its own data: a duration or message in a *Start a countdown* action can be a variable or expression from another connection.
 
-1. In the timer, click **phone** and choose **Companion**. Copy the link shown.
+1. In the timer, click **share** and choose **Companion**. Copy the link shown.
 2. In Companion, add a **Presentation Timer** connection and paste the link into its settings.
 
 It connects within a second or two. If **Require a PIN** is on, Companion's status shows a PIN to type into the panel; it's remembered afterwards. The module's own help (in Companion) lists the actions, variables, feedbacks and presets. It isn't in Companion's module store yet: build it from `companion/companion-module-sophtwhere-presentationtimer` (`npm install && npm run build`) and point Companion's **Developer modules path** at the `companion/` folder, or `npm run package` for a `.tgz` to import. It is written for Companion 5.1 and should work from 4.3 on.
 
 ### Pairing server
 
-Phone control needs `remote-server.js` running on a server you control. View-only, admin and Companion links need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 3* supports view-only and admin links, *4* adds Companion), and the timer's phone panel warns if the server is too old for the code you've selected. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the phone panel.
+Sharing needs `remote-server.js` running on a server you control (the hosted timer has one). View-only, admin and Companion links need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 3* supports view-only and admin links, *4* adds Companion), and the timer's share panel warns if the server is too old for the code you've selected. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the share panel.
 
 ```bash
 npm install
@@ -250,7 +242,7 @@ Some venue and corporate networks only allow ports 80 and 443. On those, phones 
 
 On a touch screen the controller shows a bottom bar: **Presets**, **Start**, **Pause**, **+1 min**, **−1 min** and **⋯** (more: a friend's phone as a remote, and this guide). **Presets** opens a sheet with the built-in durations and any you've added. **Other duration…** there is a keypad: type the minutes (or hours : minutes, e.g. `1:30`), then **▶ Start** to start it, **Set default** to make it the default without starting, or **Save preset** to add it to the sheet. Your own presets are kept on the phone; **Edit** lets you remove them.
 
-**A friend's phone as your remote:** if you're speaking with the timer on your own phone or tablet, tap **⋯ → Let a friend control this timer**. A code appears; your friend scans it with their phone and gets a **remote control** (start, pause, ±1 min, presets, messages, or a virtual Stream Deck) or, with **Countdown display** selected first, a view-only countdown of their own. They can start the talk at the right moment and keep you to time while you speak. It needs the pairing server (see *Phone remote control*), which the hosted timer has; the two phones connect directly when they're on the same Wi-Fi, otherwise through it.
+**A friend's phone as your remote:** if you're speaking with the timer on your own phone or tablet, tap **⋯ → Let a friend control this timer**. A code appears; your friend scans it with their phone and gets a **remote control** (start, pause, ±1 min, presets, messages, or a virtual Stream Deck) or, with **Countdown display** selected first, a view-only countdown of their own. They can start the talk at the right moment and keep you to time while you speak. It needs the pairing server (see *Sharing with phones, displays and Companion*), which the hosted timer has; the two phones connect directly when they're on the same Wi-Fi, otherwise through it.
 
 The phone's **Back** button closes whatever is open (the guide, the presets, a menu); when nothing is open it does nothing, so a stray press can't leave the timer during a talk. The same goes for the phone remote.
 
@@ -267,20 +259,9 @@ The first time you open it on a phone, it asks how long your talk is.
 
 ## Running it yourself
 
-### Static hosting (no server code)
+### Static hosting
 
-Copy the contents of `public/` to any static web host. It must be served over **HTTPS**. Everything works except **share** and the remote display.
-
-### With the relay server (adds remote display)
-
-Requires Node.js 18 or later.
-
-```bash
-npm install
-DOMAIN=https://timer.example.com PORT=3000 node relay-server.js
-```
-
-Or pass `--domain` and `--port` as arguments. The server serves `public/` and handles the WebSocket relay and WebRTC signalling on the same port. Put it behind HTTPS; if you use a reverse proxy, it must pass WebSocket upgrades.
+Copy the contents of `public/` to any static web host. It must be served over **HTTPS**. Everything works on its own except **share**, which also needs the pairing server, `remote-server.js` (see *Pairing server* above). It can run on the same machine as the web host or another one; the timer looks for it on port 8443 of its own host unless told otherwise.
 
 ---
 

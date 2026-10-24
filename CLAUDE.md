@@ -18,7 +18,9 @@ A keyboard-driven countdown timer for presentations and conferences. Two operati
 
 - **Controller** (`timer.html`) — the operator's screen. Shows buttons, status info, and all controls.
 - **Presenter** (`timer.html?presenter`) — a secondary window opened on the display screen. Shows only the countdown, colour-coded by state. No controls.
-- **Audience** (`audience.html?room=WORD-N`) — a stripped read-only viewer that receives state over WebSocket/WebRTC from a remote controller.
+- **Shared devices** (`remote.html#…`, opened from the **share** panel's QR code) — phones, tablets and other computers as remote controls or view-only displays, plus Bitfocus Companion. See *Phone Remote Control* and *Bitfocus Companion*.
+
+The legacy relay share (`relay.js`, `audience.html`, `relay-server.js`: room codes like `TIGER-7` over an Express WebSocket relay) was removed in Oct 2026; the **share** button now opens the pairing panel from `remote-control.js`, which superseded it.
 
 Visual state is driven entirely by CSS classes on `<html>`. No JS touches colour or layout directly — it only adds/removes classes. This is a core architectural convention. Do not break it.
 
@@ -28,21 +30,18 @@ Visual state is driven entirely by CSS classes on `<html>`. No JS touches colour
 
 ```
 timer_build/
-├── relay-server.js        Express app — entry point for deployment
-├── remote-server.js       EXPERIMENTAL phone-control pairing server (wss, port 8443; standalone)
+├── remote-server.js       Pairing server for share (phones, displays, Companion): wss, port 8443, standalone
 ├── deploy/                systemd unit + certbot hook for remote-server.js
 ├── docs/                  Plans and notes (glasses-g2-plan.md: the Even Realities G2 app, not started)
 ├── companion/             Bitfocus Companion module (TypeScript, its own npm project; see "Bitfocus Companion" below)
-├── package.json           Dependencies: express, ws
+├── package.json           Dependency: ws (for remote-server.js)
 └── public/                Served as static files
     ├── timer.html          Controller page
-    ├── audience.html       Remote read-only viewer
     ├── timer.js            Core timer logic (large — ~1980 lines)
     ├── timer.css           All styles + state classes (large — ~1300 lines)
     ├── timerapi.js         Inbound command handler (processTimerApiMessage)
     ├── streamdeck.js       Stream Deck WebHID integration + in-app editor
     ├── deck-face.js        Draws a deck key face onto a canvas (shared by streamdeck.js and the phone's virtual XL)
-    ├── relay.js            WebSocket-first remote display client + WebRTC upgrade
     ├── touchcontrols.js    Mobile gestures, touch strip, preset sheet + keypad, quick-start overlay
     ├── back-guard.js       Phone Back button: closes the open overlay, never leaves the page (timer touch + remote)
     ├── runsheet-core.js    Run sheet logic: parsing, normalising, CSV (pure, no DOM; node-testable)
@@ -52,13 +51,13 @@ timer_build/
     ├── markdown-lite.js    Tiny Markdown renderer for the README help overlay (node-testable)
     ├── help-overlay.js     README overlay (? / F1 / help link) for the timer main screen and the editor
     ├── help-overlay.css    Its styles (viewport/em-sized)
-    ├── remote-control.js   EXPERIMENTAL phone control, timer side (phone button/panel, allow-list)
+    ├── remote-control.js   EXPERIMENTAL share, timer side (share button + panel `#phone-panel`, allow-list, Companion API)
     ├── remote-peer.js      LAN-only WebRTC link with server fallback (shared by timer and phone)
     ├── remote.html         Phone control page (opened from the QR code)
     ├── remote-phone.js     Its logic
     ├── display.html        Presenter screen for a desktop countdown display (fed by remote.html; no localStorage)
     ├── jsQR.js             QR decoder for the phone's Admin scanner (third-party, Apache-2.0; jsQR-LICENSE.txt)
-    ├── qrcode.min.js       QR code generator (qrcodejs 1.0.0, third-party, MIT; qrcode-LICENSE.txt), loaded on demand by the phone and share panels
+    ├── qrcode.min.js       QR code generator (qrcodejs 1.0.0, third-party, MIT; qrcode-LICENSE.txt), loaded on demand by the share panel and the phone
     ├── fsapi.js            Fullscreen API abstraction (cross-browser)
     ├── inettime.js         Internet time sync via worldtimeapi.org
     ├── timeroverlaypip.js  Picture-in-Picture overlay of countdown
@@ -81,24 +80,14 @@ timer_build/
 
 ## Deployment
 
+`public/` is a static site: copy it (and `README.md`, for the in-app help) to any HTTPS host. The **share** features also need the pairing server, `remote-server.js`, reachable at `wss://<timer host>:8443/` by default (another server via `?remote=` or the panel's *Server* field):
+
 ```bash
-cd timer_build
-npm install
-DOMAIN=https://timer.yourdomain.com PORT=3000 node relay-server.js
+npm install          # just ws
+node remote-server.js --cert fullchain.pem --key privkey.pem --origin https://timer.yourdomain.com
 ```
 
-Or with arguments:
-```bash
-node relay-server.js --domain https://timer.yourdomain.com --port 3000
-```
-
-The server:
-- Serves `public/` as static files
-- Injects `window.TIMER_RELAY_URL` into HTML responses so `relay.js` knows where to connect
-- Exposes `POST /api/room` to generate room codes
-- Upgrades WebSocket connections on `/signal/:room` (WebRTC signalling) and `/relay/:room` (WS data relay)
-
-There is no nginx or reverse proxy configured yet. Node handles port directly. If you add nginx later, proxy WebSocket upgrades with `proxy_http_version 1.1` and `Upgrade`/`Connection` headers.
+`deploy/timer-remote.service` runs it under systemd (certificates via `LoadCredential`, root-only) and `deploy/certbot-deploy-hook.sh` restarts it on renewal. The hosted copy is https://timer.sophtwhere.com/beta/ with the server as the `timer-remote` service on the same VPS.
 
 The app requires HTTPS in production because:
 - WebHID (Stream Deck) requires a secure context
@@ -116,7 +105,7 @@ This is the central integration point. **Do not bypass it.**
 
 `timer.js` and `timerapi.js` check `if (timerAPI)` before every call. When null, they run fine with no remote features.
 
-`streamdeck.js` and `relay.js` each install themselves by wrapping the existing value:
+`streamdeck.js`, `remote-control.js` and the other integrations each install themselves by wrapping the existing value:
 
 ```js
 const prev = window.timerAPI;
@@ -128,7 +117,7 @@ window.timerAPI = {
 };
 ```
 
-This means loading order matters but both can coexist. `streamdeck.js` loads first (declared first in timer.html), so relay chains onto it. Both receive every `timerAPI.send()` call.
+This means loading order matters but they all coexist: each chains onto the one loaded before it, and every one receives every `timerAPI.send()` call.
 
 **Outbound** (timer → integrations): `timerAPI.send({ setVariableValues: { remain, expired, impending, pausing, adjusting_up, adjusting_down, custommsg, showbar, showtimenow, showmessages, endsAt, startedAt, ... } })`
 
@@ -223,8 +212,6 @@ All timer state persists in localStorage. These are the canonical keys:
 | `tab_<id>` | timestamp ms | Heartbeat for multi-tab detection |
 | `controller_tab_<id>` | timestamp ms | Marks this tab as a controller |
 
-The audience page (`audience.html`) does **not** use localStorage at all — it receives all state over the relay WebSocket.
-
 ---
 
 ## Time Provider
@@ -245,25 +232,7 @@ The controller uses localStorage as a simple inter-tab bus. Each tab writes its 
 
 The presenter tab (`?presenter`) does not run the timer logic — it watches for `storage` events on `remainDisp`, `remainDispClass`, and `showbar` keys and mirrors them into its own DOM. This means the presenter view works even if they are on the same machine with no network.
 
-The remote relay (`relay.js`) is an additional channel on top of this — it sends the same `setVariableValues` payloads that `timerAPI.send()` produces, so the audience page is architecturally identical to the presenter tab but receives data over WebSocket instead of localStorage events.
-
----
-
-## WebRTC / WebSocket Relay
-
-### Connection strategy
-1. Controller clicks Share → POST `/api/room` → gets room code (e.g. `TIGER-7`)
-2. Controller connects to relay WebSocket immediately: `/relay/TIGER-7?role=controller`
-3. Controller also connects to signalling WebSocket: `/signal/TIGER-7?role=controller`
-4. When a viewer joins signalling, WebRTC offer/answer/ICE exchange happens over the signalling WS
-5. If WebRTC DataChannel opens successfully, traffic migrates from relay WS to DataChannel silently
-6. If WebRTC fails (symmetric NAT, corporate firewall), relay WS remains as fallback — nothing breaks
-7. Viewers also connect to relay WS immediately for the same WS-first behaviour
-
-### Server rooms
-Room codes are `WORD-N` format (e.g. `TIGER-7`). Rooms are garbage-collected after 4 hours of inactivity. Only one controller per room; multiple viewers allowed. Viewers are read-only — messages from viewer sockets are dropped by the server.
-
-The latest `setVariableValues` snapshot is cached on the room object so new viewers receive current state immediately on join without waiting for the next timer tick.
+Shared devices (`remote-control.js`) are an additional channel on top of this, built from the same `timerAPI` bus rather than from localStorage.
 
 ---
 
@@ -315,7 +284,7 @@ Files: `runsheet-core.js` (pure logic, shared), `runsheet.js` (controller window
 
 ## Phone Remote Control (experimental)
 
-Separate from the relay/`share` audience display. Pieces: `remote-server.js` (standalone pairing server, wss on 8443, TLS from `--cert/--key` or systemd `$CREDENTIALS_DIRECTORY`), `remote-control.js` (timer), `remote.html` + `remote-phone.js` (phone), `remote-peer.js` (shared).
+Opened by the **share** button (`#btnshare`; the panel element is still `#phone-panel`, and the button reads `share ·` when on, `share N` with N devices). Pieces: `remote-server.js` (standalone pairing server, wss on 8443, TLS from `--cert/--key` or systemd `$CREDENTIALS_DIRECTORY`), `remote-control.js` (timer), `remote.html` + `remote-phone.js` (phone), `remote-peer.js` (shared).
 
 **Pairing:** the timer makes a room code and four 24-char keys: control, view-only, admin and companion (`remote_pairing`: `key`, `view`, `admin`, `comp`). A control link is `remote.html#r=<room>&k=<key>[&s=<server>]`; a view-only link is `#r=<room>&v=<view key>&m=<countdown|runsheet>[&s=…]`; an admin link is `#r=<room>&a=<admin key>[&s=…]`; a Companion link is `#r=<room>&c=<companion key>[&s=…]` (shown as text to copy, not a QR code; `remote.html` treats `c` as a control link if someone opens it anyway). Each carries only its own key. The panel's mode selector (`remote_link_mode`) picks which the QR code shows. The link's fragment never reaches the web server. `s` is omitted when it's the default `wss://<host>:8443/` (the phone derives it), keeping the QR code small. Old `server/room/key` names are still accepted. The QR code is drawn by `qrCanvas()` from the qrcodejs model (`_oQRCode`) on whole device pixels with a 4-module quiet zone; clicking it shows a full-screen version. The panel's CSS is injected by `remote-control.js` (`PANEL_CSS`), not kept in `timer.css`, so a browser with a stale cached `timer.css` can't show it unstyled underneath the button bar. The panel sits below the bar (`--buttons-bottom`) and shrinks the QR on short windows. The server stores only a SHA-256 of the key, rejects joins with the wrong key, and won't let another key take over a room. It checks `Origin` against `--origin`. Limits: 16 KB per message, 40 messages/s per socket, 16 phones per room. Rooms survive a timer reconnect for 2 minutes. Every socket has an `error` handler; without it an oversized frame crashed the whole server.
 
@@ -380,8 +349,6 @@ On touch screens (`@media (pointer: coarse)` in `timer.css`) the keyboard hints 
 
 The `#touch-strip` is hidden via CSS on non-touch devices (`@media (pointer: coarse)` controls visibility). The `div.buttons` desktop bar is hidden on touch devices via the same media query.
 
-The `audience.html` page supports tap-to-fullscreen (calls `requestFullscreen()` on any body tap).
-
 ---
 
 ## Files You Can Safely Ignore
@@ -401,11 +368,9 @@ The `audience.html` page supports tap-to-fullscreen (calls `requestFullscreen()`
 - **Stream Deck connection:** open the editor (`deck` button or `D`) and click **Connect deck**; WebHID needs a click for the permission prompt. Previously granted decks re-attach on page load and on USB plug-in (`navigator.hid` `connect`/`disconnect` events). The Elgato desktop app must be quit or it holds the device. Report framing has been verified against a mock device only, not real hardware. MK.2/XL (gen2) send JPEG rotated 180°; the Mini/original (gen1) send BMP and their orientation is a guess. If images look rotated or mirrored, adjust the `ORIENTATION` table at the top of `streamdeck.js`. The deck only repaints when a boolean flag in `deckState` changes; don't add per-tick values like `remain` to it.
 - **Button bar sizing:** the bar's buttons and labels are deliberately sized in `px` while everything else uses viewport units, so browser zoom resizes only the buttons (documented in the README). The bar is a wrapping flex row with no fixed height. `runsheet.js` publishes its bottom edge as `--buttons-bottom` (ResizeObserver), and the dashboard and run sheet message are positioned from it. Don't give the bar a fixed height again.
 - **Button bar convention:** `timer.js` binds key-macro clicks only to `div.buttons div.btn[data-keys]`. Buttons without `data-keys` (e.g. `deck`, `share`) must bind their own handlers.
-- **Static hosting:** `share` and `audience.html` need `relay-server.js` running. On a plain static host (e.g. the `/beta` deployment) they fail; everything else works.
 - `currentdevice.js` is still in `public/` but unused. It can be deleted.
 - Run sheet: the touch strip has no Next/Back yet; editing a running item's duration doesn't change its countdown until it's restarted.
 - **Even Realities G2 glasses (planned, not started):** a presenter-facing countdown + messages app for the glasses, as a third kind of view-only display. The plan, the G2 app model as understood in Oct 2026, the message contract it must follow, the pairing options and the open questions are in `docs/glasses-g2-plan.md`. Read that before starting; verify the SDK facts marked *(check)* against the official docs first, since they came from community write-ups. The app would live in `glasses/` (its own Node/Even CLI project, not in `public/`).
-- No authentication on the relay server. The room code is the only access control. Sufficient for typical use; add a token if the server will be public-facing and high-value.
 
 ---
 
