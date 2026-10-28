@@ -249,7 +249,7 @@ A countdown that floats on top of everything on another computer, for example ov
 1. On the other computer (same network as the timer), open `overlay.html` next to the timer (for the hosted timer: https://timer.sophtwhere.com/beta/overlay.html).
 2. On the timer, click **share**, then **Pair a computer**. It shows a 6-digit code that changes every 30 seconds.
 3. Type the code on the other computer. They link up straight away and the code disappears from the timer.
-4. Choose a shape (**16:9**, **Square** or **9:16**), whether to show the **message** (along the top, sized to fit) and the **progress shade** (the background fills in as time runs out), then click **Start overlay**. Drag the floating window where you want it and resize it, then minimize the overlay page.
+4. Choose a shape (**16:9**, **Square**, **9:16**, or **9:16 stacked**, with the minutes above the seconds for bigger digits in a narrow window), whether to show the **message** (along the top, sized to fit) and the **progress shade** (the background fills in as time runs out), then click **Start overlay**. Drag the floating window where you want it and resize it, then minimize the overlay page.
 
 The overlay turns orange under a minute and red when time is up, and greys out while paused. It can't control the timer. The computer stays paired: next time just open `overlay.html` (it remembers), even after the timer was closed. **Unpair this computer** forgets it; a **New code** on the timer unpairs every device. The code only works from the same network as the timer (same internet connection) and only once; a code typed from elsewhere is refused. The floating window works best in Chrome or Edge; other browsers get a simpler video overlay.
 

@@ -48,8 +48,8 @@ with sync_playwright() as p:
     t.evaluate("processTimerApiMessage({cmd:'custommessage', text:'Please wrap up now'})"); t.evaluate("processTimerApiMessage({cmd:'start', msecs: 50000})"); t.wait_for_timeout(1500)
     print("message + under a minute ->", ovt())
     o.screenshot(path=OUT+"/overlay_169.png")
-    for l in ["1","916"]:
-        o.click(f"#layout button[data-l='{l}']"); o.wait_for_timeout(300); o.screenshot(path=OUT+f"/overlay_{l}.png"); print("layout", l, "->", ovt()["cls"], ovt()["font"])
+    for l in ["1","916","stack"]:
+        o.click(f"#layout button[data-l='{l}']"); o.wait_for_timeout(300); o.screenshot(path=OUT+f"/overlay_{l}.png"); print("layout", l, "->", ovt()["cls"], ovt()["font"], "| lines:", o.evaluate("[...document.querySelectorAll('#ov .ov-remain span')].map(s=>s.textContent+'@'+s.style.fontSize)"))
     o.click("#layout button[data-l='169']")
     t.evaluate("processTimerApiMessage({cmd:'start', msecs: 1500})"); t.wait_for_timeout(3500)
     print("over ->", ovt())

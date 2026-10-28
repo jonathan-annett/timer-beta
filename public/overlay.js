@@ -178,7 +178,9 @@
   // ─── The overlay ──────────────────────────────────────────────────────────
 
   const ov = $('ov');
-  const LAYOUTS = { 169: [480, 270], 1: [320, 320], 916: [270, 480] };   // floating window size (px)
+  const LAYOUTS = { 169: [480, 270], 1: [320, 320], 916: [270, 480], stack: [270, 480] };   // floating window size (px)
+  // Stacked: the countdown split at its last colon, "12:34" → "12" over "34", "+1:02:03" → "+1:02" over "03"
+  const splitRemain = r => { const i = r.lastIndexOf(':'); return i < 0 ? [r, ''] : [r.slice(0, i), r.slice(i + 1)]; };
   let layout = LAYOUTS[store.get(LAYOUT)] ? store.get(LAYOUT) : '169';
   let pip = null;                                    // the Document Picture-in-Picture window
   let video = null, canvas = null;                   // or the video fallback
@@ -205,13 +207,19 @@
     try { pip.resizeTo(w + (pip.outerWidth - pip.innerWidth), h + (pip.outerHeight - pip.innerHeight)); } catch (_) { /* not allowed */ }
   }
 
-  // Largest font at which the span's text fits its box (both ways)
-  function fit(box, span, w, h) {
-    if (!w || !h || !span.textContent) return;
-    span.style.fontSize = '100px';
-    const r = span.getBoundingClientRect();
-    if (!r.width || !r.height) return;
-    span.style.fontSize = Math.max(6, Math.floor(100 * Math.min(w * 0.94 / r.width, h * 0.92 / r.height))) + 'px';
+  // Largest font at which each span's text fits a box of w × h (both ways); spans given together
+  // share one size (the stacked lines match)
+  function fit(spans, w, h) {
+    spans = spans.filter(s => s.textContent);
+    if (!w || !h || !spans.length) return;
+    let k = Infinity;
+    for (const s of spans) {
+      s.style.fontSize = '100px';
+      const r = s.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      k = Math.min(k, w * 0.94 / r.width, h * 0.92 / r.height);
+    }
+    spans.forEach(s => { s.style.fontSize = Math.max(6, Math.floor(100 * k)) + 'px'; });
   }
 
   function texts() {
@@ -238,7 +246,9 @@
     ov.classList.toggle('paused', t.online && !!state.paused);
     ov.querySelector('.ov-shade').style.width = t.pct + '%';
     ov.querySelector('.ov-msg span').textContent = t.msg;
-    ov.querySelector('.ov-remain span').textContent = t.remain;
+    const stack = layout === 'stack', [r1, r2] = stack ? splitRemain(t.remain) : [t.remain, ''];
+    ov.querySelector('.ov-remain .r1').textContent = r1;
+    ov.querySelector('.ov-remain .r2').textContent = r2;
     $('layout').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.l === layout));
     // Preview size: as big as the box allows at this shape
     if (!pip) {
@@ -248,8 +258,9 @@
     } else { ov.style.width = ''; ov.style.height = ''; }
     // Fit the text to the boxes it's in now (the page or the floating window)
     const msgBox = ov.querySelector('.ov-msg'), remBox = ov.querySelector('.ov-remain');
-    if (showMsg && t.msg) fit(msgBox, msgBox.firstChild, msgBox.clientWidth, msgBox.clientHeight);
-    fit(remBox, remBox.firstChild, remBox.clientWidth, remBox.clientHeight);
+    if (showMsg && t.msg) fit([msgBox.firstChild], msgBox.clientWidth, msgBox.clientHeight);
+    if (stack) fit([remBox.querySelector('.r1'), remBox.querySelector('.r2')], remBox.clientWidth, remBox.clientHeight / 2);
+    else fit([remBox.querySelector('.r1')], remBox.clientWidth, remBox.clientHeight);
     if (canvas) drawCanvas(t, showMsg, showBar);
     $('start').textContent = pip || (video && document.pictureInPictureElement === video) ? 'Stop overlay' : 'Start overlay';
   }
@@ -305,13 +316,19 @@
     c.textAlign = 'center'; c.textBaseline = 'middle';
     const fitPx = (text, w, h) => { c.font = FONT.replace('{px}', 100); return Math.max(6, Math.floor(100 * Math.min(w * 0.94 / c.measureText(text).width, h * 0.92 / 100))); };
     if (showMsg && t.msg) {
-      top = H * (layout === '916' ? 0.12 : 0.22);
+      top = H * (layout === '916' || layout === 'stack' ? 0.12 : 0.22);
       c.font = FONT.replace('{px}', fitPx(t.msg, W * 0.94, top)); c.fillStyle = '#ffd75e';
       c.fillText(t.msg, W / 2, top / 2);
     }
-    c.font = FONT.replace('{px}', fitPx(t.remain, W, H - top));
     c.fillStyle = !t.online ? '#444' : over ? '#ff4d4d' : imp ? '#ffa500' : paused ? '#888' : '#fff';
-    c.fillText(t.remain, W / 2, top + (H - top) / 2);
+    if (layout === 'stack') {
+      const lines = splitRemain(t.remain).filter(Boolean), h2 = (H - top) / 2;
+      c.font = FONT.replace('{px}', Math.min(...lines.map(l => fitPx(l, W, h2))));
+      lines.forEach((l, i) => c.fillText(l, W / 2, top + h2 * (lines.length === 1 ? 1 : i + 0.5)));
+    } else {
+      c.font = FONT.replace('{px}', fitPx(t.remain, W, H - top));
+      c.fillText(t.remain, W / 2, top + (H - top) / 2);
+    }
   }
 
   // Last, once everything above exists (a saved link connects straight away)
