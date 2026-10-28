@@ -179,8 +179,14 @@
 
   const ov = $('ov');
   const LAYOUTS = { 169: [480, 270], 1: [320, 320], 916: [270, 480], stack: [270, 480] };   // floating window size (px)
-  // Stacked: the countdown split at its last colon, "12:34" → "12" over "34", "+1:02:03" → "+1:02" over "03"
-  const splitRemain = r => { const i = r.lastIndexOf(':'); return i < 0 ? [r, ''] : [r.slice(0, i), r.slice(i + 1)]; };
+  // Stacked: "12:34" → "12" over "34"; from an hour, "1:23:59" → "1 hr" over "23:59" ("+" kept in overtime)
+  const splitRemain = r => {
+    const m = r.match(/^([+-]?)(\d+):(\d+):(\d+)$/);
+    if (m) return [m[1] + Number(m[2]) + ' hr', m[3] + ':' + m[4]];
+    const i = r.lastIndexOf(':');
+    return i < 0 ? [r, ''] : [r.slice(0, i), r.slice(i + 1)];
+  };
+  const hourStack = r => /^[+-]?\d+:\d+:\d+$/.test(r);   // its two lines differ in length: each sized on its own
   let layout = LAYOUTS[store.get(LAYOUT)] ? store.get(LAYOUT) : '169';
   let pip = null;                                    // the Document Picture-in-Picture window
   let video = null, canvas = null;                   // or the video fallback
@@ -259,7 +265,8 @@
     // Fit the text to the boxes it's in now (the page or the floating window)
     const msgBox = ov.querySelector('.ov-msg'), remBox = ov.querySelector('.ov-remain');
     if (showMsg && t.msg) fit([msgBox.firstChild], msgBox.clientWidth, msgBox.clientHeight);
-    if (stack) fit([remBox.querySelector('.r1'), remBox.querySelector('.r2')], remBox.clientWidth, remBox.clientHeight / 2);
+    if (stack && hourStack(t.remain)) [remBox.querySelector('.r1'), remBox.querySelector('.r2')].forEach(s => fit([s], remBox.clientWidth, remBox.clientHeight / 2));
+    else if (stack) fit([remBox.querySelector('.r1'), remBox.querySelector('.r2')], remBox.clientWidth, remBox.clientHeight / 2);
     else fit([remBox.querySelector('.r1')], remBox.clientWidth, remBox.clientHeight);
     if (canvas) drawCanvas(t, showMsg, showBar);
     $('start').textContent = pip || (video && document.pictureInPictureElement === video) ? 'Stop overlay' : 'Start overlay';
@@ -323,8 +330,11 @@
     c.fillStyle = !t.online ? '#444' : over ? '#ff4d4d' : imp ? '#ffa500' : paused ? '#888' : '#fff';
     if (layout === 'stack') {
       const lines = splitRemain(t.remain).filter(Boolean), h2 = (H - top) / 2;
-      c.font = FONT.replace('{px}', Math.min(...lines.map(l => fitPx(l, W, h2))));
-      lines.forEach((l, i) => c.fillText(l, W / 2, top + h2 * (lines.length === 1 ? 1 : i + 0.5)));
+      const shared = Math.min(...lines.map(l => fitPx(l, W, h2))), own = hourStack(t.remain);
+      lines.forEach((l, i) => {
+        c.font = FONT.replace('{px}', own ? fitPx(l, W, h2) : shared);
+        c.fillText(l, W / 2, top + h2 * (lines.length === 1 ? 1 : i + 0.5));
+      });
     } else {
       c.font = FONT.replace('{px}', fitPx(t.remain, W, H - top));
       c.fillText(t.remain, W / 2, top + (H - top) / 2);
