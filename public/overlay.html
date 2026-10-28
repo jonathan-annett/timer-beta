@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Timer overlay</title>
+  <style>
+    :root { --bg: #0b0b0b; --panel: #151515; --line: #2a2a2a; --text: #ddd; --dim: #888; --accent: #4aa8ff; --ok: #7fdc7f; --warn: #ffcc33; --bad: #ff8080; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font: 15px/1.45 "Helvetica Neue", Arial, sans-serif; }
+    [hidden] { display: none !important; }
+    main { max-width: 760px; margin: 0 auto; padding: 24px 16px 40px; }
+    h1 { font-size: 20px; margin: 0 0 4px; color: #fff; }
+    .sub { color: var(--dim); margin: 0 0 20px; }
+    button { font: inherit; color: var(--text); background: #222; border: 1px solid #444; border-radius: 6px; padding: 8px 14px; cursor: pointer; }
+    button:hover { background: #2c2c2c; }
+    button.primary { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
+    button.big { font-size: 18px; padding: 12px 22px; }
+    button:disabled { opacity: .4; cursor: default; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+
+    /* Pairing by code */
+    #code { font: bold 44px/1.1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .3em; text-align: center; width: 100%; max-width: 360px;
+      background: #000; color: #fff; border: 2px solid #333; border-radius: 10px; padding: 10px 0 10px .3em; font-variant-numeric: tabular-nums; }
+    #code:focus { outline: none; border-color: var(--accent); }
+    .center { text-align: center; }
+    #codemsg { min-height: 1.5em; margin-top: 10px; }
+    .bad { color: var(--bad); } .ok { color: var(--ok); } .warn { color: var(--warn); }
+    details { margin-top: 14px; color: var(--dim); font-size: 13px; }
+    details input { width: 100%; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 6px; font: 13px monospace; }
+
+    /* Paired */
+    #status { font-size: 13px; color: var(--dim); }
+    #status.ok { color: var(--ok); } #status.warn { color: var(--warn); }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+    .seg { display: inline-flex; }
+    .seg button { border-radius: 0; }
+    .seg button:first-child { border-radius: 6px 0 0 6px; }
+    .seg button:last-child { border-radius: 0 6px 6px 0; }
+    .seg button + button { border-left: 0; }
+    .seg button.on { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
+    label.check { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; color: var(--text); }
+    #previewbox { display: flex; justify-content: center; align-items: center; height: 300px; background: #050505; border: 1px dashed #333; border-radius: 8px; }
+    #previewbox .floating { color: var(--dim); font-size: 13px; text-align: center; padding: 20px; }
+    .hint { color: var(--dim); font-size: 13px; }
+    #pinwait .pin { font: bold 40px "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; color: #fff; }
+  </style>
+  <style id="ov-css">
+    /* The overlay itself: also copied into the floating window, so only #ov rules here */
+    #ov { position: relative; overflow: hidden; background: #000; color: #fff; display: flex; flex-direction: column;
+      font-family: "Helvetica Neue", Arial, sans-serif; font-weight: bold; font-variant-numeric: tabular-nums; }
+    #ov.l-169 { aspect-ratio: 16 / 9; } #ov.l-1 { aspect-ratio: 1; } #ov.l-916 { aspect-ratio: 9 / 16; }
+    #ov.fill { width: 100vw; height: 100vh; aspect-ratio: auto; }
+    #ov .ov-shade { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(255, 255, 255, .13); }
+    #ov:not(.bar) .ov-shade { display: none; }
+    #ov .ov-msg { position: relative; flex: 0 0 22%; display: flex; align-items: center; justify-content: center; white-space: nowrap; padding: 0 3%; color: #ffd75e; }
+    #ov.l-916 .ov-msg { flex-basis: 12%; }
+    #ov:not(.msg) .ov-msg, #ov.nomsg .ov-msg { display: none; }
+    #ov .ov-remain { position: relative; flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; white-space: nowrap; }
+    #ov span { line-height: 1; }
+    #ov.impending .ov-remain { color: #ffa500; } #ov.impending .ov-shade { background: rgba(255, 165, 0, .18); }
+    #ov.over { background: #2a0000; } #ov.over .ov-remain { color: #ff4d4d; } #ov.over .ov-shade { background: rgba(255, 77, 77, .2); }
+    #ov.paused .ov-remain { color: #888; }
+    #ov.offline .ov-remain { color: #444; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Timer overlay</h1>
+    <p class="sub">A countdown that floats on top of other windows (PowerPoint's Presenter View, say), fed by the timer on another computer.</p>
+
+    <section id="enter" class="card center" hidden>
+      <p>On the timer, open <b>share</b> and click <b>Pair a computer</b>. Type the 6-digit code it shows:</p>
+      <input id="code" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="······" aria-label="Pairing code">
+      <div id="codemsg"></div>
+      <details><summary>Pairing server</summary>
+        <input id="server" spellcheck="false" aria-label="Pairing server address">
+      </details>
+    </section>
+
+    <section id="paired" hidden>
+      <div class="card">
+        <div class="row" style="margin-top:0"><span id="status">Connecting…</span></div>
+        <div class="row">
+          <span>Shape</span>
+          <span class="seg" id="layout"><button data-l="169">16:9</button><button data-l="1">Square</button><button data-l="916">9:16</button></span>
+          <label class="check"><input type="checkbox" id="opt-msg"> Message</label>
+          <label class="check"><input type="checkbox" id="opt-bar"> Progress shade</label>
+        </div>
+        <div id="previewbox">
+          <div id="ov" class="l-169 offline"><div class="ov-shade"></div><div class="ov-msg"><span></span></div><div class="ov-remain"><span>–:––</span></div></div>
+          <div class="floating" hidden>The overlay is in its floating window. Drag it where you want it and resize it; closing it brings it back here.</div>
+        </div>
+        <div class="row">
+          <button id="start" class="primary big">Start overlay</button>
+          <span class="hint">Then minimize this window: the overlay keeps running on top, with no keys needed.</span>
+        </div>
+      </div>
+      <div id="pinwait" class="card center" hidden>
+        <p id="pinmsg">The timer asks who this is. Tell the person at the timer this PIN:</p>
+        <div class="pin" id="pincode"></div>
+      </div>
+      <p class="hint">Paired with timer room <b id="room"></b>. <button id="unpair">Unpair this computer</button></p>
+    </section>
+  </main>
+  <script src="remote-peer.js?v=ce2b3716"></script>
+  <script src="overlay.js?v=6036238e"></script>
+</body>
+</html>

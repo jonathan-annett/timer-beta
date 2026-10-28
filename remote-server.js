@@ -11,7 +11,10 @@
  *     'pptx'), which is reported to the timer; the timer enforces it (view: no commands; admin:
  *     may also set up other computers; pptx: only the PowerPoint machines' own messages),
  *   - forwards WebRTC signalling so phone and timer can try a direct LAN connection, and
- *   - relays the (small) control/state messages when a direct connection isn't possible.
+ *   - relays the (small) control/state messages when a direct connection isn't possible, and
+ *   - pairs a computer by a 6-digit code instead of a link (protocol 6): while the timer asks
+ *     for it, the server shows it a code that changes every 30 s; a computer on the same
+ *     network (same public address) that types it gets a link from the timer, passed on once.
  * It never looks inside the messages it forwards.
  *
  * Usage:
@@ -51,12 +54,17 @@ const ORIGINS = (arg('origin') || process.env.ALLOWED_ORIGINS || '').split(',').
 
 // Bumped when the protocol gains features; sent to timers in 'hosted' so they can tell an
 // out-of-date server (1 = control only; 2 = adds view-only keys and roles; 3 = adds admin keys).
-const PROTOCOL = 5;   // 2: view-only keys, 3: admin keys, 4: companion keys, 5: PowerPoint keys
+const PROTOCOL = 6;   // 2: view-only keys, 3: admin keys, 4: companion keys, 5: PowerPoint keys, 6: pairing codes
 const MAX_MESSAGE_BYTES = 16 * 1024;     // signalling + state messages are tiny
 const MAX_MSGS_PER_SEC = 40;             // per socket; extra messages are dropped
 const MAX_PHONES_PER_ROOM = 16;          // controllers + view-only displays
 const HOST_GRACE_MS = 2 * 60 * 1000;     // keep a room while its timer reconnects
 const PING_MS = 25 * 1000;
+const CODE_MS = 30 * 1000;               // a pairing code changes this often...
+const CODE_GRACE_MS = 10 * 1000;         // ...and the one before still works this much longer (typed as it changed)
+const CLAIM_WAIT_MS = 20 * 1000;         // how long a claimed code waits for the timer's answer
+const MAX_CODE_FAILS = 5;                // wrong codes per address per minute
+const MAX_FRAG = 2048;                   // a granted link
 
 if (!INSECURE && (!CERT || !KEY)) {
   console.error('Need --cert and --key (TLS certificate and private key), or --insecure for local testing.');
@@ -83,6 +91,7 @@ function send(ws, obj) {
 function dropRoom(id) {
   const room = rooms.get(id);
   if (!room) return;
+  stopCodes(room);
   for (const p of room.phones.values()) { send(p.ws, { type: 'error', reason: 'room-closed' }); p.ws.close(); }
   rooms.delete(id);
 }
@@ -94,6 +103,57 @@ setInterval(() => {
   }
 }, 30 * 1000);
 
+// ─── Pairing codes (protocol 6) ───────────────────────────────────────────────
+// The timer sends {type:'pair', on:true} and gets {type:'pair-code', code, ms} every 30 s until
+// it sends on:false (or a code is used, or it goes away). Another computer opens a socket and sends
+// {type:'claim', code}; if the code is live and it comes from the same public address as the timer
+// (the same network), the timer gets {type:'claim', id} and answers {type:'grant', id, frag} (a
+// link for that computer) or {type:'deny', id}; the computer gets {type:'granted', frag} or an
+// error. A code works once. The server stores no keys: the link passes through, once.
+
+const codes = new Map();          // code -> { roomId, until }
+const claims = new Map();         // claim id -> { ws, roomId }
+const codeFails = new Map();      // address -> { n, since }
+
+// The address a socket came from, comparable: IPv4 as is, IPv6 by its /64 (the network part).
+// Private and loopback addresses are all one 'local' network: they reach the server directly
+// (a server on the venue LAN, or local testing), where a public server sees one router address.
+function netOf(addr) {
+  let a = String(addr || '').replace(/^::ffff:/, '');
+  if (a === '::1' || /^(127|10)\./.test(a) || /^192\.168\./.test(a) || /^172\.(1[6-9]|2\d|3[01])\./.test(a) ||
+      /^169\.254\./.test(a) || /^f[cd]/i.test(a) || /^fe80:/i.test(a)) return 'local';
+  if (a.includes(':')) a = a.split(':').slice(0, 4).join(':') + '::/64';
+  return a;
+}
+
+function newCode() {
+  for (;;) {
+    const c = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    if (!codes.has(c)) return c;
+  }
+}
+function issueCode(roomId) {
+  const room = rooms.get(roomId);
+  if (!room || !room.host) return;
+  const now = Date.now();
+  for (const [c, v] of codes) if (v.until < now) codes.delete(c);
+  if (room.code && codes.has(room.code)) codes.get(room.code).until = now + CODE_GRACE_MS;   // the old one: a little longer
+  room.code = newCode();
+  codes.set(room.code, { roomId, until: now + CODE_MS + CODE_GRACE_MS });
+  send(room.host, { type: 'pair-code', code: room.code, ms: CODE_MS });
+}
+function stopCodes(room) {
+  clearInterval(room.codeTimer);
+  room.codeTimer = null; room.code = null;
+  for (const [c, v] of codes) if (rooms.get(v.roomId) === room) codes.delete(c);
+}
+function codeFailed(net) {
+  const now = Date.now(), f = codeFails.get(net);
+  if (!f || now - f.since > 60000) codeFails.set(net, { n: 1, since: now });
+  else f.n++;
+}
+const tooManyFails = net => { const f = codeFails.get(net); return !!f && Date.now() - f.since <= 60000 && f.n >= MAX_CODE_FAILS; };
+
 // ─── Server ───────────────────────────────────────────────────────────────────
 
 const server = INSECURE
@@ -103,7 +163,7 @@ const server = INSECURE
 server.on('request', (req, res) => {
   // Plain HTTPS requests: a health check, and a page so you can accept a self-signed cert
   res.writeHead(200, { 'content-type': 'text/plain' });
-  res.end(`timer remote server ok, protocol ${PROTOCOL} (view-only, admin, companion and PowerPoint links) (${rooms.size} rooms)\n`);
+  res.end(`timer remote server ok, protocol ${PROTOCOL} (view-only, admin, companion and PowerPoint links, pairing codes) (${rooms.size} rooms)\n`);
 });
 
 const wss = new WebSocketServer({
@@ -121,13 +181,14 @@ const wss = new WebSocketServer({
   },
 });
 
-wss.on('connection', ws => {
+wss.on('connection', (ws, req) => {
   ws.isAlive = true;
+  ws.net = netOf(req.socket.remoteAddress);
   ws.on('pong', () => { ws.isAlive = true; });
   // Must be handled: an oversized or malformed frame emits 'error', and an unhandled
   // 'error' would crash the whole server. ws closes the socket itself afterwards.
   ws.on('error', err => console.warn('[remote] socket error:', err.code || err.message));
-  let role = null, roomId = null, phoneId = null;
+  let role = null, roomId = null, phoneId = null, claimId = null;
   let windowStart = Date.now(), count = 0;
 
   ws.on('message', raw => {
@@ -139,6 +200,22 @@ wss.on('connection', ws => {
     let m;
     try { m = JSON.parse(raw); } catch (_) { return; }
     if (!m || typeof m !== 'object') return;
+
+    if (!role && m.type === 'claim') {                // a computer typed a pairing code
+      if (tooManyFails(ws.net)) { send(ws, { type: 'error', reason: 'too-many' }); return ws.close(); }
+      const c = typeof m.code === 'string' && /^\d{6}$/.test(m.code) ? codes.get(m.code) : null;
+      const room = c && c.until >= Date.now() ? rooms.get(c.roomId) : null;
+      if (!room || !room.host) { codeFailed(ws.net); send(ws, { type: 'error', reason: 'bad-code' }); return ws.close(); }
+      if (room.host.net !== ws.net) { codeFailed(ws.net); send(ws, { type: 'error', reason: 'other-network' }); return ws.close(); }
+      stopCodes(room);                                // used: no more codes until the timer asks again
+      claimId = crypto.randomBytes(6).toString('hex');
+      claims.set(claimId, { ws, roomId: c.roomId });
+      role = 'claim'; roomId = c.roomId;
+      send(ws, { type: 'claim-wait' });
+      send(room.host, { type: 'claim', id: claimId });
+      setTimeout(() => { if (claims.has(claimId)) { send(ws, { type: 'error', reason: 'no-answer' }); ws.close(); } }, CLAIM_WAIT_MS);
+      return;
+    }
 
     if (!role) {
       if (!validRoom(m.room) || !validKey(m.key)) { send(ws, { type: 'error', reason: 'bad-request' }); return ws.close(); }
@@ -197,15 +274,27 @@ wss.on('connection', ws => {
     if (role === 'host' && m.type === 'to') {
       const p = room.phones.get(m.id);
       if (p) send(p.ws, { type: 'down', msg: m.msg });
+    } else if (role === 'host' && m.type === 'pair') {
+      stopCodes(room);
+      if (m.on) { issueCode(roomId); room.codeTimer = setInterval(() => issueCode(roomId), CODE_MS); }
+    } else if (role === 'host' && (m.type === 'grant' || m.type === 'deny')) {
+      const cl = claims.get(m.id);
+      if (!cl || cl.roomId !== roomId) return;
+      claims.delete(m.id);
+      if (m.type === 'grant' && typeof m.frag === 'string' && m.frag.length <= MAX_FRAG) send(cl.ws, { type: 'granted', frag: m.frag });
+      else send(cl.ws, { type: 'error', reason: 'refused' });
+      cl.ws.close();
     } else if (role === 'phone' && m.type === 'up' && room.phones.get(phoneId)) {
       send(room.host, { type: 'from', id: phoneId, msg: m.msg });
     }
   });
 
   ws.on('close', () => {
+    if (claimId) claims.delete(claimId);
     const room = rooms.get(roomId);
     if (!room) return;
     if (role === 'host' && room.host === ws) {
+      stopCodes(room);
       room.host = null; room.hostGoneAt = Date.now();
       for (const p of room.phones.values()) send(p.ws, { type: 'host-offline' });
     } else if (role === 'phone' && room.phones.has(phoneId)) {

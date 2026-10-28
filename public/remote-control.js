@@ -74,13 +74,13 @@
     pptx:      { label: 'PowerPoint', hint: '<b>PowerPoint</b>: open this link in Chrome or Edge on the computer that shows the slides (same network as this one). It receives the run sheet’s decks and shows how to start the PowerPoint player. It can’t control the timer.' },
   };
   const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet', 'pptx'];   // what an admin phone can set another computer up as
-  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4, pptx: 5 };   // pairing server needed for each link
+  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4, pptx: 5, overlay: 2, code: 6 };   // pairing server needed for each link (code: pairing by code)
   // 'editor' is the control link with m=runsheet: a computer opening it starts in the run sheet editor
   const linkFields = (p, mode) => mode === 'control' ? { r: p.room, k: p.key }
     : mode === 'editor' ? { r: p.room, k: p.key, m: 'runsheet' }
     : mode === 'admin' ? { r: p.room, a: p.admin }
     : mode === 'companion' ? { r: p.room, c: p.comp }
-    : mode === 'pptx' ? { r: p.room, p: p.pptx } : { r: p.room, v: p.view, m: mode };
+    : mode === 'pptx' ? { r: p.room, p: p.pptx } : { r: p.room, v: p.view, m: mode };   // (countdown, runsheet, overlay: view only)
   const PASTE_MODES = ['companion', 'pptx'];          // links to copy, not codes to scan
   // On a phone or tablet (the timer itself run on one), the panel is a simple sheet: a friend's
   // phone as a remote control or a countdown display. No run sheet or admin links there.
@@ -132,8 +132,11 @@
         case 'hosted':
           hosted = true;
           serverProtocol = m.protocol || 1;   // servers from before view-only keys don't say
+          if (pair.on && serverProtocol >= MIN_PROTOCOL.code) sock.send(JSON.stringify({ type: 'pair', on: true }));
           setStatus('Ready — scan the code with a phone', 'ok');
           break;
+        case 'pair-code': pair.code = m.code; pair.ms = m.ms || 30000; pair.at = Date.now(); renderPanel(); break;
+        case 'claim': grantClaim(m.id); break;
         case 'peer-join': addPeer(m.id, m.role); break;
         case 'peer-leave': removePeer(m.id); break;
         case 'from': { const p = peers.get(m.id); if (p) p.peer.receive(m.msg); break; }
@@ -146,6 +149,7 @@
     sock.onclose = () => {
       if (sock !== ws) return;
       hosted = false;
+      pair.code = null;                      // asked for again when the server is back
       for (const id of [...peers.keys()]) removePeer(id);
       if (!enabled) { setStatus('Off', 'idle'); return; }
       setStatus(`Can't reach ${serverUrl()} — retrying…`, 'error');
@@ -154,6 +158,38 @@
     };
     sock.onerror = () => {};
   }
+
+  // ─── Pairing a computer by code (pairing server protocol 6) ──────────────
+  // "Pair a computer" asks the server for a 6-digit code (a new one every 30 s) and shows it. Typed
+  // on another computer's overlay page (on the same network), the server tells us; we answer with
+  // that computer's link: the view-only overlay link, plus a token that lets it past "Require a
+  // PIN" (typing the code was the proof). Then the code goes away. Only while the panel is open.
+  const pair = { on: false, code: null, ms: 30000, at: 0, note: '' };
+  function sendServer(obj) { if (ws && ws.readyState === WebSocket.OPEN && hosted) ws.send(JSON.stringify(obj)); }
+  function startPairing() {
+    if (!hosted || serverProtocol < MIN_PROTOCOL.code) return;
+    pair.on = true; pair.code = null; pair.note = '';
+    sendServer({ type: 'pair', on: true });
+    renderPanel();
+  }
+  function stopPairing() {
+    if (!pair.on) return;
+    pair.on = false; pair.code = null;
+    sendServer({ type: 'pair', on: false });
+    renderPanel();
+  }
+  function grantClaim(id) {
+    if (typeof id !== 'string') return;
+    if (!pair.on) { sendServer({ type: 'deny', id }); return; }
+    const token = randomString(24, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789');
+    localStorage.setItem(APPROVED_KEY, JSON.stringify(approvedTokens().concat(token).slice(-64)));
+    sendServer({ type: 'grant', id, frag: shareFragment('overlay') + '&t=' + token });
+    pair.on = false; pair.code = null;      // the server has dropped the code too
+    const d = new Date();
+    pair.note = `A computer was paired as an overlay at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    renderPanel();
+  }
+  const overlayPage = () => { const u = new URL('overlay.html', location.href); u.search = ''; u.hash = ''; return u.toString(); };
 
   function relayTo(id) {
     return msg => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'to', id, msg })); };
@@ -727,6 +763,13 @@
 #adopt-notice .an-row { display: flex; gap: 10px; margin-top: 18px; }
 #adopt-notice button { flex: 1; padding: 10px; font-size: 16px; border-radius: 6px; border: 1px solid #444; background: #222; color: #eee; cursor: pointer; }
 #adopt-notice .an-open { background: #0b3d5c; border-color: #2a6a9a; }
+#phone-panel .pp-code { margin: 8px 0 4px; padding: 8px; border: 1px solid #2a6a9a; border-radius: 6px; background: #0b1a26; }
+#phone-panel .pp-code[hidden] { display: none; }
+#phone-panel .pp-code .pp-digits { font: bold 40px/1.1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .12em; text-align: center; color: #fff; font-variant-numeric: tabular-nums; }
+#phone-panel .pp-code .pp-ttl { height: 3px; background: #2a6a9a; margin: 6px 0; transform-origin: left; }
+#phone-panel .pp-code .pp-codehint { font-size: 12px; color: #9ab; }
+#phone-panel .pp-code .pp-codehint b { color: #fff; user-select: all; }
+@keyframes pp-ttl { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 #phone-panel .pp-lan { color: #7fdc7f; } #phone-panel .pp-srv { color: #ffcc33; }
 #phone-panel .pp-hint { font-size: 11px; color: #666; margin-top: 4px; }
 #phone-panel .pp-adv { margin-top: 8px; font-size: 12px; color: #888; }
@@ -763,8 +806,10 @@
       <div class="pp-modehint"></div>
       <div class="pp-qr"></div>
       <div class="pp-link"></div>
+      <div class="pp-code" hidden></div>
       <label class="pp-pin"><input type="checkbox" class="pp-pin-box"> Require a PIN <span class="pp-hint">— a new phone shows a 4-digit PIN; type it here to let it in</span></label>
       <div class="pp-pending"></div>
+      <div class="pp-row"><button class="pp-pair" title="Show a 6-digit code to type on another computer on this network (no QR code or link needed)">Pair a computer</button></div>
       <div class="pp-row"><button class="pp-copy">Copy link</button><button class="pp-renew" title="Disconnect all phones and make a new code">New code</button><button class="pp-toggle"></button></div>
       <div class="pp-peers"></div>
       <details class="pp-adv"${TOUCH ? ' hidden' : ''}><summary>Server</summary>
@@ -772,7 +817,8 @@
         <div class="pp-hint">Default: wss://this-host:8443/ (remote-server.js). Phones on the same Wi-Fi connect directly; otherwise through the server.</div>
       </details>`;
     document.body.appendChild(el);
-    el.querySelector('.pp-close').addEventListener('click', () => { el.hidden = true; });
+    el.querySelector('.pp-close').addEventListener('click', () => { el.hidden = true; stopPairing(); });
+    el.querySelector('.pp-pair').addEventListener('click', () => (pair.on ? stopPairing() : startPairing()));
     el.querySelector('.pp-pin-box').addEventListener('change', ev => {
       if (ev.target.checked) localStorage.setItem(PIN_KEY, '1');
       else {
@@ -903,6 +949,7 @@
     el.querySelector('.pp-link').classList.toggle('pp-paste', paste);
     el.querySelector('.pp-qr').hidden = paste;
     if (enabled && !paste) drawQR(phoneLink());
+    renderPairing(el);
     el.querySelector('.pp-pin').style.display = enabled ? '' : 'none';
     el.querySelector('.pp-pin-box').checked = pinRequired();
     const pend = el.querySelector('.pp-pending');
@@ -924,6 +971,31 @@
       (lanCount < [...peers.values()].filter(e => e.role !== 'pptx').length ? '<div class="pp-hint">"via server": not on the same network (or the Wi-Fi isolates devices).</div>' : '') +
       (shareNote ? `<div class="pp-hint">${shareNote}</div>` : '');
   }
+
+  function renderPairing(el) {
+    const btn = el.querySelector('.pp-pair'), box = el.querySelector('.pp-code');
+    btn.parentElement.style.display = enabled && !TOUCH ? '' : 'none';
+    const ok = hosted && serverProtocol >= MIN_PROTOCOL.code;
+    btn.disabled = !ok;
+    btn.textContent = pair.on ? 'Cancel pairing' : 'Pair a computer';
+    btn.title = ok || !hosted ? btn.title : 'The pairing server is out of date: update remote-server.js (protocol 6) to pair by code';
+    box.hidden = !enabled || !(pair.on || pair.note);
+    // While a code is up it takes the QR code's place
+    el.querySelector('.pp-qr').style.display = enabled && !pair.on ? '' : 'none';
+    el.querySelector('.pp-link').style.display = pair.on ? 'none' : '';
+    el.querySelector('.pp-modes').style.display = enabled && !pair.on ? '' : 'none';   // the code isn't one of these links
+    el.querySelector('.pp-modehint').style.display = pair.on ? 'none' : '';
+    if (!pair.on) { box.dataset.code = ''; box.innerHTML = pair.note ? `<div class="pp-codehint">${pair.note}</div>` : ''; return; }
+    if (box.dataset.code === (pair.code || '-')) return;          // keep the countdown bar running
+    box.dataset.code = pair.code || '-';
+    const left = pair.code ? Math.max(0, pair.ms - (Date.now() - pair.at)) : 0;
+    box.innerHTML = !pair.code ? '<div class="pp-codehint">Getting a code…</div>' :
+      `<div class="pp-digits">${pair.code.slice(0, 3)} ${pair.code.slice(3)}</div>` +
+      `<div class="pp-ttl" style="animation: pp-ttl ${left}ms linear forwards"></div>` +
+      `<div class="pp-codehint">On the other computer (same network), open <b>${esc(overlayPage())}</b> and type this code. ` +
+      'It becomes a countdown overlay. The code changes every 30 s and works once.</div>';
+  }
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   // ─── Require a PIN ───────────────────────────────────────────────────────
 
@@ -990,6 +1062,7 @@
   function togglePanel() {
     const el = panel();
     el.hidden = !el.hidden;
+    if (el.hidden) stopPairing();
     if (!el.hidden) {
       document.dispatchEvent(new CustomEvent('timer-panel', { detail: 'phone' }));   // one panel at a time
       if (!enabled) enable();
@@ -1000,7 +1073,7 @@
   function init() {
     installBus();
     document.getElementById('btnshare')?.addEventListener('click', togglePanel);
-    document.addEventListener('timer-panel', e => { const el = document.getElementById('phone-panel'); if (e.detail !== 'phone' && el) el.hidden = true; });
+    document.addEventListener('timer-panel', e => { const el = document.getElementById('phone-panel'); if (e.detail !== 'phone' && el) { el.hidden = true; stopPairing(); } });
     if (localStorage.getItem(ENABLED_KEY) === '1') { panel(); enable(); }
     renderPanel();
   }

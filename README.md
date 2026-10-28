@@ -242,6 +242,17 @@ The QR code contains a secret key: anyone with the link can control the timer, s
 
 It connects within a second or two. If **Require a PIN** is on, Companion's status shows a PIN to type into the panel; it's remembered afterwards. The module's own help (in Companion) lists the actions, variables, feedbacks and presets. It isn't in Companion's module store yet: build it from `companion/companion-module-sophtwhere-presentationtimer` (`npm install && npm run build`) and point Companion's **Developer modules path** at the `companion/` folder, or `npm run package` for a `.tgz` to import. It is written for Companion 5.1 and should work from 4.3 on.
 
+### Countdown overlay on another computer
+
+A countdown that floats on top of everything on another computer, for example over PowerPoint's Presenter View on the slides computer, so the presenter sees their time there. No keys are needed once it's running.
+
+1. On the other computer (same network as the timer), open `overlay.html` next to the timer (for the hosted timer: https://timer.sophtwhere.com/beta/overlay.html).
+2. On the timer, click **share**, then **Pair a computer**. It shows a 6-digit code that changes every 30 seconds.
+3. Type the code on the other computer. They link up straight away and the code disappears from the timer.
+4. Choose a shape (**16:9**, **Square** or **9:16**), whether to show the **message** (along the top, sized to fit) and the **progress shade** (the background fills in as time runs out), then click **Start overlay**. Drag the floating window where you want it and resize it, then minimize the overlay page.
+
+The overlay turns orange under a minute and red when time is up, and greys out while paused. It can't control the timer. The computer stays paired: next time just open `overlay.html` (it remembers), even after the timer was closed. **Unpair this computer** forgets it; a **New code** on the timer unpairs every device. The code only works from the same network as the timer (same internet connection) and only once; a code typed from elsewhere is refused. The floating window works best in Chrome or Edge; other browsers get a simpler video overlay.
+
 ### Slides on a PowerPoint computer
 
 Give a run sheet item a PowerPoint deck and it opens as a full-screen slide show on the computer that shows the slides when **Next** reaches that item. Decks are sent to that computer ahead of time, so the switch is instant. An item without slides leaves the last deck on screen; **Back** onto an item with slides shows them again. You can have a backup computer too: every PowerPoint computer gets the same decks and opens them at the same moment. Decks only open or close when you press **Next**, **Back** or **Close slides**: a computer that connects or reconnects (or the timer page being reloaded) never changes what's on screen.
@@ -260,7 +271,7 @@ Then attach decks in the run sheet editor: **+ slides** in the **Slides** column
 
 ### Pairing server
 
-Sharing needs `remote-server.js` running on a server you control (the hosted timer has one). View-only, admin, Companion and PowerPoint links need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 3* supports view-only and admin links, *4* adds Companion, *5* PowerPoint), and the timer's share panel warns if the server is too old for the code you've selected. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the share panel.
+Sharing needs `remote-server.js` running on a server you control (the hosted timer has one). View-only, admin, Companion and PowerPoint links need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 3* supports view-only and admin links, *4* adds Companion, *5* PowerPoint, *6* pairing a computer by code), and the timer's share panel warns if the server is too old for the code you've selected. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the share panel.
 
 ```bash
 npm install

@@ -73,6 +73,14 @@ relayed through the user). Suggested setup and loop:
 
 ## What was built recently (newest first)
 
+- **Countdown overlay + pairing by code** (28 Oct, branch `alpha`, NOT on main, NOT deployed):
+  `overlay.html` floats a countdown (message strip on top, progress as a background shade;
+  16:9 / square / 9:16) over other windows via Document PiP, fed as a view-only device. Paired
+  by a 6-digit code from the share panel's **Pair a computer** (rotates every 30 s, single use,
+  same network only). Needs pairing server **protocol 6** (`remote-server.js` changed): deploying
+  it restarts `timer-remote`, which the user wants only between shows. Tested locally
+  (`tests/e2e/overlay_pair.py`); the user is trying it on the Mac via the local preview.
+
 - **Stream Deck: one page drives it** (28 Oct): a user's MK.2 (default layout) had keys "moving
   around" after pressing Bar. Cause (inferred, not seen on hardware): the presenter window (the
   default layout's Remote key opens it) and any second timer tab also attached the deck, so
