@@ -76,7 +76,7 @@ relayed through the user). Suggested setup and loop:
 ## What was built recently (newest first)
 
 - **Countdown overlay + pairing by code** (28 Oct, built on a local `alpha` branch, promoted to
-  main on the user's OK; main before it was `d3d8ece`, the rollback point if it misbehaves):
+  main on the user's OK; deployed 28 Oct with the Stream Deck fix below; the beta site ran `ce10a90` before (tag `beta-rollback`)):
   `overlay.html` floats a countdown (message strip on top, progress as a background shade;
   16:9 / square / 9:16 / 9:16 stacked) over other windows via Document PiP, fed as a view-only device. Paired
   by a 6-digit code from the share panel's **Pair a computer** (rotates every 30 s, single use,
