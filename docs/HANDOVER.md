@@ -11,9 +11,11 @@ setup and protocol; `tests/e2e/README.md` is how to test.
   for their OK before every push** (28 Oct: a push is one step from live). End commit messages with the attribution lines the session gives you.
 - Deploy is by the user, from GitHub: https://timer.sophtwhere.com/beta/ is served from a clone of
   the repo on the VPS, and the user's local `update-server.sh` (untracked, not for the repo) runs
-  `git pull` there over SSH and restarts `timer-remote`. So a pushed commit is deployed once they
-  run it. The pairing server (`remote-server.js`, protocol 5) is the systemd service
-  `timer-remote` on the same VPS.
+  `git pull --ff-only` there over SSH, restarting `timer-remote` only when `remote-server.js` or
+  `package.json` changed (a restart drops every phone, display, Companion and PowerPoint link
+  until they reconnect, so only between shows). So a pushed commit is deployed once they run it.
+  The pairing server (`remote-server.js`, protocol 6) is the systemd service `timer-remote` on
+  the same VPS.
 - At the end of each change, say it's pushed and ready for `./update-server.sh`, and which pages to
   reload (or have them try it first in the local preview, see below). Stale cached scripts have caused "it doesn't work" reports several times (most recently
   holding slides not syncing: an old `pptx-hub.js`/`pptx-receiver.js`). Script/style links now
@@ -73,13 +75,14 @@ relayed through the user). Suggested setup and loop:
 
 ## What was built recently (newest first)
 
-- **Countdown overlay + pairing by code** (28 Oct, branch `alpha`, NOT on main, NOT deployed):
+- **Countdown overlay + pairing by code** (28 Oct, built on a local `alpha` branch, promoted to
+  main on the user's OK; main before it was `d3d8ece`, the rollback point if it misbehaves):
   `overlay.html` floats a countdown (message strip on top, progress as a background shade;
   16:9 / square / 9:16 / 9:16 stacked) over other windows via Document PiP, fed as a view-only device. Paired
   by a 6-digit code from the share panel's **Pair a computer** (rotates every 30 s, single use,
-  same network only). Needs pairing server **protocol 6** (`remote-server.js` changed): deploying
-  it restarts `timer-remote`, which the user wants only between shows. Tested locally
-  (`tests/e2e/overlay_pair.py`); the user is trying it on the Mac via the local preview.
+  same network only). Needs pairing server **protocol 6** (`remote-server.js` changed), so its
+  deploy restarts `timer-remote`. Tested locally (`tests/e2e/overlay_pair.py`); the user is
+  testing it on the beta site.
 
 - **Stream Deck: one page drives it** (28 Oct): a user's MK.2 (default layout) had keys "moving
   around" after pressing Bar. Cause (inferred, not seen on hardware): the presenter window (the
