@@ -7,8 +7,8 @@ setup and protocol; `tests/e2e/README.md` is how to test.
 
 ## Working with this repo
 
-- Repo: `github.com/jonathan-annett/timer-beta`. Commit straight to `main` and push (the user
-  asked for this). End commit messages with the attribution lines the session gives you.
+- Repo: `github.com/jonathan-annett/timer-beta`. Commit to `main`, but **tell the user and wait
+  for their OK before every push** (28 Oct: a push is one step from live). End commit messages with the attribution lines the session gives you.
 - Deploy is by the user, from GitHub: https://timer.sophtwhere.com/beta/ is served from a clone of
   the repo on the VPS, and the user's local `update-server.sh` (untracked, not for the repo) runs
   `git pull` there over SSH and restarts `timer-remote`. So a pushed commit is deployed once they
@@ -72,6 +72,13 @@ relayed through the user). Suggested setup and loop:
   short messages.
 
 ## What was built recently (newest first)
+
+- **Stream Deck: one page drives it** (28 Oct): a user's MK.2 (default layout) had keys "moving
+  around" after pressing Bar. Cause (inferred, not seen on hardware): the presenter window (the
+  default layout's Remote key opens it) and any second timer tab also attached the deck, so
+  both pages ran each press and redrew every key at once. Now presenter windows never attach and
+  a Web Lock picks one timer tab. Tested with a fake deck (`tests/e2e/streamdeck_owner.py`);
+  waiting on the user to confirm on their deck.
 
 - **Run sheet: start ripple, provisional times, scaling** (24 Oct): any start edit now shifts the
   start times after it (not just the next item's); a sheet without start times shows times "as

@@ -237,12 +237,22 @@
 
   // ─── WebHID connection ────────────────────────────────────────────────────
 
+  // Only one page drives the deck. Two pages writing key images at once mix up the pieces (images
+  // land on the wrong keys, e.g. after a Bar press, which both pages act on and redraw for), and
+  // both run every press. A presenter window (opened by the Remote key) never does; among timer
+  // tabs, the one holding this lock does, and the next one takes over when it closes.
+  const PRESENTER = location.search.startsWith('?presenter');
+  let owner = false;                 // this page holds the deck lock
+  const NOT_OWNER_TEXT = 'Another timer tab is using the deck: use that one (this tab takes over when it closes)';
+
   // Must be called from a user gesture (click) — WebHID requires it for the permission prompt.
   async function connectDeck() {
     if (!navigator.hid) {
       _showDeckStatus('WebHID unavailable — use desktop Chrome or Edge over HTTPS', 'error');
       return;
     }
+    if (PRESENTER) { _showDeckStatus('Connect the deck from the main timer window', 'idle'); return; }
+    if (!owner) { _showDeckStatus(NOT_OWNER_TEXT, 'idle'); return; }
     if (device) { _showDeckStatus('Connected: ' + deviceInfo.name, 'ok'); return; }
     localStorage.removeItem(AUTOCONNECT_KEY);            // explicit Connect re-enables auto-connect
     if (pausedDevice) {                                  // still granted — no picker needed
@@ -957,14 +967,25 @@
       _showDeckStatus('WebHID unavailable here — layouts can still be edited', 'idle');
       return;
     }
-    _showDeckStatus('Not connected', 'idle');
+    if (PRESENTER) { _showDeckStatus('Connect the deck from the main timer window', 'idle'); return; }
+    _showDeckStatus(NOT_OWNER_TEXT, 'idle');
+    const own = () => {
+      owner = true;
+      _showDeckStatus('Not connected', 'idle');
+      autoAttach();
+    };
+    // Held until this page closes (the never-settling promise); without Web Locks, every page drives it
+    if (navigator.locks) navigator.locks.request('timer-streamdeck', () => { own(); return new Promise(() => {}); });
+    else own();
+  }
 
-    // Re-attach a previously granted device on load, and when one is plugged back in.
-    // (No user gesture needed for devices already granted to this site.)
+  // Re-attach a previously granted device on load (or on taking over from a closed tab), and when
+  // one is plugged back in. (No user gesture needed for devices already granted to this site.)
+  function autoAttach() {
     const isDeck = d => DEVICE_IDS.some(id => id.vendorId === d.vendorId && id.productId === d.productId);
     navigator.hid.getDevices().then(devices => {
       const match = devices.find(isDeck);
-      if (!match) return;
+      if (!match || device) return;
       if (autoConnectAllowed()) attach(match);
       else { pausedDevice = match; _showDeckStatus('Disconnected — click Connect to use it again', 'idle'); }
     });
