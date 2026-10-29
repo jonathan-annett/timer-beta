@@ -7,24 +7,21 @@ setup and protocol; `tests/e2e/README.md` is how to test.
 
 ## Where things are (29 Oct)
 
-**Three sites, two branches:**
+**Sites and branches (29 Oct, after the promotion):**
 
 | Site | Serves | From | Who |
 |---|---|---|---|
-| https://alpha.timed-show.com/ | Cloudflare Worker `timed-show-alpha` (pages + Durable Objects) | local `alpha` branch, deployed from the Mac with `wrangler` | the user (and the agent's tests) only: Cloudflare Access |
-| https://timer.sophtwhere.com/beta/ | VPS clone + `timer-remote` (`remote-server.js`) | `main`, deployed by the user's `./update-server.sh` | beta testers, live shows |
-| https://timer.sophtwhere.com/ | VPS, static | not this repo's concern | public |
+| https://alpha.timed-show.com/ | Worker `timed-show-alpha` | local `alpha` branch, `wrangler deploy --env alpha` | the user (and tests) only: Cloudflare Access |
+| https://beta.timed-show.com/ | Worker `timed-show-beta` (public; PowerPoint off) | `main` (pushed), `wrangler deploy --env beta` | beta testers |
+| https://timer.sophtwhere.com/beta/ | VPS clone + `timer-remote` | still `main` as of `f5365dd` (pause fix); to move to `legacy-beta` (landing page) when the user says | old beta |
+| timed-show.com, timed.show (+ www.) | Worker `timed-show-landing`: "coming soon, the beta is at beta.timed-show.com" | `cloudflare/landing/` | public |
 
-`timed-show.com`, `www.timed-show.com`, `timed.show`, `www.timed.show`: a "coming soon, the beta is at
-beta.timed-show.com" page (Worker `timed-show-landing`, `cloudflare/landing/`, deployed 29 Oct; every
-path, no-store), kept until the launch, when those addresses move to the real site.
-Planned: `beta.timed-show.com` (Worker `timed-show-beta`, from `main`) replaces the VPS beta, and
-`timer.sophtwhere.com/beta/` redirects there. `timed.show` (bought) redirects to `timed-show.com`.
-Not done yet (see *Open*).
-
-- **`alpha` is not pushed to GitHub** and is many commits ahead of `main`. `main` = what the VPS beta
-  runs (`f3ece87`, deployed 28 Oct; rollback tag `beta-rollback` = `ce10a90`). The user promotes
-  alpha → main when they say; nothing goes to `main` or GitHub without their OK.
+- **Promoted 29 Oct:** `alpha` merged into `main` (`0f99a08`), pushed, deployed to beta.timed-show.com
+  and checked live (pages, PowerPoint refused, `/ws`, share + phone via server + overlay code
+  pairing with the proximity check). The VPS was left alone on purpose: the user is testing the
+  new beta first. **Don't run `update-server.sh` now**: it would pull the new `main` onto the VPS
+  (the plan is `legacy-beta` there instead).
+- Keep developing on `alpha` (level with `main` after the promotion) and promote again the same way.
 - **Deploy alpha** (no push needed): `cd cloudflare && set -a; . ~/.config/timed-show.env; set +a; npx wrangler deploy --env alpha`.
   Do it after each committed change the user should see; it takes ~15 s.
 - **Credentials (outside the repo, never print them):** `~/.config/timed-show.env`
@@ -83,7 +80,7 @@ changed too (no same-network check, `kick`): promoting to main means a `timer-re
   `streamdeck.js` (no `timer-remote` restart). The original site (timer.sophtwhere.com, not this
   repo) has the same bug if it has the same code.
 
-## The move to beta.timed-show.com (prepared 29 Oct; waiting for the user's test and go)
+## The move off the VPS (beta.timed-show.com live 29 Oct; the VPS part waits for the user)
 
 The user's plan, answers given: alpha → `main` → Worker `timed-show-beta` at **beta.timed-show.com**
 (timed-show.com itself is kept for the launch). The VPS beta is **frozen**: local branch
@@ -96,8 +93,7 @@ site, "Bring my settings" ticked by default) + `deprecated-beta.html` (→ the o
 already there). Not carried: share keys/approvals, the running countdown, videos.
 Check: `tests/e2e/_move_to_new_site.py` (manual; needs the worktree).
 
-On the user's go: push `alpha` → `main` (ask), `wrangler deploy --env beta`, run the suite against
-beta, push `legacy-beta`, then on the VPS `git fetch && git checkout legacy-beta` once (afterwards
+Done: `main` pushed and beta deployed. Still to do on the user's go: push `legacy-beta`, then on the VPS `git fetch && git checkout legacy-beta` once (afterwards
 `update-server.sh` pulls that branch; `remote-server.js` there is unchanged, so no restart).
 
 ## Known issue being checked (29 Oct)
