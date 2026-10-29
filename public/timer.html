@@ -13,7 +13,7 @@
       <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
       <link rel="manifest" href="manifest.json">
       <title>Presentation Timer</title>
-      <link rel="stylesheet" href="timer.css?v=0ef18500" id="style_1">
+      <link rel="stylesheet" href="timer.css?v=f8761f9a" id="style_1">
       <link rel="stylesheet" href="help-overlay.css?v=ab22e694">
   </head>
   <body>
@@ -36,7 +36,7 @@
       <script src="deck-face.js?v=c546849b" defer></script>
       <script src="streamdeck.js?v=a050b499" defer></script>
       <script src="back-guard.js?v=1ffc51f1" defer></script>
-      <script src="touchcontrols.js?v=a40d867a" defer></script>
+      <script src="touchcontrols.js?v=9cfa18a2" defer></script>
       <script src="runsheet-core.js?v=2a42c0bc" defer></script>
       <script src="runsheet.js?v=693a7edc" defer></script>
       <script src="remote-peer.js?v=a4dfabd5" defer></script>
@@ -240,10 +240,15 @@
         <button class="touch-btn touch-help" id="touch-more-btn" title="More" aria-label="More">⋯</button>
       </div>
 
-      <!-- Touch "more" sheet: a friend's phone as a remote, help -->
+      <!-- Touch "more" sheet: bar / clock / undo pauses, a friend's phone as a remote, help -->
       <div id="touch-more-sheet" style="display:none">
         <div class="touch-sheet-backdrop" id="touch-more-backdrop"></div>
         <div class="touch-sheet-content">
+          <div class="touch-more-row">
+            <button class="touch-more-item" id="touch-bar-btn"><b>▬ Bar</b><small></small></button>
+            <button class="touch-more-item" id="touch-clock-btn"><b>🕒 Clock</b><small></small></button>
+            <button class="touch-more-item" id="touch-undopause-btn"><b>↺ Undo pauses</b><small></small></button>
+          </div>
           <button class="touch-more-item" id="touch-remote-btn"><b>📱 Let a friend control this timer</b><small>Shows a code for their phone: a remote control, or a countdown display</small></button>
           <button class="touch-more-item" id="touch-help-btn"><b>? Help</b><small>The guide</small></button>
           <button class="touch-sheet-cancel" id="touch-more-cancel">Cancel</button>

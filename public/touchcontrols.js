@@ -85,7 +85,16 @@
         : done ? '<b>📱 Let a friend control this timer</b><small>Done: your friend’s phone was disconnected. Tap here to share again with a new code.</small>'
         : '<b>📱 Let a friend control this timer</b><small>Shows a code for their phone: a remote control, or a countdown display</small>';
     };
-    const openMore = () => { if (!more) return; remoteLabel(); more.style.display = 'flex'; requestAnimationFrame(() => more.classList.add('visible')); };
+    // Bar (B), Clock (T), Undo pauses ('): shown with their state; the switches leave the sheet open
+    const moreSwitches = () => {
+      const set = (id, on, text) => { const b = document.getElementById(id); if (!b) return; b.classList.toggle('on', on); b.querySelector('small').textContent = text; };
+      set('touch-bar-btn', html.classList.contains('showbar'), html.classList.contains('showbar') ? 'On' : 'Off');
+      set('touch-clock-btn', html.classList.contains('showtimenow'), html.classList.contains('showtimenow') ? 'On' : 'Off');
+      const undo = document.getElementById('touch-undopause-btn');
+      const any = html.classList.contains('paused') || !!(document.getElementById('extra_time_disp') || {}).textContent;
+      if (undo) { undo.disabled = !any; undo.querySelector('small').textContent = any ? 'Ends as if never paused' : 'No pauses'; }
+    };
+    const openMore = () => { if (!more) return; remoteLabel(); moreSwitches(); more.style.display = 'flex'; requestAnimationFrame(() => more.classList.add('visible')); };
     const closeMore = () => { if (!more) return; more.classList.remove('visible'); setTimeout(() => { more.style.display = 'none'; }, 220); };
     // On click, not pointerdown: what these open appears under the finger, and the click that
     // follows a pointerdown would land on it (the phone panel's QR code, say)
@@ -93,6 +102,9 @@
     onTap('touch-more-btn', openMore);
     onTap('touch-more-cancel', closeMore);
     onTap('touch-more-backdrop', closeMore);
+    onTap('touch-bar-btn', () => { pressKey('b'); moreSwitches(); });
+    onTap('touch-clock-btn', () => { pressKey('t'); moreSwitches(); });
+    onTap('touch-undopause-btn', () => { pressKey("'"); closeMore(); });
     // Full screen (the F key), where the browser can (iPhone Safari can't: the button stays hidden)
     if (document.fullscreenEnabled || document.webkitFullscreenEnabled) document.documentElement.classList.add('can-fullscreen');
     onTap('touch-fs-btn', () => pressKey('f'));

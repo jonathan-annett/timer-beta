@@ -1421,6 +1421,12 @@ html.portrait #disp_next_mins:before{
   border-radius: 8px; color: #fff; font-size: 16px; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 .touch-more-item:active { background: #0f3460; }
 .touch-more-item small { display: block; color: #888; font-size: 13px; font-weight: normal; margin-top: 3px; }
+/* Bar, Clock, Undo pauses: the less-used switches, side by side */
+.touch-more-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.touch-more-row .touch-more-item { text-align: center; padding: 12px 6px; font-size: 15px; }
+.touch-more-row .touch-more-item.on { border-color: #2a6a9a; background: #0b2a40; }
+.touch-more-row .touch-more-item.on small { color: #9cf; }
+.touch-more-item:disabled { opacity: .4; }
 /* Short screens (a phone held sideways): the sheet scrolls, and the keypad sits beside its
    display and actions instead of above them */
 .touch-sheet-content { max-height: 100vh; max-height: 100dvh; overflow-y: auto; box-sizing: border-box; }
