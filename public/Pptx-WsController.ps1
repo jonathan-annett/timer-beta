@@ -658,13 +658,17 @@ function On-TimerMessage($d) {
             Write-Host ''
             Write-Host ("   The timer asks who this is. On the timer, type:   {0}   (one wrong try disconnects)" -f $script:PinCode) -ForegroundColor Black -BackgroundColor Yellow
             Write-Host ''
-            Send-Timer @{ t = 'pin'; code = $script:PinCode }
+            Send-Timer @{ t = 'pin'; code = $script:PinCode; name = 'PowerPoint player' }
         }
         'pin-ok' {
             $script:PinCode = $null
             if ($d.token) { Save-Token ([string]$d.token) }
             Log 'Let in by the timer' 'Green'
             Send-Hello
+        }
+        'revoked' {
+            Log 'The timer took this computer''s access away. Start this script again to ask again.' 'Red'
+            $script:Running = $false
         }
         'pin-rejected' {
             Log 'The timer refused this computer (wrong number). Start this script again to try again.' 'Red'

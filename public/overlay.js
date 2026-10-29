@@ -168,14 +168,15 @@
     if (m.t === 'pin-required') {
       if (!pinCode) pinCode = String(100 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900));   // 3 digits: the proximity check;
       $('pincode').textContent = pinCode; $('pinwait').hidden = false;
-      if (peer) peer.send({ t: 'pin', code: pinCode });
+      if (peer) peer.send({ t: 'pin', code: pinCode, name: 'Overlay · ' + RemotePeer.deviceName() });
     } else if (m.t === 'pin-ok') {
       if (typeof m.token === 'string') store.set(tokenKey(link.r), m.token);
       pinCode = null; $('pinwait').hidden = true;
       if (peer) peer.send({ t: 'hello', token: store.get(tokenKey(link.r)) || undefined });
-    } else if (m.t === 'pin-rejected') {
+    } else if (m.t === 'pin-rejected' || m.t === 'revoked') {
       refused = true;                                  // the timer disconnects it: don't reconnect
-      $('pinmsg').textContent = 'The timer didn’t let this computer in. Reload this page to try again.'; $('pincode').textContent = '';
+      $('pinwait').hidden = false;
+      $('pinmsg').textContent = m.t === 'revoked' ? 'The timer took this computer’s access away.' : 'The timer didn’t let this computer in. Reload this page to try again.'; $('pincode').textContent = '';
     } else if (m.t === 'state' && m.s && typeof m.s === 'object') {
       if (m.full) for (const k of Object.keys(state)) delete state[k];
       Object.assign(state, m.s);

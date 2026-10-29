@@ -173,16 +173,16 @@
       $('pinmsg').textContent = 'The timer is asking who this is. Show this number to the person at the timer (or read it to them over the phone); it connects once they type it in. One wrong try disconnects this phone.';
       $('pinretry').hidden = true;
       box.hidden = false;
-      if (peer) peer.send({ t: 'pin', code: pinCode });
+      if (peer) peer.send({ t: 'pin', code: pinCode, name: RemotePeer.deviceName() });
     } else if (m.t === 'pin-ok') {
       if (typeof m.token === 'string') store.set(tokenKey(), m.token);
       pinCode = null;
       box.hidden = true;
       if (peer) { peer.send({ t: 'hello', token: store.get(tokenKey()) || undefined }); if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true }); if (editorMode()) peer.send({ t: 'rs-sub', on: true }); }
-    } else if (m.t === 'pin-rejected') {
+    } else if (m.t === 'pin-rejected' || m.t === 'revoked') {
       pinCode = null;
       $('pincode').textContent = '';
-      $('pinmsg').textContent = 'The timer didn’t let this phone in.';
+      $('pinmsg').textContent = m.t === 'revoked' ? 'The timer took this device’s access away.' : 'The timer didn’t let this phone in.';
       fatal = true;                                    // the timer disconnects it: don't reconnect
       $('pinretry').hidden = false;
       box.hidden = false;
@@ -195,7 +195,7 @@
   const joinPart = RemotePeer.joiner();
   function onMessage(m) {
     if (m && m.t === 'part') { const whole = joinPart(m); if (whole) onMessage(whole); return; }
-    if (m && (m.t === 'pin-required' || m.t === 'pin-ok' || m.t === 'pin-rejected')) return onPin(m);
+    if (m && (m.t === 'pin-required' || m.t === 'pin-ok' || m.t === 'pin-rejected' || m.t === 'revoked')) return onPin(m);
     if (m && m.t === 'deck') return onDeck(m);
     if (m && m.t === 'share-link') return onShareLink(m);
     if (m && typeof m.t === 'string' && /^(rs-|vup-)/.test(m.t)) return onEditorMessage(m);

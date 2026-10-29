@@ -256,13 +256,16 @@
     // brings back the token it was given when it passed before, under this code). Until then
     // nothing is sent to it and nothing else from it is acted on.
     if (!e.approved) {
-      if (m.t === 'hello' && typeof m.token === 'string' && approvedTokens().includes(m.token)) {
-        e.approved = true;
+      const known = m.t === 'hello' && typeof m.token === 'string' ? approvedEntry(m.token) : null;
+      if (known) {
+        e.approved = true; e.token = m.token; e.name = known.name || '';
+        updateApproved(m.token, { seen: Date.now(), role: e.role });
       } else if (m.t === 'hello') {
         e.peer.send({ t: 'pin-required' });
         return;
       } else if (m.t === 'pin' && typeof m.code === 'string' && /^\d{3,4}$/.test(m.code)) {   // 3 digits (4 from older devices, Companion, the PowerPoint player)
         e.pin = m.code;
+        e.suggest = cleanName(m.name);           // the device's own idea of a name ("iPhone · Safari")
         openPanel();                             // the operator has to see the request
         renderPanel();
         return;
@@ -725,6 +728,11 @@
 #phone-panel button { flex: 1; padding: 5px 4px; font-size: 12px; background: #222; border: 1px solid #444; color: #ccc; border-radius: 4px; cursor: pointer; }
 #phone-panel button:hover { background: #333; color: #fff; }
 #phone-panel .pp-peers { margin-top: 8px; font-size: 12px; }
+#phone-panel .pp-dev { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin: 3px 0; }
+#phone-panel .pp-devbtns { flex: none; white-space: nowrap; }
+#phone-panel .pp-devbtns button { font-size: 11px; padding: 1px 6px; margin-left: 4px; }
+#phone-panel .pp-devbtns button.pp-armed { background: #5a1a1a; border-color: #a33; color: #fff; }
+#phone-panel .pp-known summary { cursor: pointer; color: #aaa; margin-top: 6px; }
 #phone-panel .pp-pin { display: block; font-size: 12px; color: #bbb; margin: 6px 0 2px; cursor: pointer; }
 #phone-panel .pp-pin input { vertical-align: middle; margin: 0 4px 0 0; }
 #phone-panel .pp-ask { background: #2a2200; border: 1px solid #665200; border-radius: 6px; padding: 8px; margin: 6px 0; font-size: 13px; color: #ffe08a; }
@@ -845,6 +853,15 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       const row = ev.target.closest('[data-id]');
       approvePeer(peers.get(row.dataset.id), ev.target.value.trim());
     });
+    el.querySelector('.pp-peers').addEventListener('click', ev => {
+      const b = ev.target.closest('button[data-dev]');
+      if (!b) return;
+      const token = b.dataset.token;
+      if (b.dataset.dev === 'rename') renameDevice(token);
+      else if (armed(token)) { armedRevoke.delete(token); revokeDevice(token); }
+      else { armedRevoke.set(token, Date.now()); renderPanel(); setTimeout(renderPanel, 3100); }
+    });
+    el.querySelector('.pp-peers').addEventListener('toggle', ev => { if (ev.target.classList.contains('pp-known')) knownOpen = ev.target.open; }, true);
     el.querySelector('.pp-qr').addEventListener('click', showBigQR);
     el.querySelectorAll('.pp-modes button').forEach(b => b.addEventListener('click', () => {
       localStorage.setItem(LINK_MODE_KEY, b.dataset.mode);
@@ -959,20 +976,27 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     const rows = pending();
     const keep = {};
     pend.querySelectorAll('[data-id]').forEach(r => { keep[r.dataset.id] = r.querySelector('input').value; });
-    pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.role === 'view' ? 'A display' : e.role === 'companion' ? 'Companion' : e.role === 'pptx' ? 'A PowerPoint computer' : 'A phone'} wants to connect.</b> Type the number it shows${e.role === 'companion' ? ' (in its connection log)' : e.role === 'pptx' ? ' (on its receiver page or in the player window)' : ''}. A wrong number disconnects it:
+    pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.suggest ? esc(e.suggest) + (e.role === 'view' ? ' (a display)' : '') : e.role === 'view' ? 'A display' : e.role === 'companion' ? 'Companion' : e.role === 'pptx' ? 'A PowerPoint computer' : 'A phone'} wants to connect.</b> Type the number it shows${e.role === 'companion' ? ' (in its connection log)' : e.role === 'pptx' ? ' (on its receiver page or in the player window)' : ''}. A wrong number disconnects it:
         <span class="pp-askrow"><input inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="###" value="${keep[e.id] || ''}">
         <button data-act="ok">Let it in</button><button data-act="no">Refuse</button></span></div>`).join('');
     if (rows.length && !keep[rows[0].id]) { const i = pend.querySelector('input'); if (i && !TOUCH) i.focus(); }
     const srv = el.querySelector('.pp-server');
     if (force || document.activeElement !== srv) srv.value = serverUrl();
     const pptxLines = hub() ? hub().summary().map(hub().describe).join('') : '';
-    el.querySelector('.pp-peers').innerHTML = !peers.size ? (enabled ? '<i>No phones connected</i>' : '') :
-      pptxLines + [...peers.values()].filter(e => !e.rejected && (e.role !== 'pptx' || !e.approved)).map(e => `<div>${e.role === 'view' ? 'Display' : e.role === 'companion' ? 'Companion' : e.role === 'pptx' ? 'PowerPoint' : 'Phone'} ${e.n} · ` +
-        (!e.approved ? '<span class="pp-warn">waiting for its PIN</span> · ' : '') +
-        (e.role === 'view' ? '<span class="pp-view">view only</span> · ' : e.role === 'admin' ? '<span class="pp-admin">admin</span> · ' : '') +
-        `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : e.peer.mode === 'p2p' ? '<b class="pp-lan" title="A direct link over the internet: not the same network">direct</b>' : '<b class="pp-srv">via server</b>'}</div>`).join('') +
+    const live = [...peers.values()].filter(e => !e.rejected && (e.role !== 'pptx' || !e.approved));
+    const here = new Set([...peers.values()].filter(e => e.approved && e.token).map(e => e.token));
+    const away = enabled ? approvedList().filter(x => !here.has(x.t)) : [];
+    el.querySelector('.pp-peers').innerHTML = (!peers.size ? (enabled ? '<i>No devices connected</i>' : '') :
+      pptxLines + live.map(e => `<div class="pp-dev"><span><b>${esc(deviceLabel(e))}</b> · ` +
+        (!e.approved ? '<span class="pp-warn">waiting for its number</span> · ' : '') +
+        (e.role === 'view' ? '<span class="pp-view">view only</span> · ' : e.role === 'admin' ? '<span class="pp-admin">admin</span> · ' : e.role === 'companion' ? 'Companion · ' : '') +
+        `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : e.peer.mode === 'p2p' ? '<b class="pp-lan" title="A direct link over the internet: not the same network">direct</b>' : '<b class="pp-srv">via server</b>'}</span>` +
+        (e.approved && e.token ? deviceButtons(e.token) : '') + '</div>').join('') +
       (lanCount < [...peers.values()].filter(e => e.role !== 'pptx').length ? '<div class="pp-hint">"via server": no direct link could be made (a network in between blocks it).</div>' : '') +
-      (shareNote ? `<div class="pp-hint">${shareNote}</div>` : '');
+      (shareNote ? `<div class="pp-hint">${shareNote}</div>` : '')) +
+      (away.length ? `<details class="pp-known"${knownOpen ? ' open' : ''}><summary>Known devices, not connected (${away.length})</summary>` +
+        away.map(x => `<div class="pp-dev"><span><b>${esc(x.name || 'Unnamed device')}</b>${x.role ? ' · ' + esc(deviceKind(x.role)) : ''}${x.seen ? ' · last seen ' + when(x.seen) : ''}</span>${deviceButtons(x.t)}</div>`).join('') +
+        '</details>' : '');
   }
 
   function renderPairing(el) {
@@ -1005,16 +1029,69 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
   // Every new device shows a 3-digit number (not large: readable at arm's length, or read out over
   // the phone) and someone types it here. Only then does it get anything; one wrong number drops it
   // (rejectPeer: 'kick' closes its connection at the server). It keeps a token for next time.
-  function approvedTokens() {
-    try { const v = JSON.parse(localStorage.getItem(APPROVED_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (_) { return []; }
+  // The devices that passed: [{t: token, name, role, added, seen}] (older lists held bare tokens)
+  function approvedList() {
+    try {
+      const v = JSON.parse(localStorage.getItem(APPROVED_KEY) || '[]');
+      return Array.isArray(v) ? v.map(x => typeof x === 'string' ? { t: x } : x).filter(x => x && typeof x.t === 'string') : [];
+    } catch (_) { return []; }
+  }
+  function saveApproved(list) { localStorage.setItem(APPROVED_KEY, JSON.stringify(list.slice(-64))); }
+  function approvedEntry(token) { return approvedList().find(x => x.t === token) || null; }
+  function updateApproved(token, fields) {
+    const list = approvedList(), x = list.find(y => y.t === token);
+    if (x) { Object.assign(x, fields); saveApproved(list); }
+  }
+  // (function declarations and var here: renderPanel() may run before this part of the file has)
+  function cleanName(s) { return typeof s === 'string' ? s.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 40) : ''; }
+  var KIND = { view: 'Display', companion: 'Companion', pptx: 'PowerPoint', admin: 'Phone', control: 'Phone' };
+  function deviceKind(role) { return (KIND || {})[role] || 'Phone'; }
+  function deviceLabel(e) { return e.name || e.suggest || `${deviceKind(e.role)} ${e.n}`; }
+
+  // ─── Devices: names and revoking one ─────────────────────────────────────
+  // Each approved device is known by its token, so its name follows it across reconnects. Revoke
+  // takes one device out (its approval goes, it's told and disconnected) without New code's
+  // starting everyone again; to come back it has to pass the proximity check.
+  function renameDevice(token) {
+    const x = approvedEntry(token);
+    if (!x) return;
+    const live = [...peers.values()].find(e => e.token === token);
+    const name = prompt('Name for this device (e.g. “Sam’s phone”, “FOH overlay”):', x.name || (live ? deviceLabel(live) : ''));
+    if (name === null) return;
+    updateApproved(token, { name: cleanName(name) });
+    for (const e of peers.values()) if (e.token === token) e.name = cleanName(name);
+    renderPanel();
+  }
+  function revokeDevice(token) {
+    saveApproved(approvedList().filter(x => x.t !== token));
+    for (const e of peers.values()) {
+      if (e.token !== token) continue;
+      e.rejected = true; e.approved = false;
+      try { e.peer.send({ t: 'revoked' }); } catch (_) { /* gone */ }
+      setTimeout(() => sendServer({ type: 'kick', id: e.id }), 400);
+    }
+    renderPanel();
+  }
+  var armedRevoke = new Map();                   // token -> time the first click armed it (two clicks)
+  var knownOpen = false;                         // the "known devices" list is open
+  function armed(token) { return !!armedRevoke && armedRevoke.has(token) && Date.now() - armedRevoke.get(token) < 3000; }
+  function when(t) {
+    if (!t) return '';
+    const d = new Date(t), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    return d.toDateString() === new Date().toDateString() ? hm : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' + hm;
+  }
+  function deviceButtons(token) {
+    return `<span class="pp-devbtns"><button data-dev="rename" data-token="${esc(token)}" title="Give this device a name">Rename</button>` +
+      `<button data-dev="revoke" data-token="${esc(token)}" title="Disconnect this device and remove its approval (click twice)"${armed(token) ? ' class="pp-armed"' : ''}>${armed(token) ? 'Sure?' : 'Revoke'}</button></span>`;
   }
   const pending = () => [...peers.values()].filter(e => !e.approved && e.pin && !e.rejected);
   function approvePeer(e, entered) {
     if (!e || e.approved || e.rejected) return;
     if (entered !== e.pin) { rejectPeer(e); return; }
     const token = randomString(24, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789');
-    localStorage.setItem(APPROVED_KEY, JSON.stringify(approvedTokens().concat(token).slice(-64)));
-    e.approved = true; e.pin = null;
+    const now = Date.now();
+    saveApproved(approvedList().concat({ t: token, name: e.suggest || '', role: e.role, added: now, seen: now }));
+    e.approved = true; e.pin = null; e.token = token; e.name = e.suggest || '';
     e.peer.send({ t: 'pin-ok', token });       // the phone says hello again and gets its state
     renderPanel();
   }

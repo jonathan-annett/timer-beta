@@ -262,5 +262,14 @@ var RemotePeer = (function () {
     if (navigator.connection && navigator.connection.addEventListener) navigator.connection.addEventListener('change', later);
   }
 
-  return { create, parts, joiner, sendBig, defaultServer, socketUrl, keepAlive, retryOnNetworkChange };
+  // A name the timer can show for this device until someone gives it a better one ("iPhone · Safari")
+  function deviceName() {
+    const ua = navigator.userAgent;
+    const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android'
+      : /Mac OS X/.test(ua) ? (navigator.maxTouchPoints > 1 ? 'iPad' : 'Mac') : /Windows/.test(ua) ? 'Windows' : /CrOS/.test(ua) ? 'Chromebook' : /Linux/.test(ua) ? 'Linux' : 'Device';
+    const browser = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+    return browser ? os + ' · ' + browser : os;
+  }
+
+  return { create, parts, joiner, sendBig, defaultServer, socketUrl, keepAlive, retryOnNetworkChange, deviceName };
 })();

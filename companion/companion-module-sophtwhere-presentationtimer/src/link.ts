@@ -301,7 +301,7 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 				if (!this.pinCode) this.pinCode = String(100 + (randomBytes(4).readUInt32BE(0) % 900)) // 3 digits: the timer's proximity check
 				this.setStatus('pin', `type ${this.pinCode} in the timer's share panel (one wrong try disconnects)`)
 				this.emit('pin', this.pinCode)
-				this.up({ t: 'pin', code: this.pinCode })
+				this.up({ t: 'pin', code: this.pinCode, name: 'Companion' })
 				break
 			}
 			case 'pin-ok': {
@@ -317,6 +317,9 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 			case 'pin-rejected':
 				this.pinCode = null
 				this.setStatus('rejected', 'the timer refused this connection (wrong number)')
+				break
+			case 'revoked':
+				this.setStatus('rejected', 'the timer took this connection’s access away')
 				break
 		}
 	}

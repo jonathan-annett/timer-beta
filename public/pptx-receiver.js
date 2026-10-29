@@ -224,11 +224,11 @@
     if (m.t === 'pin-required') {
       if (!pinCode) pinCode = String(100 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900));   // 3 digits: the proximity check;
       $('pincode').textContent = pinCode; $('pinretry').hidden = true; $('pinwait').hidden = false;
-      peer.send({ t: 'pin', code: pinCode });
+      peer.send({ t: 'pin', code: pinCode, name: 'PowerPoint receiver · ' + RemotePeer.deviceName() });
     } else if (m.t === 'pin-ok') {
       if (typeof m.token === 'string') store.set('pptx_token_' + cfg.room, m.token);
       pinCode = null; $('pinwait').hidden = true; sendHello();
-    } else if (m.t === 'pin-rejected') {
+    } else if (m.t === 'pin-rejected' || m.t === 'revoked') {
       fatal = true;                                    // the timer disconnects it: don't reconnect
       $('pincode').textContent = ''; $('pinmsg').textContent = 'The timer didn’t let this computer in.'; $('pinretry').hidden = false; $('pinwait').hidden = false;
     } else if (m.t === 'pf-offer') offer(m);
