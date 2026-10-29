@@ -2,6 +2,7 @@ import os as _os  # paths: the repo's public/ folder; screenshots go to $E2E_OUT
 HERE = _os.path.dirname(_os.path.abspath(__file__))
 PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
+SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing server (run_all.sh; wss://localhost:8787/ws = the Cloudflare Worker via wrangler dev)
 import sys, os, mimetypes, json, subprocess
 from playwright.sync_api import sync_playwright
 ROOT=PUBLIC; S=os.path.dirname(os.path.abspath(__file__)); BASE="https://timer.sophtwhere.com/beta/"
@@ -19,7 +20,7 @@ with sync_playwright() as p:
     c.add_init_script("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';}")
     c.route("**/*",h); pg=c.new_page(); pg.on("pageerror", lambda e: errs.append(str(e)))
     pg.on("console", lambda m: errs.append("console "+m.type+": "+m.text) if m.type=="error" else None)
-    pg.goto(BASE+"timer.html?remote=wss://localhost:8443/"); pg.wait_for_timeout(1000)
+    pg.goto(BASE+"timer.html?remote="+SERVER); pg.wait_for_timeout(1000)
     pg.click("#btnshare"); pg.wait_for_timeout(1500)
     pg.click("#phone-panel .pp-modes button[data-mode=companion]"); pg.wait_for_timeout(300)
     print("button before:", pg.text_content("#btnshare").strip(), "| panel title:", pg.text_content("#phone-panel .pp-head b"), "| old share panel present:", pg.locator("#share-panel").count())

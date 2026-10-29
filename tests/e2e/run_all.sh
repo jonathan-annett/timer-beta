@@ -7,7 +7,9 @@
 cd "$(dirname "$0")"
 OUT="${E2E_OUT:-/tmp/timer-e2e}"; mkdir -p "$OUT"
 started=""
-if ! (echo > /dev/tcp/127.0.0.1/8443) 2>/dev/null && ! nc -z 127.0.0.1 8443 2>/dev/null; then
+# E2E_SERVER=wss://localhost:8787/ws runs them against the Cloudflare Worker instead (cd cloudflare && npx wrangler dev --local-protocol https
+# --var ORIGINS:https://timer.sophtwhere.com); otherwise remote-server.js on 8443, started here if it isn't running.
+if [ -z "$E2E_SERVER" ] && ! (echo > /dev/tcp/127.0.0.1/8443) 2>/dev/null && ! nc -z 127.0.0.1 8443 2>/dev/null; then
   ./server.sh > "$OUT/server.log" 2>&1 & started=$!
   sleep 1.5
 fi

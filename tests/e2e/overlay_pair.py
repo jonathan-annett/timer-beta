@@ -2,6 +2,7 @@ import os as _os  # paths: the repo's public/ folder; screenshots go to $E2E_OUT
 HERE = _os.path.dirname(_os.path.abspath(__file__))
 PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
+SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing server (run_all.sh; wss://localhost:8787/ws = the Cloudflare Worker via wrangler dev)
 # server: pairing an overlay computer by the 6-digit code (protocol 6), then the overlay following
 # the timer (countdown, message, progress shade, colours), reconnecting from the saved link, layouts,
 # and the floating window where headless Chromium allows it.
@@ -23,7 +24,7 @@ with sync_playwright() as p:
     c.add_init_script("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';localStorage.remote_pin='1'}")
     c.route("**/*",h)
     t=c.new_page(); t.on("pageerror", lambda e: errs.append("timer: "+str(e)))
-    t.goto(BASE+"timer.html?remote=wss://localhost:8443/"); t.wait_for_timeout(1500)
+    t.goto(BASE+"timer.html?remote="+SERVER); t.wait_for_timeout(1500)
     t.click("#btnshare"); t.wait_for_timeout(1500)
     print("pair button:", t.text_content("#phone-panel .pp-pair"), "| enabled:", t.is_enabled("#phone-panel .pp-pair"))
     t.click("#phone-panel .pp-pair"); t.wait_for_timeout(800)
@@ -34,7 +35,7 @@ with sync_playwright() as p:
     # the other computer: its own browser profile
     o_ctx=b.new_context(ignore_https_errors=True, viewport={"width":1100,"height":800}); o_ctx.route("**/*",h)
     o=o_ctx.new_page(); o.on("pageerror", lambda e: errs.append("overlay: "+str(e)))
-    o.goto(BASE+"overlay.html?remote=wss://localhost:8443/"); o.wait_for_timeout(800)
+    o.goto(BASE+"overlay.html?remote="+SERVER); o.wait_for_timeout(800)
     print("overlay first screen: enter shown:", o.is_visible("#enter"))
     o.fill("#code", "000000" if code != "000000" else "111111"); o.wait_for_timeout(800)
     print("wrong code ->", o.text_content("#codemsg"))

@@ -191,5 +191,32 @@ var RemotePeer = (function () {
     });
   }
 
-  return { create, parts, joiner, sendBig };
+  // The pairing server for pages from `host` (default: this page's). The VPS (sophtwhere.com, and
+  // the local preview on port 8444) runs it on its own port, 8443; elsewhere (Cloudflare) it's on
+  // the site itself, at /ws.
+  function defaultServer(host) {
+    host = host || location.host;
+    const name = host.replace(/:\d+$/, '');
+    if (/(^|\.)sophtwhere\.com$/.test(name) || host === 'localhost:8444') return `wss://${name}:8443/`;
+    return `${location.protocol === 'http:' && !host.includes('.') ? 'ws' : 'wss'}://${host}/ws`;
+  }
+  // The address to open: the server plus ?room= (or ?code=), which the Cloudflare server routes by.
+  // The VPS server ignores it.
+  function socketUrl(server, params) {
+    try {
+      const u = new URL(server);
+      for (const k in params) if (params[k]) u.searchParams.set(k, params[k]);
+      return u.href;
+    } catch (_) { return server; }
+  }
+  // Keeps an idle connection open (a hibernating Cloudflare server sends no pings of its own):
+  // {type:'ping'} every 25 s, answered with {type:'pong'}, which every client ignores.
+  function keepAlive(ws) {
+    const t = setInterval(() => {
+      if (ws.readyState === 1) { try { ws.send('{"type":"ping"}'); } catch (_) { /* closing */ } }
+      else if (ws.readyState > 1) clearInterval(t);
+    }, 25000);
+  }
+
+  return { create, parts, joiner, sendBig, defaultServer, socketUrl, keepAlive };
 })();

@@ -74,7 +74,11 @@ $Room = Get-LinkPart $frag 'r'
 $Key = Get-LinkPart $frag 'p'
 $Server = Get-LinkPart $frag 's'
 if (-not $Server -and $hashAt -ge 0) {
-    try { $Server = 'wss://' + ([Uri]$Link.Trim()).Host + ':8443/' } catch { $Server = $null }
+    # As the timer's pages work it out: the VPS (sophtwhere.com) runs the server on port 8443, a Cloudflare site at /ws
+    try {
+        $u = [Uri]$Link.Trim()
+        if ($u.Host -match '(^|\.)sophtwhere\.com$') { $Server = 'wss://' + $u.Host + ':8443/' } else { $Server = 'wss://' + $u.Authority + '/ws' }
+    } catch { $Server = $null }
 }
 if (-not $Room -or -not $Key -or -not $Server) {
     Write-Host 'That link is not a PowerPoint link from the timer. In the timer, click share, choose PowerPoint, and copy the link.' -ForegroundColor Red
@@ -689,7 +693,9 @@ while ($script:Running) {
             $script:ws.Options.RemoteCertificateValidationCallback = { $true }
         }
         Log "Connecting to $Server"
-        $script:ws.ConnectAsync([Uri]$Server, [Threading.CancellationToken]::None).Wait()
+        # ?room= lets the Cloudflare server route the connection (the VPS server ignores it)
+        $sockUrl = $Server + $(if ($Server.Contains('?')) { '&' } else { '?' }) + 'room=' + [Uri]::EscapeDataString($Room)
+        $script:ws.ConnectAsync([Uri]$sockUrl, [Threading.CancellationToken]::None).Wait()
         Send-Raw @{ type = 'join'; room = $Room; key = $Key }
 
         $buffer = New-Object byte[] 65536

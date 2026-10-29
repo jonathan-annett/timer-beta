@@ -75,6 +75,18 @@ relayed through the user). Suggested setup and loop:
 
 ## What was built recently (newest first)
 
+- **Cloudflare Worker** (29 Oct, branch `alpha`, not deployed yet): moving alpha/beta off the VPS
+  because venues block port 8443. New domains (the user's, on Cloudflare): `timed-show.com`
+  (canonical; some venues allow only .com/.net/.org) and `timed.show` (to redirect to it). Plan:
+  `alpha.timed-show.com` from the `alpha` branch (just the user and the agent, behind Cloudflare
+  Access, which is enabled), `beta.timed-show.com` from `main`, `timer.sophtwhere.com` stays as
+  is and `/beta/` redirects to beta. `cloudflare/` has the Worker + Durable Objects (see
+  *Cloudflare* in CLAUDE.md); all 13 e2e tests pass against it (`E2E_SERVER`) and against
+  `remote-server.js`, and the timed behaviour (code changes, limits, claim wait, room expiry) was
+  checked by hand. Still to do: deploy alpha (Access first), GitHub → Cloudflare deploys,
+  `timed.show` redirect, a page that carries localStorage over from the old origin before
+  `/beta/` redirects (stored state is per origin), rebranding.
+
 - **Countdown overlay + pairing by code** (28 Oct, built on a local `alpha` branch, promoted to
   main on the user's OK; deployed 28 Oct with the Stream Deck fix below; the beta site ran `ce10a90` before (tag `beta-rollback`)):
   `overlay.html` floats a countdown (message strip on top, progress as a background shade;

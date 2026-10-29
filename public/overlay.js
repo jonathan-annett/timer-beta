@@ -26,7 +26,7 @@
   };
   const SAVED_LINK = 'overlay_saved_link', SERVER = 'overlay_server', LAYOUT = 'overlay_layout', OPT_MSG = 'overlay_msg', OPT_BAR = 'overlay_bar';
   const parse = frag => Object.fromEntries(new URLSearchParams(frag));
-  const defaultServer = () => new URLSearchParams(location.search).get('remote') || store.get(SERVER) || `wss://${location.hostname}:8443/`;
+  const defaultServer = () => new URLSearchParams(location.search).get('remote') || store.get(SERVER) || RemotePeer.defaultServer();
 
   // ─── Which timer: a link in the address, the one saved, or pair by code ───
 
@@ -46,7 +46,7 @@
     });
     $('server').addEventListener('change', () => {
       const v = $('server').value.trim();
-      if (v && v !== `wss://${location.hostname}:8443/`) store.set(SERVER, v); else store.del(SERVER);
+      if (v && v !== RemotePeer.defaultServer()) store.set(SERVER, v); else store.del(SERVER);
     });
   }
 
@@ -62,7 +62,7 @@
     msg('Checking…');
     $('code').disabled = true;
     let ws;
-    try { ws = new WebSocket($('server').value.trim() || defaultServer()); } catch (_) { msg('That pairing server address isn’t right.', 'bad'); $('code').disabled = false; return; }
+    try { ws = new WebSocket(RemotePeer.socketUrl($('server').value.trim() || defaultServer(), { code })); } catch (_) { msg('That pairing server address isn’t right.', 'bad'); $('code').disabled = false; return; }
     let done = false;
     const fail = text => { if (done) return; done = true; msg(text, 'bad'); $('code').disabled = false; $('code').value = ''; $('code').focus(); try { ws.close(); } catch (_) { /* gone */ } };
     ws.onopen = () => ws.send(JSON.stringify({ type: 'claim', code }));
@@ -117,7 +117,7 @@
 
   function connect() {
     clearTimeout(retryTimer);
-    try { ws = new WebSocket(link.s || defaultServer()); } catch (_) { return schedule(); }
+    try { ws = new WebSocket(RemotePeer.socketUrl(link.s || defaultServer(), { room: link.r })); RemotePeer.keepAlive(ws); } catch (_) { return schedule(); }
     const sock = ws;
     sock.onopen = () => sock.send(JSON.stringify({ type: 'join', room: link.r, key: link.v }));
     sock.onmessage = ev => {

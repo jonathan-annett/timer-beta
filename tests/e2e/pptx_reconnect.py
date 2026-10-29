@@ -2,6 +2,7 @@ import os as _os  # paths: the repo's public/ folder; screenshots go to $E2E_OUT
 HERE = _os.path.dirname(_os.path.abspath(__file__))
 PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
+SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing server (run_all.sh; wss://localhost:8787/ws = the Cloudflare Worker via wrangler dev)
 import os, mimetypes, json, subprocess, threading, time, hashlib
 from playwright.sync_api import sync_playwright
 ROOT = PUBLIC; S = os.path.dirname(os.path.abspath(__file__)); BASE = "https://timer.sophtwhere.com/beta/"
@@ -36,7 +37,7 @@ with sync_playwright() as p:
     c = b.new_context(ignore_https_errors=True, viewport={"width": 1280, "height": 800})
     c.add_init_script("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';}")
     c.route("**/*", h); T = c.new_page(); T.on("pageerror", lambda e: errs.append("timer: " + str(e)))
-    T.goto(BASE + "timer.html?remote=wss://localhost:8443/"); T.wait_for_timeout(1200)
+    T.goto(BASE + "timer.html?remote="+SERVER); T.wait_for_timeout(1200)
     sums = T.evaluate("""async () => {
       const mk = (n, seed) => { const a = new Uint8Array(n); for (let i = 0; i < n; i++) a[i] = (i * seed + (i >> 9)) & 255; return a; };
       const d1 = mk(3500000, 7), d3 = mk(900000, 13);

@@ -33,7 +33,7 @@
   let h = parse(location.hash.slice(1));
   if (h.r && h.p) store.set(SAVED_LINK, location.hash.slice(1));
   else if (store.get(SAVED_LINK)) h = parse(store.get(SAVED_LINK));
-  const cfg = { server: h.s || `wss://${location.hostname}:8443/`, room: h.r, key: h.p };
+  const cfg = { server: h.s || RemotePeer.defaultServer(), room: h.r, key: h.p };
   if (!cfg.room || !cfg.key) {
     $('blocked').hidden = false;
     $('blocked').textContent = 'Open this page from the PowerPoint link in the timer’s share panel.';
@@ -178,7 +178,7 @@
   function connect() {
     clearTimeout(retryTimer);
     if (fatal) return;
-    try { ws = new WebSocket(cfg.server); } catch (_) { return schedule(); }
+    try { ws = new WebSocket(RemotePeer.socketUrl(cfg.server, { room: cfg.room })); RemotePeer.keepAlive(ws); } catch (_) { return schedule(); }
     const sock = ws;
     sock.onopen = () => sock.send(JSON.stringify({ type: 'join', room: cfg.room, key: cfg.key }));
     sock.onmessage = ev => {

@@ -1,7 +1,7 @@
 /*!
  * remote-control.js  (EXPERIMENTAL)
  * Lets phones control the timer. Timer side: pairing panel with QR code, connection to the
- * pairing server (remote-server.js, default wss://<this host>:8443), one RemotePeer link per
+ * pairing server (remote-server.js or the Cloudflare Worker; RemotePeer.defaultServer()), one RemotePeer link per
  * phone, state pushed to phones, and an allow-list for commands coming back.
  *
  * Phones get a link with the server, room and secret key in the URL fragment (never sent to
@@ -30,7 +30,7 @@
 
   const SERVER_KEY = 'remote_server', PAIR_KEY = 'remote_pairing', ENABLED_KEY = 'remote_enabled';
   const PIN_KEY = 'remote_pin', APPROVED_KEY = 'remote_approved';   // "Require a PIN" and the phones approved under it
-  const defaultServer = () => `wss://${location.hostname}:8443/`;
+  const defaultServer = () => RemotePeer.defaultServer();
   if (params.get('remote')) localStorage.setItem(SERVER_KEY, params.get('remote'));   // ?remote=wss://host:port/
 
   let ws = null, retryTimer = null, retryDelay = 1000, enabled = false, hosted = false, serverProtocol = 0;
@@ -119,8 +119,9 @@
     clearTimeout(retryTimer);
     if (!enabled) return;
     setStatus('Connecting to ' + serverUrl() + ' …', 'idle');
-    try { ws = new WebSocket(serverUrl()); } catch (err) { setStatus('Bad server address: ' + err.message, 'error'); return; }
+    try { ws = new WebSocket(RemotePeer.socketUrl(serverUrl(), { room: pairing().room })); } catch (err) { setStatus('Bad server address: ' + err.message, 'error'); return; }
     const sock = ws;
+    RemotePeer.keepAlive(sock);
     sock.onopen = () => {
       retryDelay = 1000;
       const p = pairing();
@@ -814,7 +815,7 @@
       <div class="pp-peers"></div>
       <details class="pp-adv"${TOUCH ? ' hidden' : ''}><summary>Server</summary>
         <div class="pp-row"><input class="pp-server" spellcheck="false"><button class="pp-apply">Apply</button></div>
-        <div class="pp-hint">Default: wss://this-host:8443/ (remote-server.js). Phones on the same Wi-Fi connect directly; otherwise through the server.</div>
+        <div class="pp-hint">Default: ${RemotePeer.defaultServer()}. Phones on the same Wi-Fi connect directly; otherwise through the server.</div>
       </details>`;
     document.body.appendChild(el);
     el.querySelector('.pp-close').addEventListener('click', () => { el.hidden = true; stopPairing(); });

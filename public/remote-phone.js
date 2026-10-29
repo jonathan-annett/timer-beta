@@ -16,7 +16,7 @@
 
   const $ = id => document.getElementById(id);
   // Link: #r=<room>&k=<key> (control) or #r=<room>&v=<view key>&m=<countdown|runsheet>
-  // (view only), plus [&s=<server>]; the server defaults to wss://<this host>:8443/.
+  // (view only), plus [&s=<server>]; the server defaults to RemotePeer.defaultServer().
   // (Long names server/room/key from older links still work.)
   // The last link opened is saved, so the page also works without one: from a bookmark, or as
   // an installed app (whose start URL has no #fragment). Good for a multi-day event; the timer
@@ -29,7 +29,7 @@
     else if (localStorage.getItem(SAVED_LINK)) h = parse(localStorage.getItem(SAVED_LINK));
   } catch (_) { /* private mode: links still work, they just aren't remembered */ }
   const cfg = {
-    server: h.s || h.server || `wss://${location.hostname}:8443/`,
+    server: h.s || h.server || RemotePeer.defaultServer(),
     room: h.r || h.room,
     key: h.a || h.k || h.key || h.c || h.v,
   };
@@ -85,7 +85,7 @@
   function connect() {
     clearTimeout(retryTimer);
     if (fatal) return;
-    try { ws = new WebSocket(cfg.server); } catch (_) { return schedule(); }
+    try { ws = new WebSocket(RemotePeer.socketUrl(cfg.server, { room: cfg.room })); RemotePeer.keepAlive(ws); } catch (_) { return schedule(); }
     const sock = ws;
     sock.onopen = () => { sock.send(JSON.stringify({ type: 'join', room: cfg.room, key: cfg.key })); };
     sock.onmessage = ev => {
@@ -947,7 +947,7 @@
     if (!room) return reject('That isn’t a timer phone code.');
     if (room === cfg.room) return reject('That’s this timer’s own code. Scan the code on the other computer.');
     if (!key) return reject('That’s a view-only code. On the other computer choose Control (or Admin) under share, then scan again.');
-    target = { room, key, server: f.s || f.server || `wss://${u.hostname}:8443/` };
+    target = { room, key, server: f.s || f.server || RemotePeer.defaultServer(u.host) };
     lastRejected = '';
     stopScan();
     if (navigator.vibrate) navigator.vibrate(30);
@@ -992,7 +992,7 @@
     admStatus('Sending it to the other computer…');
     p.timer = setTimeout(() => fail('The other computer didn’t answer. Is its timer page open with phone control on?'), 10000);
     let ws2, peer2 = null;
-    try { ws2 = new WebSocket(t.server); } catch (_) { return fail('Bad server address in that code.'); }
+    try { ws2 = new WebSocket(RemotePeer.socketUrl(t.server, { room: t.room })); RemotePeer.keepAlive(ws2); } catch (_) { return fail('Bad server address in that code.'); }
     p.ws = ws2;
     ws2.onopen = () => ws2.send(JSON.stringify({ type: 'join', room: t.room, key: t.key }));
     ws2.onmessage = ev => {

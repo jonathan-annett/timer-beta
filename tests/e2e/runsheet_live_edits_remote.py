@@ -2,6 +2,7 @@ import os as _os  # paths: the repo's public/ folder; screenshots go to $E2E_OUT
 HERE = _os.path.dirname(_os.path.abspath(__file__))
 PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
+SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing server (run_all.sh; wss://localhost:8787/ws = the Cloudflare Worker via wrangler dev)
 import sys, os, mimetypes, json, datetime
 from playwright.sync_api import sync_playwright
 ROOT=PUBLIC; OUT=OUTDIR; BASE="https://timer.sophtwhere.com/beta/"
@@ -22,7 +23,7 @@ with sync_playwright() as p:
     c.add_init_script("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';localStorage.runsheet=%s}" % json.dumps(json.dumps(SHEET)))
     c.route("**/*",h)
     t=c.new_page(); t.on("pageerror", lambda e: errs.append("timer: "+str(e)))
-    t.goto(BASE+"timer.html?remote=wss://localhost:8443/"); t.wait_for_timeout(1500)
+    t.goto(BASE+"timer.html?remote="+SERVER); t.wait_for_timeout(1500)
     t.evaluate("window.runsheet.setActive(true); window.runsheet.next()"); t.wait_for_timeout(800)
     t.click("#btnshare"); t.wait_for_timeout(1500); t.click("#phone-panel .pp-modes button[data-mode=control]"); t.wait_for_timeout(300)
     link=t.text_content("#phone-panel .pp-link"); t.click("#btnshare")
