@@ -174,6 +174,7 @@ var RunsheetCore = (function () {
       deck: it.deck || null,                    // {key, name, size} (PowerPoint decks, pptx-hub.js)
       holding: it.holding || null,              // {key, name, size} (holding slide: an image set as the PowerPoint computers' wallpaper)
       hidden: !!it.hidden,                      // a completed item "deleted" in the editor: kept for the record, not shown or run
+      auto: !!it.auto,                          // starts by itself at its own (typed) start time: a hard start (runsheet.js)
       planned: planned[i],
       eff: eff[i],
       isEnd: i === endIdx,
@@ -200,11 +201,13 @@ var RunsheetCore = (function () {
   // A new duration, end or start moves everything after it: start times written on later
   // rows shift by the same amount (rows without one follow anyway). Hidden rows (already run) stay.
   // `to` (a row index, optional) stops there: rows after it keep their times (scaling a selection).
+  // A row with a hard start (auto, ticked in the editor) is fixed: it stops the ripple there.
   function shiftStarts(sheet, from, delta, to) {
     if (!delta) return;
     const last = to == null ? sheet.items.length - 1 : Math.min(to, sheet.items.length - 1);
     for (let j = from + 1; j <= last; j++) {
       const x = sheet.items[j];
+      if (x.auto && x.start != null && !x.hidden) break;      // a hard start doesn't move, and nothing after it does
       if (x.start != null && isFinite(x.start) && !x.hidden) x.start = ((x.start + delta) % DAY + DAY) % DAY;
     }
   }
@@ -246,6 +249,7 @@ var RunsheetCore = (function () {
         ...(it.deck ? { deck: it.deck } : {}),
         ...(it.holding ? { holding: it.holding } : {}),
         ...(it.hidden ? { hidden: true } : {}),
+        ...(it.auto ? { auto: true } : {}),
       })),
     });
   }

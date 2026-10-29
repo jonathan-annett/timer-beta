@@ -1620,6 +1620,10 @@ html.runsheet:not(.reduced) #runsheet_dash { display: block; }
 /* "Auto start at 22:40" (runsheet.js; only before the show, with a start time for the first item) */
 #rs_auto { display: block; margin-top: 0.3em; padding-left: 4.4em; font-size: 0.85em; color: #ccc; cursor: pointer; pointer-events: auto; user-select: none; }
 #rs_auto[hidden] { display: none; }
+/* The preset buttons are for tablets and mouse users outside run sheet mode: gone in it (the keyboard,
+   the Stream Deck and the run sheet set durations). The wrapper takes no space of its own. */
+.btn-presets { display: contents; }
+html.runsheet .btn-presets { display: none; }
 #rs_auto input { vertical-align: middle; cursor: pointer; }
 
 /* In run sheet mode the controller's copy of the message moves to the top right,

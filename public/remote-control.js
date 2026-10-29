@@ -451,6 +451,7 @@
       const out = { id: it.id, name: typeof it.name === 'string' ? it.name.slice(0, 300) : '',
         start: secs(it.start, 2 * 86400), duration: secs(it.duration, 86400) };
       if (it.hidden === true) out.hidden = true;    // deleted after it ran: kept for the log
+      if (it.auto === true) out.auto = true;        // a hard start (starts by itself at its start time)
       // A video can stay (or move to another row), never be made up: only keys already on the sheet
       if (it.video && typeof it.video === 'object' && known.has(it.video.key)) {
         out.video = known.get(it.video.key);

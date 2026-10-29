@@ -82,7 +82,17 @@
       padding: 0.571rem 0.429rem 0.286rem; position: sticky; top: 0; background: var(--bg); z-index: 1; }
     #rs-table td { padding: 0.143rem 0.286rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
     #rs-table td.num { color: var(--faint); text-align: right; width: 2.4rem; padding-right: 0.571rem; }
-    #rs-table td.start { width: 5.5rem; } #rs-table td.dur { width: 9rem; }
+    #rs-table td.start { width: 6.9rem; white-space: nowrap; } #rs-table td.dur { width: 9rem; }
+    /* The hard-start tick before a typed start time (runsheet.js hardStartTick): dim while it can't fire yet */
+    #rs-table td.start input[data-field=start] { width: calc(100% - 1.4rem); }
+    #rs-table input.hard { width: 0.95rem; height: 0.95rem; margin: 0 0.3rem 0 0.1rem; padding: 0; vertical-align: middle; cursor: pointer; accent-color: var(--accent); }
+    #rs-table input.hard[hidden] { display: inline-block; visibility: hidden; }
+    #rs-table input.hard.idle { opacity: 0.35; }
+    #autostart[hidden] { display: none; }   /* (.mode's display would show it anyway) */
+    #rs-table input.hard:disabled { cursor: default; opacity: 0.25; }
+    /* A hard start whose time came while items before it hadn't run */
+    @keyframes hardmiss { 50% { background: rgba(255, 70, 70, 0.38); } }
+    #rs-table tr.hardmiss td { animation: hardmiss 1s infinite; }
     #rs-table td.ends { width: 4.6rem; color: var(--dim); }
     #rs-table td.ends input::placeholder { color: var(--text); font-style: normal; opacity: 0.8; }
     #rs-table tr.locked td.ends input::placeholder, #rs-table tr.hiddenrow td.ends input::placeholder { color: var(--dim); }
@@ -271,7 +281,7 @@
   <script src="markdown-lite.js?v=938fee93"></script>
   <script src="help-overlay.js?v=8a5dbd9d"></script>
   <script src="video-store.js?v=069f77d9"></script>
-  <script src="runsheet-core.js?v=2a42c0bc"></script>
-  <script src="runsheet-editor.js?v=4de2fa28"></script>
+  <script src="runsheet-core.js?v=d0fec52c"></script>
+  <script src="runsheet-editor.js?v=c4fdfa4f"></script>
 </body>
 </html>

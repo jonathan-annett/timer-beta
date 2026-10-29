@@ -133,6 +133,10 @@ The editor's **Show log** lists planned vs actual start times and how long each 
 
 **Standing by:** after **Reset show** (in run sheet mode) the timer stands by for the first item: its full time, dimmed and paused, with its name as the message and **Standing by.** in place of the pause notice (on the presenter's screen, phones and the overlay; on your own screen it's in the run sheet panel, and the times read *will start at* / *will end at*). **Next**, **Resume** or **Space** starts the show. If the first item has a start time, the dashboard and the editor offer **Auto start at hh:mm**: ticked, the notice counts down (*Standing by to start in 5:23…*) and the show starts by itself at that time, even with the timer window minimized. It starts only on time: if the timer wasn't open then, it waits for Next.
 
+**Hard starts:** any row with a start time has a tick box before it. Ticked, that item starts by itself when its time comes, whatever is running, as long as it's the next item; if items before it haven't run yet it doesn't jump ahead, and its row flashes red (the dashboard says why) until you deal with it. A ticked time is fixed: changes to earlier durations don't move it, and the start times after it stay put. The first row's tick is the **Auto start** above. The other ticks are dimmed until the show has started (you can set them up beforehand).
+
+In run sheet mode the button bar leaves out the **Presets** (set durations with the keyboard, a Stream Deck or the run sheet); turn run sheet mode off to get them back.
+
 ## Stream Deck
 
 Works with the Stream Deck **Mini**, **MK.2** (and original) and **XL**, straight from the browser with no Elgato software or plugin.

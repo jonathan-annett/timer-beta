@@ -183,7 +183,8 @@
   }
 
   function resetShow() {
-    state = Object.assign(emptyState(), { active: state.active, autostart: !!state.autostart });
+    state = Object.assign(emptyState(), { active: state.active });
+    hardMiss.clear(); armedAt.clear();
     // Hidden items were deleted after they ran; kept only for the log, which a reset clears
     if (sheet.items.some(x => x.hidden)) { sheet.items = sheet.items.filter(x => !x.hidden); writeSheet(); }
     if (isActive()) enterStandby();
@@ -208,8 +209,14 @@
     const first = nextIndex(-1);
     return norm.anchored && first >= 0 ? plannedStartMs(first) : null;
   }
+  // The first item's tick in the editor (its `auto`, a hard start) is the auto start: the dashboard's and
+  // editor header's "Auto start at …" boxes set the same thing
+  function firstAuto() {
+    const f = nextIndex(-1);
+    return f >= 0 && !!norm.items[f].auto;
+  }
   function autostartAt() {
-    const p0 = state.autostart ? firstStartMs() : null;
+    const p0 = firstAuto() ? firstStartMs() : null;
     return p0 != null && p0 > now() ? p0 : null;
   }
   let sentStandby = '', armedFor = null;
@@ -237,17 +244,44 @@
     return true;
   }
   function setAutostart(on) {
-    state.autostart = !!on;
+    const f = nextIndex(-1);
+    if (f < 0) return;
+    if (on) sheet.items[f].auto = true; else delete sheet.items[f].auto;
+    writeSheet();
     if (state.standby) sendStandby();
     commit();
   }
+  // Hard starts during the show: an upcoming item ticked in the editor (auto, with its own start time)
+  // starts by itself when its time comes, whatever is running, but only if it's the next item. If items
+  // before it haven't run yet it doesn't jump: its row flashes red in the editor (hardMiss) and the
+  // dashboard says why. Like the first item's auto start it arms while counting down to its time and
+  // fires once, so it never starts late (a timer opened after the time) or again after Back.
+  const armedAt = new Map(), hardMiss = new Set();
+  function hardStartTick() {
+    for (const id of hardMiss) { const j = idxOf(id); if (j < 0 || j <= state.index || state.finished || !norm.items[j].auto) hardMiss.delete(id); }
+    if (!isActive() || state.index < 0 || state.finished || !norm.anchored) return;
+    const t = now(), nx = nextIndex(state.index);
+    for (let j = state.index + 1; j < norm.items.length; j++) {
+      const it = norm.items[j];
+      if (!it.auto || it.hidden || it.startDerived || j === norm.endIdx) continue;
+      const p = plannedStartMs(j);
+      if (p == null) continue;
+      if (t < p) { armedAt.set(it.id, p); continue; }
+      if (armedAt.get(it.id) !== p) continue;      // not counted down to here, or already handled
+      armedAt.delete(it.id);
+      if (j === nx) { lastAction = 0; next(); return; }
+      hardMiss.add(it.id);
+      flash(`${it.name || 'An item'} was due to start at ${clockOf(p)}, but the items before it haven't run`);
+      commit();
+    }
+  }
   function standbyTick() {
-    if (!state.standby) return;
+    if (!state.standby) { hardStartTick(); return; }
     const s = api({ cmd: 'snapshot' });
     if (s && !s.standby) { state.standby = false; commit(); return; }   // started some other way (a preset, the API)
     // Armed while it counts down to the start time; fires once when it gets there. So it never starts
     // late (a timer opened after the time) and Back to before the show doesn't start it again.
-    const p0 = state.autostart ? firstStartMs() : null, t = now();
+    const p0 = firstAuto() ? firstStartMs() : null, t = now();
     if (p0 != null && t < p0) armedFor = p0;
     else if (p0 != null && armedFor === p0 && isActive() && state.index < 0 && !state.finished) { armedFor = null; lastAction = 0; next(); return; }
     if (JSON.stringify(standbyArgs()) !== sentStandby) sendStandby();     // the start time was edited, or auto start ticked
@@ -645,7 +679,7 @@
       const nj = state.finished ? -1 : nextIndex(state.index);
       if (nj >= 0) {
         const it = norm.items[nj], p = plannedStartMs(nj), proj = projections(), x = proj && proj.get(nj);
-        setRow('next', it.name, C.formatDuration(it.eff) + (x != null ? ` · ≈ ${clockOf(x)}` + (p != null && clockOf(p) !== clockOf(x) ? ` (planned ${clockOf(p)})` : '')
+        setRow('next', it.name, (it.auto && !it.startDerived && norm.anchored && p != null ? `starts by itself at ${clockOf(p)} · ` : '') + C.formatDuration(it.eff) + (x != null ? ` · ≈ ${clockOf(x)}` + (p != null && clockOf(p) !== clockOf(x) ? ` (planned ${clockOf(p)})` : '')
                                                                        : p != null ? ` · planned ${clockOf(p)}` : ''));
       } else if (!state.finished && norm.items.length) {
         const pf = plannedFinishMs(), proj = projections(), x = proj && proj.finish;
@@ -664,14 +698,16 @@
       const auto = $('rs_auto'), offer = autostartOffer();
       if (auto) {
         auto.hidden = offer == null;
-        if (offer != null) { auto.querySelector('span').textContent = 'Auto start at ' + clockOf(offer); auto.querySelector('input').checked = !!state.autostart; }
+        if (offer != null) { auto.querySelector('span').textContent = 'Auto start at ' + clockOf(offer); auto.querySelector('input').checked = firstAuto(); }
       }
       const pos = state.index >= 0 ? `${Math.min(state.index + 1, norm.timedCount)}/${norm.timedCount}` : `0/${norm.timedCount}`;
       const status = $('rs_status');
       if (status) {
-        status.textContent = flashText || [sheet.title, pos, info.text, videoHint(), window.pptxHub ? window.pptxHub.hint() : ''].filter(Boolean).join(' · ');
+        // A hard start whose time came while items before it hadn't run (hardStartTick): said until it starts
+        const missed = [...hardMiss].map(id => norm.items[idxOf(id)]).filter(Boolean).map(it => `⚠ ${it.name} was due at ${clockOf(plannedStartMs(idxOf(it.id)))}`).join(' · ');
+        status.textContent = flashText || [missed, sheet.title, pos, info.text, videoHint(), window.pptxHub ? window.pptxHub.hint() : ''].filter(Boolean).join(' · ');
         dash.classList.remove('rs-behind', 'rs-ahead', 'rs-ontime', 'rs-flash');
-        dash.classList.add(flashText ? 'rs-flash' : 'rs-' + (info.kind === 'none' ? 'ontime' : info.kind));
+        dash.classList.add(flashText ? 'rs-flash' : missed ? 'rs-behind' : 'rs-' + (info.kind === 'none' ? 'ontime' : info.kind));
       }
     }
     announce(false, info);
@@ -739,7 +775,7 @@
     const ts = isActive() && !state.finished && state.index >= 0 ? api({ cmd: 'snapshot' }) : null;
     const autoP0 = autostartOffer();
     const live = JSON.stringify({ text: info.text, kind: info.kind, late: info.late == null ? null : Math.round(info.late),
-      auto: !!state.autostart, autoAt: autoP0, standby: !!state.standby,
+      auto: firstAuto(), autoAt: autoP0, standby: !!state.standby, hardMiss: [...hardMiss],
       curId: ts ? state.currentId : null, curEnd: ts ? Math.round(timerEndMs(ts) / 1000) * 1000 : null });
     if (live !== lastLive) { lastLive = live; localStorage.setItem(LIVE_KEY, live); }
   }
@@ -799,6 +835,8 @@
     document.getElementById('btnrunsheet')?.addEventListener('click', openEditor);
     // When the player window opens (or anything about it changes), cue the next video if needed
     if (vp()) vp().onChange(() => preloadNext());
+    // The auto start used to be its own setting; it's now the first item's hard start
+    if (state.autostart) { const f = nextIndex(-1); if (f >= 0) { sheet.items[f].auto = true; writeSheet(); } delete state.autostart; }
     commit();
     // Heartbeat for the editor window, so it knows Next/Back will be handled. Written by
     // every timer window running this code, whether in controller or presenter (P) mode.

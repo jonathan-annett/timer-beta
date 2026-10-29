@@ -207,7 +207,7 @@
       if (src.hidden) tr.classList.add('hiddenrow');
       tr.innerHTML =
         `<td class="num">${it.isEnd ? 'End' : i + 1}</td>` +
-        `<td class="start"><input data-field="start" aria-label="Start time"></td>` +
+        `<td class="start"><input type="checkbox" class="hard" tabindex="-1" aria-label="Start automatically at this time"><input data-field="start" aria-label="Start time"></td>` +
         `<td class="name"><input data-field="name" aria-label="Item name"></td>` +
         `<td class="vid"></td><td class="deck"></td>` +
         `<td class="dur"><input data-field="duration" aria-label="Duration"></td>` +
@@ -219,6 +219,9 @@
           (src.hidden ? `<button data-act="unhide" tabindex="-1" title="Show it in the run sheet again">↺</button>`
                       : `<button data-act="del" tabindex="-1" title="Delete">✕</button>`) + `</td>`;
       const [start, name, dur] = FIELDS.map(f => tr.querySelector(`[data-field=${f}]`));
+      const hard = tr.querySelector('input.hard');       // a hard start: only for a typed start time
+      hard.hidden = src.start == null || it.isEnd;
+      hard.checked = !!src.auto;
       start.value = src.start != null ? C.formatClock(src.start) : '';
       name.value = src.name || '';
       dur.value = src.duration != null ? C.formatDuration(src.duration) : '';
@@ -314,6 +317,19 @@
         inp.title = scaling ? 'Apply or cancel the scaling first' : ro ? (role === 'now' ? 'Running now: it started when it started' : 'Already run: kept as it happened') : (inp.classList.contains('invalid') ? inp.title : '');
       });
       tr.querySelectorAll('td.vid button, td.vid select, td.deck button').forEach(b => { b.disabled = role === 'done' || it.hidden || scaling; });
+      // The hard-start tick: the first item's works before the show (it's the auto start, in standby);
+      // the others only once the show is under way, for items still to come. Otherwise dimmed.
+      const hard = tr.querySelector('input.hard');
+      if (hard) {
+        const firstIdx = norm.items.findIndex((x, j) => !x.hidden && j !== norm.endIdx);
+        const started = active && !state.finished && curIdx >= 0;
+        const armedNow = i === firstIdx ? active && !started && !state.finished : started && i > curIdx;
+        hard.disabled = role === 'done' || role === 'now' || it.hidden || scaling;
+        hard.classList.toggle('idle', !armedNow);
+        hard.title = hard.disabled ? '' : (i === firstIdx ? 'Auto start: after Reset show, the show starts by itself at this time'
+          : 'Hard start: when this time comes, this item starts by itself, if it\'s next') + (armedNow ? '' : ' (not active yet: ' + (i === firstIdx ? 'only before the show' : 'once the show has started') + ')');
+      }
+      tr.classList.toggle('hardmiss', (live.hardMiss || []).includes(it.id));
       const del = tr.querySelector('button[data-act=del]');
       if (del) del.title = role === 'done' ? 'Delete (hidden from the run sheet; it stays in the log)' : 'Delete';
       startIn.classList.toggle('conflict', overlap >= 1);
@@ -675,6 +691,13 @@
 
   tbody.addEventListener('change', e => {
     const input = e.target;
+    if (input.classList.contains('hard')) {          // the hard-start tick: kept on the item (auto)
+      const it = sheet.items.find(x => x.id === input.closest('tr').dataset.id);
+      if (!it || scaling) { renderAll(); return; }
+      if (input.checked) it.auto = true; else delete it.auto;
+      saveSheet();
+      return;
+    }
     const field = input.dataset.field;
     if (!field) return;
     const i = sheet.items.findIndex(it => it.id === input.closest('tr').dataset.id);
