@@ -18,7 +18,7 @@ tests/e2e/server.sh &             # local pairing server on wss://localhost:8443
 (cd companion/companion-module-sophtwhere-presentationtimer && npm install && npm run build)
 ```
 
-Tests marked *server* need `server.sh` running. To run them against the Cloudflare Worker instead, start it (`cd cloudflare && npx wrangler dev --local-protocol https --var ORIGINS:https://timer.sophtwhere.com`) and run `E2E_SERVER=wss://localhost:8787/ws ./run_all.sh` (the scripts read `E2E_SERVER`; `run_all.sh` then doesn't start `server.sh`). In the cloud workspace a background command
+Tests marked *server* need `server.sh` running. To run them against the Cloudflare Worker instead, start it (in the private `timed-show-cloud` repo: `./build.sh && npx wrangler dev --local-protocol https --var ORIGINS:https://timer.sophtwhere.com`) and run `E2E_SERVER=wss://localhost:8787/ws ./run_all.sh` (the scripts read `E2E_SERVER`; `run_all.sh` then doesn't start `server.sh`). In the cloud workspace a background command
 is stopped after 2 hours at most; restart it if a test can't connect.
 
 `./run_all.sh` runs them all (or `./run_all.sh runsheet_*` for some), starting the pairing
