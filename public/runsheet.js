@@ -212,10 +212,12 @@
     const p0 = state.autostart ? firstStartMs() : null;
     return p0 != null && p0 > now() ? p0 : null;
   }
-  let sentStandbyAt, armedFor = null;
+  let sentStandby = '', armedFor = null;
+  const standbyArgs = () => ({ at: autostartAt(), start: autostartOffer() });   // start: the first item's start, still ahead
   function sendStandby() {
-    sentStandbyAt = autostartAt();
-    api({ cmd: 'standby', on: true, at: sentStandbyAt });
+    const a = standbyArgs();
+    sentStandby = JSON.stringify(a);
+    api({ cmd: 'standby', on: true, at: a.at, start: a.start });
   }
   function enterStandby() {
     const first = nextIndex(-1);
@@ -248,7 +250,7 @@
     const p0 = state.autostart ? firstStartMs() : null, t = now();
     if (p0 != null && t < p0) armedFor = p0;
     else if (p0 != null && armedFor === p0 && isActive() && state.index < 0 && !state.finished) { armedFor = null; lastAction = 0; next(); return; }
-    if (autostartAt() !== sentStandbyAt) sendStandby();                  // the start time was edited
+    if (JSON.stringify(standbyArgs()) !== sentStandby) sendStandby();     // the start time was edited, or auto start ticked
   }
   (function ticker(fn, ms) {                     // a worker's tick: not slowed in a hidden window
     try {
@@ -651,6 +653,13 @@
                x != null ? `≈ ${clockOf(x)}` + (pf != null && clockOf(pf) !== clockOf(x) ? ` (planned ${clockOf(pf)})` : '') : pf != null ? `planned ${clockOf(pf)}` : '');
       } else setRow('next', '', '');
 
+      // Standing by: the notice here on the operator's screen (the big one is for the presenter's)
+      const sb = $('rs_standby');
+      if (sb) {
+        const t = state.standby && state.index < 0 ? (api({ cmd: 'snapshot' }) || {}).standbyText : '';
+        sb.hidden = !t;
+        sb.querySelector('.rs-name').textContent = t || '';
+      }
       // "Auto start at 22:40": only before the show, and only with a start time typed for the first item
       const auto = $('rs_auto'), offer = autostartOffer();
       if (auto) {

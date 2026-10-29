@@ -21,10 +21,11 @@ function processTimerApiMessage(msg) {
         }
 
 
-        // Standby (run sheet Reset show): {on, at} — at: the auto start time (ms, timer clock) or null.
+        // Standby (run sheet Reset show): {on, at, start} — at: the auto start time (ms, timer clock) or null;
+        // start: the first item's planned start or null ("will start at").
         // Only the notice and the flag: the run sheet sets the time and the message itself.
         case "standby": {
-            setStandby(!!msg.on, msg.on && Number.isFinite(msg.at) ? msg.at : null);
+            setStandby(!!msg.on, msg.on && Number.isFinite(msg.at) ? msg.at : null, msg.on && Number.isFinite(msg.start) ? msg.start : null);
             break;
         }
 

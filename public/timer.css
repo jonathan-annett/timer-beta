@@ -662,6 +662,13 @@ html.reduced.paused #remain_info_message:after {
 html.standby.paused #remain_info_message:before,
 html.standby.paused #remain_info_message:after { content: "" !important; }
 html.standby.paused #remain_info_message { display: block !important; }
+/* The operator's screen shows that notice in the run sheet dashboard instead (#rs_standby), and the
+   times as what will happen: "will start at" / "will end at" (timer.js), steady, no pause total */
+html.standby.paused:not(.reduced) #remain_info_message { display: none !important; }
+html.standby #started_disp:before { content: "will start at "; color: var(--color-future-start); }
+html.standby #ends_disp:before { content: "will end at "; }
+html.standby.paused #ends_disp { animation: none !important; color: inherit !important; }
+html.standby #extra_time_disp { display: none !important; }
 
 
 
@@ -1602,6 +1609,8 @@ html.runsheet:not(.reduced) #runsheet_dash { display: block; }
 #runsheet_dash #rs_cur { color: #fff; font-weight: bold; }
 #runsheet_dash #rs_cur .rs-name { font-size: 1.3em; }
 #runsheet_dash #rs_cur .rs-meta { font-weight: normal; color: #999; }
+#runsheet_dash #rs_standby[hidden] { display: none; }
+#runsheet_dash #rs_standby .rs-name { font-size: 1.3em; font-weight: bold; color: #ccc; }   /* "Standing by…", as big as "Not started" */
 #runsheet_dash #rs_next { color: #bbb; }
 
 #rs_status { margin-top: 0.2em; font-size: 0.85em; color: #888; padding-left: 4.4em; }

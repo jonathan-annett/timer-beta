@@ -335,9 +335,10 @@ custom_message.addEventListener('focus', function(){
   // off or its flags changed, so pauses, adjustments and easing correct themselves.
   var clockAnchor = null;		// (var: displayUpdate runs before this line during startup)
 
-  // Standby on or off (the `standby` API command; restartTimer ends it). at: an auto start time (ms) or null
-  function setStandby(on, at) {
-	  standby = on ? { at: Number.isFinite(at) ? at : null } : null;
+  // Standby on or off (the `standby` API command; restartTimer ends it). at: an auto start time (ms) or
+  // null; start: the first item's planned start (ms) or null, for "will start at" / "will end at"
+  function setStandby(on, at, start) {
+	  standby = on ? { at: Number.isFinite(at) ? at : null, start: Number.isFinite(start) ? start : null } : null;
 	  if (standby) localStorage.setItem("standby", JSON.stringify(standby)); else localStorage.removeItem("standby");
 	  if (standby) setHtmlClass("standby"); else clearHtmlClass("standby");
 	  clockAnchor = null;			// devices get the new notice with the next anchor
@@ -477,7 +478,7 @@ custom_message.addEventListener('focus', function(){
 				  clearRemainClass("adjustingDown") ;
 				  clearHtmlClass("adjusting_time");
 				  remain_actual = undefined;
-				  keyDisp.textContent = tabCount === 1  ? "" : controllerCount > 1 ? "MULTIPLE CONTROLLERS TABS ARE OPEN. CLOSE ONE!" : pausedMsec === 0 ? "remote display active" : "countdown was paused at "+ local24HourTime (timeProvider.date(pausedAt));
+				  keyDisp.textContent = tabCount === 1  ? "" : controllerCount > 1 ? "MULTIPLE CONTROLLERS TABS ARE OPEN. CLOSE ONE!" : pausedMsec === 0 || standby ? "remote display active" : "countdown was paused at "+ local24HourTime (timeProvider.date(pausedAt));
 				  writeNumber("endsAt",endsAt);
 			  }
 		 }
@@ -494,6 +495,12 @@ custom_message.addEventListener('focus', function(){
 			 endsDisp.textContent =  local24HourTime ( timeProvider.date(seekEndsAt+pausedMsec) );
 			 const accumTimeStr = secToStr((pauseAcum+pausedMsec) / oneSecond);
 			 extraTimeDisp.textContent = "+ "+accumTimeStr+" pauses";
+			 if (standby) {		// "will start at" the first item's start time (or now, if it has none ahead) and "will end at" (timer.css)
+				 const willStart = standby.start && standby.start > timeNow ? standby.start : timeNow;
+				 startedDisp.textContent = local24HourTime(timeProvider.date(willStart));
+				 endsDisp.textContent = local24HourTime(timeProvider.date(willStart + thisDuration));
+				 extraTimeDisp.textContent = "";
+			 }
 			 pausing = true;
 			 if (timerAPI && lastEndsAtText !== endsDisp.textContent) {
 				lastEndsAtText = endsDisp.textContent;
@@ -858,6 +865,7 @@ custom_message.addEventListener('focus', function(){
 		  pauseAcum,
 		  message: currentCustomMessage(),
 		  standby: !!standby,
+		  standbyText: standby && pausedAt ? standbyText(timeProvider.now()) : "",	// for the run sheet dashboard
 	  };
   }
 

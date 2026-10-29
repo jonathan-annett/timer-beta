@@ -13,7 +13,7 @@
       <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
       <link rel="manifest" href="manifest.json">
       <title>Presentation Timer</title>
-      <link rel="stylesheet" href="timer.css?v=de25e951" id="style_1">
+      <link rel="stylesheet" href="timer.css?v=5485f1a1" id="style_1">
       <link rel="stylesheet" href="help-overlay.css?v=ab22e694">
   </head>
   <body>
@@ -28,8 +28,8 @@
       <script src="overlay-view.js?v=58c3e9ec"></script>
       <script src="local-overlay.js?v=aab1518d"></script>
       <script src="elementcolors.js?v=3346b988"></script>
-      <script src="timerapi.js?v=5ea0ccd9"></script>
-      <script src="timer.js?v=93585c7a" defer></script>    
+      <script src="timerapi.js?v=47e065d9"></script>
+      <script src="timer.js?v=76820432" defer></script>    
       <script src="FileSaver.js?v=de19cbb6" defer></script>    
       <script src="video-store.js?v=069f77d9" defer></script>
       <script src="dropPlayer.js?v=4de62e2c" defer></script>
@@ -39,7 +39,7 @@
       <script src="back-guard.js?v=1ffc51f1" defer></script>
       <script src="touchcontrols.js?v=a4339318" defer></script>
       <script src="runsheet-core.js?v=2a42c0bc" defer></script>
-      <script src="runsheet.js?v=2a8244e8" defer></script>
+      <script src="runsheet.js?v=ce43eecb" defer></script>
       <script src="remote-peer.js?v=a4dfabd5" defer></script>
       <script src="remote-control.js?v=34078406" defer></script>
       <script src="pptx-hub.js?v=e1230167" defer></script>
@@ -135,6 +135,7 @@
       <div id="runsheet_dash">
         <div class="rs-row" id="rs_prev"><span class="rs-label">Prev</span><span class="rs-name"></span><span class="rs-meta"></span></div>
         <div class="rs-row" id="rs_cur"><span class="rs-label">Now</span><span class="rs-name"></span><span class="rs-meta"></span></div>
+        <div class="rs-row" id="rs_standby" hidden><span class="rs-label"></span><span class="rs-name"></span></div>
         <div class="rs-row" id="rs_next"><span class="rs-label">Next</span><span class="rs-name"></span><span class="rs-meta"></span></div>
         <div id="rs_status"></div>
         <label id="rs_auto" hidden title="Start the first item on its own at its start time (the timer stands by until then)"><input type="checkbox"> <span>Auto start</span></label>

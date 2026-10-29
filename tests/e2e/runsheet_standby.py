@@ -36,8 +36,9 @@ with sync_playwright() as p:
     st=lambda: t.evaluate("({cls: ['paused','standby','over'].filter(c=>document.documentElement.classList.contains(c)).join(','), remain: document.getElementById('remain_disp').textContent, info: document.getElementById('remain_info_message').textContent, infoShown: getComputedStyle(document.getElementById('remain_info_message')).display !== 'none', msg: document.getElementById('custom_message').textContent, index: JSON.parse(localStorage.runsheet_state).index})")
     e.once("dialog", lambda d: d.accept()); e.click("#btn-reset"); t.wait_for_timeout(1500)
     print("after Reset show:", st())
+    lbl=lambda: t.evaluate("['started_disp','ends_disp','extra_time_disp'].map(id=>{const e=document.getElementById(id); return getComputedStyle(e,'::before').content.replace(/\"/g,'')+e.textContent+(getComputedStyle(e).display==='none'?' [hidden]':'')+(getComputedStyle(e).animationName!=='none'?' [blinking]':'')})")
+    print("operator screen: big notice shown:", st()["infoShown"], "| dashboard:", t.is_visible("#rs_standby"), repr(t.text_content("#rs_standby")), "| times:", lbl())
     print("dashboard auto start:", t.is_visible("#rs_auto"), t.text_content("#rs_auto").strip(), "| editor:", e.is_visible("#autostart"), e.text_content("#autostart").strip())
-    t.screenshot(path=OUT+"/standby_timer.png")
     # presenter window and a phone
     pw=c.new_page(); pw.on("pageerror", lambda x: errs.append("presenter: "+str(x))); pw.goto(BASE+"timer.html?presenter"); pw.wait_for_timeout(1500)
     t.click("#btnshare"); t.wait_for_timeout(1500); link=t.text_content("#phone-panel .pp-link")
@@ -46,6 +47,8 @@ with sync_playwright() as p:
     pinfo=lambda: (pw.text_content("#remain_info_message"), pw.is_visible("#remain_info_message"))
     print("presenter:", pinfo(), "| phone:", ph.text_content("#remain"), "/", ph.text_content("#substate"))
     t.click("#rs_auto input"); t.wait_for_timeout(1200)
+    t.screenshot(path=OUT+"/standby_timer.png")
+    print("  with a start time: times:", lbl(), "| dashboard:", repr(t.text_content("#rs_standby")))
     print("auto start ticked on the dashboard:", st()["info"], "| editor box checked:", e.is_checked("#autostart input"), "| focus left it:", t.evaluate("document.activeElement.tagName"))
     print("  presenter:", pinfo(), "| phone:", ph.text_content("#substate"))
     pw.screenshot(path=OUT+"/standby_presenter.png")
@@ -56,6 +59,7 @@ with sync_playwright() as p:
     print("history:", t.evaluate("JSON.parse(localStorage.runsheet_state).history.length"), "| editor Back enabled:", e.is_enabled("#btn-back"))
     t.wait_for_timeout(400); e.click("#btn-back"); t.wait_for_timeout(1500)
     print("Back:", st(), "| status:", t.text_content("#rs_status"))
+    print("  standing by after the start time: times:", lbl())
     t.keyboard.press("Shift+Quote"); t.wait_for_timeout(1500)     # Resume while standing by
     print('Resume (") in standby:', st())
     t.wait_for_timeout(400); e.click("#btn-back"); t.wait_for_timeout(1000)
