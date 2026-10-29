@@ -29,7 +29,7 @@ with sync_playwright() as p:
     print("pair button:", t.text_content("#phone-panel .pp-pair"), "| enabled:", t.is_enabled("#phone-panel .pp-pair"))
     t.click("#phone-panel .pp-pair"); t.wait_for_timeout(800)
     code=t.text_content("#phone-panel .pp-digits").replace(" ","")
-    print("code shown:", code, "| QR hidden:", t.evaluate("getComputedStyle(document.querySelector('#phone-panel .pp-qr')).display"), "| hint:", t.text_content("#phone-panel .pp-codehint")[:90])
+    print("code shown:", code, "| status:", t.text_content("#phone-panel .pp-status"), "| QR hidden:", t.evaluate("getComputedStyle(document.querySelector('#phone-panel .pp-qr')).display"), "| hint:", t.text_content("#phone-panel .pp-codehint")[:90])
     t.screenshot(path=OUT+"/overlay_code.png")
 
     # the other computer: its own browser profile
@@ -66,5 +66,5 @@ with sync_playwright() as p:
           "| button:", o.text_content("#start"), "| status:", o.text_content("#status"))
     # the code is single use and goes away when the panel closes
     t.click("#btnshare"); t.wait_for_timeout(300)
-    print("panel reopened: pairing on?", t.text_content("#phone-panel .pp-pair"))
+    print("panel reopened: pairing on?", t.text_content("#phone-panel .pp-pair"), "| status:", t.text_content("#phone-panel .pp-status"))
 print("errors:", errs)

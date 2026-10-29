@@ -986,6 +986,7 @@
     el.querySelector('.pp-link').style.display = pair.on ? 'none' : '';
     el.querySelector('.pp-modes').style.display = enabled && !pair.on ? '' : 'none';   // the code isn't one of these links
     el.querySelector('.pp-modehint').style.display = pair.on ? 'none' : '';
+    if (pair.on && statusKind === 'ok') el.querySelector('.pp-status').textContent = 'Ready — type this code on the other computer';   // not "scan the code"
     if (!pair.on) { box.dataset.code = ''; box.innerHTML = pair.note ? `<div class="pp-codehint">${pair.note}</div>` : ''; return; }
     if (box.dataset.code === (pair.code || '-')) return;          // keep the countdown bar running
     box.dataset.code = pair.code || '-';
