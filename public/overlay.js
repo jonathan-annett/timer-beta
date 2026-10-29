@@ -101,7 +101,7 @@
     if (waiting) return status('Waiting for the timer… (closed, or it made a new share code: then unpair and pair again)', 'warn');
     if (!ws || ws.readyState !== WebSocket.OPEN) return status('Reconnecting…', 'warn');
     if (!hostOnline) return status('The timer is offline: waiting for it…', 'warn');
-    status(peer && peer.mode === 'lan' ? '⚡ Connected directly (same network)' : 'Connected via the server', 'ok');
+    status(peer && peer.mode === 'lan' ? '⚡ Connected directly (same network)' : peer && peer.mode === 'p2p' ? '⚡ Connected directly (over the internet)' : 'Connected via the server', 'ok');
   }
 
   function newPeer() {

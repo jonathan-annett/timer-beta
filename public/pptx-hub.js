@@ -439,7 +439,7 @@
     else {
       bits.push(!s.receiver ? '<span class="pp-warn">receiver page not open</span>'
         : s.receiver === 'lan' ? (s.folder ? 'receiver <b class="pp-lan">LAN direct</b>' : '<span class="pp-warn">receiver: no folder chosen</span>')
-        : '<span class="pp-warn">receiver via server: decks need the same network</span>');
+        : `<span class="pp-warn">receiver ${s.receiver === 'p2p' ? 'direct but on another network' : 'via server'}: decks need the same network</span>`);
       bits.push(s.player ? (s.simulate ? 'player (simulating)' : 'player ✓') + (s.presenter ? ', Presenter View' : '') + (s.edit ? ', <b>rehearsal</b> (decks open for editing)' : '') : '<span class="pp-warn">player not running</span>');
       if (s.total) bits.push(s.transfer ? `sending ${esc(s.transfer.name)} ${s.transfer.pct}%` : `${s.ready}/${s.total} files ready`);
     }

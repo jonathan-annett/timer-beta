@@ -931,7 +931,7 @@
   function renderPanel(force) {
     const el = document.getElementById('phone-panel');
     const btn = document.getElementById('btnshare');
-    const lanCount = [...peers.values()].filter(e => e.peer.mode === 'lan' && e.role !== 'pptx').length;
+    const lanCount = [...peers.values()].filter(e => e.peer.mode !== 'server' && e.role !== 'pptx').length;   // direct, either way
     if (btn) btn.textContent = !enabled ? 'share' : peers.size ? `share ${peers.size}` : 'share ·';
     if (!el) return;
     const st = el.querySelector('.pp-status');
@@ -972,8 +972,8 @@
       pptxLines + [...peers.values()].filter(e => !e.rejected && (e.role !== 'pptx' || !e.approved)).map(e => `<div>${e.role === 'view' ? 'Display' : e.role === 'companion' ? 'Companion' : e.role === 'pptx' ? 'PowerPoint' : 'Phone'} ${e.n} · ` +
         (!e.approved ? '<span class="pp-warn">waiting for its PIN</span> · ' : '') +
         (e.role === 'view' ? '<span class="pp-view">view only</span> · ' : e.role === 'admin' ? '<span class="pp-admin">admin</span> · ' : '') +
-        `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : '<b class="pp-srv">via server</b>'}</div>`).join('') +
-      (lanCount < [...peers.values()].filter(e => e.role !== 'pptx').length ? '<div class="pp-hint">"via server": not on the same network (or the Wi-Fi isolates devices).</div>' : '') +
+        `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : e.peer.mode === 'p2p' ? '<b class="pp-lan" title="A direct link over the internet: not the same network">direct</b>' : '<b class="pp-srv">via server</b>'}</div>`).join('') +
+      (lanCount < [...peers.values()].filter(e => e.role !== 'pptx').length ? '<div class="pp-hint">"via server": no direct link could be made (a network in between blocks it).</div>' : '') +
       (shareNote ? `<div class="pp-hint">${shareNote}</div>` : '');
   }
 

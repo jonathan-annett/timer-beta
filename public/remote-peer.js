@@ -3,17 +3,19 @@
  * One link between the timer and one phone, shared by remote-control.js (timer side) and
  * remote-phone.js (phone side).
  *
- * It tries a direct WebRTC data channel with NO STUN/TURN servers. Without them a
- * connection can only succeed when the phone can reach the timer's computer on the local
- * network, so a successful connection is the "same LAN" test. If it fails, or drops later,
- * messages go through the pairing server instead (mode 'server'). Both modes carry the same
- * small JSON messages.
+ * It tries a direct WebRTC data channel, with public STUN servers (no TURN), so it can connect
+ * across networks too when their routers allow it. Once it's open, the route it took decides the
+ * mode: 'lan' when both ends use local addresses (the same network: file transfers are allowed
+ * only then), 'p2p' when it goes over the internet (route()). If it fails, or drops later,
+ * messages go through the pairing server instead (mode 'server'). All three carry the same
+ * small JSON messages; only the server mode costs the server anything.
  *
  *   const peer = RemotePeer.create({ initiator, relay, onMessage, onModeChange });
  *   relay(obj)      — sends obj to the other side through the server (signalling + fallback)
  *   peer.receive(m) — feed it messages that arrived through the server
  *   peer.send(obj)  — sends by the best available path
- *   onMessage(obj, via)  via: 'lan' (the data channel) or 'server'
+ *   onMessage(obj, via)  via: 'lan' (the data channel, in mode 'lan' or 'p2p') or 'server'
+ *   peer.mode  'lan' | 'p2p' | 'server'
  *
  * Binary (video files from the run sheet editor): LAN only, never through the server.
  *   peer.sendBinary(buf) → false unless the data channel is open; onBinary(buf) receives.
@@ -28,6 +30,11 @@
 
 var RemotePeer = (function () {
   'use strict';
+
+  // Free public STUN servers: they only tell each end its own public address
+  const STUN = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+  const publicV4 = a => typeof a === 'string' && /^\d+\.\d+\.\d+\.\d+$/.test(a) &&
+    !/^(10|127)\./.test(a) && !/^192\.168\./.test(a) && !/^172\.(1[6-9]|2\d|3[01])\./.test(a) && !/^169\.254\./.test(a) && !/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(a);
 
   function create(opts) {
     const { initiator, relay, onMessage, onModeChange, onBinary } = opts;
@@ -45,13 +52,29 @@ var RemotePeer = (function () {
       dc = ch;
       ch.binaryType = 'arraybuffer';
       ch.bufferedAmountLowThreshold = 1 << 20;
-      ch.onopen = () => { clearTimeout(timer); setMode('lan'); };
+      ch.onopen = () => { clearTimeout(timer); route().then(m => { if (dc === ch && ch.readyState === 'open') setMode(m); }); };
       ch.onclose = () => { dc = null; setMode('server'); };
       ch.onmessage = e => {
         if (typeof e.data !== 'string') { if (onBinary) onBinary(e.data); return; }
         let m; try { m = JSON.parse(e.data); } catch (_) { return; /* ignore junk */ }
         onMessage(m, 'lan');
       };
+    }
+
+    // Which way the open channel goes: 'lan' if neither end is a STUN (srflx) or relay address,
+    // nor a public IPv4 one; otherwise 'p2p'. When it can't tell, 'p2p' (no file transfers).
+    async function route() {
+      try {
+        const stats = await pc.getStats(), byId = {};
+        let pair = null;
+        stats.forEach(r => { byId[r.id] = r; });
+        stats.forEach(r => { if (r.type === 'transport' && r.selectedCandidatePairId) pair = byId[r.selectedCandidatePairId]; });
+        if (!pair) stats.forEach(r => { if (!pair && r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) pair = r; });
+        const l = pair && byId[pair.localCandidateId], r = pair && byId[pair.remoteCandidateId];
+        if (!l || !r) return 'p2p';
+        const far = c => c.candidateType === 'srflx' || c.candidateType === 'relay' || publicV4(c.address || c.ip);
+        return far(l) || far(r) ? 'p2p' : 'lan';
+      } catch (_) { return 'p2p'; }
     }
 
     function giveUp() {
@@ -63,7 +86,7 @@ var RemotePeer = (function () {
 
     function start() {
       if (closed || typeof RTCPeerConnection === 'undefined') return false;
-      pc = new RTCPeerConnection({ iceServers: [] });        // LAN only: no STUN, no TURN
+      pc = new RTCPeerConnection({ iceServers: STUN });        // no TURN: nothing ever goes through a server of ours
       pc.onicecandidate = e => { if (e.candidate) relay({ k: 'sig', ice: e.candidate.toJSON() }); };
       pc.onconnectionstatechange = () => {
         if (pc && (pc.connectionState === 'failed' || pc.connectionState === 'closed')) giveUp();
@@ -77,7 +100,7 @@ var RemotePeer = (function () {
       } else {
         pc.ondatachannel = e => wire(e.channel);
       }
-      timer = setTimeout(() => { if (mode !== 'lan') giveUp(); }, timeoutMs);
+      timer = setTimeout(() => { if (mode === 'server') giveUp(); }, timeoutMs);
       return true;
     }
 

@@ -155,7 +155,7 @@
     else if (!ws || ws.readyState !== WebSocket.OPEN) { b.className = ''; b.textContent = 'reconnecting…'; }
     else if (!hostOnline) { b.className = ''; b.textContent = 'timer offline'; setNote('Waiting for the timer…'); }
     else if (peer && peer.mode === 'lan') { b.className = 'lan'; b.textContent = '⚡ LAN direct'; setNote(''); }
-    else { b.className = 'server'; b.textContent = 'via server'; setNote('Not a direct link: decks can’t be sent. This computer has to be on the same network as the timer’s computer (and the network must let devices reach each other).'); }
+    else { b.className = 'server'; b.textContent = peer && peer.mode === 'p2p' ? 'direct, other network' : 'via server'; setNote('Not on the same network: decks can’t be sent. This computer has to be on the same network as the timer’s computer (and the network must let devices reach each other).'); }
   }
   function sendHello() {
     if (!peer) return;

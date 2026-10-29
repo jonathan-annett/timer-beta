@@ -66,6 +66,7 @@
     if (!ws || ws.readyState !== WebSocket.OPEN) return setBadge('off', 'reconnecting…');
     if (!hostOnline) return setBadge('off', 'timer offline', 'waiting for the timer…');
     if (peer && peer.mode === 'lan') setBadge('lan', '⚡ LAN direct');
+    else if (peer && peer.mode === 'p2p') setBadge('lan', '⚡ direct', 'over the internet, not the same Wi-Fi');
     else setBadge('server', 'via server', 'not on the same Wi-Fi');
   }
 
