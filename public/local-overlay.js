@@ -14,7 +14,8 @@
  *
  * While it's open and the timer page or the floating window has the keyboard, both show a warning
  * that keys go to the timer, not PowerPoint (the one-laptop case: PowerPoint, a Stream Deck and
- * this overlay, no crew): OverlayView's keysWarning, and here the html class overlay-keys (#lo-keys).
+ * this overlay, no crew): OverlayView's keysWarning and key-focus.js's badge; overlay_open tells the
+ * presenter window and the run sheet editor to show theirs.
  *
  *   window.LocalOverlay.toggle()   (timer.js togglePIPMode; needs the key press or click)
  * MIT Licensed
@@ -30,8 +31,12 @@
     custommsg: ['msg', String], showbar: ['bar', truthy], showmessages: ['msgs', truthy], barpct: ['pct', Number],
   };
   const s = {};
-  let view = null, box = null, fadeTimer = null;
-  const KEYS_WARNING = 'Keys go to the timer, not PowerPoint';
+  let view = null, box = null, fadeTimer = null, keysBadge = null;
+  // The presenter window and the run sheet editor show the ⌨ badge while this is open (key-focus.js)
+  window.addEventListener('pagehide', () => { try { localStorage.removeItem('overlay_open'); } catch (_) { /* no storage */ } });
+  try { localStorage.removeItem('overlay_open'); } catch (_) { /* a reload: the overlay closed with the page */ }
+  const KEYS_WARNING = 'Warning: timer still owns the keyboard';   // on the overlay; the page's badge has the longer KEYS_HINT
+  const KEYS_HINT = 'Warning: timer still owns the keyboard. Click in PowerPoint to ensure slides advance normally';
 
   const prev = window.timerAPI;
   window.timerAPI = {
@@ -61,16 +66,12 @@
       onStatus: text => { showBox(); box.querySelector('.lo-note').textContent = text; },
       onWindow: forwardKeys,
       keysWarning: KEYS_WARNING,
-      onKeys: focused => {
-        const html = document.documentElement;
-        if (focused) OverlayView.flashTip(document.getElementById('lo-keys'));
-        if (focused) { if (window.setHtmlClass) setHtmlClass('overlay-keys'); else html.classList.add('overlay-keys'); }
-        else if (window.clearHtmlClass) clearHtmlClass('overlay-keys'); else html.classList.remove('overlay-keys');
-      },
+      onKeys: focused => keysBadge.set(focused),
       onChange: () => {
         const html = document.documentElement;
         if (view.open) { if (window.setHtmlClass) setHtmlClass('overlay'); else html.classList.add('overlay'); }
         else { if (window.clearHtmlClass) clearHtmlClass('overlay'); else html.classList.remove('overlay'); hideBox(); }
+        try { if (view.open) localStorage.setItem('overlay_open', '1'); else localStorage.removeItem('overlay_open'); } catch (_) { /* no storage */ }
       },
     });
     const parking = document.createElement('div');    // where the element waits while it isn't floating
@@ -96,15 +97,7 @@
 #lo-box .lo-hide { border-radius: 4px; }
 #lo-box label { margin-right: 12px; cursor: pointer; }
 #lo-box .lo-note { color: #ffcc33; margin-top: 4px; }
-#lo-box .lo-note:empty { display: none; }
-#lo-keys { display: none; position: fixed; z-index: 61; left: 50%; transform: translateX(-50%); top: calc(var(--buttons-bottom, 56px) + 8px);
-  align-items: center; gap: 8px; font: bold 15px "Helvetica Neue", Arial, sans-serif; white-space: nowrap; cursor: default; }
-html.overlay-keys #lo-keys { display: flex; }
-#lo-keys .kw-key { background: #c62828; color: #fff; border-radius: 6px; padding: 2px 8px; font-size: 20px; animation: lo-blink 1s steps(1) infinite;
-  box-shadow: 0 2px 10px rgba(0,0,0,.5); }
-#lo-keys .kw-tip { background: rgba(198,40,40,.92); color: #fff; border-radius: 6px; padding: 5px 12px; transition: opacity 1s; }
-#lo-keys .kw-tip.kw-gone { opacity: 0; }
-@keyframes lo-blink { 50% { opacity: .2; } }`;
+#lo-box .lo-note:empty { display: none; }`;
     document.head.appendChild(st);
     box = document.createElement('div');
     box.id = 'lo-box';
@@ -114,12 +107,7 @@ html.overlay-keys #lo-keys { display: flex; }
       <label><input type="checkbox" data-o="msg"> Message</label><label><input type="checkbox" data-o="bar"> Progress shade</label>
       <div class="lo-note"></div>`;
     document.body.appendChild(box);
-    const keys = document.createElement('div');
-    keys.id = 'lo-keys';
-    keys.title = KEYS_WARNING + ': click PowerPoint to give it the keys';
-    keys.innerHTML = '<span class="kw-key">⌨</span><span class="kw-tip"></span>';
-    keys.querySelector('.kw-tip').textContent = keys.title;
-    document.body.appendChild(keys);
+    keysBadge = KeysBadge.create(KEYS_HINT, 'calc(var(--buttons-bottom, 56px) + 8px)');
     // Clicks here mustn't leave focus on a button: the timer's keys (Space…) must keep working
     box.addEventListener('mousedown', e => { if (e.target.closest('button, label, input')) e.preventDefault(); });
     box.addEventListener('click', e => {

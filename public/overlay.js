@@ -191,6 +191,7 @@
   // ─── The overlay (drawing and floating: overlay-view.js, shared with the timer's own O) ───
 
   let view = null;
+  const keysBadge = KeysBadge.create('Warning: timer still owns the keyboard. Click in PowerPoint to ensure slides advance normally');
   function setupView() {
     view = OverlayView.create({
       prefix: 'overlay_',                             // overlay_layout, overlay_msg, overlay_bar
@@ -199,8 +200,8 @@
         el.style.width = Math.round(lw * k) + 'px'; el.style.height = Math.round(lh * k) + 'px';
       },
       onStatus: text => status(text, 'warn'),
-      keysWarning: 'Keys aren’t going to PowerPoint',   // e.g. the presenter's clicker, on the slides computer
-      onKeys: focused => { $('keyswarn').hidden = !focused; if (focused) OverlayView.flashTip($('keyswarn')); },
+      keysWarning: 'Warning: timer still owns the keyboard',   // e.g. the presenter's clicker, on the slides computer
+      onKeys: focused => keysBadge.set(focused),
       onChange: () => { $('previewbox').querySelector('.floating').hidden = !view.open || !('documentPictureInPicture' in window); render(); },
     });
     $('previewbox').insertBefore(view.el, $('previewbox').firstChild);

@@ -300,13 +300,5 @@ var OverlayView = (function () {
   }
 
   const supported = () => 'documentPictureInPicture' in window || !!document.pictureInPictureEnabled;
-  // A page's own ⌨ badge (el: its text in a .kw-tip child): the words show for 4 s, then fade
-  function flashTip(badge) {
-    const tip = badge.querySelector('.kw-tip');
-    if (!tip) return;
-    clearTimeout(badge._tipTimer);
-    tip.classList.remove('kw-gone');
-    badge._tipTimer = setTimeout(() => tip.classList.add('kw-gone'), 4000);
-  }
-  return { create, autoMsg, supported, flashTip, LAYOUTS };
+  return { create, autoMsg, supported, LAYOUTS };
 })();
