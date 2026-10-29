@@ -91,7 +91,7 @@
       onMessage,
       onModeChange: showMode,
     });
-    peer.send({ t: 'hello', token: store.get(tokenKey()) || undefined });   // via the server until the LAN link is up
+    peer.send({ t: 'hello', token: store.get(tokenKey()) || undefined, clock: 1 });   // via the server until the LAN link is up
     if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true });
     if (editorMode()) peer.send({ t: 'rs-sub', on: true });
   }
@@ -179,7 +179,7 @@
       if (typeof m.token === 'string') store.set(tokenKey(), m.token);
       pinCode = null;
       box.hidden = true;
-      if (peer) { peer.send({ t: 'hello', token: store.get(tokenKey()) || undefined }); if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true }); if (editorMode()) peer.send({ t: 'rs-sub', on: true }); }
+      if (peer) { peer.send({ t: 'hello', token: store.get(tokenKey()) || undefined, clock: 1 }); if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true }); if (editorMode()) peer.send({ t: 'rs-sub', on: true }); }
     } else if (m.t === 'pin-rejected' || m.t === 'revoked') {
       pinCode = null;
       $('pincode').textContent = '';
@@ -203,6 +203,9 @@
   // ─── State from the timer ────────────────────────────────────────────────
 
   const joinPart = RemotePeer.joiner();
+  // The countdown, counted here from the timer's anchor (remote-clock.js; we said clock: 1 in hello).
+  // A timer from before that keeps sending remain/over/impending/pct itself, and no clk.
+  const clock = RemoteClock.create(v => { Object.assign(state, v); render(); });
   function onMessage(m) {
     if (m && m.t === 'part') { const whole = joinPart(m); if (whole) onMessage(whole); return; }
     if (m && (m.t === 'pin-required' || m.t === 'pin-ok' || m.t === 'pin-rejected' || m.t === 'revoked')) return onPin(m);
@@ -212,6 +215,8 @@
     if (!m || m.t !== 'state' || typeof m.s !== 'object') return;
     if (m.full) for (const k of Object.keys(state)) delete state[k];
     Object.assign(state, m.s);
+    if (m.s.clk) clock.set(m.s.clk);
+    if (clock.active) Object.assign(state, clock.values());
     render();
   }
 

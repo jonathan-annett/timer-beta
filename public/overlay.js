@@ -78,6 +78,8 @@
 
   let ws = null, peer = null, retry = 1000, retryTimer = null, hostOnline = false, waiting = false, refused = false;
   const state = {};
+  // The countdown, counted here from the timer's anchor (remote-clock.js; hello says clock: 1)
+  const clock = RemoteClock.create(v => { Object.assign(state, v); render(); });
 
   function start() {
     $('paired').hidden = false;
@@ -114,7 +116,7 @@
       onMessage,
       onModeChange: showMode,
     });
-    peer.send({ t: 'hello', token: store.get(tokenKey(link.r)) || undefined });
+    peer.send({ t: 'hello', token: store.get(tokenKey(link.r)) || undefined, clock: 1 });
   }
 
   function connect() {
@@ -163,7 +165,7 @@
     } else if (m.t === 'pin-ok') {
       if (typeof m.token === 'string') store.set(tokenKey(link.r), m.token);
       pinCode = null; $('pinwait').hidden = true;
-      if (peer) peer.send({ t: 'hello', token: store.get(tokenKey(link.r)) || undefined });
+      if (peer) peer.send({ t: 'hello', token: store.get(tokenKey(link.r)) || undefined, clock: 1 });
     } else if (m.t === 'pin-rejected' || m.t === 'revoked') {
       refused = true;                                  // the timer disconnects it: don't reconnect
       $('pinwait').hidden = false;
@@ -171,6 +173,8 @@
     } else if (m.t === 'state' && m.s && typeof m.s === 'object') {
       if (m.full) for (const k of Object.keys(state)) delete state[k];
       Object.assign(state, m.s);
+      if (m.s.clk) clock.set(m.s.clk);
+      if (clock.active) Object.assign(state, clock.values());
       render();
     }
   }

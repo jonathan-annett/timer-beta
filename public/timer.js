@@ -320,6 +320,23 @@ custom_message.addEventListener('focus', function(){
   // can stretch chained timers to once a minute, so the deck keys and remotes froze unless the
   // PiP overlay (media playing) kept the page awake. Timers in a worker aren't throttled like
   // that, so a tiny worker sends the ticks; setInterval is the fallback.
+  // The countdown for shared devices as an anchor they count from themselves, instead of a new text
+  // every second (remote-control.js sends it to devices that understand it: remote-clock.js). It says
+  // "remaining r ms, changing at rr per ms (-1 running, 0 paused, -1.25 / -0.75 while easing after an
+  // adjustment), elapsed e at er, total d; f = before the start, p = paused", taken at t
+  // (performance.now()). A new one goes out only when the last one's prediction is more than 150 ms
+  // off or its flags changed, so pauses, adjustments and easing correct themselves.
+  var clockAnchor = null;		// (var: displayUpdate runs before this line during startup)
+  function announceClock(r, e, paused, future, runRate) {
+	  const t = performance.now();
+	  const rr = paused ? 0 : runRate, er = paused ? 0 : 1, f = future ? 1 : 0, p = paused ? 1 : 0;
+	  const a = clockAnchor;
+	  if (a && a.f === f && a.p === p && a.d === thisDuration && a.rr === rr &&
+		  Math.abs(a.r + a.rr * (t - a.t) - r) < 150 && Math.abs(a.e + a.er * (t - a.t) - e) < 500) return;
+	  clockAnchor = { t, r: Math.round(r), e: Math.round(e), d: thisDuration, rr, er, f, p };
+	  if (timerAPI) timerAPI.send({ setVariableValues: { clock: clockAnchor } });
+  }
+
   function startTicker(fn, ms) {
 	  try {
 		  const src = 'setInterval(function(){postMessage(0)},' + ms + ');';
@@ -507,6 +524,8 @@ custom_message.addEventListener('focus', function(){
 
 		 }
 		 
+		 announceClock(remainMsecAbs, elapsedMSec, !!pausedAt, elapsedMSec < 0, adjusting_up ? -1.25 : adjusting_down ? -0.75 : -1);
+
 		 if (lastTimeText !== timeText) {
 				 if (lastUpdateTick===0 || timeNow - lastUpdateTick > 750) {
 					 lastUpdateTick = timeNow;
