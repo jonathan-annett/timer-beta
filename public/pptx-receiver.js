@@ -20,6 +20,7 @@
 
 (function () {
   'use strict';
+  if (location.hostname) document.title = location.hostname + ' - PowerPoint receiver';
 
   const $ = id => document.getElementById(id);
   const store = {

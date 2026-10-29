@@ -448,6 +448,8 @@ The `#touch-strip` is hidden via CSS on non-touch devices (`@media (pointer: coa
 
 ## Conventions to Follow
 
+- **Window titles start with the site's host name** — `location.hostname + ' - ' + what` ("timed-show.com - Control Screen"; timer.js `siteTitle()`), set by each page's script; the static `<title>` is only the fallback (file://, before the script runs).
+
 - **State via CSS classes** — visual state always via `setHtmlClass`/`clearHtmlClass`, never via `element.style`.
 - **Time via `timeProvider`** — never `Date.now()` in timer logic.
 - **Commands via `processTimerApiMessage`** — never call timer functions directly from integrations.

@@ -233,7 +233,7 @@ var OverlayView = (function () {
           pip = await window.documentPictureInPicture.requestWindow({ width: w, height: h });
         } catch (err) { pip = null; status('Couldn’t open the floating window: ' + err.message); return; }
         addCss(pip.document, ' html, body { margin: 0; background: #000; overflow: hidden; }');
-        pip.document.title = 'Timer';
+        pip.document.title = (location.hostname || 'Timer') + ' - Overlay';
         home = { parent: el.parentNode, next: el.nextSibling };
         pip.document.body.appendChild(el);                 // the same element: it keeps updating
         pip.addEventListener('resize', () => render());

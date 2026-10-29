@@ -90,7 +90,7 @@
   // ─── Player window ────────────────────────────────────────────────────────
 
   function playerHtml() {
-    return `<html><head><title>Video player</title><style>
+    return `<html><head><title>${location.hostname || 'Timer'} - Video player</title><style>
       :root { --color-main-background: black; }
       html, body { margin: 0; background: var(--color-main-background); overflow: hidden; user-select: none; }
       body.fullscreen { cursor: none; }

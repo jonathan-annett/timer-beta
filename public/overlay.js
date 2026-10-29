@@ -16,6 +16,7 @@
 
 (function () {
   'use strict';
+  if (location.hostname) document.title = location.hostname + ' - Overlay';
 
   const $ = id => document.getElementById(id);
   const store = {

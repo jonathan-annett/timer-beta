@@ -181,7 +181,7 @@
     if (scaling) { view = scaledCopy(norm); norm = C.normalise(view); }
     if (document.activeElement !== $('title')) $('title').value = sheet.title || '';
     if (document.activeElement !== $('per-item')) $('per-item').value = sheet.perItem || 20;
-    document.title = 'Run sheet' + (sheet.title ? ' — ' + sheet.title : '');
+    document.title = (location.hostname || 'Timer') + ' - Run sheet' + (sheet.title ? ' — ' + sheet.title : '');
     renderTable();
     renderStatus();
     renderLive();
@@ -1343,7 +1343,7 @@
   // ─── Boot ─────────────────────────────────────────────────────────────────
 
   if (REMOTE) {
-    document.title = 'Run sheet (remote)';
+    document.title = (location.hostname || 'Timer') + ' - Run sheet (remote)';
     const tag = document.createElement('span');
     tag.id = 'remote-tag';
     tag.textContent = 'Editing the timer on another computer';

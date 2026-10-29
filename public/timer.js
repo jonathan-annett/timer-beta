@@ -97,23 +97,28 @@ let togglePIPMode ;
 
 const isLinked = window.location.search.indexOf("&linked")>0;
 
+// Window titles: the site's name first ("timed-show.com - Control Screen")
+function siteTitle(what) {
+	return (location.hostname || "Presentation Timer") + (what ? " - " + what : "");
+}
+
   if (window.location.search.startsWith("?presenter")) {
 
 	  html.classList.add("reduced");
 	  runMode = "presenter";
 	  remainInfoDisp.textContent = localStorage.getItem("remainInfo") || "";	// the notice now ("Paused", standby); then from storage events
 	  if (fs_api.isFullscreen()) {
-		 document.title = "Presentation Timer - Remote Screen (Fullscreen)";
+		 document.title = siteTitle("Remote Screen (Fullscreen)");
 	  } else {
-		 document.title = "Presentation Timer - Remote Screen";
+		 document.title = siteTitle("Remote Screen");
 	  }
 
   } else {
 
 	 if (fs_api.isFullscreen()) {
-		 document.title = "Presentation Timer - Control Screen (Fullscreen)";
+		 document.title = siteTitle("Control Screen (Fullscreen)");
 	 } else {
-		 document.title = "Presentation Timer - Control Screen";
+		 document.title = siteTitle("Control Screen");
 	 }
 
 	 // The floating overlay (O): local-overlay.js, the same overlay as overlay.html
@@ -403,25 +408,25 @@ custom_message.addEventListener('focus', function(){
 	  if (!fs_api.isFullscreen()) {
 			if (runMode === "presenter") {
 				if (tabCount===1) {
-					docTitle = "Presentation Timer - Single Window";
+					docTitle = siteTitle("Single Window");
 				} else { 
-					docTitle = "Presentation Timer - Remote Screen";
+					docTitle = siteTitle("Remote Screen");
 				}
 			} else  {
 				if (runMode==="controller" ) {
-					docTitle = "Presentation Timer - Control Screen";
+					docTitle = siteTitle("Control Screen");
 				} else {
-				   docTitle = "Presentation Timer";
+				   docTitle = siteTitle("");
 				}
 			}
 	  } else {
 			 if (runMode === "presenter") {
-						document.title = "Presentation Timer - Remote Screen (Fullscreen)";
+						docTitle = siteTitle("Remote Screen (Fullscreen)");
 			 } else  {
 					if (runMode==="controller" ) {
-						docTitle = "Presentation Timer - Control Screen (Fullscreen)";
+						docTitle = siteTitle("Control Screen (Fullscreen)");
 					} else {
-						docTitle = "Presentation Timer (Fullscreen)";
+						docTitle = siteTitle("(Fullscreen)");
 					}
 			}  
 	  } 

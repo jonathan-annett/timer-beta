@@ -64,6 +64,7 @@
   if (!here.length) { store(); return; }
 
   $('title').textContent = 'Bring your settings from the old beta?';
+  if (location.hostname) document.title = location.hostname + ' - Bring your settings';
   $('text').textContent = 'You brought:';
   $('list').innerHTML = labels.map(l => `<li>${l}</li>`).join('');
   $('ask').hidden = false;

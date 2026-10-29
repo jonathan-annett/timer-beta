@@ -11,6 +11,7 @@
 
 (function () {
   'use strict';
+  if (location.hostname) document.title = location.hostname + ' - Control a timer';
 
   const code = document.getElementById('code'), msgEl = document.getElementById('msg');
   const server = new URLSearchParams(location.search).get('remote') || RemotePeer.defaultServer();

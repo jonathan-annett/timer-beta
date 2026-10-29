@@ -13,6 +13,7 @@
 
 (function () {
   'use strict';
+  if (location.hostname) document.title = location.hostname + ' - Remote';
 
   const $ = id => document.getElementById(id);
   // Link: #r=<room>&k=<key> (control) or #r=<room>&v=<view key>&m=<countdown|runsheet>
