@@ -262,6 +262,33 @@ var RemotePeer = (function () {
     if (navigator.connection && navigator.connection.addEventListener) navigator.connection.addEventListener('change', later);
   }
 
+  // Pairing by code (pairing server protocol 6): send the 6-digit code from a timer's share panel on
+  // a fresh socket; the timer answers with this device's link (a URL fragment). Callbacks: onWait()
+  // (the code is live, the timer is being asked), onGranted(frag), onError(reason): one of
+  // CLAIM_ERRORS' keys, 'bad-server' or 'unreachable' (or a reason from a newer server).
+  const CLAIM_ERRORS = {
+    'bad-code': 'That code didn’t work. Codes change every 30 seconds: type the one showing now.',
+    'too-many': 'Too many wrong codes. Wait a minute, then try again.',
+    'no-answer': 'The timer didn’t answer. Is its share panel still open?',
+    'refused': 'The timer didn’t accept this device. Try a new code.',
+    'bad-server': 'That pairing server address isn’t right.',
+    'unreachable': 'Couldn’t reach the pairing server.',
+  };
+  function claim(server, code, cb) {
+    let ws, done = false;
+    const fail = reason => { if (done) return; done = true; try { ws.close(); } catch (_) { /* gone */ } if (cb.onError) cb.onError(reason); };
+    try { ws = new WebSocket(socketUrl(server, { code })); } catch (_) { fail('bad-server'); return; }
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'claim', code }));
+    ws.onmessage = ev => {
+      let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
+      if (m.type === 'claim-wait') { if (cb.onWait) cb.onWait(); }
+      else if (m.type === 'granted' && typeof m.frag === 'string') { done = true; cb.onGranted(m.frag); }
+      else if (m.type === 'error') fail(String(m.reason || 'failed'));
+    };
+    ws.onclose = () => fail('unreachable');
+    ws.onerror = () => {};
+  }
+
   // A name the timer can show for this device until someone gives it a better one ("iPhone · Safari")
   function deviceName() {
     const ua = navigator.userAgent;
@@ -271,5 +298,5 @@ var RemotePeer = (function () {
     return browser ? os + ' · ' + browser : os;
   }
 
-  return { create, parts, joiner, sendBig, defaultServer, socketUrl, keepAlive, retryOnNetworkChange, deviceName };
+  return { create, parts, joiner, sendBig, defaultServer, socketUrl, keepAlive, retryOnNetworkChange, deviceName, claim, CLAIM_ERRORS };
 })();

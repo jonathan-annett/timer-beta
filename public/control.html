@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+ * control.html
+ * A friend's phone pairs with a timer by code: the timer (on a phone or tablet: ⋯ → Let a friend
+ * control this timer) shows a 6-digit code; typed here, it opens the same remote.html link its QR
+ * code would. Short address on the Cloudflare site: <host>/control.
+ * MIT Licensed
+-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>Control a timer</title>
+  <style>
+    :root { --bg: #000; --text: #e8e8e8; --dim: #8a8a8a; --accent: #4aa8ff; --ok: #5fd35f; --bad: #ff8080; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font: 17px/1.45 "Helvetica Neue", Arial, sans-serif; }
+    main { max-width: 480px; margin: 0 auto; padding: max(32px, env(safe-area-inset-top)) 16px 32px; text-align: center; }
+    h1 { font-size: 24px; margin: 0 0 10px; color: #fff; }
+    p { color: var(--dim); margin: 0 0 22px; }
+    #code { font: bold 44px/1.1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .3em; text-align: center; width: 100%; max-width: 340px;
+      background: #111; color: #fff; border: 2px solid #333; border-radius: 12px; padding: 12px 0 12px .3em; font-variant-numeric: tabular-nums; }
+    #code:focus { outline: none; border-color: var(--accent); }
+    #msg { min-height: 3em; margin-top: 14px; }
+    .bad { color: var(--bad); } .ok { color: var(--ok); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Control a timer</h1>
+    <p>On the timer, open <b>⋯</b> → <b>Let a friend control this timer</b> (or <b>share</b> on a computer). Type the 6-digit code it shows:</p>
+    <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······" aria-label="Pairing code">
+    <div id="msg"></div>
+  </main>
+  <script src="remote-peer.js?v=685deaaa"></script>
+  <script src="control.js?v=c5ee5845"></script>
+</body>
+</html>

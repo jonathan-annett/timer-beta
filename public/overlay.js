@@ -49,36 +49,25 @@
     });
   }
 
-  const CODE_ERRORS = {
-    'bad-code': 'That code didn’t work. Codes change every 30 seconds: type the one showing now.',
-    'too-many': 'Too many wrong codes. Wait a minute, then try again.',
-    'no-answer': 'The timer didn’t answer. Is its share panel still open?',
-    'refused': 'The timer didn’t accept this computer. Try a new code.',
-  };
   function claim(code) {
     const msg = (text, kind) => { $('codemsg').textContent = text; $('codemsg').className = kind || ''; };
     msg('Checking…');
     $('code').disabled = true;
-    let ws;
-    try { ws = new WebSocket(RemotePeer.socketUrl($('server').value.trim() || defaultServer(), { code })); } catch (_) { msg('That pairing server address isn’t right.', 'bad'); $('code').disabled = false; return; }
-    let done = false;
-    const fail = text => { if (done) return; done = true; msg(text, 'bad'); $('code').disabled = false; $('code').value = ''; $('code').focus(); try { ws.close(); } catch (_) { /* gone */ } };
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'claim', code }));
-    ws.onmessage = ev => {
-      let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
-      if (m.type === 'claim-wait') msg('Found it. Connecting…', 'ok');
-      else if (m.type === 'granted') {
-        const l = parse(m.frag);
-        if (!l.r || !l.v) return fail('The timer sent something unexpected. Try again.');
-        done = true;
-        store.set(SAVED_LINK, m.frag);
+    RemotePeer.claim($('server').value.trim() || defaultServer(), code, {
+      onWait: () => msg('Found it. Connecting…', 'ok'),
+      onGranted: frag => {
+        const l = parse(frag);
+        if (!l.r || !l.v) { msg('The timer sent something unexpected. Try again.', 'bad'); $('code').disabled = false; return; }
+        store.set(SAVED_LINK, frag);
         link = l;
         $('enter').hidden = true;
         start();
-      } else if (m.type === 'error') fail(CODE_ERRORS[m.reason] || 'Pairing failed: ' + m.reason);
-    };
-    ws.onclose = () => fail('Couldn’t reach the pairing server. Check the address under “Pairing server”.');
-    ws.onerror = () => {};
+      },
+      onError: reason => {
+        msg(reason === 'unreachable' ? 'Couldn’t reach the pairing server. Check the address under “Pairing server”.' : RemotePeer.CLAIM_ERRORS[reason] || 'Pairing failed: ' + reason, 'bad');
+        $('code').disabled = false; $('code').value = ''; $('code').focus();
+      },
+    });
   }
 
   // ─── Connection (as a view-only display) ──────────────────────────────────

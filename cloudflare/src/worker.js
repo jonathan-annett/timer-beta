@@ -89,6 +89,7 @@ export default {
     if (PPTX_FILES.includes(url.pathname) && !feature(env, 'pptx')) return new Response('Not found', { status: 404 });   // (run_worker_first)
     if (url.pathname === '/') return Response.redirect(new URL('/timer.html' + url.search, url).href, 302);
     if (url.pathname === '/o' || url.pathname === '/o/') return Response.redirect(new URL('/overlay.html' + url.search, url).href, 302);   // short, to type
+    if (url.pathname === '/control' || url.pathname === '/control/') return Response.redirect(new URL('/control.html' + url.search, url).href, 302);   // a friend's phone, to type a code
     return env.ASSETS.fetch(req);      // anything that isn't a file: the 404
   },
 };

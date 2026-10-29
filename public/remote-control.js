@@ -164,14 +164,21 @@
 
   // ─── Pairing a computer by code (pairing server protocol 6) ──────────────
   // "Pair a computer" asks the server for a 6-digit code (a new one every 30 s) and shows it. Typed
-  // on another computer's overlay page (on the same network), the server tells us; we answer with
-  // that computer's link: the view-only overlay link, plus a token that lets it past "Require a
-  // PIN" (typing the code was the proof). Then the code goes away. Only while the panel is open.
-  const pair = { on: false, code: null, ms: 30000, at: 0, note: '' };
+  // on another computer's overlay page, the server tells us; we answer with that computer's link
+  // (the view-only overlay link); it then passes the proximity check like any device. Then the code
+  // goes away. Only while the panel is open.
+  // On a phone or tablet (TOUCH) the panel shows a code by default instead of the QR code (kind
+  // 'phone'): a friend types it on <host>/control (control.html) and gets the link the QR code
+  // would have given (linkMode(): remote control or countdown display). "Show QR code instead"
+  // remembers the choice (TOUCH_QR_KEY).
+  const pair = { on: false, kind: 'overlay', code: null, ms: 30000, at: 0, note: '' };
+  const TOUCH_QR_KEY = 'remote_touch_qr';
+  const codeOk = () => !hosted || serverProtocol >= MIN_PROTOCOL.code;   // (not known until hosted)
+  const codeMode = () => TOUCH && localStorage.getItem(TOUCH_QR_KEY) !== '1' && codeOk();
   function sendServer(obj) { if (ws && ws.readyState === WebSocket.OPEN && hosted) ws.send(JSON.stringify(obj)); }
-  function startPairing() {
+  function startPairing(kind = 'overlay') {
     if (!hosted || serverProtocol < MIN_PROTOCOL.code) return;
-    pair.on = true; pair.code = null; pair.note = '';
+    pair.on = true; pair.kind = kind; pair.code = null; pair.note = '';
     sendServer({ type: 'pair', on: true });
     renderPanel();
   }
@@ -184,16 +191,23 @@
   function grantClaim(id) {
     if (typeof id !== 'string') return;
     if (!pair.on) { sendServer({ type: 'deny', id }); return; }
-    sendServer({ type: 'grant', id, frag: shareFragment('overlay') });   // it then passes the proximity check like any device
+    const mode = pair.kind === 'phone' ? linkMode() : 'overlay';
+    sendServer({ type: 'grant', id, frag: shareFragment(mode) });   // it then passes the proximity check like any device
     pair.on = false; pair.code = null;      // the server has dropped the code too
-    const d = new Date();
-    pair.note = `A computer was paired as an overlay at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const d = new Date(), hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    pair.note = pair.kind === 'phone' ? `A phone typed the code at ${hm} (${mode === 'control' ? 'remote control' : 'countdown display'}). When it shows a number, type it below.`
+      : `A computer was paired as an overlay at ${hm}`;
     renderPanel();
   }
   // The overlay page's address, to type on the other computer: short (<host>/o) on the Cloudflare site, whose Worker redirects it
   const overlayPage = () => {
     if (RemotePeer.defaultServer().endsWith('/ws')) return location.host + '/o';
     const u = new URL('overlay.html', location.href); u.search = ''; u.hash = ''; return u.toString();
+  };
+  // The page a friend's phone opens to type the code: <host>/control on the Cloudflare site
+  const controlPage = () => {
+    if (RemotePeer.defaultServer().endsWith('/ws')) return location.host + '/control';
+    const u = new URL('control.html', location.href); u.search = ''; u.hash = ''; return u.toString();
   };
 
   function relayTo(id) {
@@ -740,6 +754,8 @@
 #phone-panel .pp-askrow input { width: 5em; flex: none; font: 18px "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; text-align: center;
   background: #111; color: #fff; border: 1px solid #665200; border-radius: 4px; padding: 4px; }
 #phone-panel .pp-askrow button { flex: 1; }
+#phone-panel.pp-touch .pp-code .pp-digits { font-size: 48px; }
+#phone-panel.pp-touch .pp-code .pp-codehint { font-size: 14px; }
 #phone-panel.pp-touch .pp-pin { font-size: 14px; margin: 8px 0 4px; }
 #phone-panel.pp-touch .pp-ask { font-size: 15px; }
 #phone-panel.pp-touch .pp-askrow input { font-size: 24px; width: 4.2em; }
@@ -820,7 +836,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     if (TOUCH) el.classList.add('pp-touch');
     el.innerHTML = `
       <div class="pp-head"><b>${TOUCH ? 'Let a friend control this timer' : 'Share this timer'}</b> <span class="pp-exp">experimental</span><button class="pp-close" aria-label="Close">✕</button></div>
-      ${TOUCH ? '<div class="pp-intro">They scan this code with their phone. Choose what their phone becomes:</div>' : ''}
+      ${TOUCH ? '<div class="pp-intro"></div>' : ''}
       <div class="pp-status"></div>
       <div class="pp-modes" role="group" aria-label="What the QR code is for">
         <button data-mode="control">${TOUCH ? 'Remote control' : 'Control'}</button><button data-mode="countdown">${TOUCH ? 'Countdown display' : 'Countdown'}</button>${TOUCH ? '' : '<button data-mode="runsheet">Run sheet</button><button data-mode="admin">Admin</button><button data-mode="companion">Companion</button><button data-mode="pptx">PowerPoint</button>'}
@@ -829,6 +845,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       <div class="pp-qr"></div>
       <div class="pp-link"></div>
       <div class="pp-code" hidden></div>
+      ${TOUCH ? '<div class="pp-row pp-qrrow"><button class="pp-qrswitch"></button></div>' : ''}
       <div class="pp-pending"></div>
       <div class="pp-row"><button class="pp-pair" title="Show a 6-digit code to type on another computer on this network (no QR code or link needed)">Pair a computer</button></div>
       <div class="pp-row"><button class="pp-copy">Copy link</button><button class="pp-renew" title="Disconnect all phones and make a new code">New code</button><button class="pp-toggle"></button></div>
@@ -840,6 +857,11 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     document.body.appendChild(el);
     el.querySelector('.pp-close').addEventListener('click', () => { el.hidden = true; stopPairing(); });
     el.querySelector('.pp-pair').addEventListener('click', () => (pair.on ? stopPairing() : startPairing()));
+    el.querySelector('.pp-qrswitch')?.addEventListener('click', () => {
+      if (codeMode()) { localStorage.setItem(TOUCH_QR_KEY, '1'); stopPairing(); }
+      else { localStorage.removeItem(TOUCH_QR_KEY); pair.note = ''; }
+      renderPanel();
+    });
     el.querySelector('.pp-pending').addEventListener('click', ev => {
       const b = ev.target.closest('button[data-act]');
       if (!b) return;
@@ -1001,27 +1023,41 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
 
   function renderPairing(el) {
     const btn = el.querySelector('.pp-pair'), box = el.querySelector('.pp-code');
-    btn.parentElement.style.display = enabled && !TOUCH ? '' : 'none';
     const ok = hosted && serverProtocol >= MIN_PROTOCOL.code;
+    const touchCode = enabled && codeMode();
+    // On a phone/tablet in code mode: a code whenever the panel is open (after one is used, the
+    // note stays up until the panel is opened again)
+    if (touchCode && ok && !pair.on && !pair.note && !el.hidden) { startPairing('phone'); return; }
+    btn.parentElement.style.display = enabled && !TOUCH ? '' : 'none';
     btn.disabled = !ok;
     btn.textContent = pair.on ? 'Cancel pairing' : 'Pair a computer';
     btn.title = ok || !hosted ? btn.title : 'The pairing server is out of date: update remote-server.js (protocol 6) to pair by code';
-    box.hidden = !enabled || !(pair.on || pair.note);
-    // While a code is up it takes the QR code's place
-    el.querySelector('.pp-qr').style.display = enabled && !pair.on ? '' : 'none';
-    el.querySelector('.pp-link').style.display = pair.on ? 'none' : '';
-    el.querySelector('.pp-modes').style.display = enabled && !pair.on ? '' : 'none';   // the code isn't one of these links
-    el.querySelector('.pp-modehint').style.display = pair.on ? 'none' : '';
-    if (pair.on && statusKind === 'ok') el.querySelector('.pp-status').textContent = 'Ready — type this code on the other computer';   // not "scan the code"
-    if (!pair.on) { box.dataset.code = ''; box.innerHTML = pair.note ? `<div class="pp-codehint">${pair.note}</div>` : ''; return; }
+    const sw = el.querySelector('.pp-qrswitch');
+    if (sw) {
+      sw.parentElement.style.display = enabled && codeOk() ? '' : 'none';
+      sw.textContent = codeMode() ? 'Show QR code instead' : 'Use a code instead';
+    }
+    const intro = el.querySelector('.pp-intro');
+    if (intro) intro.textContent = touchCode ? 'Your friend types this code on their phone. Choose what their phone becomes:' : 'They scan this code with their phone. Choose what their phone becomes:';
+    const codeUp = pair.on || touchCode;                 // a code (or "Getting a code…") in the QR code's place
+    box.hidden = !enabled || !(codeUp || pair.note);
+    el.querySelector('.pp-qr').style.display = enabled && !codeUp ? '' : 'none';
+    el.querySelector('.pp-link').style.display = codeUp ? 'none' : '';
+    const desktopCode = pair.on && pair.kind !== 'phone';  // the overlay code isn't one of the links; the phone code gives the chosen one
+    el.querySelector('.pp-modes').style.display = enabled && !desktopCode ? '' : 'none';
+    el.querySelector('.pp-modehint').style.display = desktopCode ? 'none' : '';
+    if (pair.on && statusKind === 'ok') el.querySelector('.pp-status').textContent = pair.kind === 'phone' ? 'Ready — your friend types this code' : 'Ready — type this code on the other computer';   // not "scan the code"
+    if (!pair.on && !(touchCode && !pair.note)) { box.dataset.code = ''; box.innerHTML = pair.note ? `<div class="pp-codehint">${pair.note}</div>` : ''; return; }
     if (box.dataset.code === (pair.code || '-')) return;          // keep the countdown bar running
     box.dataset.code = pair.code || '-';
     const left = pair.code ? Math.max(0, pair.ms - (Date.now() - pair.at)) : 0;
     box.innerHTML = !pair.code ? '<div class="pp-codehint">Getting a code…</div>' :
       `<div class="pp-digits">${pair.code.slice(0, 3)} ${pair.code.slice(3)}</div>` +
       `<div class="pp-ttl" style="animation: pp-ttl ${left}ms linear forwards"></div>` +
-      `<div class="pp-codehint">On the other computer (same network), open <b>${esc(overlayPage())}</b> and type this code. ` +
-      'It becomes a countdown overlay. The code changes every 30 s and works once.</div>';
+      (pair.kind === 'phone'
+        ? `<div class="pp-codehint">On your friend’s phone, open <b>${esc(controlPage())}</b> and type this code. The code changes every 30 s and works once.</div>`
+        : `<div class="pp-codehint">On the other computer, open <b>${esc(overlayPage())}</b> and type this code. ` +
+          'It becomes a countdown overlay. The code changes every 30 s and works once.</div>');
   }
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -1111,6 +1147,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     const big = document.getElementById('phone-qr-big');
     if (big) big.remove();
     el.hidden = true;
+    stopPairing();
     renderPanel();
   }
 
@@ -1143,6 +1180,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     el.hidden = !el.hidden;
     if (el.hidden) stopPairing();
     if (!el.hidden) {
+      if (TOUCH && !pair.on) pair.note = '';      // a fresh code each time it's opened
       document.dispatchEvent(new CustomEvent('timer-panel', { detail: 'phone' }));   // one panel at a time
       if (!enabled) enable();
       renderPanel(true);
@@ -1163,7 +1201,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     const big = document.getElementById('phone-qr-big');
     if (big) { big.click(); return true; }
     const el = document.getElementById('phone-panel');
-    if (el && !el.hidden) { el.hidden = true; return true; }
+    if (el && !el.hidden) { el.hidden = true; stopPairing(); return true; }
     return false;
   });
 

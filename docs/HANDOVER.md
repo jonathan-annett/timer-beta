@@ -105,40 +105,23 @@ instrumented (any extra listener or evaluate). Unknown whether it's real or a te
 is checking O open/close by hand on alpha (also after clicking in the presenter window). Don't
 loop on it: ask the user's result first.
 
-## Next up: "let a friend control this timer" by code (asked 29 Oct; alpha first; not started)
+## Built 29 Oct on alpha: "let a friend control this timer" by code
 
-The user's design: on a phone running the timer, **⋯ → Let a friend control this timer** (the
-touch share panel, `#phone-panel.pp-touch`) shows a **6-digit code by default** (the user expects
-most people to prefer it), with a **Show QR code instead** button (and back). The note says: on
-your friend's phone open **`<this host>/control`** and type the code (alpha.timed-show.com/control
-now; `timed.show/control` once the launch site runs it). The friend's `/control` page has just a
-code box; a right code takes them to the same `remote.html#…` link the QR code opens; their phone
-then shows its 3-digit proximity number and the timer's owner types it into the panel: linked.
-
-How it fits (from reading the code, nothing written yet):
-- Pairing codes already exist (protocol 6) for the overlay: `startPairing()` / `stopPairing()` /
-  `grantClaim()` in `remote-control.js` (`pair` = {on, code, ms, at, note}); `grantClaim` sends
-  `shareFragment('overlay')`. Give `pair` a kind: the touch panel grants `shareFragment(linkMode())`
-  (`control`, or `countdown` if that tab is chosen; touch only offers those two, `TOUCH_MODES`);
-  "Pair a computer" on desktop keeps `overlay`. `pair.note` wording per kind.
-- `renderPairing()` hides the pair button on `TOUCH` and shows the code box in place of the QR
-  (`.pp-code`, `.pp-digits`, CSS countdown bar): on touch, start pairing when the panel opens in
-  code mode (unless the user chose QR: keep that choice, e.g. `localStorage.remote_touch_qr`),
-  stop it on close (already happens), and show `controlPage()` (`<host>/control` on Cloudflare,
-  like `overlayPage()`'s `/o`) in the hint.
-- Move the claim logic out of `overlay.js` (`claim()`, `CODE_ERRORS`) into `remote-peer.js`
-  (e.g. `RemotePeer.claim(server, code, {onWait, onGranted(frag), onError(reason)})`) and use it
-  from both `overlay.js` and a new `control.html` + `control.js` (code box only; on `granted`,
-  `location.replace('remote.html#' + frag)`; server from `?remote=` or `RemotePeer.defaultServer()`).
-- Worker (`cloudflare/src/worker.js`): `/control` (and `/control/`) → 302 `control.html`, beside `/o`.
-- The server needs no change (codes are generic; the proximity check guards the new device).
-- Tests: extend `overlay_pair.py` or add `control_pair.py` (touch context: `has_touch=True`,
-  `is_mobile=True`, so the timer uses the touch panel), approve with `_proximity.approve(t)`.
-- Docs: README (*Let a friend control this timer*, the phone section), CLAUDE.md (touch panel,
-  *Pairing by code*).
+On a phone running the timer, **⋯ → Let a friend control this timer** now shows a 6-digit code by
+default (**Show QR code instead** switches, remembered in `remote_touch_qr`); the friend opens
+`<host>/control` (`control.html` + `control.js`; Worker redirect) and types it, lands on
+`remote.html#…` with the control or countdown link chosen in the panel, then the 3-digit proximity
+check. Claim logic moved to `RemotePeer.claim()` (overlay uses it too). No server change. Test:
+`tests/e2e/control_pair.py` (passes against both servers). Details in CLAUDE.md (*Mobile / Touch*,
+*Pairing by code*). Waiting for the user to try it on real phones via alpha.
 
 ## Open (offered or asked, not started)
 
+- **Serve the timer at `/`** (asked 29 Oct, "when you get time"): the Worker already 302s `/` →
+  `timer.html`; the user confirmed: serve it *at* `/` (address stays `alpha.timed-show.com/`;
+  cleaner, nicer to copy and paste).
+  Check what assumes the `timer.html` path first: `?presenter` windows, `timer.html` links in the
+  README/other pages, the PWA manifest's start URL, the help's `unlinkSelf()`.
 - Warn when a share link is opened in the same browser as the timer ("use the presenter window";
   Continue anyway): offered, user didn't object.
 - Beta on Cloudflare: Worker `timed-show-beta` + `beta.timed-show.com`, GitHub → Cloudflare deploys
