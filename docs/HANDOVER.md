@@ -22,6 +22,7 @@ setup and protocol; `tests/e2e/README.md` is how to test.
   new beta first. **Don't run `update-server.sh` now**: it would pull the new `main` onto the VPS
   (the plan is `legacy-beta` there instead).
 - Keep developing on `alpha` (level with `main` after the promotion) and promote again the same way.
+- `main` has one local commit not pushed yet (`1cac14e`, handover only): push it with the next promotion.
 - **Deploy alpha** (no push needed): `cd cloudflare && set -a; . ~/.config/timed-show.env; set +a; npx wrangler deploy --env alpha`.
   Do it after each committed change the user should see; it takes ~15 s.
 - **Credentials (outside the repo, never print them):** `~/.config/timed-show.env`
@@ -103,6 +104,38 @@ again should close the overlay) fail in the plain headless run, but pass wheneve
 instrumented (any extra listener or evaluate). Unknown whether it's real or a test quirk; the user
 is checking O open/close by hand on alpha (also after clicking in the presenter window). Don't
 loop on it: ask the user's result first.
+
+## Next up: "let a friend control this timer" by code (asked 29 Oct; alpha first; not started)
+
+The user's design: on a phone running the timer, **⋯ → Let a friend control this timer** (the
+touch share panel, `#phone-panel.pp-touch`) shows a **6-digit code by default** (the user expects
+most people to prefer it), with a **Show QR code instead** button (and back). The note says: on
+your friend's phone open **`<this host>/control`** and type the code (alpha.timed-show.com/control
+now; `timed.show/control` once the launch site runs it). The friend's `/control` page has just a
+code box; a right code takes them to the same `remote.html#…` link the QR code opens; their phone
+then shows its 3-digit proximity number and the timer's owner types it into the panel: linked.
+
+How it fits (from reading the code, nothing written yet):
+- Pairing codes already exist (protocol 6) for the overlay: `startPairing()` / `stopPairing()` /
+  `grantClaim()` in `remote-control.js` (`pair` = {on, code, ms, at, note}); `grantClaim` sends
+  `shareFragment('overlay')`. Give `pair` a kind: the touch panel grants `shareFragment(linkMode())`
+  (`control`, or `countdown` if that tab is chosen; touch only offers those two, `TOUCH_MODES`);
+  "Pair a computer" on desktop keeps `overlay`. `pair.note` wording per kind.
+- `renderPairing()` hides the pair button on `TOUCH` and shows the code box in place of the QR
+  (`.pp-code`, `.pp-digits`, CSS countdown bar): on touch, start pairing when the panel opens in
+  code mode (unless the user chose QR: keep that choice, e.g. `localStorage.remote_touch_qr`),
+  stop it on close (already happens), and show `controlPage()` (`<host>/control` on Cloudflare,
+  like `overlayPage()`'s `/o`) in the hint.
+- Move the claim logic out of `overlay.js` (`claim()`, `CODE_ERRORS`) into `remote-peer.js`
+  (e.g. `RemotePeer.claim(server, code, {onWait, onGranted(frag), onError(reason)})`) and use it
+  from both `overlay.js` and a new `control.html` + `control.js` (code box only; on `granted`,
+  `location.replace('remote.html#' + frag)`; server from `?remote=` or `RemotePeer.defaultServer()`).
+- Worker (`cloudflare/src/worker.js`): `/control` (and `/control/`) → 302 `control.html`, beside `/o`.
+- The server needs no change (codes are generic; the proximity check guards the new device).
+- Tests: extend `overlay_pair.py` or add `control_pair.py` (touch context: `has_touch=True`,
+  `is_mobile=True`, so the timer uses the touch panel), approve with `_proximity.approve(t)`.
+- Docs: README (*Let a friend control this timer*, the phone section), CLAUDE.md (touch panel,
+  *Pairing by code*).
 
 ## Open (offered or asked, not started)
 
