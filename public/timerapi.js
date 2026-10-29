@@ -189,7 +189,7 @@ function processTimerApiMessage(msg) {
 
         case "presentermode": {
             if (runMode !== "presenter") {
-                location.replace("/?presenter");
+                location.replace(location.pathname + "?presenter");   // (was "/?presenter": the site root, wrong under /beta/)
             }
             break;
         }

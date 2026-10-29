@@ -22,6 +22,9 @@ setup and protocol; `tests/e2e/README.md` is how to test.
   new beta first. **Don't run `update-server.sh` now**: it would pull the new `main` onto the VPS
   (the plan is `legacy-beta` there instead).
 - Keep developing on `alpha` (level with `main` after the promotion) and promote again the same way.
+  **Before each promotion:** in `public/changelog.html` turn the `next` section into the release
+  (`data-version` = the date, heading to match; user-facing wording), commit, then merge: beta users
+  get a *What's new* toast on their next reload. Add to `next` as features land on alpha.
 - `main` has one local commit not pushed yet (`1cac14e`, handover only): push it with the next promotion.
 - **Deploy alpha** (no push needed): `cd cloudflare && set -a; . ~/.config/timed-show.env; set +a; npx wrangler deploy --env alpha`.
   Do it after each committed change the user should see; it takes ~15 s.

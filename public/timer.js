@@ -286,7 +286,7 @@ custom_message.addEventListener('focus', function(){
 		 if (window.opener) window.close();
 		 timerWin = undefined;
 	  } else {
-		 timerWin = open("timer.html?presenter", 'remote_timer_window', "location=0");
+		 timerWin = open(location.pathname + "?presenter", 'remote_timer_window', "location=0");   // this page's own address: / on the Cloudflare site, timer.html elsewhere
 		 if (timerWin) {
 			timerWin.addEventListener ("load",function(){
 				console.log("timer win loaded");

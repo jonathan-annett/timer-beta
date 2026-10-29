@@ -10,7 +10,7 @@
   "main": "src/worker.js",
   "compatibility_date": "2026-10-01",
   "assets": { "directory": "../public", "binding": "ASSETS", "html_handling": "none",   // timer.html stays timer.html
-              "run_worker_first": ["/pptx.html", "/pptx-receiver.js", "/Pptx-WsController.ps1"] },   // so FEATURES can refuse them
+              "run_worker_first": ["/", "/timer.html", "/pptx.html", "/pptx-receiver.js", "/Pptx-WsController.ps1"] },   // the timer at /; FEATURES can refuse the PowerPoint files
   "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
   "durable_objects": {
     "bindings": [

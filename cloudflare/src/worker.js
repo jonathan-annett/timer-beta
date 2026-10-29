@@ -87,7 +87,10 @@ export default {
     }
     if (url.pathname === '/ws') return socket(req, env, url);
     if (PPTX_FILES.includes(url.pathname) && !feature(env, 'pptx')) return new Response('Not found', { status: 404 });   // (run_worker_first)
-    if (url.pathname === '/') return Response.redirect(new URL('/timer.html' + url.search, url).href, 302);
+    // The timer lives at / (a short address to copy and paste); old timer.html links come here
+    // (302, so it can be undone without browsers remembering it)
+    if (url.pathname === '/') return env.ASSETS.fetch(new Request(new URL('/timer.html', url), req));
+    if (url.pathname === '/timer.html') return Response.redirect(new URL('/' + url.search, url).href, 302);
     if (url.pathname === '/o' || url.pathname === '/o/') return Response.redirect(new URL('/overlay.html' + url.search, url).href, 302);   // short, to type
     if (url.pathname === '/control' || url.pathname === '/control/') return Response.redirect(new URL('/control.html' + url.search, url).href, 302);   // a friend's phone, to type a code
     return env.ASSETS.fetch(req);      // anything that isn't a file: the 404

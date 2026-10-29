@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+ * changelog.html
+ * What's new, newest first. whats-new.js reads it on the timer page and shows a toast with the
+ * releases this browser hasn't seen yet. Each release is <section class="release" data-version="…">
+ * with an <h2> and a short <ul> (the toast shows the lists as they are).
+ *
+ * Working on alpha: add items to the data-version="next" section (it's never shown as a toast).
+ * Promoting to beta: change "next" to the date (YYYY-MM-DD; add b, c… for a second one that day),
+ * its heading to match, and start a fresh empty "next" section above it only after the merge.
+ * MIT Licensed
+-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>What's new · Timer</title>
+  <style>
+    :root { --bg: #0b0b0b; --panel: #151515; --line: #2a2a2a; --text: #ddd; --dim: #888; --accent: #4aa8ff; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 "Helvetica Neue", Arial, sans-serif; }
+    main { max-width: 720px; margin: 0 auto; padding: 28px 16px 48px; }
+    h1 { font-size: 24px; color: #fff; margin: 0 0 4px; }
+    .sub { color: var(--dim); margin: 0 0 24px; }
+    .release { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; }
+    .release h2 { font-size: 18px; color: #fff; margin: 0 0 8px; }
+    .release[data-version="next"] { border-style: dashed; }
+    .release[data-version="next"] h2::after { content: " · in testing, not released yet"; color: var(--dim); font-weight: normal; font-size: 14px; }
+    ul { margin: 0; padding-left: 1.2em; }
+    li { margin: 4px 0; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>What's new</h1>
+    <p class="sub">Changes to the timer, newest first. <a href="./">Back to the timer</a></p>
+
+    <section class="release" data-version="next">
+      <h2>Next update</h2>
+      <ul>
+        <li><b>Let a friend control your timer with a code.</b> On a phone or tablet, tap <b>⋯ → Let a friend control this timer</b>: your friend opens <b>/control</b> on this site and types the 6-digit code (or scans a QR code instead). <b>⋯ → Take back control</b> disconnects them at once.</li>
+        <li><b>Shorter address:</b> the timer is now just the site's address, nicer to copy and share. Old links still work.</li>
+        <li><b>Phone timer:</b> a full-screen button, and <b>Bar</b>, <b>Clock</b> and <b>Undo pauses</b> in the <b>⋯</b> menu. Bigger details when the phone is on its side; the progress bar sits above the buttons; messages fit the screen upright.</li>
+        <li><b>Keyboard on a remote:</b> a remote control opened on a computer takes the timer's own shortcuts (durations, Space, pause, arrows, B/M/T…).</li>
+        <li><b>Virtual Stream Deck:</b> the Backlight key dims the phone's deck along with a real one.</li>
+        <li>Phones that are disconnected or unpaired go back to the code screen, ready to pair again.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

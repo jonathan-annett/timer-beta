@@ -100,7 +100,7 @@ html body div.kw-note.kw-note.kw-gone { opacity: 0; }
   }
 
   // ─── The presenter window and the run sheet editor ───────────────────────
-  const PRESENTER = /timer\.html$/.test(location.pathname) && location.search.startsWith('?presenter');
+  const PRESENTER = /(^|\/)(timer\.html)?$/.test(location.pathname) && location.search.startsWith('?presenter');   // (the timer is / on the Cloudflare site)
   const EDITOR = /runsheet\.html$/.test(location.pathname) && !/[?&]remote\b/.test(location.search);
   if (PRESENTER || EDITOR) {
     let badge = null;

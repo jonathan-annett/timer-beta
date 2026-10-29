@@ -42,7 +42,7 @@
     if (m) data = decode(m[1]);
   } catch (_) { data = null; }
   history.replaceState(null, '', location.pathname);          // out of the address bar either way
-  const open = () => location.replace('timer.html');
+  const open = () => location.replace('./');   // the timer (/ on the Cloudflare site)
 
   if (!data || typeof data !== 'object') { open(); return; }
   const take = {};
