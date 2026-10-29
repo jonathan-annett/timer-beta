@@ -227,7 +227,7 @@
     document.body.classList.toggle('over', !!state.over);
     document.body.classList.toggle('impending', !!state.impending && !state.over);
     document.body.classList.toggle('paused', !!state.paused);
-    $('substate').textContent = state.paused ? 'Paused' : (state.adjUp || state.adjDown) ? 'Adjusting…' : (state.def ? 'Default ' + state.def : '');
+    $('substate').textContent = state.standby ? state.standby : state.paused ? 'Paused' : (state.adjUp || state.adjDown) ? 'Adjusting…' : (state.def ? 'Default ' + state.def : '');
     $('pause').textContent = state.paused ? 'Resume' : 'Pause';
     $('catchup').disabled = !(state.adjUp || state.adjDown);
     $('catchup').classList.toggle('on', !!(state.adjUp || state.adjDown));
@@ -685,7 +685,7 @@
     if (!presenterMode() || !frameReady) return;
     $('cdframe').contentWindow.postMessage({
       t: 'display', cls: state.cls || '', remain: state.remain || '', msg: state.msg || '',
-      pct: state.pct || 0, full: isFull(),
+      pct: state.pct || 0, full: isFull(), info: state.standby || (state.paused ? 'Paused' : ''),   // the presenter's notice
     }, location.origin);
   }
   window.addEventListener('message', e => {
@@ -860,7 +860,7 @@
   let lastList = null, cdSig = '', rsvSig = '';
   function renderDisplays() {
     const remain = (state.over ? '+' : '') + (state.remain || '–:––');
-    const sub = state.paused && state.msgs ? 'Paused' : '';     // status messages follow the timer's M switch
+    const sub = state.standby ? state.standby : state.paused && state.msgs ? 'Paused' : '';     // status messages follow the timer's M switch (standby always shows)
 
     postDisplay();
 

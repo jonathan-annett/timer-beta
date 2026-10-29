@@ -98,6 +98,7 @@
     const it = norm.items[i];
     if (state.dayBase == null) state.dayBase = dayBaseNow();
     state.index = i; state.currentId = it.id; state.finished = false;
+    state.standby = false;                        // (the timer's start below ends its standby)
     const entry = { id: it.id, name: it.name, planned: null, plannedDur: it.eff, actual: now() };
     state.log.push(entry);
     entry.planned = plannedStartMs(i);            // after push: an unanchored show is pinned to its first entry
@@ -166,6 +167,7 @@
     if (!h) { flash('Nothing to go back to'); return false; }
     stopRunsheetVideo();                          // undoing a video item stops it (it's then cued again)
     if (h.timer) api({ cmd: 'restore', state: h.timer });
+    if (h.timer && h.timer.standby && h.index < 0) { state.standby = true; sendStandby(); }   // back to before the show: standing by again
     state.index = h.index; state.currentId = h.currentId; state.finished = h.finished;
     state.log.length = Math.min(state.log.length, h.logLen);
     state.dayBase = h.dayBase;
@@ -181,11 +183,81 @@
   }
 
   function resetShow() {
-    state = Object.assign(emptyState(), { active: state.active });
+    state = Object.assign(emptyState(), { active: state.active, autostart: !!state.autostart });
     // Hidden items were deleted after they ran; kept only for the log, which a reset clears
     if (sheet.items.some(x => x.hidden)) { sheet.items = sheet.items.filter(x => !x.hidden); writeSheet(); }
+    if (isActive()) enterStandby();
     commit();
   }
+
+  // ─── Standby and auto start ───────────────────────────────────────────────
+  // After Reset show the timer stands by: paused at the first item's full time with its name as
+  // the message, the notice "Standing by." (timer.js). Resume or restart on the timer (keys, phones,
+  // Companion) then starts the show like Next (standbyStart). With a start time typed for the first
+  // item and auto start ticked, the notice counts down ("Standing by to start in 5:23…") and the
+  // show starts on its own at that time: checked from a worker tick, so a hidden or minimized timer
+  // window still does it on time. It doesn't start late: if the timer wasn't open at the time, it
+  // waits for Next.
+  // The first item's start, when an auto start can be offered for it (before the show, still ahead)
+  function autostartOffer() {
+    if (!isActive() || state.index >= 0 || state.finished) return null;
+    const p0 = firstStartMs();
+    return p0 != null && p0 > now() ? p0 : null;
+  }
+  function firstStartMs() {
+    const first = nextIndex(-1);
+    return norm.anchored && first >= 0 ? plannedStartMs(first) : null;
+  }
+  function autostartAt() {
+    const p0 = state.autostart ? firstStartMs() : null;
+    return p0 != null && p0 > now() ? p0 : null;
+  }
+  let sentStandbyAt, armedFor = null;
+  function sendStandby() {
+    sentStandbyAt = autostartAt();
+    api({ cmd: 'standby', on: true, at: sentStandbyAt });
+  }
+  function enterStandby() {
+    const first = nextIndex(-1);
+    if (first < 0) return;
+    const it = norm.items[first], ms = it.eff * 1000;
+    api({ cmd: 'default', msecs: ms });
+    api({ cmd: 'start', msecs: ms });
+    // paused a moment after the start: paused at exactly N.000 s the display reads N+1 (as dropPlayer's rewind)
+    setTimeout(() => { const s = api({ cmd: 'snapshot' }); if (state.standby && s && s.pausedAt == null) api({ cmd: 'pause' }); }, 60);
+    api({ cmd: 'custommessage', text: it.name });
+    state.standby = true;
+    sendStandby();
+  }
+  function standbyStart() {
+    if (!isActive() || !state.standby || state.index >= 0 || state.finished) return false;
+    next();
+    return true;
+  }
+  function setAutostart(on) {
+    state.autostart = !!on;
+    if (state.standby) sendStandby();
+    commit();
+  }
+  function standbyTick() {
+    if (!state.standby) return;
+    const s = api({ cmd: 'snapshot' });
+    if (s && !s.standby) { state.standby = false; commit(); return; }   // started some other way (a preset, the API)
+    // Armed while it counts down to the start time; fires once when it gets there. So it never starts
+    // late (a timer opened after the time) and Back to before the show doesn't start it again.
+    const p0 = state.autostart ? firstStartMs() : null, t = now();
+    if (p0 != null && t < p0) armedFor = p0;
+    else if (p0 != null && armedFor === p0 && isActive() && state.index < 0 && !state.finished) { armedFor = null; lastAction = 0; next(); return; }
+    if (autostartAt() !== sentStandbyAt) sendStandby();                  // the start time was edited
+  }
+  (function ticker(fn, ms) {                     // a worker's tick: not slowed in a hidden window
+    try {
+      const w = new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage(0)},' + ms + ');'], { type: 'text/javascript' })));
+      w.onmessage = fn; w.onerror = () => { w.terminate(); setInterval(fn, ms); };
+      return;
+    } catch (_) { /* no workers */ }
+    setInterval(fn, ms);
+  })(standbyTick, 500);
 
   // ─── Changing the current item's time ─────────────────────────────────────
   // The run sheet and the countdown are kept in step: a new duration (or end) for the item
@@ -306,6 +378,7 @@
 
   function setActive(on) {
     state.active = !!on;
+    if (!state.active && state.standby) { state.standby = false; api({ cmd: 'standby', on: false }); }   // left paused, as a plain pause
     commit();
   }
 
@@ -423,6 +496,7 @@
       case 'curdur': curDuration(c.id, c.duration == null ? null : Number(c.duration)); break;
       case 'curend': curEnd(c.id, Number(c.endClock), c.nextId || null); break;
       case 'livename': liveName(c.id, c.name); break;
+      case 'autostart': setAutostart(c.on); break;
     }
   }
 
@@ -577,6 +651,12 @@
                x != null ? `≈ ${clockOf(x)}` + (pf != null && clockOf(pf) !== clockOf(x) ? ` (planned ${clockOf(pf)})` : '') : pf != null ? `planned ${clockOf(pf)}` : '');
       } else setRow('next', '', '');
 
+      // "Auto start at 22:40": only before the show, and only with a start time typed for the first item
+      const auto = $('rs_auto'), offer = autostartOffer();
+      if (auto) {
+        auto.hidden = offer == null;
+        if (offer != null) { auto.querySelector('span').textContent = 'Auto start at ' + clockOf(offer); auto.querySelector('input').checked = !!state.autostart; }
+      }
       const pos = state.index >= 0 ? `${Math.min(state.index + 1, norm.timedCount)}/${norm.timedCount}` : `0/${norm.timedCount}`;
       const status = $('rs_status');
       if (status) {
@@ -648,7 +728,9 @@
     }
     // curEnd: when the item running now is due to end (the timer's end, pauses included), for the editor's checks
     const ts = isActive() && !state.finished && state.index >= 0 ? api({ cmd: 'snapshot' }) : null;
+    const autoP0 = autostartOffer();
     const live = JSON.stringify({ text: info.text, kind: info.kind, late: info.late == null ? null : Math.round(info.late),
+      auto: !!state.autostart, autoAt: autoP0, standby: !!state.standby,
       curId: ts ? state.currentId : null, curEnd: ts ? Math.round(timerEndMs(ts) / 1000) * 1000 : null });
     if (live !== lastLive) { lastLive = live; localStorage.setItem(LIVE_KEY, live); }
   }
@@ -686,7 +768,9 @@
   // sheetChanged(): the sheet in localStorage was rewritten by this window (the remote editor,
   // remote-control.js); the storage event that the editor window's writes give doesn't fire then.
   window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive, sheetChanged: onSheetChanged, flash, restart: restartCountdown,
-    curDuration, curEnd, liveName };
+    curDuration, curEnd, liveName, standbyStart, setAutostart };
+  // The dashboard's "Auto start at …" box; blurred after a click so Space goes back to the timer
+  if ($('rs_auto')) $('rs_auto').addEventListener('change', e => { setAutostart(e.target.checked); e.target.blur(); });
 
   // The dashboard sits just below the button bar, whose height depends on zoom and
   // window width (buttons wrap). Publish its bottom edge for the CSS.

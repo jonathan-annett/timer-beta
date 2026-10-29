@@ -21,6 +21,13 @@ function processTimerApiMessage(msg) {
         }
 
 
+        // Standby (run sheet Reset show): {on, at} — at: the auto start time (ms, timer clock) or null.
+        // Only the notice and the flag: the run sheet sets the time and the message itself.
+        case "standby": {
+            setStandby(!!msg.on, msg.on && Number.isFinite(msg.at) ? msg.at : null);
+            break;
+        }
+
         case "undopause": {
             press(onKey_UndoPause);
             break;

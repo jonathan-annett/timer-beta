@@ -222,7 +222,7 @@
       online,
       remain: online && state.remain ? (state.over ? '+' : '') + state.remain : '–:––',
       over: state.over, impending: state.impending, paused: state.paused,
-      msg: online ? String(state.msg || '').trim() || OverlayView.autoMsg(state) : '',
+      msg: online ? OverlayView.stripText(state, state.msg) : '',
       pct: state.pct, bar: state.bar,                 // the shade follows the timer's B too
     });
     $('layout').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.l === view.layout));

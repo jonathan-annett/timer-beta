@@ -101,6 +101,7 @@ const isLinked = window.location.search.indexOf("&linked")>0;
 
 	  html.classList.add("reduced");
 	  runMode = "presenter";
+	  remainInfoDisp.textContent = localStorage.getItem("remainInfo") || "";	// the notice now ("Paused", standby); then from storage events
 	  if (fs_api.isFullscreen()) {
 		 document.title = "Presentation Timer - Remote Screen (Fullscreen)";
 	  } else {
@@ -129,6 +130,12 @@ let thisDuration = defaultDuration;
 let startedAt	   = readNumber ( "startedAt",	   timeProvider.now()	 );
 let endsAt		  = readNumber ( "endsAt",		  startedAt + defaultDuration  ) ;
 let seekEndsAt	  = readNumber ( "seekEndsAt",	  endsAt		);
+// Standby (the run sheet's Reset show): paused at the first item's full time, its name as the
+// message, "Standing by." (or "Standing by to start in 5:23…" with an auto start at `at`) instead of
+// "Paused (for …)". Set by the `standby` API command, kept over a reload, ended by any start.
+var standby = (function () { try { const v = JSON.parse(localStorage.getItem("standby")); return v && typeof v === "object" ? v : null; } catch (e) { return null; } })();
+var lastRemainInfo = null;		// the notice as sent to the presenter window (localStorage remainInfo)
+if (standby && !window.location.search.startsWith("?presenter")) html.classList.add("standby");	// (setHtmlClass isn't defined yet here)
 
 
 let lastUpdateTick = 0;
@@ -327,13 +334,35 @@ custom_message.addEventListener('focus', function(){
   // (performance.now()). A new one goes out only when the last one's prediction is more than 150 ms
   // off or its flags changed, so pauses, adjustments and easing correct themselves.
   var clockAnchor = null;		// (var: displayUpdate runs before this line during startup)
+
+  // Standby on or off (the `standby` API command; restartTimer ends it). at: an auto start time (ms) or null
+  function setStandby(on, at) {
+	  standby = on ? { at: Number.isFinite(at) ? at : null } : null;
+	  if (standby) localStorage.setItem("standby", JSON.stringify(standby)); else localStorage.removeItem("standby");
+	  if (standby) setHtmlClass("standby"); else clearHtmlClass("standby");
+	  clockAnchor = null;			// devices get the new notice with the next anchor
+	  if (timerAPI) timerAPI.send({ setVariableValues: { standby: !!standby, standby_at: standby && standby.at ? local24HourTime(timeProvider.date(standby.at)) : "" } });
+  }
+  function standbyText(t) {
+	  return standby && standby.at && standby.at > t ? "Standing by to start in " + secToStr(Math.ceil((standby.at - t) / 1000)) + "…" : "Standing by.";
+  }
+  // Resume or restart while standing by starts the show (the run sheet's first item), not just the countdown
+  function standbyStart() {
+	  if (!standby) return false;
+	  if (window.runsheet && window.runsheet.standbyStart && window.runsheet.standbyStart()) return true;
+	  setStandby(false);
+	  return false;
+  }
   function announceClock(r, e, paused, future, runRate) {
 	  const t = performance.now();
 	  const rr = paused ? 0 : runRate, er = paused ? 0 : 1, f = future ? 1 : 0, p = paused ? 1 : 0;
+	  // standing by (s), and how long until its auto start (sa ms, counting down; -1 none)
+	  const sb = standby ? 1 : 0, sa = standby && standby.at ? Math.max(0, standby.at - timeProvider.now()) : -1;
 	  const a = clockAnchor;
-	  if (a && a.f === f && a.p === p && a.d === thisDuration && a.rr === rr &&
+	  if (a && a.f === f && a.p === p && a.d === thisDuration && a.rr === rr && a.s === sb && (a.sa < 0) === (sa < 0) &&
+		  (sa < 0 || Math.abs(a.sa - (t - a.t) - sa) < 150) &&
 		  Math.abs(a.r + a.rr * (t - a.t) - r) < 150 && Math.abs(a.e + a.er * (t - a.t) - e) < 500) return;
-	  clockAnchor = { t, r: Math.round(r), e: Math.round(e), d: thisDuration, rr, er, f, p };
+	  clockAnchor = { t, r: Math.round(r), e: Math.round(e), d: thisDuration, rr, er, f, p, s: sb, sa: Math.round(sa) };
 	  if (timerAPI) timerAPI.send({ setVariableValues: { clock: clockAnchor } });
   }
 
@@ -400,6 +429,13 @@ custom_message.addEventListener('focus', function(){
 	  }
 	  
 	  if ((runMode==="controller" || tabCount=== 1) && !isLinked ) {
+		 // A presenter window doing the timing itself (it's the only timer tab, e.g. while the controller
+		 // reloads) starts from what's saved, not what it read when it opened: otherwise it wrote that
+		 // old end time back and the reloaded controller's countdown jumped
+		 if (runMode === "presenter") {
+			 startedAt = readNumber("startedAt", startedAt); endsAt = readNumber("endsAt", endsAt); seekEndsAt = readNumber("seekEndsAt", seekEndsAt);
+			 pausedAt = readNumber("pausedAt", undefined); pauseAcum = readNumber("pauseAcum", 0);
+		 }
 		 
 		 let pausedMsec = pausedAt ? timeNow-pausedAt : 0;
 		  
@@ -454,7 +490,7 @@ custom_message.addEventListener('focus', function(){
 		 
 		 if (pausedMsec!=0) {
 			 const pausedTimeStr = secToStr(pausedMsec / oneSecond);
-			 remainInfoDisp.textContent =  runMode === "presenter" ? "Paused" : pausedTimeStr;
+			 remainInfoDisp.textContent = standby ? standbyText(timeNow) : runMode === "presenter" ? "Paused" : pausedTimeStr;
 			 endsDisp.textContent =  local24HourTime ( timeProvider.date(seekEndsAt+pausedMsec) );
 			 const accumTimeStr = secToStr((pauseAcum+pausedMsec) / oneSecond);
 			 extraTimeDisp.textContent = "+ "+accumTimeStr+" pauses";
@@ -525,6 +561,13 @@ custom_message.addEventListener('focus', function(){
 		 }
 		 
 		 announceClock(remainMsecAbs, elapsedMSec, !!pausedAt, elapsedMSec < 0, adjusting_up ? -1.25 : adjusting_down ? -0.75 : -1);
+		 // The notice for a presenter window beside this one (it doesn't work the timer out itself)
+		 const remainInfo = !pausedAt ? "" : standby ? standbyText(timeNow) : "Paused";
+		 if (remainInfo !== lastRemainInfo) {
+			 lastRemainInfo = remainInfo; localStorage.setItem("remainInfo", remainInfo);
+			 // the standby notice on the bus (the timer's own overlay, Companion); devices work it out from the anchor
+			 if (timerAPI) timerAPI.send({ setVariableValues: { standby_text: standby && pausedAt ? remainInfo : "" } });
+		 }
 
 		 if (lastTimeText !== timeText) {
 				 if (lastUpdateTick===0 || timeNow - lastUpdateTick > 750) {
@@ -758,6 +801,7 @@ custom_message.addEventListener('focus', function(){
 
   
   function restartTimer(useDuration) {
+	if (standby) setStandby(false);		// any start ends standby
 	thisDuration = useDuration ===undefined ? defaultDuration : useDuration;
 	lastUpdateTick = 0;
 	startedAt  = timeProvider.now();  
@@ -813,6 +857,7 @@ custom_message.addEventListener('focus', function(){
 		  pausedAt: pausedAt === undefined ? null : pausedAt,
 		  pauseAcum,
 		  message: currentCustomMessage(),
+		  standby: !!standby,
 	  };
   }
 
@@ -958,6 +1003,7 @@ function onLocalStorage(ev){
 	     
 	 }
 	 
+	 if (runMode==="presenter" && ev.key==="remainInfo") remainInfoDisp.textContent = ev.newValue || "";
 	 if (runMode==="presenter" && (ev.key==="showbar"  ||  ev.key.startsWith("remainDisp"))){
 		 
 	   remainDisp.textContent = localStorage.getItem("remainDisp");
@@ -1069,6 +1115,7 @@ function getTabCount(cont) {
 let custom_msg_timeout;
 
 function onKey_Pause(ev) {
+		if (standby && html.classList.contains("paused") && standbyStart()) return;   // Resume in standby: the show starts
 		const timeNow = timeProvider.now();
 		html.classList.toggle("paused");
 		lastTimeText="";
@@ -1210,6 +1257,7 @@ function onKey_Ctrl_Q(ev) {
 
 
 function onKey_Space(ev) {
+	if (standbyStart()) return;			// in standby: the show starts (the run sheet's first item)
  
 	const preserve_default = defaultDuration;
 		

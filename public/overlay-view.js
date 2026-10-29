@@ -75,8 +75,10 @@ var OverlayView = (function () {
 
   // The timer's own notices, as its presenter screen shows them (timer.css #remain_info_message),
   // for when its messages switch (M) is on and no message of the operator's is up.
-  // s: { msgs, paused, over, impending }
+  // s: { msgs, paused, over, impending, standby }. Standby (run sheet Reset show) always shows,
+  // like the timer's own notice; see withStandby for the message strip
   function autoMsg(s) {
+    if (s.standby) return s.standby;
     if (!s.msgs) return '';
     return s.paused ? 'Paused' : s.over ? 'Time is Up' : s.impending ? 'Wrap up - last minute' : '';
   }
@@ -328,5 +330,12 @@ var OverlayView = (function () {
   const supported = () => 'documentPictureInPicture' in window || !!document.pictureInPictureEnabled;
   // The video fallback is used here (Safari, Firefox): create the view at load, not in the click
   const needsVideo = () => !('documentPictureInPicture' in window) && !!document.pictureInPictureEnabled;
-  return { create, autoMsg, supported, needsVideo, LAYOUTS };
+  // The message strip's text: the operator's message, with the standby notice after it while standing by
+  // (the message is then the first item's name: "Keynote · Standing by to start in 5:23…")
+  function stripText(s, msg) {
+    msg = String(msg || '').trim();
+    if (s.standby) return msg ? msg + ' · ' + s.standby : s.standby;
+    return msg || autoMsg(s);
+  }
+  return { create, autoMsg, stripText, supported, needsVideo, LAYOUTS };
 })();

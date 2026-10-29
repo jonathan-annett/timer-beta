@@ -131,6 +131,8 @@ Changing the **start of the next item** is changing when the current one ends, a
 
 The editor's **Show log** lists planned vs actual start times and how long each item ran, and **Export log CSV** saves it. **Export CSV** saves the sheet as Start, Name, Duration with every time filled in. **Fill in times** writes the calculated times into the table. **Reset show** clears the log to run it again, and the **Run sheet mode** switch turns the whole thing off without deleting the sheet.
 
+**Standing by:** after **Reset show** (in run sheet mode) the timer stands by for the first item: its full time, dimmed and paused, with its name as the message and **Standing by.** in place of the pause notice (on the presenter's screen, phones and the overlay too). **Next**, **Resume** or **Space** starts the show. If the first item has a start time, the dashboard and the editor offer **Auto start at hh:mm**: ticked, the notice counts down (*Standing by to start in 5:23…*) and the show starts by itself at that time, even with the timer window minimized. It starts only on time: if the timer wasn't open then, it waits for Next.
+
 ## Stream Deck
 
 Works with the Stream Deck **Mini**, **MK.2** (and original) and **XL**, straight from the browser with no Elgato software or plugin.

@@ -657,6 +657,13 @@ html.reduced.paused #remain_info_message:after {
     content : "";
 }
 
+/* Standby (run sheet Reset show): the notice is the whole text ("Standing by." / "Standing by to start
+   in 5:23…", set by timer.js), and it shows above the first item's name, which is the message */
+html.standby.paused #remain_info_message:before,
+html.standby.paused #remain_info_message:after { content: "" !important; }
+html.standby.paused #remain_info_message { display: block !important; }
+
+
 
 /* keyboard help text*/
 #disp_next_mins:before {
@@ -1601,6 +1608,10 @@ html.runsheet:not(.reduced) #runsheet_dash { display: block; }
 #runsheet_dash.rs-behind #rs_status { color: #ff6b6b; }
 #runsheet_dash.rs-ahead  #rs_status { color: #5fd35f; }
 #runsheet_dash.rs-flash  #rs_status { color: #ffcc33; }
+/* "Auto start at 22:40" (runsheet.js; only before the show, with a start time for the first item) */
+#rs_auto { display: block; margin-top: 0.3em; padding-left: 4.4em; font-size: 0.85em; color: #ccc; cursor: pointer; pointer-events: auto; user-select: none; }
+#rs_auto[hidden] { display: none; }
+#rs_auto input { vertical-align: middle; cursor: pointer; }
 
 /* In run sheet mode the controller's copy of the message moves to the top right,
    so long item names don't collide with the dashboard (presenter view unchanged). */

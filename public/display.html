@@ -15,7 +15,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Presentation Timer - Remote Screen</title>
-      <link rel="stylesheet" href="timer.css?v=36d1e5ba">
+      <link rel="stylesheet" href="timer.css?v=de25e951">
   </head>
   <body>
       <div id="clock_main">
@@ -53,6 +53,8 @@
             if (html.className !== cls + ' reduced') html.className = cls + ' reduced';
           }
           if (typeof s.remain === 'string' && $('remain_disp').textContent !== s.remain) $('remain_disp').textContent = s.remain;
+          var info = typeof s.info === 'string' ? s.info : '';      // "Paused", or the run sheet's standby notice
+          if ($('remain_info_message').textContent !== info) $('remain_info_message').textContent = info;
           var msg = typeof s.msg === 'string' ? s.msg : '';
           if ($('custom_message').textContent !== msg) $('custom_message').textContent = msg;
           // Full screen is on the page around this one; the presenter hides its hint then

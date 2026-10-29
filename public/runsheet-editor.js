@@ -415,6 +415,10 @@
     const el = $('live');
     el.textContent = state.active ? (live.text || '') : '';
     el.className = live.kind || '';
+    // "Auto start at 22:40": before the show, when the first item has a start time still ahead
+    const auto = $('autostart'), at = state.active && Number.isFinite(live.autoAt) ? live.autoAt : null;
+    auto.hidden = at == null;
+    if (at != null) { auto.querySelector('span').textContent = 'Auto start at ' + clockOf(at); auto.querySelector('input').checked = !!live.auto; }
     $('conn').classList.toggle('show', !controllerAlive());
     if (REMOTE) $('conn').textContent = 'Not connected to the timer right now: reconnecting… Changes made now may not reach it.';
   }
@@ -1204,9 +1208,10 @@
   // Close every slide show on the PowerPoint computers: the holding slide shows
   $('btn-pptxclose').addEventListener('click', () => send('pptxclose'));
   $('btn-reset').addEventListener('click', () => {
-    if (confirm('Reset the show? This clears the log and goes back to before the first item. The timer itself is not changed.')) send('reset');
+    if (confirm('Reset the show? This clears the log and goes back to before the first item. In run sheet mode the timer then stands by with the first item, paused, until it starts.')) send('reset');
   });
   $('active').addEventListener('change', e => send('active', { on: e.target.checked }));
+  $('autostart').querySelector('input').addEventListener('change', e => send('autostart', { on: e.target.checked }));
 
   // ─── Countdown preview, Pause and Restart ─────────────────────────────────
   // The timer's countdown as it shows it: here from the timer window's localStorage

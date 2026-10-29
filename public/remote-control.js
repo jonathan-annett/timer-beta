@@ -492,6 +492,7 @@
       case 'goto':   if (typeof m.id === 'string' && ID_RE.test(m.id)) rs.goTo(m.id); break;
       case 'reset':  rs.reset(); break;
       case 'active': rs.setActive(!!m.on); break;
+      case 'autostart': if (rs.setAutostart) rs.setAutostart(!!m.on); break;
       case 'pptxclose': if (window.pptxHub) window.pptxHub.close(); break;
       case 'pause':  processTimerApiMessage({ cmd: 'pause' }); break;
       case 'restart': if (rs.restart) rs.restart(); break;

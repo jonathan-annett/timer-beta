@@ -8,7 +8,7 @@
  * direct link either. The device counts from when the anchor arrived (performance.now(), minus a),
  * so it runs behind by the one-way delay (tens of ms): invisible at one-second resolution.
  *
- *   const clock = RemoteClock.create(values => …)   called with {remain, over, impending, pct}
+ *   const clock = RemoteClock.create(values => …)   called with {remain, over, impending, pct, standby}
  *                                                   whenever one of them changes
  *   clock.set(anchor)      a new anchor (state.clk)
  *   clock.values()         the current values, or null before the first anchor
@@ -30,16 +30,21 @@ var RemoteClock = (function () {
     return prefix + hr + ':' + (min < 10 ? '0' : '') + min + ':' + sx_;
   }
 
-  // The values the timer shows at this moment for anchor c, aged dt ms (timer.js displayUpdate)
+  // The values the timer shows at this moment for anchor c, aged dt ms (timer.js displayUpdate).
+  // standby: the run sheet's standby notice ("Standing by." / "Standing by to start in 5:23…",
+  // timer.js standbyText), or ''.
   function compute(c, dt) {
     const r = c.r + c.rr * dt, e = c.e + c.er * dt;
-    if (c.f) return { remain: secToStr(c.d / 1000), over: false, impending: e > -60000, pct: 0 };   // before the start
+    const sa = c.s && c.sa >= 0 ? c.sa - dt : -1;
+    const standby = !c.s ? '' : sa > 0 ? 'Standing by to start in ' + secToStr(Math.ceil(sa / 1000)) + '…' : 'Standing by.';
+    if (c.f) return { remain: secToStr(c.d / 1000), over: false, impending: e > -60000, pct: 0, standby };   // before the start
     const s = r / 1000, over = s < 0;
     return {
       remain: over ? secToStr(-s) : secToStr(s + 1),
       over,
       impending: !over && e >= 0 && s <= 60,
       pct: over ? 100 : Math.max(0, Math.min(100, Math.floor(e / c.d * 100))) || 0,
+      standby,
     };
   }
 
@@ -61,7 +66,7 @@ var RemoteClock = (function () {
     function check() {
       const v = values();
       if (!v) return;
-      const sig = v.remain + '|' + v.over + '|' + v.impending + '|' + v.pct;
+      const sig = v.remain + '|' + v.over + '|' + v.impending + '|' + v.pct + '|' + v.standby;
       if (sig !== last) { last = sig; onChange(v); }
     }
     ticker(check, 200);
