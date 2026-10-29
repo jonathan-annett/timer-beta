@@ -190,7 +190,11 @@
     pair.note = `A computer was paired as an overlay at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     renderPanel();
   }
-  const overlayPage = () => { const u = new URL('overlay.html', location.href); u.search = ''; u.hash = ''; return u.toString(); };
+  // The overlay page's address, to type on the other computer: short (<host>/o) on the Cloudflare site, whose Worker redirects it
+  const overlayPage = () => {
+    if (RemotePeer.defaultServer().endsWith('/ws')) return location.host + '/o';
+    const u = new URL('overlay.html', location.href); u.search = ''; u.hash = ''; return u.toString();
+  };
 
   function relayTo(id) {
     return msg => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'to', id, msg })); };

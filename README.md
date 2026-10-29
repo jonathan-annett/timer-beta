@@ -246,7 +246,7 @@ It connects within a second or two. If **Require a PIN** is on, Companion's stat
 
 A countdown that floats on top of everything on another computer, for example over PowerPoint's Presenter View on the slides computer, so the presenter sees their time there. No keys are needed once it's running.
 
-1. On the other computer (same network as the timer), open `overlay.html` next to the timer (for the hosted timer: https://timer.sophtwhere.com/beta/overlay.html).
+1. On the other computer (same network as the timer), open `overlay.html` next to the timer (the share panel shows the address; on a Cloudflare-hosted timer it's just the site plus `/o`, e.g. `alpha.timed-show.com/o`).
 2. On the timer, click **share**, then **Pair a computer**. It shows a 6-digit code that changes every 30 seconds.
 3. Type the code on the other computer. They link up straight away and the code disappears from the timer.
 4. Choose a shape (**16:9**, **Square**, **9:16**, or **9:16 stacked**, with the minutes above the seconds for bigger digits in a narrow window; from an hour it shows *1 hr* above *23:59*), whether to show the **message** (along the top, sized to fit) and the **progress shade** (the background fills in as time runs out), then click **Start overlay**. Drag the floating window where you want it and resize it, then minimize the overlay page.

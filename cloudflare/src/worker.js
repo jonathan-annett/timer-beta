@@ -81,6 +81,7 @@ export default {
     }
     if (url.pathname === '/ws') return socket(req, env, url);
     if (url.pathname === '/') return Response.redirect(new URL('/timer.html' + url.search, url).href, 302);
+    if (url.pathname === '/o' || url.pathname === '/o/') return Response.redirect(new URL('/overlay.html' + url.search, url).href, 302);   // short, to type
     return env.ASSETS.fetch(req);      // anything that isn't a file: the 404
   },
 };
