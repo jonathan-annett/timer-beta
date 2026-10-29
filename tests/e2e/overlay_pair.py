@@ -46,6 +46,10 @@ with sync_playwright() as p:
     t.evaluate("processTimerApiMessage({cmd:'start', msecs: 10*60000})"); t.wait_for_timeout(1500)
     ovt=lambda: o.evaluate("({remain: document.querySelector('#ov .ov-remain span').textContent, msg: document.querySelector('#ov .ov-msg span').textContent, cls: document.getElementById('ov').className, shade: document.querySelector('#ov .ov-shade').style.width, font: document.querySelector('#ov .ov-remain span').style.fontSize})")
     print("timer", t.text_content("#remain_disp"), "-> overlay", ovt())
+    t.keyboard.press("b"); t.keyboard.press("m"); t.wait_for_timeout(1500)      # the timer's bar and messages switches
+    print("after B and M on the timer:", ovt()["cls"], "| timer:", t.evaluate("document.documentElement.className.split(' ').filter(c=>/^show(bar|messages)$/.test(c))"))
+    t.evaluate("processTimerApiMessage({cmd:'start', msecs: 50000})"); t.wait_for_timeout(1500)
+    print("under a minute, no message ->", repr(ovt()["msg"]))
     t.evaluate("processTimerApiMessage({cmd:'custommessage', text:'Please wrap up now'})"); t.evaluate("processTimerApiMessage({cmd:'start', msecs: 50000})"); t.wait_for_timeout(1500)
     print("message + under a minute ->", ovt())
     o.screenshot(path=OUT+"/overlay_169.png")
@@ -57,6 +61,10 @@ with sync_playwright() as p:
     o.click("#layout button[data-l='169']")
     t.evaluate("processTimerApiMessage({cmd:'start', msecs: 1500})"); t.wait_for_timeout(3500)
     print("over ->", ovt())
+    t.evaluate("processTimerApiMessage({cmd:'custommessage', text:''})"); t.wait_for_timeout(1500)
+    print("over, no message ->", repr(ovt()["msg"]))
+    t.keyboard.press("m"); t.keyboard.press("b"); t.wait_for_timeout(1500)
+    print("M and B off again ->", repr(ovt()["msg"]), ovt()["cls"])
     # reload: back from the saved link, no code
     o.reload(); o.wait_for_timeout(3000)
     print("after reload: paired:", o.is_visible("#paired"), "| enter:", o.is_visible("#enter"), "| status:", o.text_content("#status"), "| remain:", ovt()["remain"])

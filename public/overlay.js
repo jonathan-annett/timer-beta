@@ -228,19 +228,27 @@
     spans.forEach(s => { s.style.fontSize = Math.max(6, Math.floor(100 * k)) + 'px'; });
   }
 
+  // The timer's own notices, as its presenter screen shows them (timer.css #remain_info_message),
+  // when its messages switch (M) is on and no message of the operator's is showing
+  function autoMsg() {
+    if (!state.msgs) return '';
+    return state.paused ? 'Paused' : state.over ? 'Time is Up' : state.impending ? 'Wrap up - last minute' : '';
+  }
+
   function texts() {
     const online = !!(ws && ws.readyState === WebSocket.OPEN && hostOnline && peer);
     return {
       online,
       remain: online && state.remain ? (state.over ? '+' : '') + state.remain : '–:––',
-      msg: online ? String(state.msg || '').trim() : '',
+      msg: online ? String(state.msg || '').trim() || autoMsg() : '',
       pct: online && isFinite(state.pct) ? Math.max(0, Math.min(100, Number(state.pct))) : 0,
     };
   }
 
   function render() {
     const t = texts();
-    const showMsg = $('opt-msg').checked, showBar = $('opt-bar').checked;
+    // The bar follows the timer's bar switch (B); this page's boxes can turn either off here
+    const showMsg = $('opt-msg').checked, showBar = $('opt-bar').checked && !!state.bar;
     ov.className = 'l-' + layout;
     if (pip) ov.classList.add('fill');
     ov.classList.toggle('msg', showMsg);
