@@ -34,9 +34,10 @@
   let view = null, box = null, fadeTimer = null, keysBadge = null;
   // The presenter window and the run sheet editor show the ⌨ badge while this is open (key-focus.js)
   window.addEventListener('pagehide', () => { try { localStorage.removeItem('overlay_open'); } catch (_) { /* no storage */ } });
+  window.addEventListener('storage', e => { if (e.key === KeysBadge.FOCUS_KEY && view && view.open) view.checkKeys(); });
   try { localStorage.removeItem('overlay_open'); } catch (_) { /* a reload: the overlay closed with the page */ }
   const KEYS_WARNING = 'Warning: timer still owns the keyboard';   // on the overlay; the page's badge has the longer KEYS_HINT
-  const KEYS_HINT = 'Warning: timer still owns the keyboard. Click in PowerPoint to ensure slides advance normally';
+  const KEYS_HINT = 'Warning: timer still owns the keyboard. Click in PowerPoint (or your show software) to ensure slides advance normally';
 
   const prev = window.timerAPI;
   window.timerAPI = {
@@ -67,6 +68,8 @@
       onWindow: forwardKeys,
       keysWarning: KEYS_WARNING,
       onKeys: focused => keysBadge.set(focused),
+      onLocalFocus: focused => KeysBadge.report('timer', focused),        // tell the presenter window and the editor
+      focusedElsewhere: () => KeysBadge.focusedElsewhere('timer'),        // one of them has it: warn here too
       onChange: () => {
         const html = document.documentElement;
         if (view.open) { if (window.setHtmlClass) setHtmlClass('overlay'); else html.classList.add('overlay'); }

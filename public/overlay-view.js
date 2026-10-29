@@ -14,6 +14,9 @@
  *                text beside it for 4 s each time it starts; checked on focus changes and every
  *                second (moving to another app isn't always reported)
  *     onKeys     (focused) when that changes, e.g. to show the page's own badge
+ *     onLocalFocus (focused) this page or its floating window, each check (to tell other windows)
+ *     focusedElsewhere ()  true when another of the app's windows has the keyboard: warn here too
+ *   v.checkKeys()         check now (e.g. when another window reports its focus)
  *   v.el                  the overlay element (id "ov"): put it where it should sit when not floating
  *   v.render(d)           d: { online, remain, over, impending, paused, msg, pct, bar } (remain as
  *                         shown, '+' included; msg already chosen: OverlayView.autoMsg() helps)
@@ -185,6 +188,8 @@ var OverlayView = (function () {
       let focused = false;
       if (opts.keysWarning && (pip || videoOpen())) {
         try { focused = document.hasFocus() || !!(pip && pip.document.hasFocus()); } catch (_) { focused = document.hasFocus(); }
+        if (opts.onLocalFocus) opts.onLocalFocus(focused);
+        if (!focused && opts.focusedElsewhere) focused = !!opts.focusedElsewhere();
       }
       const text = focused ? opts.keysWarning : '';
       if (text !== warning) {
@@ -212,8 +217,11 @@ var OverlayView = (function () {
       render();
     }
 
+    // The floating window the browser says is open (Document PiP), whatever our own note says
+    const livePip = () => (window.documentPictureInPicture && window.documentPictureInPicture.window) || null;
     async function toggle() {
-      if (pip) { pip.close(); return; }
+      const open = pip || livePip();
+      if (open) { open.close(); return; }
       if (videoOpen()) { document.exitPictureInPicture(); return; }
       const [w, h] = LAYOUTS[layout];
       if ('documentPictureInPicture' in window) {
@@ -228,7 +236,9 @@ var OverlayView = (function () {
         pip.addEventListener('focus', checkKeys);
         pip.addEventListener('blur', checkSoon);
         if (opts.onWindow) opts.onWindow(pip);
-        pip.addEventListener('pagehide', () => {
+        const mine = pip;
+        mine.addEventListener('pagehide', () => {
+          if (pip !== mine) return;                         // an older window's late pagehide
           if (home && home.parent) home.parent.insertBefore(el, home.next && home.next.parentNode === home.parent ? home.next : null);
           pip = null;
           watchKeys(); render(); changed();
@@ -293,7 +303,7 @@ var OverlayView = (function () {
     }
 
     return {
-      el, render, setLayout, setOption, toggle,
+      el, render, setLayout, setOption, toggle, checkKeys,
       get layout() { return layout; }, get showMsg() { return showMsg; }, get showBar() { return showBar; },
       get open() { return !!pip || videoOpen(); },
     };

@@ -65,6 +65,16 @@ with sync_playwright() as p:
         pg.bring_to_front(); pg.wait_for_timeout(1300)
         print(name, "hasFocus:", pg.evaluate("document.hasFocus()"), "| overlay_open:", pg.evaluate("localStorage.overlay_open || null"))
         print(name, "focused, overlay open: badge", pg.is_visible(".kw-badge"), "|", pg.get_attribute(".kw-badge", "title")[:40] if pg.locator(".kw-badge").count() else None)
+    # one of the timer's windows has the keyboard (the presenter window): every window warns
+    t.evaluate("document.hasFocus = () => false; documentPictureInPicture.window.document.hasFocus = () => false")
+    ed.evaluate("document.hasFocus = () => false"); pr.evaluate("document.hasFocus = () => true"); t.wait_for_timeout(2200)
+    allw=lambda: {"timer": t.is_visible(".kw-badge"), "overlay": t.evaluate("documentPictureInPicture.window.document.getElementById('ov').classList.contains('warn')"),
+                  "presenter": pr.is_visible(".kw-badge"), "editor": ed.is_visible(".kw-badge")}
+    print("only the presenter window has the keyboard:", allw())
+    pr.evaluate("document.hasFocus = () => false; window.dispatchEvent(new Event('blur'))"); t.wait_for_timeout(3500)
+    print("none of them has it (PowerPoint/vMix/OBS does):", allw())
+    for pg in (t, ed, pr): pg.evaluate("delete document.hasFocus")
+    t.evaluate("delete documentPictureInPicture.window.document.hasFocus")
     pr.bring_to_front(); was=t.evaluate("document.documentElement.classList.contains('paused')")
     pr.keyboard.press('"'); pr.wait_for_timeout(600)
     print("presenter window: \" pressed there -> timer paused:", was, "->", t.evaluate("document.documentElement.classList.contains('paused')"), "| presenter's own copy paused:", pr.evaluate("document.documentElement.classList.contains('paused')"))

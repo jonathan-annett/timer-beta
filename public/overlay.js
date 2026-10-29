@@ -191,7 +191,7 @@
   // ─── The overlay (drawing and floating: overlay-view.js, shared with the timer's own O) ───
 
   let view = null;
-  const keysBadge = KeysBadge.create('Warning: timer still owns the keyboard. Click in PowerPoint to ensure slides advance normally');
+  const keysBadge = KeysBadge.create('Warning: timer still owns the keyboard. Click in PowerPoint (or your show software) to ensure slides advance normally');
   function setupView() {
     view = OverlayView.create({
       prefix: 'overlay_',                             // overlay_layout, overlay_msg, overlay_bar

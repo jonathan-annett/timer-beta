@@ -8,10 +8,16 @@
  *
  *   const b = KeysBadge.create(text);  b.set(on)     (used by local-overlay.js and overlay.js)
  *
+ * The timer's windows share one answer (the timer page, its floating overlay, the presenter window,
+ * the run sheet editor): while the overlay is open and ANY of them has the keyboard, ALL show the
+ * badge, so it's on the confidence monitor (and in a vision switcher's view of it) too. Each window
+ * reports its own focus in localStorage keys_focus {w, t} (report(), refreshed every second while
+ * focused; FRESH 2.5 s), and focusedElsewhere(w) reads the others'.
+ *
  * And by itself, on the pages that aren't the overlay's own:
  *   - the presenter window (timer.html?presenter) and the run sheet editor show the badge while
  *     the timer's overlay is open (localStorage overlay_open, written by local-overlay.js) and
- *     they have the keyboard;
+ *     one of the timer's windows has the keyboard;
  *   - the presenter window passes its keys on to the timer window that opened it, as the floating
  *     overlay does, so the timer's keys work whichever of its windows has focus. Full screen (F, F11,
  *     Ctrl+Cmd+F), Escape and Cmd shortcuts stay here. The run sheet editor keeps its keys: it's typed in.
@@ -66,6 +72,27 @@ html body div.kw-badge.kw-badge[hidden] { display: none; }
     };
   }
 
+  // ─── Which of the timer's windows has the keyboard ───────────────────────
+  const FOCUS_KEY = 'keys_focus', FRESH = 2500;
+  function report(who, focused) {
+    try {
+      const cur = JSON.parse(localStorage.getItem(FOCUS_KEY) || 'null');
+      if (focused) {
+        // at most once a second for the same window: a write wakes the others (storage events), and
+        // they mustn't answer each other in a loop
+        if (cur && cur.w === who && Date.now() - cur.t < 900) return;
+        localStorage.setItem(FOCUS_KEY, JSON.stringify({ w: who, t: Date.now() }));
+      }
+      else if (cur && cur.w === who) localStorage.setItem(FOCUS_KEY, JSON.stringify({ w: null, t: Date.now() }));   // gone elsewhere
+    } catch (_) { /* no storage */ }
+  }
+  function focusedElsewhere(who) {
+    try {
+      const v = JSON.parse(localStorage.getItem(FOCUS_KEY) || 'null');
+      return !!(v && v.w && v.w !== who && Date.now() - v.t < FRESH);
+    } catch (_) { return false; }
+  }
+
   // ─── The presenter window and the run sheet editor ───────────────────────
   const PRESENTER = /timer\.html$/.test(location.pathname) && location.search.startsWith('?presenter');
   const EDITOR = /runsheet\.html$/.test(location.pathname) && !/[?&]remote\b/.test(location.search);
@@ -74,15 +101,17 @@ html body div.kw-badge.kw-badge[hidden] { display: none; }
     const check = () => {
       let open = false;
       try { open = localStorage.getItem('overlay_open') === '1'; } catch (_) { /* no storage */ }
-      if (!badge && open) badge = create('Warning: timer still owns the keyboard. Click in PowerPoint to ensure slides advance normally');
-      if (badge) badge.set(open && document.hasFocus());
+      if (!badge && open) badge = create('Warning: timer still owns the keyboard. Click in PowerPoint (or your show software) to ensure slides advance normally');
+      const mine = open && document.hasFocus(), who = PRESENTER ? 'presenter' : 'editor';
+      if (open) report(who, mine);
+      if (badge) badge.set(open && (mine || focusedElsewhere(who)));
     };
     const start = () => {
       check();
       setInterval(check, 1000);                  // focus moving to another app isn't always reported
       window.addEventListener('focus', check);
       window.addEventListener('blur', () => setTimeout(check, 0));
-      window.addEventListener('storage', e => { if (e.key === 'overlay_open') check(); });
+      window.addEventListener('storage', e => { if (e.key === 'overlay_open' || e.key === FOCUS_KEY) check(); });
     };
     if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
   }
@@ -108,5 +137,5 @@ html body div.kw-badge.kw-badge[hidden] { display: none; }
     }
   }
 
-  return { create };
+  return { create, report, focusedElsewhere, FOCUS_KEY };
 })();
