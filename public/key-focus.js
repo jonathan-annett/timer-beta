@@ -31,6 +31,10 @@ var KeysBadge = (function () {
 html body div.kw-badge.kw-badge { position: fixed; z-index: 2147483000; left: 50%; transform: translateX(-50%); top: 8px; display: flex; align-items: center; gap: 8px;
   font: bold 15px "Helvetica Neue", Arial, sans-serif; white-space: nowrap; cursor: default; }
 html body div.kw-badge.kw-badge[hidden] { display: none; }
+html body div.kw-note.kw-note { position: fixed; z-index: 2147483000; left: 50%; bottom: 24px; transform: translateX(-50%); display: block;
+  padding: 10px 16px; border-radius: 8px; background: rgba(20,20,20,.95); color: #fff; border: 1px solid #555;
+  font: 16px "Helvetica Neue", Arial, sans-serif; white-space: nowrap; transition: opacity 1s; }
+html body div.kw-note.kw-note.kw-gone { opacity: 0; }
 .kw-badge .kw-key { background: #c62828; color: #fff; border-radius: 6px; padding: 2px 8px; font-size: 20px; line-height: 1.3;
   animation: kw-blink 1s steps(1) infinite; box-shadow: 0 2px 10px rgba(0,0,0,.5); }
 .kw-badge .kw-tip { background: rgba(198,40,40,.92); color: #fff; border-radius: 6px; padding: 5px 12px; transition: opacity 1s; }
@@ -39,13 +43,15 @@ html body div.kw-badge.kw-badge[hidden] { display: none; }
   let cssAdded = false;
 
   // A badge at the top of this page (top: a CSS length, e.g. under the timer's button bar)
+  function addCss() {
+    if (cssAdded) return;
+    const st = document.createElement('style');
+    st.textContent = CSS;
+    document.head.appendChild(st);
+    cssAdded = true;
+  }
   function create(text, top) {
-    if (!cssAdded) {
-      const st = document.createElement('style');
-      st.textContent = CSS;
-      document.head.appendChild(st);
-      cssAdded = true;
-    }
+    addCss();
     const el = document.createElement('div');
     el.className = 'kw-badge';
     el.hidden = true;
@@ -119,12 +125,34 @@ html body div.kw-badge.kw-badge[hidden] { display: none; }
   // Keys the presenter window keeps: its own full screen (F, F11; Ctrl+Cmd+F and other Cmd keys on a
   // Mac) and Escape (leaves full screen; in the timer window it would cancel typing there)
   const LOCAL = e => e.metaKey || /^f$/i.test(e.key) || e.key === 'F11' || e.key === 'Escape';
+  const overlayOpen = () => { try { return localStorage.getItem('overlay_open') === '1'; } catch (_) { return false; } };
+  // A short note at the bottom of this window, fading after 4 s. Used for O: a browser opens a
+  // floating window only for the window that was typed in, so a key passed on from here can close
+  // the timer's overlay but not open it.
+  let noteEl = null, noteTimer = null;
+  function note(text) {
+    if (!noteEl) {
+      addCss();
+      noteEl = document.createElement('div');
+      noteEl.className = 'kw-note';
+      document.body.appendChild(noteEl);
+    }
+    noteEl.textContent = text;
+    noteEl.classList.remove('kw-gone');
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => noteEl.classList.add('kw-gone'), 4000);
+  }
   if (PRESENTER) {
     // Keys go to the timer window that opened this one (as if typed there), so the timer's
     // shortcuts work from here too. Captured before timer.js sees them: this window only mirrors.
     for (const type of ['keydown', 'keyup']) {
       window.addEventListener(type, e => {
         if (LOCAL(e)) return;                                       // full screen and the browser's own: this window's
+        if (/^o$/i.test(e.key) && !e.ctrlKey && !overlayOpen()) {    // O can't open the overlay from here: see note()
+          e.stopImmediatePropagation();
+          if (type === 'keydown') note('Open the overlay from the timer window (press O there)');
+          return;
+        }
         let main = null;
         try { main = window.opener && !window.opener.closed && window.opener.document ? window.opener : null; } catch (_) { main = null; }
         if (!main) return;                                        // opened by hand: keys stay here, as before
