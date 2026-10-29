@@ -996,12 +996,28 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     renderPairing(el);
     const pend = el.querySelector('.pp-pending');
     const rows = pending();
-    const keep = {};
-    pend.querySelectorAll('[data-id]').forEach(r => { keep[r.dataset.id] = r.querySelector('input').value; });
-    pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.suggest ? esc(e.suggest) + (e.role === 'view' ? ' (a display)' : '') : e.role === 'view' ? 'A display' : e.role === 'companion' ? 'Companion' : e.role === 'pptx' ? 'A PowerPoint computer' : 'A phone'} wants to connect.</b> Type the number it shows${e.role === 'companion' ? ' (in its connection log)' : e.role === 'pptx' ? ' (on its receiver page or in the player window)' : ''}. A wrong number disconnects it:
-        <span class="pp-askrow"><input inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="###" value="${keep[e.id] || ''}">
+    // Rebuilt only when the requests change (a rebuild loses focus and the caret mid-typing). A new
+    // request, or the panel being opened with one waiting, puts the caret in its box (touch too),
+    // unless someone is typing in another field.
+    const sig = rows.map(e => e.id + '|' + (e.suggest || '') + '|' + e.role).join(',');
+    const opened = !el.hidden && el.dataset.shown !== '1';
+    el.dataset.shown = el.hidden ? '' : '1';
+    const changed = pend.dataset.sig !== sig;
+    if (changed) {
+      const keep = {}, had = pend.contains(document.activeElement) ? document.activeElement.closest('[data-id]')?.dataset.id : null;
+      pend.querySelectorAll('[data-id]').forEach(r => { keep[r.dataset.id] = r.querySelector('input').value; });
+      pend.dataset.sig = sig;
+      pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.suggest ? esc(e.suggest) + (e.role === 'view' ? ' (a display)' : '') : e.role === 'view' ? 'A display' : e.role === 'companion' ? 'Companion' : e.role === 'pptx' ? 'A PowerPoint computer' : 'A phone'} wants to connect.</b> Type the number it shows${e.role === 'companion' ? ' (in its connection log)' : e.role === 'pptx' ? ' (on its receiver page or in the player window)' : ''}. A wrong number disconnects it:
+        <span class="pp-askrow"><input inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="###" value="${esc(keep[e.id] || '')}">
         <button data-act="ok">Let it in</button><button data-act="no">Refuse</button></span></div>`).join('');
-    if (rows.length && !keep[rows[0].id]) { const i = pend.querySelector('input'); if (i && !TOUCH) i.focus(); }
+      const back = had && pend.querySelector(`[data-id="${had}"] input`);
+      if (back) { back.focus(); back.setSelectionRange(back.value.length, back.value.length); }
+    }
+    if (rows.length && !el.hidden && (changed || opened) && !pend.contains(document.activeElement)) {
+      const a = document.activeElement, typing = a && a !== document.body && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || (a && a.isContentEditable);
+      const box = [...pend.querySelectorAll('input')].find(i => !i.value) || pend.querySelector('input');
+      if (!typing && box) box.focus();
+    }
     const srv = el.querySelector('.pp-server');
     if (force || document.activeElement !== srv) srv.value = serverUrl();
     const pptxLines = hub() ? hub().summary().map(hub().describe).join('') : '';

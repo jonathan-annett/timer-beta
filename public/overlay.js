@@ -38,6 +38,10 @@
     $('enter').hidden = false;
     $('server').value = defaultServer();
     $('code').focus();
+    // Back in the box on coming back to this window, or a click outside the server field
+    const refocus = () => { if (!$('enter').hidden && !$('code').disabled && !$('server').matches(':focus')) $('code').focus(); };
+    window.addEventListener('focus', refocus);
+    $('enter').addEventListener('click', e => { if (!e.target.closest('details')) refocus(); });
     $('code').addEventListener('input', () => {
       const v = $('code').value.replace(/\D/g, '').slice(0, 6);
       $('code').value = v;

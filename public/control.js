@@ -21,7 +21,13 @@
     code.value = v;
     if (v.length === 6) claim(v);
   });
+  // In the box from the start, and again after a tap anywhere (phones only raise the keyboard from
+  // a tap) or on coming back to this page
+  const refocus = () => { if (!code.disabled && document.activeElement !== code) code.focus(); };
   code.focus();
+  document.addEventListener('click', refocus);
+  window.addEventListener('focus', refocus);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refocus(); });
 
   function claim(c) {
     msg('Checking…');
