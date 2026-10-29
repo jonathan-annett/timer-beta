@@ -100,6 +100,14 @@ On the user's go: push `alpha` → `main` (ask), `wrangler deploy --env beta`, r
 beta, push `legacy-beta`, then on the VPS `git fetch && git checkout legacy-beta` once (afterwards
 `update-server.sh` pulls that branch; `remote-server.js` there is unchanged, so no restart).
 
+## Known issue being checked (29 Oct)
+
+`tests/e2e/local_overlay.py`: since the shared keyboard warning (`71f869f`), its last steps (O
+again should close the overlay) fail in the plain headless run, but pass whenever the test is
+instrumented (any extra listener or evaluate). Unknown whether it's real or a test quirk; the user
+is checking O open/close by hand on alpha (also after clicking in the presenter window). Don't
+loop on it: ask the user's result first.
+
 ## Open (offered or asked, not started)
 
 - Warn when a share link is opened in the same browser as the timer ("use the presenter window";
