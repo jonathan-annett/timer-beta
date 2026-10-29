@@ -121,6 +121,8 @@ var OverlayView = (function () {
     let pip = null, home = null;                   // the Document Picture-in-Picture window; where el sat before
     let video = null, canvas = null;               // or the video fallback
     let last = { online: false, remain: '–:––', msg: '', pct: 0 }, warning = '';
+    // No Document PiP here (Safari, Firefox): get the fallback video going now, not in the click
+    const fallback = !('documentPictureInPicture' in window) && !!document.pictureInPictureEnabled;
     const status = t => { if (opts.onStatus) opts.onStatus(t); };
     const changed = () => { if (opts.onChange) opts.onChange(); };
     const videoOpen = () => !!video && document.pictureInPictureElement === video;
@@ -246,20 +248,33 @@ var OverlayView = (function () {
         watchKeys(); render(); changed();
         return;
       }
-      // Fallback: the overlay drawn on a canvas, played as a picture-in-picture video
+      // Fallback: the overlay drawn on a canvas, played as a picture-in-picture video. Safari allows
+      // requestPictureInPicture() only straight from the click (an await before it loses it: "not
+      // triggered by a user activation"), so the video is made and started beforehand
+      // (prepareVideo) and both calls happen here, synchronously.
       if (!document.pictureInPictureEnabled) { status('This browser can’t float a window on top. Use Chrome or Edge.'); return; }
-      if (!canvas) {
-        canvas = document.createElement('canvas');
-        video = document.createElement('video');
-        video.muted = true; video.playsInline = true;
-        video.srcObject = canvas.captureStream();
-        video.addEventListener('enterpictureinpicture', () => { watchKeys(); changed(); });
-        video.addEventListener('leavepictureinpicture', () => { watchKeys(); render(); changed(); });
-      }
+      prepareVideo();
+      render();
+      if (video.paused) video.play().catch(() => {});
+      video.requestPictureInPicture().then(() => render(), err => status('Couldn’t start the overlay: ' + err.message));
+    }
+    function prepareVideo() {
+      if (canvas) return;
+      const [w, h] = LAYOUTS[layout];
+      canvas = document.createElement('canvas');
       canvas.width = w * 2; canvas.height = h * 2;
-      render();
-      try { await video.play(); await video.requestPictureInPicture(); } catch (err) { status('Couldn’t start the overlay: ' + err.message); }
-      render();
+      video = document.createElement('video');
+      video.muted = true; video.playsInline = true; video.autoplay = true;
+      video.setAttribute('aria-hidden', 'true');
+      // In the page (Safari wants it there), but as good as invisible: not display:none or fully
+      // transparent, which Safari may decline to play
+      video.style.cssText = 'position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none;z-index:-1';
+      video.srcObject = canvas.captureStream();
+      video.addEventListener('enterpictureinpicture', () => { watchKeys(); changed(); });
+      video.addEventListener('leavepictureinpicture', () => { watchKeys(); render(); changed(); });
+      document.body.appendChild(video);
+      render();                                             // a first frame, so the video has its size
+      video.play().catch(() => {});                         // muted: allowed without a click
     }
 
     const FONT = 'bold {px}px "Helvetica Neue", Arial, sans-serif';
@@ -302,6 +317,7 @@ var OverlayView = (function () {
       }
     }
 
+    if (fallback) { if (document.body) prepareVideo(); else document.addEventListener('DOMContentLoaded', prepareVideo); }
     return {
       el, render, setLayout, setOption, toggle, checkKeys,
       get layout() { return layout; }, get showMsg() { return showMsg; }, get showBar() { return showBar; },
@@ -310,5 +326,7 @@ var OverlayView = (function () {
   }
 
   const supported = () => 'documentPictureInPicture' in window || !!document.pictureInPictureEnabled;
-  return { create, autoMsg, supported, LAYOUTS };
+  // The video fallback is used here (Safari, Firefox): create the view at load, not in the click
+  const needsVideo = () => !('documentPictureInPicture' in window) && !!document.pictureInPictureEnabled;
+  return { create, autoMsg, supported, needsVideo, LAYOUTS };
 })();

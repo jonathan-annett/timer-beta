@@ -171,4 +171,9 @@
   }
 
   window.LocalOverlay = { toggle, supported: OverlayView.supported };
+  // Safari (no Document PiP) floats a video, which must already be playing when O is pressed
+  if (OverlayView.needsVideo()) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { if (!view) setup(); });
+    else if (!view) setup();
+  }
 })();
