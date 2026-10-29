@@ -5,7 +5,8 @@ OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exis
 # Hard starts: the tick before a typed start time in the editor (item.auto). The first item's tick is
 # the dashboard's "Auto start at" box (one setting). During the show a ticked item starts by itself at
 # its time if it's next; if items before it haven't run, it doesn't jump: its row flashes red and the
-# dashboard says why. Ripples stop at a ticked start. (Real time: start times are seconds since midnight.)
+# dashboard says why. Ripples stop at a ticked start. Every item has a tick: one without a typed start
+# keeps the start it shows (typed, to the second) when ticked. (Real time: start times are seconds since midnight.)
 import os, mimetypes, json, datetime, subprocess
 from playwright.sync_api import sync_playwright
 ROOT=PUBLIC; OUT=OUTDIR; BASE="https://timer.sophtwhere.com/beta/"
@@ -67,4 +68,29 @@ with sync_playwright() as p:
     print("  dashboard next:", t.text_content("#rs_next").strip())
     t.wait_for_timeout(max(0, s0+55-nowsec()+2)*1000)
     print("Afternoon's time (it's next):", rows(), "| index", idx(), "| timer", t.text_content("#remain_disp"), "| message", t.text_content("#custom_message"))
+    c.close()
+
+    # Ticking an item without a typed start: it keeps the start it shows, typed (a hard start)
+    s0=nowsec()
+    SHEET3={"title":"Pin","perItem":20,"items":[{"id":"a","name":"One","start":s0+3600,"duration":600},{"id":"b","name":"Two","start":None,"duration":600},{"id":"c","name":"Three","start":None,"duration":600}]}
+    SHEET4={"title":"Loose","perItem":20,"items":[{"id":"a","name":"One","start":None,"duration":600},{"id":"b","name":"Two","start":None,"duration":600},{"id":"c","name":"Three","start":None,"duration":600}]}
+    for name, sheet in (("anchored", SHEET3), ("no times", SHEET4)):
+        c=b.new_context(ignore_https_errors=True, viewport={"width":1440,"height":900})
+        c.add_init_script("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';localStorage.runsheet=%s}" % json.dumps(json.dumps(sheet)))
+        c.route("**/*",h)
+        t=c.new_page(); t.on("pageerror", lambda x: errs.append("timer3: "+str(x))); t.goto(BASE+"timer.html"); t.wait_for_timeout(1200)
+        e=c.new_page(); e.on("pageerror", lambda x: errs.append("editor3: "+str(x))); e.goto(BASE+"runsheet.html"); e.wait_for_timeout(1200)
+        e.check("#active"); t.wait_for_timeout(500)
+        starts=lambda: [(x["id"], x["start"] if x.get("start") is None else (x["start"]-s0), bool(x.get("auto"))) for x in json.loads(t.evaluate("localStorage.runsheet"))["items"]]
+        shown=lambda: e.evaluate("[...document.querySelectorAll('#rs-table tbody tr')].map(tr=>{const i=tr.querySelector('[data-field=start]');return (i.value||i.placeholder).slice(0,5)})")
+        print(name, "before the show: row 3 tick", tick(2))
+        if name == "no times": e.click("#btn-next"); t.wait_for_timeout(1200); print("  after Next: row 3 tick", tick(2))
+        before=shown()
+        e.locator("#rs-table tbody tr").nth(2).locator("input.hard").click(); t.wait_for_timeout(1000)
+        print("  ticked row 3: sheet (start - now, auto)", starts(), "| times unchanged:", shown()==before, shown())
+        if name == "anchored":
+            e.locator("#rs-table tbody tr").nth(0).locator("[data-field=duration]").fill("20"); e.keyboard.press("Enter"); t.wait_for_timeout(800)
+            e.on("dialog", lambda d: d.accept())
+            print("  row 1 to 20 min (ripple stops at the tick):", shown())
+        c.close()
 print("errors:", errs)

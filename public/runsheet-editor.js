@@ -137,6 +137,10 @@
   }
   // A sheet without start times that hasn't started yet: its times count from now (they move on
   // as the clock does, until the first Next pins them to when the show really began)
+  // A timestamp as a start time (seconds since midnight, on the show's day)
+  function secOfDay(ms) {
+    return ((Math.round((ms - dayBase()) / 1000) % 86400) + 86400) % 86400;
+  }
   function provisional(n) {
     n = n || norm;
     return !n.anchored && !state.finished && !(state.log || []).some(e => e.id !== 'end');
@@ -219,8 +223,8 @@
           (src.hidden ? `<button data-act="unhide" tabindex="-1" title="Show it in the run sheet again">↺</button>`
                       : `<button data-act="del" tabindex="-1" title="Delete">✕</button>`) + `</td>`;
       const [start, name, dur] = FIELDS.map(f => tr.querySelector(`[data-field=${f}]`));
-      const hard = tr.querySelector('input.hard');       // a hard start: only for a typed start time
-      hard.hidden = src.start == null || it.isEnd;
+      const hard = tr.querySelector('input.hard');       // a hard start (every item but the finish)
+      hard.hidden = it.isEnd;
       hard.checked = !!src.auto;
       start.value = src.start != null ? C.formatClock(src.start) : '';
       name.value = src.name || '';
@@ -324,9 +328,13 @@
         const firstIdx = norm.items.findIndex((x, j) => !x.hidden && j !== norm.endIdx);
         const started = active && !state.finished && curIdx >= 0;
         const armedNow = i === firstIdx ? active && !started && !state.finished : started && i > curIdx;
-        hard.disabled = role === 'done' || role === 'now' || it.hidden || scaling;
+        // An item without a typed start gets the one it shows when ticked, so it needs a clock time
+        const noClock = it.startDerived && !it.auto && (provisional() || plannedMs(it.planned) == null);
+        hard.disabled = role === 'done' || role === 'now' || it.hidden || scaling || noClock;
         hard.classList.toggle('idle', !armedNow);
-        hard.title = hard.disabled ? '' : (i === firstIdx ? 'Auto start: after Reset show, the show starts by itself at this time'
+        hard.title = noClock && !(role === 'done' || role === 'now' || it.hidden || scaling)
+          ? 'Hard start: needs a clock time. Type a start time, or start the show first'
+          : hard.disabled ? '' : (it.startDerived ? 'Tick to fix this item at ' + clockOf(plannedMs(it.planned)) + '. ' : '') + (i === firstIdx ? 'Auto start: after Reset show, the show starts by itself at this time'
           : 'Hard start: when this time comes, this item starts by itself, if it\'s next') + (armedNow ? '' : ' (not active yet: ' + (i === firstIdx ? 'only before the show' : 'once the show has started') + ')');
       }
       tr.classList.toggle('hardmiss', (live.hardMiss || []).includes(it.id));
@@ -694,7 +702,18 @@
     if (input.classList.contains('hard')) {          // the hard-start tick: kept on the item (auto)
       const it = sheet.items.find(x => x.id === input.closest('tr').dataset.id);
       if (!it || scaling) { renderAll(); return; }
-      if (input.checked) it.auto = true; else delete it.auto;
+      if (input.checked) {
+        // Not typed: it keeps the start it shows now, as a typed one (a hard start doesn't ripple)
+        if (it.start == null) {
+          const j = sheet.items.indexOf(it), ms = provisional() ? null : plannedMs(norm.items[j].planned);
+          if (ms == null) { renderAll(); return; }
+          // A sheet without times (show under way): pin the first row too, so nothing else moves
+          const s0 = sheet.items[0];
+          if (!norm.anchored && s0 !== it && s0.start == null) s0.start = secOfDay(plannedMs(norm.items[0].planned));
+          it.start = secOfDay(ms);
+        }
+        it.auto = true;
+      } else delete it.auto;
       saveSheet();
       return;
     }
