@@ -15,6 +15,9 @@ setup and protocol; `tests/e2e/README.md` is how to test.
 | https://timer.sophtwhere.com/beta/ | VPS clone + `timer-remote` (`remote-server.js`) | `main`, deployed by the user's `./update-server.sh` | beta testers, live shows |
 | https://timer.sophtwhere.com/ | VPS, static | not this repo's concern | public |
 
+`timed-show.com`, `www.timed-show.com`, `timed.show`, `www.timed.show`: a "coming soon, the beta is at
+beta.timed-show.com" page (Worker `timed-show-landing`, `cloudflare/landing/`, deployed 29 Oct; every
+path, no-store), kept until the launch, when those addresses move to the real site.
 Planned: `beta.timed-show.com` (Worker `timed-show-beta`, from `main`) replaces the VPS beta, and
 `timer.sophtwhere.com/beta/` redirects there. `timed.show` (bought) redirects to `timed-show.com`.
 Not done yet (see *Open*).

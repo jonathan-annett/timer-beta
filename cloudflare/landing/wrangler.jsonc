@@ -1,0 +1,15 @@
+// The "coming soon" page on timed-show.com and timed.show (with and without www), until the
+// launch. The timer itself is the other Workers (../wrangler.jsonc: alpha, beta).
+//   cd cloudflare/landing && npx wrangler deploy
+{
+  "name": "timed-show-landing",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "timed-show.com", "custom_domain": true },
+    { "pattern": "www.timed-show.com", "custom_domain": true },
+    { "pattern": "timed.show", "custom_domain": true },
+    { "pattern": "www.timed.show", "custom_domain": true }
+  ]
+}
