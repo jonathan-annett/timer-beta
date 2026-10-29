@@ -76,7 +76,7 @@ with sync_playwright() as p:
     o.click("#start"); o.wait_for_timeout(1000)
     print("start overlay ->", o.evaluate("({docpip: 'documentPictureInPicture' in window, open: !!(window.documentPictureInPicture && documentPictureInPicture.window), inPip: !!(window.documentPictureInPicture && documentPictureInPicture.window && documentPictureInPicture.window.document.getElementById('ov'))})"),
           "| button:", o.text_content("#start"), "| status:", o.text_content("#status"))
-    ow=lambda: (o.is_visible("#keyswarn"), o.evaluate("(w => w ? w.document.getElementById('ov').classList.contains('warn') && w.document.querySelector('#ov .ov-warn span').textContent : null)(window.documentPictureInPicture && documentPictureInPicture.window)"))
+    ow=lambda: (o.is_visible("#keyswarn"), o.evaluate("(w => w ? w.document.getElementById('ov').classList.contains('warn') && (w.document.getElementById('ov').classList.contains('tip') ? 'tip: ' + w.document.querySelector('#ov .ov-tip span').textContent : 'badge only') : null)(window.documentPictureInPicture && documentPictureInPicture.window)"))
     print("floating, this page focused: badge, strip:", ow())
     o.evaluate("document.hasFocus = () => false; documentPictureInPicture.window.document.hasFocus = () => false"); o.wait_for_timeout(1300)
     print("nothing focused (PowerPoint has the keys):", ow())

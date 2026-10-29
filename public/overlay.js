@@ -200,7 +200,7 @@
       },
       onStatus: text => status(text, 'warn'),
       keysWarning: 'Keys aren’t going to PowerPoint',   // e.g. the presenter's clicker, on the slides computer
-      onKeys: focused => { $('keyswarn').hidden = !focused; },
+      onKeys: focused => { $('keyswarn').hidden = !focused; if (focused) OverlayView.flashTip($('keyswarn')); },
       onChange: () => { $('previewbox').querySelector('.floating').hidden = !view.open || !('documentPictureInPicture' in window); render(); },
     });
     $('previewbox').insertBefore(view.el, $('previewbox').firstChild);

@@ -43,13 +43,18 @@
     #previewbox { display: flex; justify-content: center; align-items: center; height: 300px; background: #050505; border: 1px dashed #333; border-radius: 8px; }
     #previewbox .floating { color: var(--dim); font-size: 13px; text-align: center; padding: 20px; }
     .hint { color: var(--dim); font-size: 13px; }
-    #keyswarn { position: sticky; top: 0; z-index: 5; margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: #c62828; color: #fff; font-weight: bold; }
+    #keyswarn { position: sticky; top: 0; z-index: 5; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; font-weight: bold; }
+    #keyswarn[hidden] { display: none; }
+    #keyswarn .kw-key { background: #c62828; color: #fff; border-radius: 6px; padding: 2px 8px; font-size: 20px; animation: kw-blink 1s steps(1) infinite; }
+    #keyswarn .kw-tip { background: rgba(198,40,40,.92); color: #fff; border-radius: 6px; padding: 5px 12px; transition: opacity 1s; }
+    #keyswarn .kw-tip.kw-gone { opacity: 0; }
+    @keyframes kw-blink { 50% { opacity: .2; } }
     #pinwait .pin { font: bold 26px "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; color: #fff; }   /* readable close up, not across a room */
   </style>
 </head>
 <body>
   <main>
-    <div id="keyswarn" hidden>⌨ Keys aren’t going to PowerPoint while this page or the overlay has the keyboard: click PowerPoint to give it the keys.</div>
+    <div id="keyswarn" hidden title="Keys aren’t going to PowerPoint while this page or the overlay has the keyboard: click PowerPoint to give it the keys"><span class="kw-key">⌨</span><span class="kw-tip">Keys aren’t going to PowerPoint: click PowerPoint to give it the keys</span></div>
     <h1>Timer overlay</h1>
     <p class="sub">A countdown that floats on top of other windows (PowerPoint's Presenter View, say), fed by the timer on another computer.</p>
 
@@ -87,7 +92,7 @@
     </section>
   </main>
   <script src="remote-peer.js?v=5e28fc3a"></script>
-  <script src="overlay-view.js?v=fd20bf2b"></script>
-  <script src="overlay.js?v=9cab24e6"></script>
+  <script src="overlay-view.js?v=c4fb81d7"></script>
+  <script src="overlay.js?v=fe866267"></script>
 </body>
 </html>

@@ -9,9 +9,10 @@
  *     onStatus   (text) a problem to show (the window couldn't open…)
  *     onChange   () after it opens or closes
  *     onWindow   (win) the floating window has opened (Document PiP: e.g. to listen for keys there)
- *     keysWarning  text for a red strip along the bottom while it floats and this page or the
- *                floating window has the keyboard (so keys aren't reaching PowerPoint underneath);
- *                checked on focus changes and every second (moving to another app isn't always reported)
+ *     keysWarning  while it floats and this page or the floating window has the keyboard (so keys
+ *                aren't reaching PowerPoint underneath): a blinking red ⌨ in the corner, with this
+ *                text beside it for 4 s each time it starts; checked on focus changes and every
+ *                second (moving to another app isn't always reported)
  *     onKeys     (focused) when that changes, e.g. to show the page's own badge
  *   v.el                  the overlay element (id "ov"): put it where it should sit when not floating
  *   v.render(d)           d: { online, remain, over, impending, paused, msg, pct, bar } (remain as
@@ -50,9 +51,14 @@ var OverlayView = (function () {
     #ov.over { background: #2a0000; } #ov.over .ov-remain { color: #ff4d4d; } #ov.over .ov-shade { background: rgba(255, 77, 77, .2); }
     #ov.paused .ov-remain { color: #888; }
     #ov.offline .ov-remain { color: #444; }
-    #ov .ov-warn { position: absolute; left: 0; right: 0; bottom: 0; height: 13%; display: none; align-items: center; justify-content: center;
-      background: #c62828; color: #fff; white-space: nowrap; }
-    #ov.warn .ov-warn { display: flex; }`;
+    #ov .ov-warn { position: absolute; left: 3%; top: 4%; height: 15%; aspect-ratio: 1.35; display: none; align-items: center; justify-content: center;
+      background: #c62828; color: #fff; border-radius: 14%; animation: ov-blink 1s steps(1) infinite; z-index: 2; }
+    #ov.warn .ov-warn { display: flex; }
+    #ov .ov-tip { position: absolute; left: 3%; right: 3%; top: 23%; height: 11%; display: none; align-items: center; justify-content: center;
+      background: rgba(198, 40, 40, .92); color: #fff; border-radius: 6px; white-space: nowrap; transition: opacity 1s; z-index: 2; }
+    #ov.warn.tip .ov-tip { display: flex; }
+    #ov .ov-tip.fading { opacity: 0; }
+    @keyframes ov-blink { 50% { opacity: .2; } }`;
 
   const LAYOUTS = { 169: [480, 270], 1: [320, 320], 916: [270, 480], stack: [270, 480] };   // floating window size (px)
   // Stacked: "12:34" → "12" over "34"; from an hour, "1:23:59" → "1 hr" over "23:59" ("+" kept in overtime)
@@ -105,7 +111,7 @@ var OverlayView = (function () {
     const el = document.createElement('div');
     el.id = 'ov';
     el.className = 'l-169 offline';
-    el.innerHTML = '<div class="ov-shade"></div><div class="ov-msg"><span></span></div><div class="ov-remain"><span class="r1">–:––</span><span class="r2"></span></div><div class="ov-warn"><span></span></div>';
+    el.innerHTML = '<div class="ov-shade"></div><div class="ov-msg"><span></span></div><div class="ov-remain"><span class="r1">–:––</span><span class="r2"></span></div><div class="ov-warn"><span>⌨</span></div><div class="ov-tip"><span></span></div>';
 
     let layout = LAYOUTS[store.get('layout')] ? store.get('layout') : '169';
     let showMsg = store.get('msg') !== '0', showBar = store.get('bar') !== '0';
@@ -129,6 +135,7 @@ var OverlayView = (function () {
       el.classList.toggle('impending', !!d.online && !!d.impending && !d.over);
       el.classList.toggle('paused', !!d.online && !!d.paused);
       el.classList.toggle('warn', !!warning);
+      el.classList.toggle('tip', !!warning && tipOn);
       const pct = d.online && isFinite(d.pct) ? Math.max(0, Math.min(100, Number(d.pct))) : 0;
       el.querySelector('.ov-shade').style.width = pct + '%';
       el.querySelector('.ov-msg span').textContent = d.msg || '';
@@ -143,9 +150,12 @@ var OverlayView = (function () {
       if (stack && hourStack(remain)) [remBox.querySelector('.r1'), remBox.querySelector('.r2')].forEach(s => fit([s], remBox.clientWidth, remBox.clientHeight / 2));
       else if (stack) fit([remBox.querySelector('.r1'), remBox.querySelector('.r2')], remBox.clientWidth, remBox.clientHeight / 2);
       else fit([remBox.querySelector('.r1')], remBox.clientWidth, remBox.clientHeight);
-      const warnBox = el.querySelector('.ov-warn');
-      warnBox.firstChild.textContent = warning;
-      if (warning) fit([warnBox.firstChild], warnBox.clientWidth, warnBox.clientHeight);
+      if (warning) {
+        const k = el.querySelector('.ov-warn'), tip = el.querySelector('.ov-tip');
+        fit([k.firstChild], k.clientWidth, k.clientHeight);
+        tip.firstChild.textContent = warning;
+        if (tipOn) fit([tip.firstChild], tip.clientWidth * 0.94, tip.clientHeight);
+      }
       if (canvas) drawCanvas(d, remain, pct, msgOn, barOn);
     }
 
@@ -160,14 +170,28 @@ var OverlayView = (function () {
       render();
     }
     // While it floats: does this page or the floating window have the keyboard?
-    let keysTimer = null, keysOn = null;
+    let keysTimer = null, keysOn = null, tipOn = false, tipTimer = null;
+    // The words beside the ⌨, for a few seconds each time the keyboard comes here
+    function showTip() {
+      clearTimeout(tipTimer);
+      tipOn = true;
+      el.querySelector('.ov-tip').classList.remove('fading');
+      tipTimer = setTimeout(() => {
+        el.querySelector('.ov-tip').classList.add('fading');
+        tipTimer = setTimeout(() => { tipOn = false; render(); }, 1000);
+      }, 4000);
+    }
     function checkKeys() {
       let focused = false;
       if (opts.keysWarning && (pip || videoOpen())) {
         try { focused = document.hasFocus() || !!(pip && pip.document.hasFocus()); } catch (_) { focused = document.hasFocus(); }
       }
       const text = focused ? opts.keysWarning : '';
-      if (text !== warning) { warning = text; render(); }
+      if (text !== warning) {
+        warning = text;
+        if (text) showTip(); else { clearTimeout(tipTimer); tipOn = false; }
+        render();
+      }
       if (focused !== keysOn) { keysOn = focused; if (opts.onKeys) opts.onKeys(focused); }
     }
     const checkSoon = () => setTimeout(checkKeys, 0);   // (on blur, focus may be moving to the other window)
@@ -254,11 +278,17 @@ var OverlayView = (function () {
         c.font = FONT.replace('{px}', fitPx(remain, W, H - top));
         c.fillText(remain, W / 2, top + (H - top) / 2);
       }
-      if (warning) {
-        const wh = H * 0.13;
-        c.fillStyle = '#c62828'; c.fillRect(0, H - wh, W, wh);
-        c.fillStyle = '#fff'; c.font = FONT.replace('{px}', fitPx(warning, W, wh));
-        c.fillText(warning, W / 2, H - wh / 2);
+      if (warning && Math.floor(Date.now() / 500) % 2 === 0) {      // a blinking ⌨ (redrawn twice a second at most)
+        const kh = H * 0.15, kw = kh * 1.35, kx = W * 0.03, ky = H * 0.04;
+        c.fillStyle = '#c62828'; c.fillRect(kx, ky, kw, kh);
+        c.fillStyle = '#fff'; c.font = FONT.replace('{px}', Math.floor(kh * 0.8));
+        c.fillText('⌨', kx + kw / 2, ky + kh / 2);
+      }
+      if (warning && tipOn) {
+        const th = H * 0.11, ty = H * 0.23;
+        c.fillStyle = 'rgba(198,40,40,.92)'; c.fillRect(W * 0.03, ty, W * 0.94, th);
+        c.fillStyle = '#fff'; c.font = FONT.replace('{px}', fitPx(warning, W * 0.9, th));
+        c.fillText(warning, W / 2, ty + th / 2);
       }
     }
 
@@ -270,5 +300,13 @@ var OverlayView = (function () {
   }
 
   const supported = () => 'documentPictureInPicture' in window || !!document.pictureInPictureEnabled;
-  return { create, autoMsg, supported, LAYOUTS };
+  // A page's own ⌨ badge (el: its text in a .kw-tip child): the words show for 4 s, then fade
+  function flashTip(badge) {
+    const tip = badge.querySelector('.kw-tip');
+    if (!tip) return;
+    clearTimeout(badge._tipTimer);
+    tip.classList.remove('kw-gone');
+    badge._tipTimer = setTimeout(() => tip.classList.add('kw-gone'), 4000);
+  }
+  return { create, autoMsg, supported, flashTip, LAYOUTS };
 })();
