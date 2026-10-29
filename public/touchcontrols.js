@@ -85,7 +85,7 @@
         : done ? '<b>📱 Let a friend control this timer</b><small>Done: your friend’s phone was disconnected. Tap here to share again with a new code.</small>'
         : '<b>📱 Let a friend control this timer</b><small>Shows a code for their phone: a remote control, or a countdown display</small>';
     };
-    // Bar (B), Clock (T), Undo pauses ('): shown with their state; the switches leave the sheet open
+    // Bar (B), Clock (T), Undo pauses ('): shown with their state
     const moreSwitches = () => {
       const set = (id, on, text) => { const b = document.getElementById(id); if (!b) return; b.classList.toggle('on', on); b.querySelector('small').textContent = text; };
       set('touch-bar-btn', html.classList.contains('showbar'), html.classList.contains('showbar') ? 'On' : 'Off');
@@ -102,9 +102,12 @@
     onTap('touch-more-btn', openMore);
     onTap('touch-more-cancel', closeMore);
     onTap('touch-more-backdrop', closeMore);
-    onTap('touch-bar-btn', () => { pressKey('b'); moreSwitches(); });
-    onTap('touch-clock-btn', () => { pressKey('t'); moreSwitches(); });
-    onTap('touch-undopause-btn', () => { pressKey("'"); closeMore(); });
+    // A buzz, the button shows its new state, then the sheet closes itself (500 ms): it's clear what
+    // happened and there's nothing left to close (no vibration on iPhone)
+    const switched = () => { try { navigator.vibrate && navigator.vibrate(30); } catch (_) { /* not allowed */ } moreSwitches(); setTimeout(closeMore, 500); };
+    onTap('touch-bar-btn', () => { pressKey('b'); switched(); });
+    onTap('touch-clock-btn', () => { pressKey('t'); switched(); });
+    onTap('touch-undopause-btn', () => { pressKey("'"); switched(); });
     // Full screen (the F key), where the browser can (iPhone Safari can't: the button stays hidden)
     if (document.fullscreenEnabled || document.webkitFullscreenEnabled) document.documentElement.classList.add('can-fullscreen');
     onTap('touch-fs-btn', () => pressKey('f'));
