@@ -113,7 +113,15 @@ default (**Show QR code instead** switches, remembered in `remote_touch_qr`); th
 `remote.html#…` with the control or countdown link chosen in the panel, then the 3-digit proximity
 check. Claim logic moved to `RemotePeer.claim()` (overlay uses it too). No server change. Test:
 `tests/e2e/control_pair.py` (passes against both servers). Details in CLAUDE.md (*Mobile / Touch*,
-*Pairing by code*). Waiting for the user to try it on real phones via alpha.
+*Pairing by code*). The user tried it: works.
+
+Same session, on alpha after it (all deployed, not pushed): code/PIN boxes keep focus (the share
+panel's pending rows no longer rebuild every render); **Take back control** in the touch ⋯ menu
+(revoke all + New code + sharing off); dropped/unpaired phones go to `control.html`; touch strip
+⛶ full screen; progress bar above the strip (landscape had it on the strip); portrait messages
+capped by width (pre-existing overlap); a controller's keyboard runs the timer's shortcuts
+(allow-list `RemotePeer.remoteKeyOk`, also from the desktop countdown iframe); the virtual XL dims
+with the deck's backlight. Next: serve the timer at `/` (below).
 
 ## Open (offered or asked, not started)
 
