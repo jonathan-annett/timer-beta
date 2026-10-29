@@ -1311,6 +1311,17 @@ html.portrait #disp_next_mins:before{
   #touch-fs-btn { display: none; }
   html.can-fullscreen #touch-fs-btn { display: flex; }
 }
+/* A phone on its side: the height-based sizes made the details tiny (10 px). Bigger here; they sit
+   at the sides, clear of the centred countdown */
+@media (pointer: coarse) and (orientation: landscape) {
+  html:not(.reduced) #elapsed_disp, html:not(.reduced) #duration_disp, html:not(.reduced) #started_disp, html:not(.reduced) #ends_disp { font-size: 4.5vh; }
+  html:not(.reduced) #elapsed_disp:before, html:not(.reduced) #duration_disp:after, html:not(.reduced) #started_disp:before, html:not(.reduced) #ends_disp:before,
+  html:not(.reduced) #extra_time_disp { font-size: 3.5vh; }
+  html:not(.reduced) #extra_time_disp { bottom: calc(80px + 13vh + 2px + env(safe-area-inset-bottom)); }
+  html.showbar:not(.reduced) #extra_time_disp { bottom: calc(96px + 13vh + 2px + env(safe-area-inset-bottom)); }
+  html:not(.reduced) #now_disp { font-size: 7vh; }
+  html:not(.reduced) #messages_enabled { font-size: 14px; top: calc(7vh + 12px); }
+}
 .touch-btn.touch-help { flex: 0 0 44px; font-size: 18px; }
 
 
