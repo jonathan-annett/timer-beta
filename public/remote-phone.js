@@ -467,6 +467,9 @@
 
   function onDeck(m) {
     if (m.none) { $('deckhint').textContent = 'The timer has no Stream Deck support loaded.'; return; }
+    // The deck's backlight (Backlight key, or the timer's deck editor): dimmed like an LCD backlight,
+    // never quite black (10% on the real deck is dim but readable)
+    if (typeof m.bl === 'number' && m.bl >= 1 && m.bl <= 100) $('keys').style.setProperty('--deck-bl', (0.2 + 0.8 * m.bl / 100).toFixed(3));
     if (!m.k || typeof m.k !== 'object') return;
     for (const [i, f] of Object.entries(m.k)) {
       const n = Number(i);

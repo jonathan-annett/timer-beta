@@ -120,6 +120,7 @@
       column-gap: var(--col-gap, 6px); row-gap: var(--row-gap, 6px); justify-content: center; align-content: center; }
     #keys canvas { width: var(--key, 40px); height: var(--key, 40px); border-radius: 14%; display: block;
       transition: transform .06s; touch-action: manipulation; }
+    #keys { filter: brightness(var(--deck-bl, 1)); transition: filter .3s; }   /* the deck's backlight (remote-phone.js) */
     #keys canvas.down { transform: scale(0.9); }
     #keys canvas.idle { cursor: default; }
     #keys canvas.off { opacity: .3; }   /* works on the real deck, not from a phone (Remote) */
@@ -403,6 +404,6 @@
   <script src="help-overlay.js?v=8a5dbd9d"></script>
   <script src="deck-face.js?v=c546849b"></script>
   <script src="remote-peer.js?v=a4dfabd5"></script>
-  <script src="remote-phone.js?v=9079bfdd"></script>
+  <script src="remote-phone.js?v=5dac9f0d"></script>
 </body>
 </html>

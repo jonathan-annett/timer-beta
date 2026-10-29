@@ -77,6 +77,15 @@ with sync_playwright() as p:
     f.keyboard.press("Shift+Quote"); t.wait_for_timeout(800); print('| " -> timer classes:', tcls(), end=" ")
     f.keyboard.press("Quote"); t.wait_for_timeout(800); print("| ' ->", repr(tcls()))
     f.evaluate("localStorage.remote_view='simple'")
+    # the virtual XL's backlight follows the deck's (Backlight key pressed on the phone)
+    f.evaluate("localStorage.remote_view='deck'"); f.reload(); f.wait_for_timeout(2500)
+    bi=t.evaluate("StreamDeck.faces('xl').findIndex(x=>x.a==='brightness_cycle')")
+    bl=lambda: (t.evaluate("StreamDeck.brightness"), f.evaluate("getComputedStyle(document.getElementById('keys')).getPropertyValue('--deck-bl')"), f.evaluate("getComputedStyle(document.getElementById('keys')).filter"))
+    print("deck view: backlight key", bi, "| timer %, phone --deck-bl, filter:", bl())
+    for _ in range(2):
+        f.locator("#keys canvas").nth(bi).tap(); f.wait_for_timeout(1000); print("  Backlight tapped ->", bl())
+    t.evaluate("StreamDeck.press(%d,'xl'); StreamDeck.press(%d,'xl')" % (bi, bi)); f.wait_for_timeout(1000); print("  back round to:", bl())
+    f.evaluate("localStorage.remote_view='simple'")
     # a laptop with the same control link, countdown view: the display iframe passes keys up
     dctx=b.new_context(ignore_https_errors=True, viewport={"width":1200,"height":800}); dctx.route("**/*",h)
     dctx.add_init_script("localStorage.remote_view='countdown'")

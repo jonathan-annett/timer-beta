@@ -702,7 +702,9 @@
     let any = false;
     const full = !e.faces.length;
     deckFaces.forEach(([f, json], i) => { if (e.faces[i] !== json) { k[i] = f; e.faces[i] = json; any = true; } });
-    if (any) e.peer.send({ t: 'deck', full, cols: 8, rows: 4, k });
+    const bl = window.StreamDeck.brightness;           // the backlight: the virtual deck dims with the real one
+    const blNew = full || e.blSent !== bl;
+    if (any || blNew) { e.blSent = bl; e.peer.send({ t: 'deck', full, cols: 8, rows: 4, k, bl }); }
   }
 
   // Sends only the fields that changed since the last message to this phone (low bandwidth)

@@ -1037,6 +1037,7 @@
       return true;
     },
     onChange(fn) { changeListeners.push(fn); },
+    get brightness() { return brightness; },   // the backlight %, for the phone's virtual deck
   };
 
   // Run after DOM is ready
