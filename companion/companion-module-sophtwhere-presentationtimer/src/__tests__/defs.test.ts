@@ -4,7 +4,7 @@ import { parseDuration, UpdateActions } from '../actions.js'
 import { remainSeconds, UpdateFeedbacks, FEEDBACK_IDS } from '../feedbacks.js'
 import { UpdatePresets } from '../presets.js'
 import { UpdateVariableDefinitions, splitRemain } from '../variables.js'
-import { parseLink } from '../link.js'
+import { socketUrl, parseLink } from '../link.js'
 import type ModuleInstance from '../main.js'
 
 test('durations', () => {
@@ -33,7 +33,10 @@ test('split remaining time', () => {
 
 test('links', () => {
 	const l = parseLink('https://timer.example.com/beta/remote.html#r=ABCD1234&c=keykeykey')
-	assert.deepEqual(l, { server: 'wss://timer.example.com:8443/', room: 'ABCD1234', key: 'keykeykey', kind: 'companion' })
+	assert.deepEqual(l, { server: 'wss://timer.example.com/ws', room: 'ABCD1234', key: 'keykeykey', kind: 'companion' })
+	assert.equal(parseLink('https://timer.sophtwhere.com/beta/remote.html#r=A&c=B')?.server, 'wss://timer.sophtwhere.com:8443/')
+	assert.equal(socketUrl('wss://beta.timed-show.com/ws', 'ABCD1234'), 'wss://beta.timed-show.com/ws?room=ABCD1234')
+	assert.equal(socketUrl('wss://timer.sophtwhere.com:8443/', 'X1'), 'wss://timer.sophtwhere.com:8443/?room=X1')
 	assert.equal(parseLink('#r=X&a=Y&s=wss%3A%2F%2Flocalhost%3A8443%2F')?.server, 'wss://localhost:8443/')
 	assert.equal(parseLink('#r=X&v=Y&s=wss://h/')?.kind, 'view')
 	assert.equal(parseLink('r=X&k=Y'), null) // no server to be found

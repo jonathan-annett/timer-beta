@@ -43,29 +43,7 @@
     #previewbox { display: flex; justify-content: center; align-items: center; height: 300px; background: #050505; border: 1px dashed #333; border-radius: 8px; }
     #previewbox .floating { color: var(--dim); font-size: 13px; text-align: center; padding: 20px; }
     .hint { color: var(--dim); font-size: 13px; }
-    #pinwait .pin { font: bold 40px "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; color: #fff; }
-  </style>
-  <style id="ov-css">
-    /* The overlay itself: also copied into the floating window, so only #ov rules here */
-    #ov { position: relative; overflow: hidden; background: #000; color: #fff; display: flex; flex-direction: column;
-      font-family: "Helvetica Neue", Arial, sans-serif; font-weight: bold; font-variant-numeric: tabular-nums; }
-    #ov.l-169 { aspect-ratio: 16 / 9; } #ov.l-1 { aspect-ratio: 1; } #ov.l-916, #ov.l-stack { aspect-ratio: 9 / 16; }
-    #ov.fill { width: 100vw; height: 100vh; aspect-ratio: auto; }
-    #ov .ov-shade { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(255, 255, 255, .13); }
-    #ov:not(.bar) .ov-shade { display: none; }
-    #ov .ov-msg { position: relative; flex: 0 0 22%; display: flex; align-items: center; justify-content: center; white-space: nowrap; padding: 0 3%; color: #ffd75e; }
-    #ov.l-916 .ov-msg, #ov.l-stack .ov-msg { flex-basis: 12%; }
-    #ov:not(.msg) .ov-msg, #ov.nomsg .ov-msg { display: none; }
-    #ov .ov-remain { position: relative; flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; white-space: nowrap; }
-    #ov span { line-height: 1; }
-    /* 9:16 stacked: minutes over seconds (hours:minutes over seconds from an hour) */
-    #ov.l-stack .ov-remain { flex-direction: column; }
-    #ov .ov-remain .r2 { display: none; }
-    #ov.l-stack .ov-remain .r2 { display: inline; }
-    #ov.impending .ov-remain { color: #ffa500; } #ov.impending .ov-shade { background: rgba(255, 165, 0, .18); }
-    #ov.over { background: #2a0000; } #ov.over .ov-remain { color: #ff4d4d; } #ov.over .ov-shade { background: rgba(255, 77, 77, .2); }
-    #ov.paused .ov-remain { color: #888; }
-    #ov.offline .ov-remain { color: #444; }
+    #pinwait .pin { font: bold 26px "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; color: #fff; }   /* readable close up, not across a room */
   </style>
 </head>
 <body>
@@ -88,11 +66,10 @@
         <div class="row">
           <span>Shape</span>
           <span class="seg" id="layout"><button data-l="169">16:9</button><button data-l="1">Square</button><button data-l="916">9:16</button><button data-l="stack" title="9:16 with the minutes above the seconds, for bigger digits">9:16 stacked</button></span>
-          <label class="check"><input type="checkbox" id="opt-msg"> Message</label>
-          <label class="check"><input type="checkbox" id="opt-bar"> Progress shade</label>
+          <label class="check" title="Messages from the timer, and its own notices (last minute, time is up) when its messages switch is on"><input type="checkbox" id="opt-msg"> Message</label>
+          <label class="check" title="The progress bar as a background shade, while the timer shows its bar"><input type="checkbox" id="opt-bar"> Progress shade</label>
         </div>
         <div id="previewbox">
-          <div id="ov" class="l-169 offline"><div class="ov-shade"></div><div class="ov-msg"><span></span></div><div class="ov-remain"><span class="r1">–:––</span><span class="r2"></span></div></div>
           <div class="floating" hidden>The overlay is in its floating window. Drag it where you want it and resize it; closing it brings it back here.</div>
         </div>
         <div class="row">
@@ -101,13 +78,15 @@
         </div>
       </div>
       <div id="pinwait" class="card center" hidden>
-        <p id="pinmsg">The timer asks who this is. Tell the person at the timer this PIN:</p>
+        <p id="pinmsg">The timer asks who this is. Tell the person at the timer this number (or read it to them over the phone). One wrong try disconnects this computer.</p>
         <div class="pin" id="pincode"></div>
       </div>
       <p class="hint">Paired with timer room <b id="room"></b>. <button id="unpair">Unpair this computer</button></p>
     </section>
   </main>
-  <script src="remote-peer.js?v=ce2b3716"></script>
-  <script src="overlay.js?v=7f4c11e3"></script>
+  <script src="remote-peer.js?v=5e28fc3a"></script>
+  <script src="key-focus.js?v=a53739ba"></script>
+  <script src="overlay-view.js?v=8068f496"></script>
+  <script src="overlay.js?v=c8d9b903"></script>
 </body>
 </html>

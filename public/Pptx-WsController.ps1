@@ -74,7 +74,11 @@ $Room = Get-LinkPart $frag 'r'
 $Key = Get-LinkPart $frag 'p'
 $Server = Get-LinkPart $frag 's'
 if (-not $Server -and $hashAt -ge 0) {
-    try { $Server = 'wss://' + ([Uri]$Link.Trim()).Host + ':8443/' } catch { $Server = $null }
+    # As the timer's pages work it out: the VPS (sophtwhere.com) runs the server on port 8443, a Cloudflare site at /ws
+    try {
+        $u = [Uri]$Link.Trim()
+        if ($u.Host -match '(^|\.)sophtwhere\.com$') { $Server = 'wss://' + $u.Host + ':8443/' } else { $Server = 'wss://' + $u.Authority + '/ws' }
+    } catch { $Server = $null }
 }
 if (-not $Room -or -not $Key -or -not $Server) {
     Write-Host 'That link is not a PowerPoint link from the timer. In the timer, click share, choose PowerPoint, and copy the link.' -ForegroundColor Red
@@ -650,11 +654,11 @@ function On-TimerMessage($d) {
     switch ([string]$d.t) {
         'pp' { Invoke-TimerCommand $d }
         'pin-required' {
-            if (-not $script:PinCode) { $script:PinCode = '{0:D4}' -f (Get-Random -Minimum 1000 -Maximum 10000) }
+            if (-not $script:PinCode) { $script:PinCode = '{0:D3}' -f (Get-Random -Minimum 100 -Maximum 1000)   # 3 digits: the timer's proximity check }
             Write-Host ''
-            Write-Host ("   The timer needs a PIN. On the timer, type:   {0}" -f $script:PinCode) -ForegroundColor Black -BackgroundColor Yellow
+            Write-Host ("   The timer asks who this is. On the timer, type:   {0}   (one wrong try disconnects)" -f $script:PinCode) -ForegroundColor Black -BackgroundColor Yellow
             Write-Host ''
-            Send-Timer @{ t = 'pin'; code = $script:PinCode }
+            Send-Timer @{ t = 'pin'; code = $script:PinCode; name = 'PowerPoint player' }
         }
         'pin-ok' {
             $script:PinCode = $null
@@ -662,8 +666,12 @@ function On-TimerMessage($d) {
             Log 'Let in by the timer' 'Green'
             Send-Hello
         }
+        'revoked' {
+            Log 'The timer took this computer''s access away. Start this script again to ask again.' 'Red'
+            $script:Running = $false
+        }
         'pin-rejected' {
-            Log 'The timer refused this computer (PIN). Start this script again to try again.' 'Red'
+            Log 'The timer refused this computer (wrong number). Start this script again to try again.' 'Red'
             $script:Running = $false
         }
     }
@@ -689,7 +697,9 @@ while ($script:Running) {
             $script:ws.Options.RemoteCertificateValidationCallback = { $true }
         }
         Log "Connecting to $Server"
-        $script:ws.ConnectAsync([Uri]$Server, [Threading.CancellationToken]::None).Wait()
+        # ?room= lets the Cloudflare server route the connection (the VPS server ignores it)
+        $sockUrl = $Server + $(if ($Server.Contains('?')) { '&' } else { '?' }) + 'room=' + [Uri]::EscapeDataString($Room)
+        $script:ws.ConnectAsync([Uri]$sockUrl, [Threading.CancellationToken]::None).Wait()
         Send-Raw @{ type = 'join'; room = $Room; key = $Key }
 
         $buffer = New-Object byte[] 65536

@@ -28,12 +28,17 @@
   };
 
   // ─── The link ─────────────────────────────────────────────────────────────
+  if (window.TimerFeatures && !TimerFeatures.pptx) {          // an alpha-only trial (features.js)
+    $('blocked').hidden = false;
+    $('blocked').textContent = 'PowerPoint computers aren’t available on this site.';
+    return;
+  }
   const SAVED_LINK = 'pptx_saved_link';
   const parse = frag => Object.fromEntries(new URLSearchParams(frag));
   let h = parse(location.hash.slice(1));
   if (h.r && h.p) store.set(SAVED_LINK, location.hash.slice(1));
   else if (store.get(SAVED_LINK)) h = parse(store.get(SAVED_LINK));
-  const cfg = { server: h.s || `wss://${location.hostname}:8443/`, room: h.r, key: h.p };
+  const cfg = { server: h.s || RemotePeer.defaultServer(), room: h.r, key: h.p };
   if (!cfg.room || !cfg.key) {
     $('blocked').hidden = false;
     $('blocked').textContent = 'Open this page from the PowerPoint link in the timer’s share panel.';
@@ -149,14 +154,25 @@
   let ws = null, peer = null, retry = 1000, retryTimer = null, hostOnline = false, waiting = false, fatal = false;
   let info = null;                                     // from the timer: the player we're paired with, decks
   const setNote = t => { $('note').textContent = t || ''; };
+  let relinkUntil = 0;                             // a direct link is being retried until then (relink())
   function showMode() {
     const b = $('badge');
     if (waiting) { b.className = ''; b.textContent = 'timer offline'; setNote('Waiting for the timer… (it has to be open, with share on)'); }
     else if (!ws || ws.readyState !== WebSocket.OPEN) { b.className = ''; b.textContent = 'reconnecting…'; }
     else if (!hostOnline) { b.className = ''; b.textContent = 'timer offline'; setNote('Waiting for the timer…'); }
     else if (peer && peer.mode === 'lan') { b.className = 'lan'; b.textContent = '⚡ LAN direct'; setNote(''); }
-    else { b.className = 'server'; b.textContent = 'via server'; setNote('Not a direct link: decks can’t be sent. This computer has to be on the same network as the timer’s computer (and the network must let devices reach each other).'); }
+    else { b.className = 'server'; b.textContent = peer && peer.mode === 'p2p' ? 'direct, other network' : Date.now() < relinkUntil ? 'retrying…' : 'via server'; setNote('Not on the same network: decks can’t be sent. This computer has to be on the same network as the timer’s computer (and the network must let devices reach each other).'); }
   }
+  // Another go at a direct link (decks need one): the badge clicked while on the server, or a new network
+  function relink() {
+    if (!peer || peer.mode !== 'server' || !hostOnline) return;
+    peer.send({ t: 'relink' });
+    relinkUntil = Date.now() + 8000;
+    showMode();
+    setTimeout(showMode, 8100);
+  }
+  $('badge').addEventListener('click', relink);
+  RemotePeer.retryOnNetworkChange(relink);
   function sendHello() {
     if (!peer) return;
     peer.send({ t: 'hello', kind: 'receiver', pair: pairId, folder: !!dir, folderName: dir ? dir.name : '', edit: $('rehearsal').checked,
@@ -178,7 +194,7 @@
   function connect() {
     clearTimeout(retryTimer);
     if (fatal) return;
-    try { ws = new WebSocket(cfg.server); } catch (_) { return schedule(); }
+    try { ws = new WebSocket(RemotePeer.socketUrl(cfg.server, { room: cfg.room })); RemotePeer.keepAlive(ws); } catch (_) { return schedule(); }
     const sock = ws;
     sock.onopen = () => sock.send(JSON.stringify({ type: 'join', room: cfg.room, key: cfg.key }));
     sock.onmessage = ev => {
@@ -191,6 +207,7 @@
         case 'error':
           if (m.reason === 'not-found' || m.reason === 'room-closed') { waiting = true; retry = 15000; }
           else if (m.reason === 'room-full') { fatal = true; setNote('Too many devices are connected to the timer.'); }
+          else if (m.reason === 'rejected') fatal = true;
           break;
       }
       showMode();
@@ -205,13 +222,14 @@
   function onMessage(m) {
     if (!m || typeof m !== 'object') return;
     if (m.t === 'pin-required') {
-      if (!pinCode) pinCode = String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+      if (!pinCode) pinCode = String(100 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900));   // 3 digits: the proximity check;
       $('pincode').textContent = pinCode; $('pinretry').hidden = true; $('pinwait').hidden = false;
-      peer.send({ t: 'pin', code: pinCode });
+      peer.send({ t: 'pin', code: pinCode, name: 'PowerPoint receiver · ' + RemotePeer.deviceName() });
     } else if (m.t === 'pin-ok') {
       if (typeof m.token === 'string') store.set('pptx_token_' + cfg.room, m.token);
       pinCode = null; $('pinwait').hidden = true; sendHello();
-    } else if (m.t === 'pin-rejected') {
+    } else if (m.t === 'pin-rejected' || m.t === 'revoked') {
+      fatal = true;                                    // the timer disconnects it: don't reconnect
       $('pincode').textContent = ''; $('pinmsg').textContent = 'The timer didn’t let this computer in.'; $('pinretry').hidden = false; $('pinwait').hidden = false;
     } else if (m.t === 'pf-offer') offer(m);
     else if (m.t === 'pf-cancel') { if (xfer && xfer.x === m.x) dropTransfer(null); }

@@ -3,17 +3,22 @@
  * One link between the timer and one phone, shared by remote-control.js (timer side) and
  * remote-phone.js (phone side).
  *
- * It tries a direct WebRTC data channel with NO STUN/TURN servers. Without them a
- * connection can only succeed when the phone can reach the timer's computer on the local
- * network, so a successful connection is the "same LAN" test. If it fails, or drops later,
- * messages go through the pairing server instead (mode 'server'). Both modes carry the same
- * small JSON messages.
+ * It tries a direct WebRTC data channel, with public STUN servers (no TURN), so it can connect
+ * across networks too when their routers allow it. Once it's open, the route it took decides the
+ * mode: 'lan' when both ends use local addresses (the same network: file transfers are allowed
+ * only then), 'p2p' when it goes over the internet (route()). If it fails, or drops later,
+ * messages go through the pairing server instead (mode 'server'). All three carry the same
+ * small JSON messages; only the server mode costs the server anything.
  *
  *   const peer = RemotePeer.create({ initiator, relay, onMessage, onModeChange });
  *   relay(obj)      — sends obj to the other side through the server (signalling + fallback)
  *   peer.receive(m) — feed it messages that arrived through the server
  *   peer.send(obj)  — sends by the best available path
- *   onMessage(obj, via)  via: 'lan' (the data channel) or 'server'
+ *   onMessage(obj, via)  via: 'lan' (the data channel, in mode 'lan' or 'p2p') or 'server'
+ *   peer.mode  'lan' | 'p2p' | 'server'
+ *   peer.restart()  while on the server, tries a direct link again (the initiator makes a new
+ *                   offer; the other side accepts any new offer with a fresh connection).
+ *   RemotePeer.retryOnNetworkChange(fn)  calls fn when the device says its network changed
  *
  * Binary (video files from the run sheet editor): LAN only, never through the server.
  *   peer.sendBinary(buf) → false unless the data channel is open; onBinary(buf) receives.
@@ -28,6 +33,11 @@
 
 var RemotePeer = (function () {
   'use strict';
+
+  // Free public STUN servers: they only tell each end its own public address
+  const STUN = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+  const publicV4 = a => typeof a === 'string' && /^\d+\.\d+\.\d+\.\d+$/.test(a) &&
+    !/^(10|127)\./.test(a) && !/^192\.168\./.test(a) && !/^172\.(1[6-9]|2\d|3[01])\./.test(a) && !/^169\.254\./.test(a) && !/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(a);
 
   function create(opts) {
     const { initiator, relay, onMessage, onModeChange, onBinary } = opts;
@@ -45,13 +55,29 @@ var RemotePeer = (function () {
       dc = ch;
       ch.binaryType = 'arraybuffer';
       ch.bufferedAmountLowThreshold = 1 << 20;
-      ch.onopen = () => { clearTimeout(timer); setMode('lan'); };
+      ch.onopen = () => { clearTimeout(timer); route().then(m => { if (dc === ch && ch.readyState === 'open') setMode(m); }); };
       ch.onclose = () => { dc = null; setMode('server'); };
       ch.onmessage = e => {
         if (typeof e.data !== 'string') { if (onBinary) onBinary(e.data); return; }
         let m; try { m = JSON.parse(e.data); } catch (_) { return; /* ignore junk */ }
         onMessage(m, 'lan');
       };
+    }
+
+    // Which way the open channel goes: 'lan' if neither end is a STUN (srflx) or relay address,
+    // nor a public IPv4 one; otherwise 'p2p'. When it can't tell, 'p2p' (no file transfers).
+    async function route() {
+      try {
+        const stats = await pc.getStats(), byId = {};
+        let pair = null;
+        stats.forEach(r => { byId[r.id] = r; });
+        stats.forEach(r => { if (r.type === 'transport' && r.selectedCandidatePairId) pair = byId[r.selectedCandidatePairId]; });
+        if (!pair) stats.forEach(r => { if (!pair && r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) pair = r; });
+        const l = pair && byId[pair.localCandidateId], r = pair && byId[pair.remoteCandidateId];
+        if (!l || !r) return 'p2p';
+        const far = c => c.candidateType === 'srflx' || c.candidateType === 'relay' || publicV4(c.address || c.ip);
+        return far(l) || far(r) ? 'p2p' : 'lan';
+      } catch (_) { return 'p2p'; }
     }
 
     function giveUp() {
@@ -63,7 +89,7 @@ var RemotePeer = (function () {
 
     function start() {
       if (closed || typeof RTCPeerConnection === 'undefined') return false;
-      pc = new RTCPeerConnection({ iceServers: [] });        // LAN only: no STUN, no TURN
+      pc = new RTCPeerConnection({ iceServers: STUN });        // no TURN: nothing ever goes through a server of ours
       pc.onicecandidate = e => { if (e.candidate) relay({ k: 'sig', ice: e.candidate.toJSON() }); };
       pc.onconnectionstatechange = () => {
         if (pc && (pc.connectionState === 'failed' || pc.connectionState === 'closed')) giveUp();
@@ -77,11 +103,15 @@ var RemotePeer = (function () {
       } else {
         pc.ondatachannel = e => wire(e.channel);
       }
-      timer = setTimeout(() => { if (mode !== 'lan') giveUp(); }, timeoutMs);
+      timer = setTimeout(() => { if (mode === 'server') giveUp(); }, timeoutMs);
       return true;
     }
 
     async function onSignal(m) {
+      if (!initiator && m.sdp && m.sdp.type === 'offer' && pc) {      // a new attempt (restart() on the other side)
+        if (mode !== 'server') return;
+        giveUp();
+      }
       if (!pc) {
         if (initiator || !m.sdp || m.sdp.type !== 'offer') return;   // stale signal after giving up
         if (!start()) return;
@@ -134,9 +164,14 @@ var RemotePeer = (function () {
     }
 
     function close() { closed = true; giveUp(); }
+    function restart() {
+      if (closed || mode !== 'server') return;
+      giveUp();
+      if (initiator) start();
+    }
 
     if (initiator) start();
-    return { send, receive, close, sendBinary, drained, get mode() { return mode; } };
+    return { send, receive, close, restart, sendBinary, drained, get mode() { return mode; } };
   }
 
   // ─── Big messages ──────────────────────────────────────────────────────────
@@ -191,5 +226,50 @@ var RemotePeer = (function () {
     });
   }
 
-  return { create, parts, joiner, sendBig };
+  // The pairing server for pages from `host` (default: this page's). The VPS (sophtwhere.com, and
+  // the local preview on port 8444) runs it on its own port, 8443; elsewhere (Cloudflare) it's on
+  // the site itself, at /ws.
+  function defaultServer(host) {
+    host = host || location.host;
+    const name = host.replace(/:\d+$/, '');
+    if (/(^|\.)sophtwhere\.com$/.test(name) || host === 'localhost:8444') return `wss://${name}:8443/`;
+    return `${location.protocol === 'http:' && !host.includes('.') ? 'ws' : 'wss'}://${host}/ws`;
+  }
+  // The address to open: the server plus ?room= (or ?code=), which the Cloudflare server routes by.
+  // The VPS server ignores it.
+  function socketUrl(server, params) {
+    try {
+      const u = new URL(server);
+      for (const k in params) if (params[k]) u.searchParams.set(k, params[k]);
+      return u.href;
+    } catch (_) { return server; }
+  }
+  // Keeps an idle connection open (a hibernating Cloudflare server sends no pings of its own):
+  // {type:'ping'} every 25 s, answered with {type:'pong'}, which every client ignores.
+  function keepAlive(ws) {
+    const t = setInterval(() => {
+      if (ws.readyState === 1) { try { ws.send('{"type":"ping"}'); } catch (_) { /* closing */ } }
+      else if (ws.readyState > 1) clearInterval(t);
+    }, 25000);
+  }
+
+  // The device joined another network (Wi-Fi after mobile data, say): worth trying a direct link
+  // again. Android Chrome reports it (navigator.connection); everyone reports coming back online.
+  function retryOnNetworkChange(fn) {
+    let t = null;
+    const later = () => { clearTimeout(t); t = setTimeout(fn, 1500); };   // let the new network settle
+    window.addEventListener('online', later);
+    if (navigator.connection && navigator.connection.addEventListener) navigator.connection.addEventListener('change', later);
+  }
+
+  // A name the timer can show for this device until someone gives it a better one ("iPhone · Safari")
+  function deviceName() {
+    const ua = navigator.userAgent;
+    const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android'
+      : /Mac OS X/.test(ua) ? (navigator.maxTouchPoints > 1 ? 'iPad' : 'Mac') : /Windows/.test(ua) ? 'Windows' : /CrOS/.test(ua) ? 'Chromebook' : /Linux/.test(ua) ? 'Linux' : 'Device';
+    const browser = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+    return browser ? os + ' · ' + browser : os;
+  }
+
+  return { create, parts, joiner, sendBig, defaultServer, socketUrl, keepAlive, retryOnNetworkChange, deviceName };
 })();

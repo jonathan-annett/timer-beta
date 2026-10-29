@@ -3,7 +3,7 @@ import type { SomeCompanionConfigField } from '@companion-module/base'
 export interface ModuleConfig {
 	/** The Companion link copied from the timer's share panel (Companion mode), or just the part after '#' */
 	link: string
-	/** Pairing server override (normally taken from the link; default wss://<timer host>:8443/) */
+	/** Pairing server override (normally taken from the link; default from the timer host: wss://<host>:8443/ on sophtwhere.com, else wss://<host>/ws) */
 	server: string
 	/** Accept a self-signed certificate on the pairing server (local testing only) */
 	insecure: boolean

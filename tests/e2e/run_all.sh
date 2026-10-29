@@ -7,7 +7,9 @@
 cd "$(dirname "$0")"
 OUT="${E2E_OUT:-/tmp/timer-e2e}"; mkdir -p "$OUT"
 started=""
-if ! (echo > /dev/tcp/127.0.0.1/8443) 2>/dev/null && ! nc -z 127.0.0.1 8443 2>/dev/null; then
+# E2E_SERVER=wss://localhost:8787/ws runs them against the Cloudflare Worker instead (cd cloudflare && npx wrangler dev --local-protocol https
+# --var ORIGINS:https://timer.sophtwhere.com); otherwise remote-server.js on 8443, started here if it isn't running.
+if [ -z "$E2E_SERVER" ] && ! (echo > /dev/tcp/127.0.0.1/8443) 2>/dev/null && ! nc -z 127.0.0.1 8443 2>/dev/null; then
   ./server.sh > "$OUT/server.log" 2>&1 & started=$!
   sleep 1.5
 fi
@@ -16,6 +18,7 @@ PY=python3; [ -x .venv/bin/python ] && PY=.venv/bin/python   # tests/e2e/.venv: 
 TO="$(command -v timeout || command -v gtimeout || true)"   # macOS has neither unless coreutils is installed
 fails=0
 for t in "$@"; do
+  case "$t" in _*) continue;; esac   # _name.py: helpers for the tests, not tests
   name="${t%.py}"
   if ${TO:+$TO 600} $PY "$t" > "$OUT/$name.log" 2>&1 && grep -q '^errors: \[\]' "$OUT/$name.log"; then
     echo "ok    $name"

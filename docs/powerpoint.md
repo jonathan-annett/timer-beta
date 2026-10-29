@@ -5,6 +5,26 @@ more **PowerPoint computers** (a main one and a backup, say), and when Next reac
 deck, each of them opens it as a full-screen slide show. An item without a deck leaves the last
 one on screen.
 
+## Using it (moved from the README: an alpha-only trial)
+
+Only on the alpha site (`features.js`, the Worker's `FEATURES`): elsewhere the Slides column, Close slides, the PowerPoint link and the receiver page are hidden or refused.
+
+Give a run sheet item a PowerPoint deck and it opens as a full-screen slide show on the computer that shows the slides when **Next** reaches that item. Decks are sent to that computer ahead of time, so the switch is instant. An item without slides leaves the last deck on screen; **Back** onto an item with slides shows them again. You can have a backup computer too: every PowerPoint computer gets the same decks and opens them at the same moment. Decks only open or close when you press **Next**, **Back** or **Close slides**: a computer that connects or reconnects (or the timer page being reloaded) never changes what's on screen.
+
+The PowerPoint computer needs Windows with PowerPoint, Chrome or Edge, and the same network as the timer's computer. To set it up:
+
+1. On the timer, click **share**, choose **PowerPoint** and copy the link. Open it in Chrome or Edge on the PowerPoint computer. Or, with an admin phone: open the timer on the PowerPoint computer, click **share** there, choose **Control**, and on the phone choose **Admin: set up another computer**, scan that code and pick **A PowerPoint computer**: it switches to the receiver page by itself.
+2. On that page, click **Download the player** and run the command it shows in PowerShell. The player is a small script that opens the decks in PowerPoint; keep its window open during the show. It shows its *Inbox* folder.
+3. On the page, click **Choose folder…** and pick that Inbox folder.
+
+Then attach decks in the run sheet editor: **+ slides** in the **Slides** column, or drop a .pptx file on a row (from a remote run sheet editor too, when it's on the same network).
+
+**Holding slide:** attach an image (PNG or JPG, e.g. the event logo, a slide saved as a picture) in the same Slides cell or drop it on a row. When that item starts, it becomes the PowerPoint computers' desktop wallpaper, so it's what the screen shows whenever no deck is up: during a break, or while a speaker is introduced without giving their title away. Put it on the first item of the day, or on the item before a speaker. An item can have both: the holding slide is set, then the deck starts over it. **Close slides** (in the run sheet editor's top bar, as a Stream Deck key, or from Companion) closes whatever slide show is up on the PowerPoint computers, even one opened there by hand, so the holding slide shows.
+
+**Rehearsals:** tick **Open decks for editing** on the receiver page and decks open as normal PowerPoint windows, with the show started for you (F5), so a speaker's changes can be made on that computer. Edits are saved when the run sheet moves on to another deck; they stay on that computer (the timer's copy isn't changed) and aren't overwritten when the timer syncs again. Untick it for the show. The share panel shows each PowerPoint computer and how many decks are ready on it, and the run sheet dashboard warns if the next item's slides aren't ready yet. The timer only loads and starts each deck; slides are advanced on the PowerPoint computer itself, with the presenter's clicker as usual.
+
+## How it works
+
 A PowerPoint computer runs two things, both joined to the timer with its **PowerPoint link**
 (share → PowerPoint):
 

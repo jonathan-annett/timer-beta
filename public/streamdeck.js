@@ -90,7 +90,7 @@
     video_play:       { label: '▶ Play\nvideo',   group: 'Video', cmd: () => _sendCmd({ cmd: 'videoplay' }) },
     video_stop:       { label: '■ Stop\nvideo',   group: 'Video', cmd: () => _sendCmd({ cmd: 'videostop' }) },
     video_rewind:     { label: '⟲ Rewind\nvideo', group: 'Video', cmd: () => _sendCmd({ cmd: 'videorewind' }) },
-    pptx_close:       { label: '✕ Close\nslides', group: 'Video', cmd: () => _sendCmd({ cmd: 'pptxclose' }) },   // PowerPoint computers: holding slide shows
+    pptx_close:       { label: '✕ Close\nslides', group: 'Video', pptx: true, cmd: () => _sendCmd({ cmd: 'pptxclose' }) },   // PowerPoint computers: holding slide shows
     empty:            { label: '',          group: 'Other',     cmd: null },
   };
 
@@ -288,6 +288,19 @@
       console.warn('StreamDeck: set brightness failed', err);
     }
   }
+
+  // The page is going away (closed, reloaded): reset the deck to its idle Elgato screen so it doesn't
+  // keep showing stale keys. One short feature report, sent without waiting (a closing page gets a
+  // moment at most; blanking every key would be far too slow). Best effort. The next page to attach
+  // (a reload, another timer tab) draws its keys again.
+  function resetOnLeave() {
+    if (!device || !deviceInfo || !device.opened) return;
+    try {
+      if (deviceInfo.protocol === 'gen2') { const d = new Uint8Array(31); d[0] = 0x02; device.sendFeatureReport(0x03, d).catch(() => {}); }
+      else { const d = new Uint8Array(16); d[0] = 0x63; device.sendFeatureReport(0x0b, d).catch(() => {}); }
+    } catch (_) { /* gone already */ }
+  }
+  window.addEventListener('pagehide', resetOnLeave);
 
   function setBrightness(pct) {
     brightness = Math.max(1, Math.min(100, pct | 0));
@@ -767,6 +780,7 @@
 
     const groups = {};
     for (const [key, action] of Object.entries(ACTIONS)) {
+      if (action.pptx && !(window.TimerFeatures && TimerFeatures.pptx)) continue;   // alpha-only trial (features.js)
       if (!groups[action.group]) groups[action.group] = [];
       groups[action.group].push({ key, action });
     }

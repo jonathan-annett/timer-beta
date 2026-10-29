@@ -543,6 +543,7 @@
   // {key, name, size}, keys 'rsdeck:' / 'rsimg:<item id>:<time>'; name is the file name.
   const DECK_RE = /\.(pptx|ppsx|pptm|ppsm|ppt|pps|potx)$/i;
   const IMG_RE = /\.(png|jpe?g|bmp)$/i;
+  const PPTX = !!(window.TimerFeatures && TimerFeatures.pptx);   // alpha-only trial (features.js): no Slides column otherwise
   const isDeck = f => !!f && DECK_RE.test(f.name || '');
   const isHolding = f => !!f && IMG_RE.test(f.name || '');
   const deckBusy = new Set();
@@ -568,6 +569,7 @@
     if (n) n.textContent = noExt((d || h).name);
   }
   async function attachDeck(id, file) {
+    if (!PPTX) return;
     const item = sheet.items.find(it => it.id === id);
     if (!item || !file) return;
     const kind = isDeck(file) ? 'deck' : isHolding(file) ? 'holding' : null;
@@ -651,7 +653,7 @@
     tbodyEl.querySelectorAll('tr.vdrop').forEach(r => r.classList.remove('vdrop'));
     if (!tr || tr.classList.contains('endrow') || tr.classList.contains('locked')) return;
     const list = Array.from(e.dataTransfer.files || []);
-    const f = list.find(x => x.type.startsWith('video/')) || list.find(isDeck) || list.find(isHolding);
+    const f = list.find(x => x.type.startsWith('video/')) || (PPTX && (list.find(isDeck) || list.find(isHolding)));
     if (!f) return;
     e.preventDefault();
     if (f.type.startsWith('video/')) attachVideo(tr.dataset.id, f); else attachDeck(tr.dataset.id, f);

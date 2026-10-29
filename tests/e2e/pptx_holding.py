@@ -1,7 +1,9 @@
 import os as _os  # paths: the repo's public/ folder; screenshots go to $E2E_OUT (default /tmp/timer-e2e)
+from _proximity import approve   # the proximity check: type each new device's number on the timer
 HERE = _os.path.dirname(_os.path.abspath(__file__))
 PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
+SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing server (run_all.sh; wss://localhost:8787/ws = the Cloudflare Worker via wrangler dev)
 import os, mimetypes, json, subprocess, threading, time, hashlib
 from playwright.sync_api import sync_playwright
 ROOT = PUBLIC; S = os.path.dirname(os.path.abspath(__file__)); BASE = "https://timer.sophtwhere.com/beta/"
@@ -34,9 +36,10 @@ with sync_playwright() as p:
     b = p.chromium.launch(args=ARGS)
     # ── the timer ──
     c = b.new_context(ignore_https_errors=True, viewport={"width": 1280, "height": 800})
+    c.add_init_script("window.TimerFeatures = { pptx: true }")   # PowerPoint: an alpha-only trial (features.js)
     c.add_init_script("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';}")
     c.route("**/*", h); T = c.new_page(); T.on("pageerror", lambda e: errs.append("timer: " + str(e)))
-    T.goto(BASE + "timer.html?remote=wss://localhost:8443/"); T.wait_for_timeout(1200)
+    T.goto(BASE + "timer.html?remote="+SERVER); T.wait_for_timeout(1200)
     sums = T.evaluate("""async () => {
       const mk = (n, seed) => { const a = new Uint8Array(n); for (let i = 0; i < n; i++) a[i] = (i * seed + (i >> 9)) & 255; return a; };
       const d1 = mk(3500000, 7), d3 = mk(900000, 13);
@@ -62,10 +65,11 @@ with sync_playwright() as p:
 
     # ── the PowerPoint computer: receiver page (its own browser profile) ──
     rc = b.new_context(ignore_https_errors=True, viewport={"width": 900, "height": 900})
+    rc.add_init_script("window.TimerFeatures = { pptx: true }")   # PowerPoint: an alpha-only trial (features.js)
     rc.add_init_script("""localStorage.pptx_receiver_id = 'testpair123';
       window.showDirectoryPicker = async () => navigator.storage.getDirectory();   // stand-in folder: the origin's private file system""")
     rc.route("**/*", h); R = rc.new_page(); R.on("pageerror", lambda e: errs.append("receiver: " + str(e)))
-    R.goto(link); R.wait_for_timeout(1500)
+    R.goto(link); approve(T); R.wait_for_timeout(1500)
     print("receiver before folder:", R.text_content("#badge"), "|", R.text_content("#folder"))
     T.wait_for_timeout(100)
     R.click("#pick"); R.wait_for_timeout(1500)
@@ -74,6 +78,7 @@ with sync_playwright() as p:
 
     # ── the player ──
     P = run_player(link, "testpair123")
+    approve(T)
     ok = wait(lambda: len(cmds(verb="send")) >= 4, 40)
     T.wait_for_timeout(800)
     print("synced:", ok, "| player commands:", [c[1:3] for c in cmds()])
@@ -106,10 +111,12 @@ with sync_playwright() as p:
     nxt()   # Panel again: holding break.png
     # a backup machine joining late: holding slide first, no deck (closed)
     rc2 = b.new_context(ignore_https_errors=True, viewport={"width": 900, "height": 900})
+    rc2.add_init_script("window.TimerFeatures = { pptx: true }")   # PowerPoint: an alpha-only trial (features.js)
     rc2.add_init_script("""localStorage.pptx_receiver_id = 'backup45678'; window.showDirectoryPicker = async () => navigator.storage.getDirectory();""")
     rc2.route("**/*", h); R2 = rc2.new_page(); R2.on("pageerror", lambda e: errs.append("receiver2: " + str(e)))
-    R2.goto(link); R2.wait_for_timeout(1200); R2.click("#pick")
+    R2.goto(link); approve(T); R2.wait_for_timeout(1200); R2.click("#pick")
     P2 = run_player(link, "backup45678", "Backup")
+    approve(T)
     wait(lambda: len([c for c in cmds("Backup") if c[1] == 'wallpaper']) >= 1, 40)
     T.wait_for_timeout(1500)
     print("late backup:", acts("Backup"))

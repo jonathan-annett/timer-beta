@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Timer: bringing your settings</title>
+  <style>
+    html, body { margin: 0; background: #0b0b0b; color: #ddd; font: 16px/1.5 "Helvetica Neue", Arial, sans-serif; }
+    main { max-width: 560px; margin: 0 auto; padding: 40px 20px; }
+    h1 { font-size: 22px; color: #fff; margin: 0 0 12px; }
+    ul { padding-left: 20px; color: #bbb; }
+    button { font: inherit; padding: 10px 18px; border-radius: 6px; border: 1px solid #444; background: #222; color: #ddd; cursor: pointer; margin-right: 8px; }
+    button.primary { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
+    .note { color: #888; font-size: 14px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 id="title">Bringing your settings…</h1>
+    <p id="text"></p>
+    <ul id="list"></ul>
+    <p id="ask" hidden>This browser already has its own settings here. Replace them with the ones you brought?</p>
+    <p><button id="go" class="primary" hidden>Replace them</button><button id="skip" hidden>Keep these, open the timer</button></p>
+    <p class="note" id="note"></p>
+  </main>
+  <script src="import.js?v=dcea8c76"></script>
+</body>
+</html>

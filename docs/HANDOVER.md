@@ -1,77 +1,143 @@
-# Handover — 24 Oct 2026
+# Handover — 29 Oct 2026
 
 For the next agent session. Read `CLAUDE.md` first (architecture, conventions, every subsystem
 in detail); this file is the state of play: what was done recently, what the user decided,
 what's being tested, and what's open. `docs/powerpoint.md` is the PowerPoint machines'
 setup and protocol; `tests/e2e/README.md` is how to test.
 
+## Where things are (29 Oct)
+
+**Three sites, two branches:**
+
+| Site | Serves | From | Who |
+|---|---|---|---|
+| https://alpha.timed-show.com/ | Cloudflare Worker `timed-show-alpha` (pages + Durable Objects) | local `alpha` branch, deployed from the Mac with `wrangler` | the user (and the agent's tests) only: Cloudflare Access |
+| https://timer.sophtwhere.com/beta/ | VPS clone + `timer-remote` (`remote-server.js`) | `main`, deployed by the user's `./update-server.sh` | beta testers, live shows |
+| https://timer.sophtwhere.com/ | VPS, static | not this repo's concern | public |
+
+`timed-show.com`, `www.timed-show.com`, `timed.show`, `www.timed.show`: a "coming soon, the beta is at
+beta.timed-show.com" page (Worker `timed-show-landing`, `cloudflare/landing/`, deployed 29 Oct; every
+path, no-store), kept until the launch, when those addresses move to the real site.
+Planned: `beta.timed-show.com` (Worker `timed-show-beta`, from `main`) replaces the VPS beta, and
+`timer.sophtwhere.com/beta/` redirects there. `timed.show` (bought) redirects to `timed-show.com`.
+Not done yet (see *Open*).
+
+- **`alpha` is not pushed to GitHub** and is many commits ahead of `main`. `main` = what the VPS beta
+  runs (`f3ece87`, deployed 28 Oct; rollback tag `beta-rollback` = `ce10a90`). The user promotes
+  alpha → main when they say; nothing goes to `main` or GitHub without their OK.
+- **Deploy alpha** (no push needed): `cd cloudflare && set -a; . ~/.config/timed-show.env; set +a; npx wrangler deploy --env alpha`.
+  Do it after each committed change the user should see; it takes ~15 s.
+- **Credentials (outside the repo, never print them):** `~/.config/timed-show.env`
+  (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`: Workers, Access, DNS/redirects on
+  `timed-show.com` and `timed.show` only; the user's other zones are read-only to it) and
+  `~/.config/timed-show-alpha-access.env` (`CF_ACCESS_CLIENT_ID/SECRET`: the Access service token
+  for tests against alpha, sent as `CF-Access-Client-Id`/`-Secret` headers).
+- **Access on alpha:** app "timed-show alpha" on `alpha.timed-show.com`, policies: the user's email
+  (one-time PIN login, 30-day sessions) + the test service token. The user wants alpha limited to
+  emails they name: add an email to the "timed-show alpha: owner" policy when asked. Creating an
+  identity provider via the API was blocked by Claude Code's permission check; the user added the
+  one-time PIN login in the dashboard (Zero Trust → Integrations → Identity providers).
+- **Testing:** `tests/e2e/run_all.sh` (VPS-style server, started by itself) and
+  `E2E_SERVER=wss://localhost:8787/ws tests/e2e/run_all.sh` against the Worker (`cd cloudflare &&
+  npx wrangler dev --port 8787 --local-protocol https --var ORIGINS:https://timer.sophtwhere.com`
+  running). Run both after server or client changes; each takes ~10 min (run in the background).
+  New devices must pass the proximity check: tests call `_proximity.approve(t)`.
+
+## Decisions the user made (29 Oct)
+
+- **Hosting:** Cloudflare (Worker + Durable Objects) for alpha/beta, pages from the repo, for
+  scaling and because venues block port 8443. `timed-show.com` canonical (venues that allow only
+  .com/.net/.org); `timed.show` redirects.
+- **Tiers (not built yet):** WebRTC (LAN or STUN) is free for everyone; relaying through the
+  server (the websocket's `data`, what costs money) needs a signed-in user. Alpha and beta: any
+  signed-in user (whitelist emails only if it gets out of hand, ~100 users). Main site later: an
+  active Buy Me a Coffee membership of at least $5 (cancelled: lasts to the end of the period),
+  or one-off donations at $5 per 31 days (a $10 donation = 62 days); Stripe subscriptions for
+  institutions. Only the timer's operator signs in; the room's entitlement covers its devices. A
+  BMC webhook brief exists (`~/Downloads/Buy Me a Coffee Webhooks Cloudflare Worker Integration Brief.md`:
+  `POST /webhooks/bmc`, HMAC check, `BMC_WEBHOOK_SECRET`). Open questions asked: email sign-in
+  provider, Companion/PowerPoint players (websocket-only) free or not, a free relay allowance.
+- **STUN: yes** (done). **PowerPoint computers: alpha only** until the user decides whether to keep
+  them (a PowerShell script may look like an attack vector); hidden and refused elsewhere (done).
+- **Proximity check instead of same-network:** pairing codes work from any network; every new
+  device shows a 3-digit number (moderate size) that someone types on the timer; one wrong try
+  drops it (done). Being on the phone to the person is fine.
+- Rebrand to "Timed Show" (or similar) is likely; keep the Companion module's internal id.
+
+## On alpha, not on main (newest last)
+
+Cloudflare Worker (`cloudflare/`); `/` → timer, `/o` → overlay page; share-panel pairing hint says
+"type this code"; overlay follows the timer's B and M (shade, *Wrap up - last minute* / *Time is
+Up* / *Paused* notices); STUN with modes `lan`/`p2p`/`server`; PowerPoint alpha-only
+(`features.js`); retrying the direct link (tap the "via server" badge, or a network change);
+proximity check (3 digits, one try, server `kick`); phone **Unpair this device**; device names,
+**Rename** and per-device **Revoke** in the share panel, known devices list; the timer's own
+overlay (O) is now the shared overlay (`overlay-view.js`, `local-overlay.js`). Note `remote-server.js`
+changed too (no same-network check, `kick`): promoting to main means a `timer-remote` restart.
+
+## Hotfix waiting for the user's OK to push (29 Oct)
+
+- `main` has `f5365dd` (not pushed): the Stream Deck Pause/Resume key resumed with Clear Pause,
+  throwing the paused time away (a user's report on the live site). Also on alpha (`a30f6fa`).
+  Test `tests/e2e/streamdeck_pause.py`. Pushing it and `./update-server.sh` changes only
+  `streamdeck.js` (no `timer-remote` restart). The original site (timer.sophtwhere.com, not this
+  repo) has the same bug if it has the same code.
+
+## The move to beta.timed-show.com (prepared 29 Oct; waiting for the user's test and go)
+
+The user's plan, answers given: alpha → `main` → Worker `timed-show-beta` at **beta.timed-show.com**
+(timed-show.com itself is kept for the launch). The VPS beta is **frozen**: local branch
+`legacy-beta` (worktree `../timer-legacy`) = `main` as deployed + the Stream Deck pause fix +
+`index.html` landing page (announces the new address; **Next** = `location.replace` to the new
+site, "Bring my settings" ticked by default) + `deprecated-beta.html` (→ the old `timer.html`) +
+`moved.js` (a dismissable "The beta has moved" bar on the old timer page, link brings settings;
+✕ hides it for 7 days). Settings travel in the URL fragment to the new site's `import.html`
+(`import.js`, allow-listed keys; run sheet media dropped; asks before replacing different values
+already there). Not carried: share keys/approvals, the running countdown, videos.
+Check: `tests/e2e/_move_to_new_site.py` (manual; needs the worktree).
+
+On the user's go: push `alpha` → `main` (ask), `wrangler deploy --env beta`, run the suite against
+beta, push `legacy-beta`, then on the VPS `git fetch && git checkout legacy-beta` once (afterwards
+`update-server.sh` pulls that branch; `remote-server.js` there is unchanged, so no restart).
+
+## Known issue being checked (29 Oct)
+
+`tests/e2e/local_overlay.py`: since the shared keyboard warning (`71f869f`), its last steps (O
+again should close the overlay) fail in the plain headless run, but pass whenever the test is
+instrumented (any extra listener or evaluate). Unknown whether it's real or a test quirk; the user
+is checking O open/close by hand on alpha (also after clicking in the presenter window). Don't
+loop on it: ask the user's result first.
+
+## Open (offered or asked, not started)
+
+- Warn when a share link is opened in the same browser as the timer ("use the presenter window";
+  Continue anyway): offered, user didn't object.
+- Beta on Cloudflare: Worker `timed-show-beta` + `beta.timed-show.com`, GitHub → Cloudflare deploys
+  (Workers Builds needs a one-time GitHub authorisation in the dashboard, or GitHub Actions with
+  the token), `timed.show` redirect rules, the `/beta/` redirect on the VPS, and a "bring my
+  settings across" page on the old origin first (localStorage/IndexedDB are per origin).
+- The tiers (relay gating, sign-in, D1 supporters store, BMC webhook, Stripe later).
+- Stream Deck "keys move around" fix (28 Oct): the user's tester found it went away after a
+  replug; the user was going to ask them to retest.
+
 ## Working with this repo
 
-- Repo: `github.com/jonathan-annett/timer-beta`. Commit to `main`, but **tell the user and wait
-  for their OK before every push** (28 Oct: a push is one step from live). End commit messages with the attribution lines the session gives you.
-- Deploy is by the user, from GitHub: https://timer.sophtwhere.com/beta/ is served from a clone of
-  the repo on the VPS, and the user's local `update-server.sh` (untracked, not for the repo) runs
-  `git pull --ff-only` there over SSH, restarting `timer-remote` only when `remote-server.js` or
-  `package.json` changed (a restart drops every phone, display, Companion and PowerPoint link
-  until they reconnect, so only between shows). So a pushed commit is deployed once they run it.
-  The pairing server (`remote-server.js`, protocol 6) is the systemd service `timer-remote` on
-  the same VPS.
-- At the end of each change, say it's pushed and ready for `./update-server.sh`, and which pages to
-  reload (or have them try it first in the local preview, see below). Stale cached scripts have caused "it doesn't work" reports several times (most recently
-  holding slides not syncing: an old `pptx-hub.js`/`pptx-receiver.js`). Script/style links now
-  carry `?v=` content-hash stamps (`tools/stamp-versions.mjs`), so a plain reload is enough;
-  pages left open since before a deploy still need one.
-- User setup: Companion 5.1 on a Mac (Node 24, developer modules path → `timer-beta/companion`);
-  a Windows test PC with PowerPoint running `Pptx-WsController.ps1` + `pptx.html`.
-- The user is in Melbourne (UTC+11). They test as they go and report back in short messages;
-  answer with what changed and what to deploy, not a recap.
-- In the cloud sandbox a downloaded PowerShell binary was blocked; don't work around such blocks.
-  On the Mac, installing PowerShell with Homebrew is the user's call (suggest it, see below).
-
-## Working from the Mac (Claude Code on the command line)
-
-The next sessions run in Claude Code on the user's MacBook, in a local clone. That removes most
-of the friction this session had (cloud container, background jobs killed after 2 h, everything
-relayed through the user). Suggested setup and loop:
-
-**Set up once**
-- `git clone` the repo (or use the existing clone), `npm install` at the root (just `ws`).
-- Python 3 + Playwright for the e2e scripts: `pip3 install playwright && python3 -m playwright install chromium`
-  (the cloud's pre-installed Chromium doesn't exist on the Mac).
-- Node 22 or newer for the Companion module (the user has Node 24; `nvm` if needed).
-- Optional: `brew install powershell` (see *PowerPoint player* below) and `brew install coreutils`
-  (gives `gtimeout`, which `run_all.sh` uses when present).
-- In Claude Code, allow the routine commands (`git`, `npm`, `node`, `python3`, `tests/e2e/*.sh`)
-  so each test run and push doesn't stop for a permission prompt.
-
-**The loop for each change**
-1. Make the change; keep `CLAUDE.md` (architecture) and this file (state of play) up to date in
-   the same commit. If any `.js`/`.css` in `public/` changed, run `node tools/stamp-versions.mjs`
-   (cache-busting `?v=` stamps in the HTML) and commit the HTML with it.
-2. `tests/e2e/run_all.sh` (or just the relevant ones, e.g. `tests/e2e/run_all.sh runsheet_*`):
-   one line per script, logs in `/tmp/timer-e2e/`. The scripts print what they saw rather than
-   asserting, so also read the log of the test for the feature you changed. Add or extend a
-   script for new behaviour (copy the closest one).
-3. **Local preview before deploying:** `tests/e2e/server.sh &` then `node tools/serve-local.mjs`,
-   and the user opens https://localhost:8444/ (accept the self-signed certificate once there and
-   once at https://localhost:8443/). It serves `public/` with caching off, and the share panel
-   connects to the local pairing server by itself, so phones-on-the-Mac, the remote editor,
-   Companion (point a test connection at the local link) and PowerPoint (*Simulate*) can all be
-   tried locally. This should replace most "deploy, Ctrl+F5, report back" round trips.
-4. Commit and push to `main`; the user deploys with `./update-server.sh` (git pull on the VPS).
-
-**Ideas to streamline further (ask the user first)**
-- Companion lives on the same Mac: if Companion's developer modules path points at this clone,
-  `npm run build` in the module is all a change needs (restart the connection, or Companion, if
-  it doesn't pick it up). `npm test` there checks the preset/action definitions.
-- **PowerPoint player:** the agent still can't reach the Windows PC, but the real
-  `Pptx-WsController.ps1` runs on macOS with `pwsh -File public/Pptx-WsController.ps1 -Link '<pptx link>' -Simulate -AllowSelfSignedCert`
-  (its Windows-only parts are skipped off Windows; untried so far). With the local preview's
-  PowerPoint link that tests the script's own protocol handling, not just `fake_player.mjs`.
-  For real-PowerPoint problems, ask the user for the player's console output; a `-LogFile`
-  option on the player would make that easier to send.
-- Keep using small commits with a test run each; the user tests between them and reports in
-  short messages.
+- Repo: `github.com/jonathan-annett/timer-beta`. **Tell the user and wait for their OK before every
+  push** (a push to `main` is one step from live). End commit messages with the attribution lines
+  the session gives you.
+- VPS deploy is by the user: `update-server.sh` (local, untracked, never commit it) runs
+  `git pull --ff-only` on the VPS over SSH and restarts `timer-remote` only when `remote-server.js`
+  or `package.json` changed (a restart drops every connection until it reconnects, so only
+  between shows).
+- After changing any `.js`/`.css` in `public/`, run `node tools/stamp-versions.mjs` and commit the
+  HTML with it (cache busting). The README is also the in-app help (Worker imports it at deploy).
+- User setup: a MacBook (this clone, Node 24, Python venv at `tests/e2e/.venv`), Companion 5.1 on
+  the Mac (developer modules path → `timer-beta/companion`), a Windows test PC with PowerPoint.
+- The user is in Melbourne (UTC+11). They test as they go and report back in short messages
+  (often several while the agent works); answer with what changed and what to reload.
+- Local preview without Cloudflare: `tests/e2e/server.sh &` + `node tools/serve-local.mjs`
+  (https://localhost:8444/). With the Worker: `npx wrangler dev ... --local-protocol https` in
+  `cloudflare/` (https://localhost:8787/timer.html; the timer page refuses plain http).
 
 ## What was built recently (newest first)
 
@@ -175,11 +241,12 @@ Run sheet:
   estimated (future), whether or not the sheet had start times.
 - Checks use what the user sees (the start shown in the row), not hidden internals.
 
-## Being tested by the user right now
+## Being tested by the user (as of 24–29 Oct)
 
+- Alpha (29 Oct): the overlay, code pairing and sharing on https://alpha.timed-show.com/.
 - The run sheet with a **names-and-durations-only** list (no start times): Next/Restart/▶
   updating Start, estimates, end-time edits.
-- The PowerPoint player on Windows: rehearsal mode's Ctrl+Q/S close "seems to work"; the player
+- The PowerPoint player on Windows (now alpha-only): rehearsal mode's Ctrl+Q/S close "seems to work"; the player
   still logs PowerPoint's windows (`window:`/`focused:`/`inside:` lines) after each start and
   during closing, for diagnosis. Turn that logging down once the user is happy.
 

@@ -16,7 +16,7 @@
 
   const $ = id => document.getElementById(id);
   // Link: #r=<room>&k=<key> (control) or #r=<room>&v=<view key>&m=<countdown|runsheet>
-  // (view only), plus [&s=<server>]; the server defaults to wss://<this host>:8443/.
+  // (view only), plus [&s=<server>]; the server defaults to RemotePeer.defaultServer().
   // (Long names server/room/key from older links still work.)
   // The last link opened is saved, so the page also works without one: from a bookmark, or as
   // an installed app (whose start URL has no #fragment). Good for a multi-day event; the timer
@@ -29,7 +29,7 @@
     else if (localStorage.getItem(SAVED_LINK)) h = parse(localStorage.getItem(SAVED_LINK));
   } catch (_) { /* private mode: links still work, they just aren't remembered */ }
   const cfg = {
-    server: h.s || h.server || `wss://${location.hostname}:8443/`,
+    server: h.s || h.server || RemotePeer.defaultServer(),
     room: h.r || h.room,
     key: h.a || h.k || h.key || h.c || h.v,
   };
@@ -39,7 +39,7 @@
   let role = h.a ? 'admin' : (h.k || h.key || h.c) ? 'control' : 'view';
   if (!cfg.room || !cfg.key) {
     $('blocked').hidden = false;
-    $('blocked').textContent = 'Open this page by scanning the QR code in the timer’s “phone” panel.';
+    $('blocked').textContent = 'Open this page by scanning the QR code in the timer’s share panel.';
     return;
   }
   $('app').hidden = false;
@@ -58,6 +58,7 @@
     b.querySelector('.short').textContent = BADGE_ICON[kind] || '•';
     $('note').textContent = note || '';
   }
+  let relinkUntil = 0;                             // a direct link is being retried until then (relink())
   function showMode() {
     postLink();
     if (waiting) return setBadge('off', 'timer offline', role === 'view'
@@ -66,8 +67,20 @@
     if (!ws || ws.readyState !== WebSocket.OPEN) return setBadge('off', 'reconnecting…');
     if (!hostOnline) return setBadge('off', 'timer offline', 'waiting for the timer…');
     if (peer && peer.mode === 'lan') setBadge('lan', '⚡ LAN direct');
-    else setBadge('server', 'via server', 'not on the same Wi-Fi');
+    else if (peer && peer.mode === 'p2p') setBadge('lan', '⚡ direct', 'over the internet, not the same Wi-Fi');
+    else if (Date.now() < relinkUntil) setBadge('server', 'retrying…', 'trying a direct link again');
+    else setBadge('server', 'via server', 'no direct link: tap to try again');
   }
+  // Another go at a direct link: the badge tapped while "via server", or the phone changed network
+  function relink() {
+    if (!peer || peer.mode !== 'server' || !hostOnline) return;
+    peer.send({ t: 'relink' });
+    relinkUntil = Date.now() + 8000;                // the timer gives a new attempt 7 s
+    showMode();
+    setTimeout(showMode, 8100);
+  }
+  $('link-badge').addEventListener('click', relink);
+  RemotePeer.retryOnNetworkChange(relink);
 
   function newPeer() {
     if (peer) peer.close();
@@ -85,7 +98,7 @@
   function connect() {
     clearTimeout(retryTimer);
     if (fatal) return;
-    try { ws = new WebSocket(cfg.server); } catch (_) { return schedule(); }
+    try { ws = new WebSocket(RemotePeer.socketUrl(cfg.server, { room: cfg.room })); RemotePeer.keepAlive(ws); } catch (_) { return schedule(); }
     const sock = ws;
     sock.onopen = () => { sock.send(JSON.stringify({ type: 'join', room: cfg.room, key: cfg.key })); };
     sock.onmessage = ev => {
@@ -105,6 +118,8 @@
           // waiting, slowly. If the timer made a New code, this code never returns: scan again.
           if (m.reason === 'not-found' || m.reason === 'room-closed') {
             waiting = true; retry = 15000;
+          } else if (m.reason === 'rejected') {
+            fatal = true; setBadge('off', 'not let in');
           } else if (m.reason === 'room-full') {
             fatal = true; setBadge('off', 'too many phones');
           }
@@ -153,21 +168,22 @@
   function onPin(m) {
     const box = $('pinwait');
     if (m.t === 'pin-required') {
-      if (!pinCode) pinCode = String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+      if (!pinCode) pinCode = String(100 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900));   // 3 digits: the proximity check;
       $('pincode').textContent = pinCode;
-      $('pinmsg').textContent = 'The timer is asking who this is. Tell the person at the timer this PIN; it connects once they type it in.';
+      $('pinmsg').textContent = 'The timer is asking who this is. Show this number to the person at the timer (or read it to them over the phone); it connects once they type it in. One wrong try disconnects this phone.';
       $('pinretry').hidden = true;
       box.hidden = false;
-      if (peer) peer.send({ t: 'pin', code: pinCode });
+      if (peer) peer.send({ t: 'pin', code: pinCode, name: RemotePeer.deviceName() });
     } else if (m.t === 'pin-ok') {
       if (typeof m.token === 'string') store.set(tokenKey(), m.token);
       pinCode = null;
       box.hidden = true;
       if (peer) { peer.send({ t: 'hello', token: store.get(tokenKey()) || undefined }); if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true }); if (editorMode()) peer.send({ t: 'rs-sub', on: true }); }
-    } else if (m.t === 'pin-rejected') {
+    } else if (m.t === 'pin-rejected' || m.t === 'revoked') {
       pinCode = null;
       $('pincode').textContent = '';
-      $('pinmsg').textContent = 'The timer didn’t let this phone in.';
+      $('pinmsg').textContent = m.t === 'revoked' ? 'The timer took this device’s access away.' : 'The timer didn’t let this phone in.';
+      fatal = true;                                    // the timer disconnects it: don't reconnect
       $('pinretry').hidden = false;
       box.hidden = false;
     }
@@ -179,7 +195,7 @@
   const joinPart = RemotePeer.joiner();
   function onMessage(m) {
     if (m && m.t === 'part') { const whole = joinPart(m); if (whole) onMessage(whole); return; }
-    if (m && (m.t === 'pin-required' || m.t === 'pin-ok' || m.t === 'pin-rejected')) return onPin(m);
+    if (m && (m.t === 'pin-required' || m.t === 'pin-ok' || m.t === 'pin-rejected' || m.t === 'revoked')) return onPin(m);
     if (m && m.t === 'deck') return onDeck(m);
     if (m && m.t === 'share-link') return onShareLink(m);
     if (m && typeof m.t === 'string' && /^(rs-|vup-)/.test(m.t)) return onEditorMessage(m);
@@ -554,7 +570,34 @@
     helpBtn.addEventListener('click', () => { $('viewmenu').hidden = true; help.open('sharing-with-phones-displays-and-companion-experimental'); });
     list.appendChild(helpBtn);
     installOption(list);
+    // Unpair: forget this timer (two taps, so a stray one does nothing)
+    const unpairBtn = document.createElement('button');
+    const unpairText = () => { unpairBtn.innerHTML = 'Unpair this device<small>Forget this timer; scan its QR code to pair again</small>'; };
+    unpairText();
+    let armed = null;
+    unpairBtn.addEventListener('click', () => {
+      if (!armed) {
+        unpairBtn.innerHTML = 'Tap again to unpair<small>This device will forget the timer</small>';
+        armed = setTimeout(() => { armed = null; unpairText(); }, 3000);
+        return;
+      }
+      clearTimeout(armed);
+      unpair();
+    });
+    list.appendChild(unpairBtn);
     $('viewmenu').hidden = false;
+  }
+  function unpair() {
+    try { localStorage.removeItem(SAVED_LINK); localStorage.removeItem(tokenKey()); } catch (_) { /* private mode */ }
+    history.replaceState(null, '', location.pathname + location.search);   // the link isn't in the address bar to come back on reload
+    fatal = true; clearTimeout(retryTimer);
+    if (peer) peer.close();
+    peer = null;
+    if (ws) try { ws.close(); } catch (_) { /* closed */ }
+    $('viewmenu').hidden = true;
+    $('app').hidden = true;
+    $('blocked').hidden = false;
+    $('blocked').textContent = 'This device is unpaired. To pair it again, scan the QR code in the timer’s share panel.';
   }
   // The README, as on the timer (help-overlay.js); ? or F1 open it too
   // The phone's Back button closes whatever is open (menus, message box, tip) and otherwise does
@@ -947,7 +990,7 @@
     if (!room) return reject('That isn’t a timer phone code.');
     if (room === cfg.room) return reject('That’s this timer’s own code. Scan the code on the other computer.');
     if (!key) return reject('That’s a view-only code. On the other computer choose Control (or Admin) under share, then scan again.');
-    target = { room, key, server: f.s || f.server || `wss://${u.hostname}:8443/` };
+    target = { room, key, server: f.s || f.server || RemotePeer.defaultServer(u.host) };
     lastRejected = '';
     stopScan();
     if (navigator.vibrate) navigator.vibrate(30);
@@ -992,7 +1035,7 @@
     admStatus('Sending it to the other computer…');
     p.timer = setTimeout(() => fail('The other computer didn’t answer. Is its timer page open with phone control on?'), 10000);
     let ws2, peer2 = null;
-    try { ws2 = new WebSocket(t.server); } catch (_) { return fail('Bad server address in that code.'); }
+    try { ws2 = new WebSocket(RemotePeer.socketUrl(t.server, { room: t.room })); RemotePeer.keepAlive(ws2); } catch (_) { return fail('Bad server address in that code.'); }
     p.ws = ws2;
     ws2.onopen = () => ws2.send(JSON.stringify({ type: 'join', room: t.room, key: t.key }));
     ws2.onmessage = ev => {

@@ -5,12 +5,12 @@
  * gives up after 7 s, after which everything goes through the server, which is all this needs
  * (a few hundred bytes a second at most).
  *
- *   server:  wss://host:8443/        join {room, key} -> joined {id, hostOnline, role}
+ *   server:  wss://host:8443/ or wss://host/ws (?room=)  join {room, key} -> joined {id, hostOnline, role}
  *   timer -> us (as down {msg} with msg {k:'data', d}):
  *            {t:'state', full, s}   the phone-level state (remain, over, msg, ...)
  *            {t:'vars', full, v}    every timerAPI bus variable, as diffs (Companion's own format)
  *            {t:'api-result', req, result|error}
- *            {t:'pin-required'} / {t:'pin-ok', token} / {t:'pin-rejected'}   (Require a PIN)
+ *            {t:'pin-required'} / {t:'pin-ok', token} / {t:'pin-rejected'}   (the proximity check)
  *   us -> timer (as up {msg: {k:'data', d}}):
  *            {t:'hello', token?}    {t:'api', req, msg}   {t:'pin', code}
  */
@@ -40,6 +40,25 @@ export interface ParsedLink {
 	kind: 'companion' | 'admin' | 'control' | 'view'
 }
 
+/** The pairing server for a timer at `host`, as the timer's own pages work it out (remote-peer.js
+ * defaultServer): the VPS (sophtwhere.com) runs it on port 8443, a Cloudflare site at /ws. */
+export function serverFor(host: string): string {
+	const name = host.replace(/:\d+$/, '')
+	if (/(^|\.)sophtwhere\.com$/.test(name) || host === 'localhost:8444') return `wss://${name}:8443/`
+	return `wss://${host}/ws`
+}
+
+/** The address to open: the server plus ?room=, which the Cloudflare server routes by (the VPS ignores it). */
+export function socketUrl(server: string, room: string): string {
+	try {
+		const u = new URL(server)
+		u.searchParams.set('room', room)
+		return u.href
+	} catch {
+		return server
+	}
+}
+
 /** Parses a link copied from the timer's share panel: a whole URL, or just the part after '#'. */
 export function parseLink(text: string, defaultServer?: string): ParsedLink | null {
 	let frag = text.trim()
@@ -54,8 +73,7 @@ export function parseLink(text: string, defaultServer?: string): ParsedLink | nu
 	if (!server && defaultServer) server = defaultServer
 	if (!server && hash >= 0) {
 		try {
-			const u = new URL(text.trim())
-			server = `wss://${u.hostname}:8443/`
+			server = serverFor(new URL(text.trim()).host)
 		} catch {
 			/* not a URL */
 		}
@@ -157,7 +175,7 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 		this.setStatus('connecting')
 		let ws: WebSocket
 		try {
-			ws = new WebSocket(this.cfg.server, {
+			ws = new WebSocket(socketUrl(this.cfg.server, this.cfg.room), {
 				rejectUnauthorized: this.cfg.rejectUnauthorized !== false,
 				headers: this.cfg.origin ? { origin: this.cfg.origin } : undefined,
 			})
@@ -169,6 +187,11 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 		ws.on('open', () => {
 			ws.send(JSON.stringify({ type: 'join', room: this.cfg.room, key: this.cfg.key }))
 		})
+		// Keeps the connection open: a hibernating Cloudflare server sends no pings of its own
+		const keepAlive = setInterval(() => {
+			if (ws.readyState === WebSocket.OPEN) ws.send('{"type":"ping"}')
+		}, 25000)
+		ws.on('close', () => clearInterval(keepAlive))
 		ws.on('message', (data) => {
 			let m: Record<string, unknown>
 			try {
@@ -182,7 +205,8 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 			if (this.ws !== ws) return
 			this.ws = null
 			this.hostOnline = false
-			if (this.status !== 'rejected' && this.status !== 'error') this.setStatus(this.closed ? 'offline' : 'connecting')
+			if (this.status === 'rejected') return // refused by the timer: stays off until the connection is set up again
+			if (this.status !== 'error') this.setStatus(this.closed ? 'offline' : 'connecting')
 			this.schedule()
 		})
 		ws.on('error', (err) => {
@@ -237,6 +261,8 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 					this.waiting = true
 					this.retry = 15000
 					this.setStatus('waiting', reason === 'not-found' ? 'no timer with this code (is the link right? is the timer open with phone control on?)' : 'the timer closed')
+				} else if (reason === 'rejected') {
+					this.setStatus('rejected', 'the timer refused this connection (wrong number)')
 				} else if (reason === 'room-full') {
 					this.setStatus('error', 'too many devices connected to that timer')
 				} else this.setStatus('error', `server said: ${reason}`)
@@ -272,10 +298,10 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 			}
 			case 'pin-required': {
 				// The timer wants the operator to let us in: show a PIN for them to type there
-				if (!this.pinCode) this.pinCode = String(1000 + (randomBytes(4).readUInt32BE(0) % 9000))
-				this.setStatus('pin', `enter PIN ${this.pinCode} in the timer's share panel`)
+				if (!this.pinCode) this.pinCode = String(100 + (randomBytes(4).readUInt32BE(0) % 900)) // 3 digits: the timer's proximity check
+				this.setStatus('pin', `type ${this.pinCode} in the timer's share panel (one wrong try disconnects)`)
 				this.emit('pin', this.pinCode)
-				this.up({ t: 'pin', code: this.pinCode })
+				this.up({ t: 'pin', code: this.pinCode, name: 'Companion' })
 				break
 			}
 			case 'pin-ok': {
@@ -290,7 +316,10 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 			}
 			case 'pin-rejected':
 				this.pinCode = null
-				this.setStatus('rejected', 'the timer refused this connection (PIN)')
+				this.setStatus('rejected', 'the timer refused this connection (wrong number)')
+				break
+			case 'revoked':
+				this.setStatus('rejected', 'the timer took this connection’s access away')
 				break
 		}
 	}

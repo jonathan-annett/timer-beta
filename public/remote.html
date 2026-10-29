@@ -39,7 +39,7 @@
     .top { display: flex; align-items: center; gap: 0.5em; font-size: 0.8em; color: var(--dim); }
     #link-badge { padding: 0.15em 0.6em; border-radius: 1em; border: 1px solid #333; white-space: nowrap; }
     #link-badge.lan { color: var(--ok); border-color: #2a5a2a; }
-    #link-badge.server { color: var(--warn); border-color: #5a4a10; }
+    #link-badge.server { color: var(--warn); border-color: #5a4a10; cursor: pointer; }
     #link-badge.off { color: var(--late); border-color: #5a2020; }
     #note { margin-left: auto; text-align: right; }
     .top button { padding: 0.25em 0.7em; border-radius: 1em; white-space: nowrap; }
@@ -259,8 +259,10 @@
       width: min(100%, 30em); max-height: 100%; overflow-y: auto; }   /* scrolls on a short (landscape) screen */
     .sheet .send { margin: 0.4em 0 0; }
     .sheet p { margin: 0.3em 0 0.8em; line-height: 1.45; }
+      html.no-pptx .pptx-only { display: none; }
   </style>
   <link rel="stylesheet" href="help-overlay.css?v=ab22e694">
+  <script src="features.js?v=4136908a"></script>
 </head>
 <body>
   <div id="blocked" hidden></div>
@@ -295,7 +297,7 @@
         <button data-mode="editor">A run sheet editor<small>Edit this timer’s run sheet from that computer (it can also control the timer)</small></button>
         <button data-mode="countdown">A countdown display<small>View only: big countdown and messages</small></button>
         <button data-mode="runsheet">A run sheet display<small>View only: now, next and the schedule, e.g. for a green room</small></button>
-        <button data-mode="pptx">A PowerPoint computer<small>Receives this timer’s run sheet slides; then start the PowerPoint player on it (the page shows how)</small></button>
+        <button data-mode="pptx" class="pptx-only">A PowerPoint computer<small>Receives this timer’s run sheet slides; then start the PowerPoint player on it (the page shows how)</small></button>
       </div>
       <div class="grid g2"><button id="admscanbtn">Scan a QR code</button><button id="admstop">Stop camera</button></div>
     </div>
@@ -382,8 +384,8 @@
 
   <!-- The timer wants a PIN before letting this phone in -->
   <div id="pinwait" class="sheet" hidden><div class="box" style="text-align:center">
-    <h3 style="margin-top:0">PIN</h3>
-    <div id="pincode" style="font-size:3.2em;font-weight:bold;letter-spacing:.2em;font-variant-numeric:tabular-nums;margin:.1em 0 .2em"></div>
+    <h3 style="margin-top:0">Check</h3>
+    <div id="pincode" style="font-size:1.9em;font-weight:bold;letter-spacing:.2em;font-variant-numeric:tabular-nums;margin:.1em 0 .2em"></div>
     <p id="pinmsg" style="color:var(--dim)"></p>
     <button id="pinretry" style="width:100%" hidden>Try again</button>
   </div></div>
@@ -400,7 +402,7 @@
   <script src="back-guard.js?v=1ffc51f1"></script>
   <script src="help-overlay.js?v=8a5dbd9d"></script>
   <script src="deck-face.js?v=c546849b"></script>
-  <script src="remote-peer.js?v=ce2b3716"></script>
-  <script src="remote-phone.js?v=63ff30f4"></script>
+  <script src="remote-peer.js?v=5e28fc3a"></script>
+  <script src="remote-phone.js?v=ad736e1a"></script>
 </body>
 </html>
