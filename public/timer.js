@@ -6,7 +6,7 @@
 
 /*jshint maxerr: 10000 */
 
-/* global fs_api,ace,timerAPI,setupPip,timeProvider,tab_id */
+/* global fs_api,ace,timerAPI,timeProvider,tab_id */
 
 
 const oneSecond		= 1000;
@@ -115,16 +115,8 @@ const isLinked = window.location.search.indexOf("&linked")>0;
 		 document.title = "Presentation Timer - Control Screen";
 	 }
 
-	 togglePIPMode = setupPip(
-		"remain_disp",
-		"remain_disp_video",
-		192*2,108*2,
-		'100px "Lucida", sans-serif',
-		"#remain_disp_video_text",
-		"overlay",
-		"#remain_disp_video_text",
-		'40px "Lucida", sans-serif'
-	);
+	 // The floating overlay (O): local-overlay.js, the same overlay as overlay.html
+	 togglePIPMode = window.LocalOverlay && LocalOverlay.supported() ? LocalOverlay.toggle : null;
 
 	if (!togglePIPMode) {
 		setHtmlClass('nooverlay');
