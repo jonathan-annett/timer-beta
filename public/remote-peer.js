@@ -16,6 +16,9 @@
  *   peer.send(obj)  — sends by the best available path
  *   onMessage(obj, via)  via: 'lan' (the data channel, in mode 'lan' or 'p2p') or 'server'
  *   peer.mode  'lan' | 'p2p' | 'server'
+ *   peer.restart()  while on the server, tries a direct link again (the initiator makes a new
+ *                   offer; the other side accepts any new offer with a fresh connection).
+ *   RemotePeer.retryOnNetworkChange(fn)  calls fn when the device says its network changed
  *
  * Binary (video files from the run sheet editor): LAN only, never through the server.
  *   peer.sendBinary(buf) → false unless the data channel is open; onBinary(buf) receives.
@@ -105,6 +108,10 @@ var RemotePeer = (function () {
     }
 
     async function onSignal(m) {
+      if (!initiator && m.sdp && m.sdp.type === 'offer' && pc) {      // a new attempt (restart() on the other side)
+        if (mode !== 'server') return;
+        giveUp();
+      }
       if (!pc) {
         if (initiator || !m.sdp || m.sdp.type !== 'offer') return;   // stale signal after giving up
         if (!start()) return;
@@ -157,9 +164,14 @@ var RemotePeer = (function () {
     }
 
     function close() { closed = true; giveUp(); }
+    function restart() {
+      if (closed || mode !== 'server') return;
+      giveUp();
+      if (initiator) start();
+    }
 
     if (initiator) start();
-    return { send, receive, close, sendBinary, drained, get mode() { return mode; } };
+    return { send, receive, close, restart, sendBinary, drained, get mode() { return mode; } };
   }
 
   // ─── Big messages ──────────────────────────────────────────────────────────
@@ -241,5 +253,14 @@ var RemotePeer = (function () {
     }, 25000);
   }
 
-  return { create, parts, joiner, sendBig, defaultServer, socketUrl, keepAlive };
+  // The device joined another network (Wi-Fi after mobile data, say): worth trying a direct link
+  // again. Android Chrome reports it (navigator.connection); everyone reports coming back online.
+  function retryOnNetworkChange(fn) {
+    let t = null;
+    const later = () => { clearTimeout(t); t = setTimeout(fn, 1500); };   // let the new network settle
+    window.addEventListener('online', later);
+    if (navigator.connection && navigator.connection.addEventListener) navigator.connection.addEventListener('change', later);
+  }
+
+  return { create, parts, joiner, sendBig, defaultServer, socketUrl, keepAlive, retryOnNetworkChange };
 })();

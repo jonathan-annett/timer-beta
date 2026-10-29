@@ -58,6 +58,7 @@
     b.querySelector('.short').textContent = BADGE_ICON[kind] || '•';
     $('note').textContent = note || '';
   }
+  let relinkUntil = 0;                             // a direct link is being retried until then (relink())
   function showMode() {
     postLink();
     if (waiting) return setBadge('off', 'timer offline', role === 'view'
@@ -67,8 +68,19 @@
     if (!hostOnline) return setBadge('off', 'timer offline', 'waiting for the timer…');
     if (peer && peer.mode === 'lan') setBadge('lan', '⚡ LAN direct');
     else if (peer && peer.mode === 'p2p') setBadge('lan', '⚡ direct', 'over the internet, not the same Wi-Fi');
-    else setBadge('server', 'via server', 'not on the same Wi-Fi');
+    else if (Date.now() < relinkUntil) setBadge('server', 'retrying…', 'trying a direct link again');
+    else setBadge('server', 'via server', 'no direct link: tap to try again');
   }
+  // Another go at a direct link: the badge tapped while "via server", or the phone changed network
+  function relink() {
+    if (!peer || peer.mode !== 'server' || !hostOnline) return;
+    peer.send({ t: 'relink' });
+    relinkUntil = Date.now() + 8000;                // the timer gives a new attempt 7 s
+    showMode();
+    setTimeout(showMode, 8100);
+  }
+  $('link-badge').addEventListener('click', relink);
+  RemotePeer.retryOnNetworkChange(relink);
 
   function newPeer() {
     if (peer) peer.close();

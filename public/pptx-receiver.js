@@ -154,14 +154,25 @@
   let ws = null, peer = null, retry = 1000, retryTimer = null, hostOnline = false, waiting = false, fatal = false;
   let info = null;                                     // from the timer: the player we're paired with, decks
   const setNote = t => { $('note').textContent = t || ''; };
+  let relinkUntil = 0;                             // a direct link is being retried until then (relink())
   function showMode() {
     const b = $('badge');
     if (waiting) { b.className = ''; b.textContent = 'timer offline'; setNote('Waiting for the timer… (it has to be open, with share on)'); }
     else if (!ws || ws.readyState !== WebSocket.OPEN) { b.className = ''; b.textContent = 'reconnecting…'; }
     else if (!hostOnline) { b.className = ''; b.textContent = 'timer offline'; setNote('Waiting for the timer…'); }
     else if (peer && peer.mode === 'lan') { b.className = 'lan'; b.textContent = '⚡ LAN direct'; setNote(''); }
-    else { b.className = 'server'; b.textContent = peer && peer.mode === 'p2p' ? 'direct, other network' : 'via server'; setNote('Not on the same network: decks can’t be sent. This computer has to be on the same network as the timer’s computer (and the network must let devices reach each other).'); }
+    else { b.className = 'server'; b.textContent = peer && peer.mode === 'p2p' ? 'direct, other network' : Date.now() < relinkUntil ? 'retrying…' : 'via server'; setNote('Not on the same network: decks can’t be sent. This computer has to be on the same network as the timer’s computer (and the network must let devices reach each other).'); }
   }
+  // Another go at a direct link (decks need one): the badge clicked while on the server, or a new network
+  function relink() {
+    if (!peer || peer.mode !== 'server' || !hostOnline) return;
+    peer.send({ t: 'relink' });
+    relinkUntil = Date.now() + 8000;
+    showMode();
+    setTimeout(showMode, 8100);
+  }
+  $('badge').addEventListener('click', relink);
+  RemotePeer.retryOnNetworkChange(relink);
   function sendHello() {
     if (!peer) return;
     peer.send({ t: 'hello', kind: 'receiver', pair: pairId, folder: !!dir, folderName: dir ? dir.name : '', edit: $('rehearsal').checked,

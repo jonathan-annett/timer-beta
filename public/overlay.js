@@ -97,12 +97,23 @@
   }
 
   function status(text, kind) { $('status').textContent = text; $('status').className = kind || ''; }
+  let relinkUntil = 0;                             // a direct link is being retried until then (relink())
   function showMode() {
     if (waiting) return status('Waiting for the timer… (closed, or it made a new share code: then unpair and pair again)', 'warn');
     if (!ws || ws.readyState !== WebSocket.OPEN) return status('Reconnecting…', 'warn');
     if (!hostOnline) return status('The timer is offline: waiting for it…', 'warn');
-    status(peer && peer.mode === 'lan' ? '⚡ Connected directly (same network)' : peer && peer.mode === 'p2p' ? '⚡ Connected directly (over the internet)' : 'Connected via the server', 'ok');
+    status(peer && peer.mode === 'lan' ? '⚡ Connected directly (same network)' : peer && peer.mode === 'p2p' ? '⚡ Connected directly (over the internet)' : Date.now() < relinkUntil ? 'Trying a direct link again…' : 'Connected via the server (click to try a direct link again)', 'ok');
   }
+  // Another go at a direct link: the status clicked while on the server, or a new network
+  function relink() {
+    if (!peer || peer.mode !== 'server' || !hostOnline) return;
+    peer.send({ t: 'relink' });
+    relinkUntil = Date.now() + 8000;
+    showMode();
+    setTimeout(showMode, 8100);
+  }
+  $('status').addEventListener('click', relink);
+  RemotePeer.retryOnNetworkChange(relink);
 
   function newPeer() {
     if (peer) peer.close();

@@ -270,6 +270,13 @@
         return;
       } else return;
     }
+    // A device on the server asks for another go at a direct link (its badge tapped, a new network);
+    // any role, at most every 5 s. The link itself is the timer's to start (it's the initiator).
+    if (m.t === 'relink') {
+      const now = Date.now();
+      if (e.peer.mode === 'server' && now - (e.relinkAt || 0) > 5000) { e.relinkAt = now; e.peer.restart(); }
+      return;
+    }
     // A PowerPoint machine (receiver page or player script): only its own messages, all handled
     // by pptx-hub.js. It gets no timer state and can't control anything.
     if (e.role === 'pptx') {
