@@ -68,19 +68,17 @@ Cloudflare Worker (`cloudflare/`); `/` → timer, `/o` → overlay page; share-p
 Up* / *Paused* notices); STUN with modes `lan`/`p2p`/`server`; PowerPoint alpha-only
 (`features.js`); retrying the direct link (tap the "via server" badge, or a network change);
 proximity check (3 digits, one try, server `kick`); phone **Unpair this device**; device names,
-**Rename** and per-device **Revoke** in the share panel, known devices list. Note `remote-server.js`
+**Rename** and per-device **Revoke** in the share panel, known devices list; the timer's own
+overlay (O) is now the shared overlay (`overlay-view.js`, `local-overlay.js`). Note `remote-server.js`
 changed too (no same-network check, `kick`): promoting to main means a `timer-remote` restart.
 
-## In progress (29 Oct)
+## Hotfix waiting for the user's OK to push (29 Oct)
 
-- **Local overlay on the timer** (user asked): the timer's O / overlay button opens the same
-  overlay as `overlay.html` (Document PiP, shapes, message, shade), with a small settings box under
-  the button bar that shows when it starts and fades after 30 s untouched. Written:
-  `public/overlay-view.js` (shared drawing/floating, from `overlay.js`) and `public/local-overlay.js`
-  (timer side, `window.LocalOverlay.toggle`). Still to do: load both in `timer.html` (before
-  `timer.js`), make `timer.js` use `LocalOverlay.toggle` for `togglePIPMode` instead of `setupPip`,
-  remove `timeroverlaypip.js`, refactor `overlay.js`/`overlay.html` onto `OverlayView` (keep the
-  element id `ov` and its classes: `overlay_pair.py` reads them), a test, docs.
+- `main` has `f5365dd` (not pushed): the Stream Deck Pause/Resume key resumed with Clear Pause,
+  throwing the paused time away (a user's report on the live site). Also on alpha (`a30f6fa`).
+  Test `tests/e2e/streamdeck_pause.py`. Pushing it and `./update-server.sh` changes only
+  `streamdeck.js` (no `timer-remote` restart). The original site (timer.sophtwhere.com, not this
+  repo) has the same bug if it has the same code.
 
 ## Open (offered or asked, not started)
 
