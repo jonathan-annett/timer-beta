@@ -1078,6 +1078,7 @@ function onKey_Pause(ev) {
 			pauseAcum += pausedMsec;
 			writeNumber("pausedAt",pausedAt);
 			writeNumber("pauseAcum",pauseAcum);
+			writeNumber("seekEndsAt",seekEndsAt);	// (without it a reload eased the countdown back to the end before the pause)
 
 			const pauseAccumText = secToStr(pauseAcum / oneSecond);
 
@@ -1115,6 +1116,8 @@ function onKey_UndoPause (ev) {
 	
 	seekEndsAt = startedAt + thisDuration;
 	endsAt = seekEndsAt;
+	writeNumber("seekEndsAt",seekEndsAt);
+	writeNumber("endsAt",endsAt);
 	endsDisp.textContent = local24HourTime( timeProvider.date(seekEndsAt) ) ;
 
 	if (timerAPI) {
