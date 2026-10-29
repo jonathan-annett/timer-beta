@@ -14,7 +14,8 @@
  * hands the socket straight to its Room. Clients from before that (no ?room=) still work: the
  * Worker reads their first message and relays (relay()).
  *
- * The same-network test for pairing codes compares CF-Connecting-IP (IPv4, or the IPv6 /64).
+ * Pairing codes work from any network (the timer's proximity check guards new devices);
+ * wrong guesses are counted per CF-Connecting-IP network (IPv4, or the IPv6 /64).
  * Nobody sends pings: clients send {type:'ping'} every 25 s, answered with {type:'pong'} by the
  * runtime without waking the Room (setWebSocketAutoResponse).
  * MIT Licensed
@@ -231,6 +232,9 @@ export class Room extends DurableObject {
       else send(cl, { type: 'error', reason: 'refused' });
       close(cl);
       await this.save(); this.schedule();
+    } else if (a.role === 'host' && m.type === 'kick') {   // the timer drops a device (failed its proximity check)
+      const p = this.byId('phone', m.id);
+      if (p) { this.retire(p); send(p, { type: 'error', reason: 'rejected' }); close(p); send(this.host(), { type: 'peer-leave', id: m.id }); }
     } else if (a.role === 'phone' && m.type === 'up') {
       send(this.host(), { type: 'from', id: a.id, msg: m.msg });
     }
@@ -288,7 +292,8 @@ export class Room extends DurableObject {
     const live = !!p && validCode(m.code) && m.code === a.code &&
       ((m.code === p.code && p.until >= now) || (m.code === p.prev && p.prevUntil >= now));
     if (!live || !host) { await codesOf(this.env).fail(a.net); send(ws, { type: 'error', reason: 'bad-code' }); return close(ws); }
-    if (host.deserializeAttachment().net !== a.net) { await codesOf(this.env).fail(a.net); send(ws, { type: 'error', reason: 'other-network' }); return close(ws); }
+    // Any network: the device then has to pass the timer's proximity check (a number it shows,
+    // typed on the timer), so a code read out over the phone works too.
     await this.stopCodes();                           // used: no more codes until the timer asks again
     const id = randomHex(6);
     ws.serializeAttachment({ ...a, role: 'claim', id });

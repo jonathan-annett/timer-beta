@@ -85,7 +85,7 @@
 
   // ─── Connection (as a view-only display) ──────────────────────────────────
 
-  let ws = null, peer = null, retry = 1000, retryTimer = null, hostOnline = false, waiting = false;
+  let ws = null, peer = null, retry = 1000, retryTimer = null, hostOnline = false, waiting = false, refused = false;
   const state = {};
 
   function start() {
@@ -142,6 +142,7 @@
           // Gone while the timer is closed (or the server restarted): it comes back with the same
           // room. If the timer made a New code it never does: unpair and pair again.
           if (m.reason === 'not-found' || m.reason === 'room-closed') { waiting = true; retry = 15000; }
+          else if (m.reason === 'rejected') refused = true;
           break;
       }
       showMode();
@@ -151,6 +152,7 @@
       if (peer) peer.close();
       peer = null;
       render(); showMode();
+      if (refused) return status('Not let in by the timer. Reload this page to try again.', 'warn');
       schedule();
     };
     sock.onerror = () => {};
@@ -164,7 +166,7 @@
   function onMessage(m) {
     if (!m || typeof m !== 'object') return;
     if (m.t === 'pin-required') {
-      if (!pinCode) pinCode = String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+      if (!pinCode) pinCode = String(100 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900));   // 3 digits: the proximity check;
       $('pincode').textContent = pinCode; $('pinwait').hidden = false;
       if (peer) peer.send({ t: 'pin', code: pinCode });
     } else if (m.t === 'pin-ok') {
@@ -172,7 +174,8 @@
       pinCode = null; $('pinwait').hidden = true;
       if (peer) peer.send({ t: 'hello', token: store.get(tokenKey(link.r)) || undefined });
     } else if (m.t === 'pin-rejected') {
-      $('pinmsg').textContent = 'The timer didn’t let this computer in.'; $('pincode').textContent = '';
+      refused = true;                                  // the timer disconnects it: don't reconnect
+      $('pinmsg').textContent = 'The timer didn’t let this computer in. Reload this page to try again.'; $('pincode').textContent = '';
     } else if (m.t === 'state' && m.s && typeof m.s === 'object') {
       if (m.full) for (const k of Object.keys(state)) delete state[k];
       Object.assign(state, m.s);

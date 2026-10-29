@@ -13,8 +13,9 @@
  *   - forwards WebRTC signalling so phone and timer can try a direct LAN connection, and
  *   - relays the (small) control/state messages when a direct connection isn't possible, and
  *   - pairs a computer by a 6-digit code instead of a link (protocol 6): while the timer asks
- *     for it, the server shows it a code that changes every 30 s; a computer on the same
- *     network (same public address) that types it gets a link from the timer, passed on once.
+ *     for it, the server shows it a code that changes every 30 s; a computer that types it gets
+ *     a link from the timer, passed on once (any network: the timer's proximity check then
+ *     guards the new device; 'kick' drops one that fails it).
  * It never looks inside the messages it forwards.
  *
  * Usage:
@@ -106,8 +107,8 @@ setInterval(() => {
 // ─── Pairing codes (protocol 6) ───────────────────────────────────────────────
 // The timer sends {type:'pair', on:true} and gets {type:'pair-code', code, ms} every 30 s until
 // it sends on:false (or a code is used, or it goes away). Another computer opens a socket and sends
-// {type:'claim', code}; if the code is live and it comes from the same public address as the timer
-// (the same network), the timer gets {type:'claim', id} and answers {type:'grant', id, frag} (a
+// {type:'claim', code}; if the code is live (from any network: the timer's proximity check then
+// guards the new device), the timer gets {type:'claim', id} and answers {type:'grant', id, frag} (a
 // link for that computer) or {type:'deny', id}; the computer gets {type:'granted', frag} or an
 // error. A code works once. The server stores no keys: the link passes through, once.
 
@@ -206,7 +207,6 @@ wss.on('connection', (ws, req) => {
       const c = typeof m.code === 'string' && /^\d{6}$/.test(m.code) ? codes.get(m.code) : null;
       const room = c && c.until >= Date.now() ? rooms.get(c.roomId) : null;
       if (!room || !room.host) { codeFailed(ws.net); send(ws, { type: 'error', reason: 'bad-code' }); return ws.close(); }
-      if (room.host.net !== ws.net) { codeFailed(ws.net); send(ws, { type: 'error', reason: 'other-network' }); return ws.close(); }
       stopCodes(room);                                // used: no more codes until the timer asks again
       claimId = crypto.randomBytes(6).toString('hex');
       claims.set(claimId, { ws, roomId: c.roomId });
@@ -284,6 +284,9 @@ wss.on('connection', (ws, req) => {
       if (m.type === 'grant' && typeof m.frag === 'string' && m.frag.length <= MAX_FRAG) send(cl.ws, { type: 'granted', frag: m.frag });
       else send(cl.ws, { type: 'error', reason: 'refused' });
       cl.ws.close();
+    } else if (role === 'host' && m.type === 'kick') {   // the timer drops a device (failed its proximity check)
+      const p = room.phones.get(m.id);
+      if (p) { room.phones.delete(m.id); send(p.ws, { type: 'error', reason: 'rejected' }); p.ws.close(); send(room.host, { type: 'peer-leave', id: m.id }); }
     } else if (role === 'phone' && m.type === 'up' && room.phones.get(phoneId)) {
       send(room.host, { type: 'from', id: phoneId, msg: m.msg });
     }

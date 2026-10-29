@@ -27,13 +27,19 @@ with sync_playwright() as p:
     print("hint:", pg.inner_text("#phone-panel .pp-modehint"))
     link=pg.text_content("#phone-panel .pp-link"); print("link:", link)
     pg.locator("#phone-panel").screenshot(path=f"{OUTDIR}/panel_companion.png")
-    r=subprocess.run(["node",f"{S}/comp_link.mjs",link],capture_output=True,text=True,timeout=40); print(r.stdout, r.stderr)
+    # the proximity check: Companion logs a number, typed into the share panel as the operator would
+    proc=subprocess.Popen(["node",f"{S}/comp_link.mjs",link],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+    for line in proc.stdout:
+        print(line.rstrip())
+        if line.startswith('["pin"'):
+            pin=json.loads(line)[1]; print("  (number shown:", pin, ")")
+            pg.fill("#phone-panel .pp-pending input", pin); pg.press("#phone-panel .pp-pending input", "Enter")
+    proc.wait()
     print("timer display:", pg.text_content("#clock_main"), "| msg:", pg.text_content("#custom_message"), "| paused:", pg.evaluate("document.documentElement.classList.contains('paused')"))
     print("button with companion:", pg.text_content("#btnshare").strip())
     print("peers:", pg.text_content("#phone-panel .pp-peers"))
-    # PIN flow
+    # a wrong number disconnects it, and it doesn't reconnect by itself
     if not pg.is_visible("#phone-panel"): pg.click("#btnshare"); pg.wait_for_timeout(500)
-    pg.check("#phone-panel input.pp-pin-box"); pg.wait_for_timeout(300)
     proc=subprocess.Popen(["node",f"{S}/comp_link.mjs",link,"pin"],stdout=subprocess.PIPE,text=True)
     pin=None
     for line in proc.stdout:
@@ -42,8 +48,9 @@ with sync_playwright() as p:
     pg.wait_for_timeout(800)
     print("pending:", pg.text_content("#phone-panel .pp-pending"))
     pg.screenshot(path=f"{OUTDIR}/panel_pin.png")
-    pg.fill("#phone-panel .pp-pending input", pin); pg.press("#phone-panel .pp-pending input", "Enter")
+    wrong=str((int(pin)+1-100)%900+100)
+    pg.fill("#phone-panel .pp-pending input", wrong); pg.press("#phone-panel .pp-pending input", "Enter")
     pg.wait_for_timeout(500)
-    print("panel open after approval:", pg.is_visible("#phone-panel"))
     out,_=proc.communicate(timeout=30); print(out)
+    print("peers after a wrong number:", pg.evaluate("[...window.remoteControl.peers.values()].filter(e=>!e.rejected).map(e=>e.role)"))
     print("errors:", errs)

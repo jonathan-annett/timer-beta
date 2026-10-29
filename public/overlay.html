@@ -43,7 +43,7 @@
     #previewbox { display: flex; justify-content: center; align-items: center; height: 300px; background: #050505; border: 1px dashed #333; border-radius: 8px; }
     #previewbox .floating { color: var(--dim); font-size: 13px; text-align: center; padding: 20px; }
     .hint { color: var(--dim); font-size: 13px; }
-    #pinwait .pin { font: bold 40px "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; color: #fff; }
+    #pinwait .pin { font: bold 26px "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; color: #fff; }   /* readable close up, not across a room */
   </style>
   <style id="ov-css">
     /* The overlay itself: also copied into the floating window, so only #ov rules here */
@@ -101,13 +101,13 @@
         </div>
       </div>
       <div id="pinwait" class="card center" hidden>
-        <p id="pinmsg">The timer asks who this is. Tell the person at the timer this PIN:</p>
+        <p id="pinmsg">The timer asks who this is. Tell the person at the timer this number (or read it to them over the phone). One wrong try disconnects this computer.</p>
         <div class="pin" id="pincode"></div>
       </div>
       <p class="hint">Paired with timer room <b id="room"></b>. <button id="unpair">Unpair this computer</button></p>
     </section>
   </main>
   <script src="remote-peer.js?v=59ca3e05"></script>
-  <script src="overlay.js?v=2b787f6d"></script>
+  <script src="overlay.js?v=8f777d38"></script>
 </body>
 </html>

@@ -10,7 +10,7 @@
  *            {t:'state', full, s}   the phone-level state (remain, over, msg, ...)
  *            {t:'vars', full, v}    every timerAPI bus variable, as diffs (Companion's own format)
  *            {t:'api-result', req, result|error}
- *            {t:'pin-required'} / {t:'pin-ok', token} / {t:'pin-rejected'}   (Require a PIN)
+ *            {t:'pin-required'} / {t:'pin-ok', token} / {t:'pin-rejected'}   (the proximity check)
  *   us -> timer (as up {msg: {k:'data', d}}):
  *            {t:'hello', token?}    {t:'api', req, msg}   {t:'pin', code}
  */
@@ -205,7 +205,8 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 			if (this.ws !== ws) return
 			this.ws = null
 			this.hostOnline = false
-			if (this.status !== 'rejected' && this.status !== 'error') this.setStatus(this.closed ? 'offline' : 'connecting')
+			if (this.status === 'rejected') return // refused by the timer: stays off until the connection is set up again
+			if (this.status !== 'error') this.setStatus(this.closed ? 'offline' : 'connecting')
 			this.schedule()
 		})
 		ws.on('error', (err) => {
@@ -260,6 +261,8 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 					this.waiting = true
 					this.retry = 15000
 					this.setStatus('waiting', reason === 'not-found' ? 'no timer with this code (is the link right? is the timer open with phone control on?)' : 'the timer closed')
+				} else if (reason === 'rejected') {
+					this.setStatus('rejected', 'the timer refused this connection (wrong number)')
 				} else if (reason === 'room-full') {
 					this.setStatus('error', 'too many devices connected to that timer')
 				} else this.setStatus('error', `server said: ${reason}`)
@@ -295,8 +298,8 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 			}
 			case 'pin-required': {
 				// The timer wants the operator to let us in: show a PIN for them to type there
-				if (!this.pinCode) this.pinCode = String(1000 + (randomBytes(4).readUInt32BE(0) % 9000))
-				this.setStatus('pin', `enter PIN ${this.pinCode} in the timer's share panel`)
+				if (!this.pinCode) this.pinCode = String(100 + (randomBytes(4).readUInt32BE(0) % 900)) // 3 digits: the timer's proximity check
+				this.setStatus('pin', `type ${this.pinCode} in the timer's share panel (one wrong try disconnects)`)
 				this.emit('pin', this.pinCode)
 				this.up({ t: 'pin', code: this.pinCode })
 				break
@@ -313,7 +316,7 @@ export class TimerLink extends EventEmitter<TimerLinkEvents> {
 			}
 			case 'pin-rejected':
 				this.pinCode = null
-				this.setStatus('rejected', 'the timer refused this connection (PIN)')
+				this.setStatus('rejected', 'the timer refused this connection (wrong number)')
 				break
 		}
 	}

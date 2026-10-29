@@ -1,4 +1,5 @@
 import os as _os  # paths: the repo's public/ folder; screenshots go to $E2E_OUT (default /tmp/timer-e2e)
+from _proximity import approve   # the proximity check: type each new device's number on the timer
 HERE = _os.path.dirname(_os.path.abspath(__file__))
 PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
@@ -21,7 +22,7 @@ ARGS=["--no-proxy-server","--disable-features=WebRtcHideLocalIpsWithMdns,LocalNe
 with sync_playwright() as p:
     b=p.chromium.launch(args=ARGS)
     c=b.new_context(ignore_https_errors=True, viewport={"width":1280,"height":800})
-    c.add_init_script("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';localStorage.remote_pin='1'}")
+    c.add_init_script("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0'}")
     c.route("**/*",h)
     t=c.new_page(); t.on("pageerror", lambda e: errs.append("timer: "+str(e)))
     t.goto(BASE+"timer.html?remote="+SERVER); t.wait_for_timeout(1500)
@@ -40,7 +41,10 @@ with sync_playwright() as p:
     o.fill("#code", "000000" if code != "000000" else "111111"); o.wait_for_timeout(800)
     print("wrong code ->", o.text_content("#codemsg"))
     o.fill("#code", code); o.wait_for_timeout(3000)
-    print("right code -> paired shown:", o.is_visible("#paired"), "| status:", o.text_content("#status"), "| PIN asked:", o.is_visible("#pinwait"))
+    print("right code -> paired shown:", o.is_visible("#paired"), "| status:", o.text_content("#status"), "| number asked:", o.is_visible("#pinwait"), o.text_content("#pincode"),
+          o.evaluate("getComputedStyle(document.querySelector('#pincode')).fontSize"))
+    approve(t)                                        # the proximity check: someone types it on the timer
+    print("after the check -> number box:", o.is_visible("#pinwait"), "| status:", o.text_content("#status"))
     print("timer panel after pairing:", t.evaluate("document.getElementById('phone-panel').hidden"), "| note:", t.evaluate("(document.querySelector('#phone-panel .pp-code')||{}).textContent"),
           "| peers:", t.evaluate("[...window.remoteControl.peers.values()].map(e=>e.role+':'+e.peer.mode)"))
     t.evaluate("processTimerApiMessage({cmd:'start', msecs: 10*60000})"); t.wait_for_timeout(1500)

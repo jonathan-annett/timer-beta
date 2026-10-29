@@ -1,4 +1,5 @@
 import os as _os  # paths: the repo's public/ folder; screenshots go to $E2E_OUT (default /tmp/timer-e2e)
+from _proximity import approve   # the proximity check: type each new device's number on the timer
 HERE = _os.path.dirname(_os.path.abspath(__file__))
 PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
@@ -68,7 +69,7 @@ with sync_playwright() as p:
     rc.add_init_script("""localStorage.pptx_receiver_id = 'testpair123';
       window.showDirectoryPicker = async () => navigator.storage.getDirectory();   // stand-in folder: the origin's private file system""")
     rc.route("**/*", h); R = rc.new_page(); R.on("pageerror", lambda e: errs.append("receiver: " + str(e)))
-    R.goto(link); R.wait_for_timeout(1500)
+    R.goto(link); approve(T); R.wait_for_timeout(1500)
     print("receiver before folder:", R.text_content("#badge"), "|", R.text_content("#folder"))
     T.wait_for_timeout(100)
     R.click("#pick"); R.wait_for_timeout(1500)
@@ -77,6 +78,7 @@ with sync_playwright() as p:
 
     # ── the player ──
     P = run_player(link, "testpair123")
+    approve(T)
     ok = wait(lambda: len(cmds(verb="send")) >= 4, 40)
     T.wait_for_timeout(800)
     print("synced:", ok, "| player commands:", [c[1:3] for c in cmds()])
@@ -112,8 +114,9 @@ with sync_playwright() as p:
     rc2.add_init_script("window.TimerFeatures = { pptx: true }")   # PowerPoint: an alpha-only trial (features.js)
     rc2.add_init_script("""localStorage.pptx_receiver_id = 'backup45678'; window.showDirectoryPicker = async () => navigator.storage.getDirectory();""")
     rc2.route("**/*", h); R2 = rc2.new_page(); R2.on("pageerror", lambda e: errs.append("receiver2: " + str(e)))
-    R2.goto(link); R2.wait_for_timeout(1200); R2.click("#pick")
+    R2.goto(link); approve(T); R2.wait_for_timeout(1200); R2.click("#pick")
     P2 = run_player(link, "backup45678", "Backup")
+    approve(T)
     wait(lambda: len([c for c in cmds("Backup") if c[1] == 'wallpaper']) >= 1, 40)
     T.wait_for_timeout(1500)
     print("late backup:", acts("Backup"))

@@ -1,4 +1,5 @@
 import os as _os  # paths: the repo's public/ folder; screenshots go to $E2E_OUT (default /tmp/timer-e2e)
+from _proximity import approve   # the proximity check: type each new device's number on the timer
 HERE = _os.path.dirname(_os.path.abspath(__file__))
 PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
@@ -68,7 +69,7 @@ with sync_playwright() as p:
     rc.add_init_script("""localStorage.pptx_receiver_id = 'testpair123';
       window.showDirectoryPicker = async () => navigator.storage.getDirectory();   // stand-in folder: the origin's private file system""")
     rc.route("**/*", h); R = rc.new_page(); R.on("pageerror", lambda e: errs.append("receiver: " + str(e)))
-    R.goto(link); R.wait_for_timeout(1500)
+    R.goto(link); approve(T); R.wait_for_timeout(1500)
     print("receiver before folder:", R.text_content("#badge"), "|", R.text_content("#folder"))
     T.wait_for_timeout(100)
     R.click("#pick"); R.wait_for_timeout(1500)
@@ -77,6 +78,7 @@ with sync_playwright() as p:
 
     # ── the player ──
     P = run_player(link, "testpair123")
+    approve(T)
     ok = wait(lambda: len(cmds(verb="send")) >= 4, 40)
     T.wait_for_timeout(800)
     print("synced:", ok, "| player commands:", [c[1:3] for c in cmds()])
@@ -101,6 +103,7 @@ with sync_playwright() as p:
     P.terminate(); T.wait_for_timeout(2500)
     n0 = len(acts()); n_all = len(cmds())
     P = run_player(link, "testpair123")
+    approve(T)
     wait(lambda: len(cmds()) > n_all + 1, 30); T.wait_for_timeout(4000)
     print("player reconnect → commands:", [c[1:3] for c in cmds()][n_all:], "| show actions:", acts(n0=n0))
     # Next while the player is away, then it comes back
@@ -108,6 +111,7 @@ with sync_playwright() as p:
     nxt()   # Panel: holding break.png (player offline)
     n0 = len(acts()); n_all = len(cmds())
     P = run_player(link, "testpair123")
+    approve(T)
     wait(lambda: len(cmds()) > n_all + 1, 30); T.wait_for_timeout(4000)
     print("Next while away, reconnect → show actions:", acts(n0=n0))
     # the timer page reloads (everyone reconnects to it)

@@ -4,6 +4,7 @@ PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
 SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing server (run_all.sh; wss://localhost:8787/ws = the Cloudflare Worker via wrangler dev)
 import sys, os, mimetypes, json
+from _proximity import approve   # the proximity check: type each new device's number on the timer
 from playwright.sync_api import sync_playwright
 ROOT=PUBLIC; OUT=OUTDIR; BASE="https://timer.sophtwhere.com/beta/"
 SHEET={"title":"Day 1","perItem":20,"items":[{"id":"a","name":"Welcome","start":None,"duration":300},{"id":"b","name":"Keynote","start":None,"duration":1800}]}
@@ -53,7 +54,7 @@ with sync_playwright() as p:
     link=t.text_content("#phone-panel .pp-link"); t.click("#btnshare")
     m=b.new_context(ignore_https_errors=True, viewport={"width":1400,"height":900}); m.route("**/*",h)
     d=m.new_page(); d.on("pageerror", lambda x: errs.append("remote: "+str(x)))
-    d.goto(link); d.wait_for_timeout(3000)
+    d.goto(link); approve(t); d.wait_for_timeout(3000)
     d.click("#viewbtn"); d.click("#viewlist button:has-text('Run sheet')"); d.wait_for_timeout(3000)
     F=lambda: d.frame(url=lambda u: 'runsheet.html' in u)
     print("remote clock:", clk(F()), "| timer:", t.text_content("#remain_disp"))

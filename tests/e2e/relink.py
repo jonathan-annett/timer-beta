@@ -6,6 +6,7 @@ SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing 
 # server: a phone that came up "via server" (WebRTC unavailable at first) taps its badge and the
 # timer tries a direct link again (relink → RemotePeer.restart()); the overlay's status does the same.
 import os, mimetypes
+from _proximity import approve   # the proximity check: type each new device's number on the timer
 from playwright.sync_api import sync_playwright
 ROOT=PUBLIC; BASE="https://timer.sophtwhere.com/beta/"
 def h(route, req):
@@ -29,7 +30,7 @@ with sync_playwright() as p:
     peers=lambda: t.evaluate("[...window.remoteControl.peers.values()].map(e=>e.role+':'+e.peer.mode)")
     pc=b.new_context(ignore_https_errors=True, viewport={"width":400,"height":800}); pc.route("**/*",h); pc.add_init_script(NO_RTC)
     ph=pc.new_page(); ph.on("pageerror", lambda e: errs.append("phone: "+str(e)))
-    ph.goto(link); ph.wait_for_timeout(9000)                      # the timer gives up on a direct link after 7 s
+    ph.goto(link); approve(t); ph.wait_for_timeout(9000)                      # the timer gives up on a direct link after 7 s
     badge=lambda: ph.evaluate("document.getElementById('link-badge').querySelector('.long').textContent")
     print("phone without WebRTC:", badge(), "| timer sees:", peers())
     ph.click("#link-badge"); ph.wait_for_timeout(300)

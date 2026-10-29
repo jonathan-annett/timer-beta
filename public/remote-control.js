@@ -29,7 +29,7 @@
   if (typeof RemotePeer === 'undefined') return;
 
   const SERVER_KEY = 'remote_server', PAIR_KEY = 'remote_pairing', ENABLED_KEY = 'remote_enabled';
-  const PIN_KEY = 'remote_pin', APPROVED_KEY = 'remote_approved';   // "Require a PIN" and the phones approved under it
+  const APPROVED_KEY = 'remote_approved';   // devices that passed the proximity check (their tokens)
   const defaultServer = () => RemotePeer.defaultServer();
   if (params.get('remote')) localStorage.setItem(SERVER_KEY, params.get('remote'));   // ?remote=wss://host:port/
 
@@ -184,9 +184,7 @@
   function grantClaim(id) {
     if (typeof id !== 'string') return;
     if (!pair.on) { sendServer({ type: 'deny', id }); return; }
-    const token = randomString(24, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789');
-    localStorage.setItem(APPROVED_KEY, JSON.stringify(approvedTokens().concat(token).slice(-64)));
-    sendServer({ type: 'grant', id, frag: shareFragment('overlay') + '&t=' + token });
+    sendServer({ type: 'grant', id, frag: shareFragment('overlay') });   // it then passes the proximity check like any device
     pair.on = false; pair.code = null;      // the server has dropped the code too
     const d = new Date();
     pair.note = `A computer was paired as an overlay at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -209,7 +207,7 @@
     const entry = { id, n: ++phoneCounter, role: ['view', 'admin', 'companion', 'pptx'].includes(role) ? role : 'control', sent: {}, peer: null, deck: false, faces: [],
       varsSent: {},                              // companion peers: the raw bus variables already sent
       join: RemotePeer.joiner(), rsSub: false, rsSent: {}, upload: null,
-      approved: !pinRequired(), pin: null, tries: 0, rejected: false };
+      approved: false, pin: null, rejected: false };   // until it passes the proximity check (or brings a token from one)
     entry.peer = RemotePeer.create({
       initiator: true,
       relay: relayTo(id),
@@ -254,8 +252,8 @@
   function onPhoneMessage(id, m, via) {
     const e = peers.get(id);
     if (!e || !m || typeof m !== 'object' || e.rejected) return;
-    // "Require a PIN": a phone is accepted only once the operator types the PIN it shows (or it
-    // brings back the token it was given when approved before, under this code). Until then
+    // Proximity check: a device is accepted only once someone types the number it shows (or it
+    // brings back the token it was given when it passed before, under this code). Until then
     // nothing is sent to it and nothing else from it is acted on.
     if (!e.approved) {
       if (m.t === 'hello' && typeof m.token === 'string' && approvedTokens().includes(m.token)) {
@@ -263,7 +261,7 @@
       } else if (m.t === 'hello') {
         e.peer.send({ t: 'pin-required' });
         return;
-      } else if (m.t === 'pin' && typeof m.code === 'string' && /^\d{4}$/.test(m.code)) {
+      } else if (m.t === 'pin' && typeof m.code === 'string' && /^\d{3,4}$/.test(m.code)) {   // 3 digits (4 from older devices, Companion, the PowerPoint player)
         e.pin = m.code;
         openPanel();                             // the operator has to see the request
         renderPanel();
@@ -823,7 +821,6 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       <div class="pp-qr"></div>
       <div class="pp-link"></div>
       <div class="pp-code" hidden></div>
-      <label class="pp-pin"><input type="checkbox" class="pp-pin-box"> Require a PIN <span class="pp-hint">— a new phone shows a 4-digit PIN; type it here to let it in</span></label>
       <div class="pp-pending"></div>
       <div class="pp-row"><button class="pp-pair" title="Show a 6-digit code to type on another computer on this network (no QR code or link needed)">Pair a computer</button></div>
       <div class="pp-row"><button class="pp-copy">Copy link</button><button class="pp-renew" title="Disconnect all phones and make a new code">New code</button><button class="pp-toggle"></button></div>
@@ -835,14 +832,6 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     document.body.appendChild(el);
     el.querySelector('.pp-close').addEventListener('click', () => { el.hidden = true; stopPairing(); });
     el.querySelector('.pp-pair').addEventListener('click', () => (pair.on ? stopPairing() : startPairing()));
-    el.querySelector('.pp-pin-box').addEventListener('change', ev => {
-      if (ev.target.checked) localStorage.setItem(PIN_KEY, '1');
-      else {
-        localStorage.removeItem(PIN_KEY);
-        for (const e of peers.values()) if (!e.approved && !e.rejected) { e.approved = true; e.pin = null; e.peer.send({ t: 'pin-ok' }); }
-      }
-      renderPanel();
-    });
     el.querySelector('.pp-pending').addEventListener('click', ev => {
       const b = ev.target.closest('button[data-act]');
       if (!b) return;
@@ -966,15 +955,13 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     el.querySelector('.pp-qr').hidden = paste;
     if (enabled && !paste) drawQR(phoneLink());
     renderPairing(el);
-    el.querySelector('.pp-pin').style.display = enabled ? '' : 'none';
-    el.querySelector('.pp-pin-box').checked = pinRequired();
     const pend = el.querySelector('.pp-pending');
     const rows = pending();
     const keep = {};
     pend.querySelectorAll('[data-id]').forEach(r => { keep[r.dataset.id] = r.querySelector('input').value; });
-    pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.role === 'view' ? 'A display' : e.role === 'companion' ? 'Companion' : e.role === 'pptx' ? 'A PowerPoint computer' : 'A phone'} wants to connect.</b> Type the PIN it shows${e.role === 'companion' ? ' (in its connection log)' : e.role === 'pptx' ? ' (on its receiver page or in the player window)' : ''}:
-        <span class="pp-askrow"><input inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" placeholder="PIN" value="${keep[e.id] || ''}">
-        <button data-act="ok">Let it in</button><button data-act="no">Refuse</button></span>${e.wrong ? '<div class="pp-warn">That’s not it. ' + (3 - e.tries) + ' more tr' + (e.tries === 2 ? 'y' : 'ies') + '.</div>' : ''}</div>`).join('');
+    pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.role === 'view' ? 'A display' : e.role === 'companion' ? 'Companion' : e.role === 'pptx' ? 'A PowerPoint computer' : 'A phone'} wants to connect.</b> Type the number it shows${e.role === 'companion' ? ' (in its connection log)' : e.role === 'pptx' ? ' (on its receiver page or in the player window)' : ''}. A wrong number disconnects it:
+        <span class="pp-askrow"><input inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="###" value="${keep[e.id] || ''}">
+        <button data-act="ok">Let it in</button><button data-act="no">Refuse</button></span></div>`).join('');
     if (rows.length && !keep[rows[0].id]) { const i = pend.querySelector('input'); if (i && !TOUCH) i.focus(); }
     const srv = el.querySelector('.pp-server');
     if (force || document.activeElement !== srv) srv.value = serverUrl();
@@ -1014,23 +1001,20 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
   }
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  // ─── Require a PIN ───────────────────────────────────────────────────────
-
-  const pinRequired = () => localStorage.getItem(PIN_KEY) === '1';
+  // ─── Proximity check ─────────────────────────────────────────────────────
+  // Every new device shows a 3-digit number (not large: readable at arm's length, or read out over
+  // the phone) and someone types it here. Only then does it get anything; one wrong number drops it
+  // (rejectPeer: 'kick' closes its connection at the server). It keeps a token for next time.
   function approvedTokens() {
     try { const v = JSON.parse(localStorage.getItem(APPROVED_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (_) { return []; }
   }
   const pending = () => [...peers.values()].filter(e => !e.approved && e.pin && !e.rejected);
   function approvePeer(e, entered) {
     if (!e || e.approved || e.rejected) return;
-    if (entered !== e.pin) {
-      e.tries++;
-      if (e.tries >= 3) { rejectPeer(e); return; }
-      e.wrong = true; renderPanel(); return;
-    }
+    if (entered !== e.pin) { rejectPeer(e); return; }
     const token = randomString(24, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789');
     localStorage.setItem(APPROVED_KEY, JSON.stringify(approvedTokens().concat(token).slice(-64)));
-    e.approved = true; e.pin = null; e.wrong = false;
+    e.approved = true; e.pin = null;
     e.peer.send({ t: 'pin-ok', token });       // the phone says hello again and gets its state
     renderPanel();
   }
@@ -1038,6 +1022,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     if (!e) return;
     e.rejected = true; e.pin = null;
     try { e.peer.send({ t: 'pin-rejected' }); } catch (_) { /* gone */ }
+    setTimeout(() => sendServer({ type: 'kick', id: e.id }), 400);   // after it has seen why
     renderPanel();
   }
 

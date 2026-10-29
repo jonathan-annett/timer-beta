@@ -654,9 +654,9 @@ function On-TimerMessage($d) {
     switch ([string]$d.t) {
         'pp' { Invoke-TimerCommand $d }
         'pin-required' {
-            if (-not $script:PinCode) { $script:PinCode = '{0:D4}' -f (Get-Random -Minimum 1000 -Maximum 10000) }
+            if (-not $script:PinCode) { $script:PinCode = '{0:D3}' -f (Get-Random -Minimum 100 -Maximum 1000)   # 3 digits: the timer's proximity check }
             Write-Host ''
-            Write-Host ("   The timer needs a PIN. On the timer, type:   {0}" -f $script:PinCode) -ForegroundColor Black -BackgroundColor Yellow
+            Write-Host ("   The timer asks who this is. On the timer, type:   {0}   (one wrong try disconnects)" -f $script:PinCode) -ForegroundColor Black -BackgroundColor Yellow
             Write-Host ''
             Send-Timer @{ t = 'pin'; code = $script:PinCode }
         }
@@ -667,7 +667,7 @@ function On-TimerMessage($d) {
             Send-Hello
         }
         'pin-rejected' {
-            Log 'The timer refused this computer (PIN). Start this script again to try again.' 'Red'
+            Log 'The timer refused this computer (wrong number). Start this script again to try again.' 'Red'
             $script:Running = $false
         }
     }

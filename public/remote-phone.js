@@ -118,6 +118,8 @@
           // waiting, slowly. If the timer made a New code, this code never returns: scan again.
           if (m.reason === 'not-found' || m.reason === 'room-closed') {
             waiting = true; retry = 15000;
+          } else if (m.reason === 'rejected') {
+            fatal = true; setBadge('off', 'not let in');
           } else if (m.reason === 'room-full') {
             fatal = true; setBadge('off', 'too many phones');
           }
@@ -166,9 +168,9 @@
   function onPin(m) {
     const box = $('pinwait');
     if (m.t === 'pin-required') {
-      if (!pinCode) pinCode = String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+      if (!pinCode) pinCode = String(100 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900));   // 3 digits: the proximity check;
       $('pincode').textContent = pinCode;
-      $('pinmsg').textContent = 'The timer is asking who this is. Tell the person at the timer this PIN; it connects once they type it in.';
+      $('pinmsg').textContent = 'The timer is asking who this is. Show this number to the person at the timer (or read it to them over the phone); it connects once they type it in. One wrong try disconnects this phone.';
       $('pinretry').hidden = true;
       box.hidden = false;
       if (peer) peer.send({ t: 'pin', code: pinCode });
@@ -181,6 +183,7 @@
       pinCode = null;
       $('pincode').textContent = '';
       $('pinmsg').textContent = 'The timer didn’t let this phone in.';
+      fatal = true;                                    // the timer disconnects it: don't reconnect
       $('pinretry').hidden = false;
       box.hidden = false;
     }

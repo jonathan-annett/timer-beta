@@ -18,6 +18,7 @@ PY=python3; [ -x .venv/bin/python ] && PY=.venv/bin/python   # tests/e2e/.venv: 
 TO="$(command -v timeout || command -v gtimeout || true)"   # macOS has neither unless coreutils is installed
 fails=0
 for t in "$@"; do
+  case "$t" in _*) continue;; esac   # _name.py: helpers for the tests, not tests
   name="${t%.py}"
   if ${TO:+$TO 600} $PY "$t" > "$OUT/$name.log" 2>&1 && grep -q '^errors: \[\]' "$OUT/$name.log"; then
     echo "ok    $name"

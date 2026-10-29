@@ -207,6 +207,7 @@
         case 'error':
           if (m.reason === 'not-found' || m.reason === 'room-closed') { waiting = true; retry = 15000; }
           else if (m.reason === 'room-full') { fatal = true; setNote('Too many devices are connected to the timer.'); }
+          else if (m.reason === 'rejected') fatal = true;
           break;
       }
       showMode();
@@ -221,13 +222,14 @@
   function onMessage(m) {
     if (!m || typeof m !== 'object') return;
     if (m.t === 'pin-required') {
-      if (!pinCode) pinCode = String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+      if (!pinCode) pinCode = String(100 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900));   // 3 digits: the proximity check;
       $('pincode').textContent = pinCode; $('pinretry').hidden = true; $('pinwait').hidden = false;
       peer.send({ t: 'pin', code: pinCode });
     } else if (m.t === 'pin-ok') {
       if (typeof m.token === 'string') store.set('pptx_token_' + cfg.room, m.token);
       pinCode = null; $('pinwait').hidden = true; sendHello();
     } else if (m.t === 'pin-rejected') {
+      fatal = true;                                    // the timer disconnects it: don't reconnect
       $('pincode').textContent = ''; $('pinmsg').textContent = 'The timer didn’t let this computer in.'; $('pinretry').hidden = false; $('pinwait').hidden = false;
     } else if (m.t === 'pf-offer') offer(m);
     else if (m.t === 'pf-cancel') { if (xfer && xfer.x === m.x) dropTransfer(null); }
