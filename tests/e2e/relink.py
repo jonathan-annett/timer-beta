@@ -41,4 +41,11 @@ with sync_playwright() as p:
     print("WebRTC back, tapped:", badge(), "| timer sees:", peers())
     t.evaluate("processTimerApiMessage({cmd:'start', msecs: 3*60000})"); t.wait_for_timeout(1500)
     print("phone shows:", ph.evaluate("document.body.innerText.match(/\\d+:\\d\\d/)?.[0]"))
+    # Unpair this device (☰ View menu, two taps): forgets the link and leaves the timer
+    ph.click("#viewbtn"); ph.wait_for_timeout(300)
+    btn=ph.locator("#viewlist button", has_text="npair")
+    btn.click(); print("first tap:", btn.inner_text().split("\n")[0]); btn.click(); ph.wait_for_timeout(1500)
+    print("unpaired:", ph.text_content("#blocked"), "| saved link:", ph.evaluate("localStorage.remote_saved_link || null"), "| hash:", repr(ph.evaluate("location.hash")),
+          "| timer peers:", peers())
+    ph.reload(); ph.wait_for_timeout(1500); print("after reload:", ph.text_content("#blocked"))
 print("errors:", errs)

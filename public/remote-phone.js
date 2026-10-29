@@ -39,7 +39,7 @@
   let role = h.a ? 'admin' : (h.k || h.key || h.c) ? 'control' : 'view';
   if (!cfg.room || !cfg.key) {
     $('blocked').hidden = false;
-    $('blocked').textContent = 'Open this page by scanning the QR code in the timer’s “phone” panel.';
+    $('blocked').textContent = 'Open this page by scanning the QR code in the timer’s share panel.';
     return;
   }
   $('app').hidden = false;
@@ -570,7 +570,34 @@
     helpBtn.addEventListener('click', () => { $('viewmenu').hidden = true; help.open('sharing-with-phones-displays-and-companion-experimental'); });
     list.appendChild(helpBtn);
     installOption(list);
+    // Unpair: forget this timer (two taps, so a stray one does nothing)
+    const unpairBtn = document.createElement('button');
+    const unpairText = () => { unpairBtn.innerHTML = 'Unpair this device<small>Forget this timer; scan its QR code to pair again</small>'; };
+    unpairText();
+    let armed = null;
+    unpairBtn.addEventListener('click', () => {
+      if (!armed) {
+        unpairBtn.innerHTML = 'Tap again to unpair<small>This device will forget the timer</small>';
+        armed = setTimeout(() => { armed = null; unpairText(); }, 3000);
+        return;
+      }
+      clearTimeout(armed);
+      unpair();
+    });
+    list.appendChild(unpairBtn);
     $('viewmenu').hidden = false;
+  }
+  function unpair() {
+    try { localStorage.removeItem(SAVED_LINK); localStorage.removeItem(tokenKey()); } catch (_) { /* private mode */ }
+    history.replaceState(null, '', location.pathname + location.search);   // the link isn't in the address bar to come back on reload
+    fatal = true; clearTimeout(retryTimer);
+    if (peer) peer.close();
+    peer = null;
+    if (ws) try { ws.close(); } catch (_) { /* closed */ }
+    $('viewmenu').hidden = true;
+    $('app').hidden = true;
+    $('blocked').hidden = false;
+    $('blocked').textContent = 'This device is unpaired. To pair it again, scan the QR code in the timer’s share panel.';
   }
   // The README, as on the timer (help-overlay.js); ? or F1 open it too
   // The phone's Back button closes whatever is open (menus, message box, tip) and otherwise does
