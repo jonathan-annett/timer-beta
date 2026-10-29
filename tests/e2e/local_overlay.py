@@ -33,6 +33,16 @@ with sync_playwright() as p:
           "| focus left the box:", t.evaluate("!document.getElementById('lo-box').contains(document.activeElement)"))
     t.evaluate("processTimerApiMessage({cmd:'custommessage', text:'Two minutes'})"); t.keyboard.press("b"); t.wait_for_timeout(1500)
     print("message + B:", pipdoc())
+    # keys pressed in the floating window reach the timer: " pauses and resumes
+    t.evaluate("documentPictureInPicture.window.focus()")
+    before=t.evaluate("document.documentElement.classList.contains('paused')")
+    t.evaluate("documentPictureInPicture.window.document.dispatchEvent(new KeyboardEvent('keydown', {key: String.fromCharCode(34), bubbles: true}))")
+    t.wait_for_timeout(300)
+    t.evaluate("documentPictureInPicture.window.document.dispatchEvent(new KeyboardEvent('keyup', {key: String.fromCharCode(34), bubbles: true}))")
+    t.wait_for_timeout(500)
+    print("key in the floating window: paused before", before, "after", t.evaluate("document.documentElement.classList.contains('paused')"))
+    t.evaluate("documentPictureInPicture.window.document.dispatchEvent(new KeyboardEvent('keydown', {key: String.fromCharCode(34), bubbles: true}))"); t.wait_for_timeout(300)
+    t.evaluate("documentPictureInPicture.window.document.dispatchEvent(new KeyboardEvent('keyup', {key: String.fromCharCode(34), bubbles: true}))"); t.wait_for_timeout(500)
     # hidden page: the bus still drives it (the timer's worker tick)
     t.evaluate("Object.defineProperty(document, 'visibilityState', {value: 'hidden', configurable: true}); document.dispatchEvent(new Event('visibilitychange'))")
     a=pipdoc()["remain"]; t.wait_for_timeout(3000); bb=pipdoc()["remain"]

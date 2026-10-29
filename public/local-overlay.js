@@ -8,6 +8,10 @@
  * shade; the same settings as overlay.html, kept as local_overlay_*). It fades out when left alone
  * for 30 s, or Hide puts it away; it comes back each time the overlay starts.
  *
+ * Keys pressed while the floating window has focus are passed on to the timer page (forwardKeys),
+ * so the timer's shortcuts keep working after a click on the overlay (Document PiP only: the
+ * video fallback gets no keys).
+ *
  *   window.LocalOverlay.toggle()   (timer.js togglePIPMode; needs the key press or click)
  * MIT Licensed
  */
@@ -50,6 +54,7 @@
     view = OverlayView.create({
       prefix: 'local_overlay_',
       onStatus: text => { showBox(); box.querySelector('.lo-note').textContent = text; },
+      onWindow: forwardKeys,
       onChange: () => {
         const html = document.documentElement;
         if (view.open) { if (window.setHtmlClass) setHtmlClass('overlay'); else html.classList.add('overlay'); }
@@ -105,6 +110,19 @@
       touch();
     });
     box.addEventListener('pointermove', touch);
+  }
+
+  // A key pressed in the floating window goes to the timer page, as if typed there (the timer's
+  // handlers, the run sheet's Page Up/Down, the deck editor… all read e.key, never keyCode)
+  function forwardKeys(win) {
+    for (const type of ['keydown', 'keyup']) {
+      win.document.addEventListener(type, e => {
+        const copy = new KeyboardEvent(type, { key: e.key, code: e.code, location: e.location, repeat: e.repeat,
+          ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, bubbles: true, cancelable: true });
+        document.dispatchEvent(copy);
+        if (copy.defaultPrevented) e.preventDefault();
+      });
+    }
   }
 
   function syncBox() {

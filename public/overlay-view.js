@@ -8,6 +8,7 @@
  *     preview    (el, [w, h]) sizes the element while it isn't floating (optional)
  *     onStatus   (text) a problem to show (the window couldn't open…)
  *     onChange   () after it opens or closes
+ *     onWindow   (win) the floating window has opened (Document PiP: e.g. to listen for keys there)
  *   v.el                  the overlay element (id "ov"): put it where it should sit when not floating
  *   v.render(d)           d: { online, remain, over, impending, paused, msg, pct, bar } (remain as
  *                         shown, '+' included; msg already chosen: OverlayView.autoMsg() helps)
@@ -166,6 +167,7 @@ var OverlayView = (function () {
         home = { parent: el.parentNode, next: el.nextSibling };
         pip.document.body.appendChild(el);                 // the same element: it keeps updating
         pip.addEventListener('resize', () => render());
+        if (opts.onWindow) opts.onWindow(pip);
         pip.addEventListener('pagehide', () => {
           if (home && home.parent) home.parent.insertBefore(el, home.next && home.next.parentNode === home.parent ? home.next : null);
           pip = null;

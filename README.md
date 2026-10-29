@@ -71,7 +71,7 @@ At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. O
 | **T** | Show the time of day |
 | **M** | Messages on / off |
 | **C** | Write a message for the presenter (**Enter** to show, **C** again to clear) |
-| **O** | Floating countdown overlay that stays on top of other apps (e.g. over PowerPoint's Presenter View): the same overlay as *Countdown overlay on another computer* below, with its shape, message and progress shade set in a small box under the buttons (it fades after 30 seconds; **Hide** puts it away). **O** again closes it. Keeps running with the timer minimized, so a Stream Deck can drive everything. Opening it needs the key press or a click on the **overlay** button. |
+| **O** | Floating countdown overlay that stays on top of other apps (e.g. over PowerPoint's Presenter View): the same overlay as *Countdown overlay on another computer* below, with its shape, message and progress shade set in a small box under the buttons (it fades after 30 seconds; **Hide** puts it away). **O** again closes it. Keeps running with the timer minimized, so a Stream Deck can drive everything; the timer's keys also work while the overlay window has focus (Chrome/Edge). Opening it needs the key press or a click on the **overlay** button. |
 | **?** or **F1** | This guide, shown over the timer (main screen only, not in presenter or single-screen mode). The *help* link at the bottom does the same |
 | **E** | Run sheet editor (opens in its own window) |
 | **Page Down / Page Up** | Run sheet mode: next item / back. Otherwise, in PowerPoint mode, Page Down restarts the timer |
