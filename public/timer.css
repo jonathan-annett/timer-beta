@@ -1303,6 +1303,10 @@ html.portrait #disp_next_mins:before{
   html:not(.reduced) .mainDiv > .progressDiv, html:not(.reduced) .mainDiv > .progressDiv > .progress { height: 12px; }
   html.showbar:not(.reduced) #started_disp, html.showbar:not(.reduced) #ends_disp { bottom: calc(96px + env(safe-area-inset-bottom)); }
   html.showbar:not(.reduced):not(.future) #elapsed_disp, html.showbar:not(.reduced) #duration_disp { bottom: calc(96px + 1.6em + env(safe-area-inset-bottom)); }
+  /* The pause total ("+ 0:04 pauses") goes just above the total duration (at 80% + 20px it landed on
+     it in portrait and behind the strip in landscape): the details' 2.5vh lines, 1.6em apart */
+  html:not(.reduced) #extra_time_disp { top: auto; bottom: calc(80px + 7vh + 2px + env(safe-area-inset-bottom)); }
+  html.showbar:not(.reduced) #extra_time_disp { bottom: calc(96px + 7vh + 2px + env(safe-area-inset-bottom)); }
   /* Full screen: only where the browser has it (not iPhone) */
   #touch-fs-btn { display: none; }
   html.can-fullscreen #touch-fs-btn { display: flex; }

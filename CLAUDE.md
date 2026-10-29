@@ -402,7 +402,7 @@ Setup, behaviour and the full protocol are in `docs/powerpoint.md`; read it befo
 
 All gestures dispatch into the existing `onDocKeyDown`/`onDocKeyUp` keyboard handlers — `touchcontrols.js` has no timer logic of its own.
 
-On touch screens the progress bar (`.mainDiv`, 12 px) sits just above the strip, with the time details above it while `showbar` (at `top: 80%` it landed on the strip in landscape); in portrait (`orientation: portrait`, any screen) messages are capped by the width too (`min(10vh, 9vw)`; they wrapped over the countdown). On touch screens (`@media (pointer: coarse)` in `timer.css`) the keyboard hints (`#disp_next_mins`) and the "open timer display / help" line (`#link`) are hidden, and the elapsed/total/started/ends lines are positioned from the bottom, just above the strip.
+On touch screens the progress bar (`.mainDiv`, 12 px) sits just above the strip, with the time details above it while `showbar` (and the pause total `#extra_time_disp` just above *total*: `7vh` over the same base; at `80% + 20px` it covered it in portrait and sat behind the strip in landscape) (at `top: 80%` it landed on the strip in landscape); in portrait (`orientation: portrait`, any screen) messages are capped by the width too (`min(10vh, 9vw)`; they wrapped over the countdown). On touch screens (`@media (pointer: coarse)` in `timer.css`) the keyboard hints (`#disp_next_mins`) and the "open timer display / help" line (`#link`) are hidden, and the elapsed/total/started/ends lines are positioned from the bottom, just above the strip.
 
 The `#touch-strip` is hidden via CSS on non-touch devices (`@media (pointer: coarse)` controls visibility). The `div.buttons` desktop bar is hidden on touch devices via the same media query.
 
