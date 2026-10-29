@@ -57,13 +57,9 @@
       label: 'Pause', altLabel: 'Resume',
       group: 'Controls',
       toggleState: 'pausing',
-      cmd: () => {
-        if (deckState.pausing) {
-          _sendCmd({ cmd: 'undopause' });
-        } else {
-          _sendCmd({ cmd: 'pause' });
-        }
-      }
+      // 'pause' toggles: pressed while paused it resumes (the paused time counts as a pause).
+      // Never 'undopause' here: that's Clear Pause, which throws the paused time away.
+      cmd: () => _sendCmd({ cmd: 'pause' })
     },
     add_1min:         { label: '+1 min',    group: 'Controls',  cmd: () => _sendCmd({ cmd: 'adjust', addtime: true,  msecs: 60000 }) },
     sub_1min:         { label: '-1 min',    group: 'Controls',  cmd: () => _sendCmd({ cmd: 'adjust', addtime: false, msecs: 60000 }) },
