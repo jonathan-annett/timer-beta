@@ -51,6 +51,8 @@
     #live.behind { color: var(--behind); } #live.ahead { color: var(--ahead); } #live.ontime { color: #ccc; }
     #conn { color: var(--warn); font-size: 0.929rem; display: none; width: 100%; }
     #conn.show { display: block; }
+    /* Time of day, top right (the timer's clock: internet-corrected like the start and end times) */
+    #tod { font-size: 1.143rem; color: var(--dim); font-variant-numeric: tabular-nums; letter-spacing: 0.03em; white-space: nowrap; }
     #remote-tag { font-size: 0.857rem; color: #9fd8ff; border: 1px solid #2a5a7a; border-radius: 1rem; padding: 0.1rem 0.6rem; white-space: nowrap; }
 
     .transport { display: flex; align-items: center; gap: 0.714rem; padding: 0.714rem 1.143rem; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -93,6 +95,9 @@
     /* A hard start whose time came while items before it hadn't run */
     @keyframes hardmiss { 50% { background: rgba(255, 70, 70, 0.38); } }
     #rs-table tr.hardmiss td { animation: hardmiss 1s infinite; }
+    /* Clear sheet, above the column of ✕ buttons */
+    th.delall { text-align: right; padding-right: 0.286rem; }
+    th.delall button { font-size: 0.786rem; padding: 0.143rem 0.429rem; white-space: nowrap; letter-spacing: normal; text-transform: none; }
     #rs-table td.ends { width: 4.6rem; color: var(--dim); }
     #rs-table td.ends input::placeholder { color: var(--text); font-style: normal; opacity: 0.8; }
     #rs-table tr.locked td.ends input::placeholder, #rs-table tr.hiddenrow td.ends input::placeholder { color: var(--dim); }
@@ -197,6 +202,7 @@
       <span id="live"></span>
       <label class="mode" id="autostart" hidden title="Start the first item on its own at its start time (the timer stands by until then)"><input type="checkbox"> <span></span></label>
       <button id="btn-help" title="Help (? or F1)" aria-label="Help">?</button>
+      <span id="tod" title="Time of day"></span>
       <div id="conn">The timer window isn't open. Open the timer in another tab or window; Next and Back won't do anything until it's running.</div>
     </header>
 
@@ -222,7 +228,7 @@
     <div class="main">
       <section class="sheet">
         <table id="rs-table">
-          <thead><tr><th>#</th><th>Start</th><th>Item</th><th>Video</th><th class="deck">Slides</th><th>Duration</th><th>Ends</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>Start</th><th>Item</th><th>Video</th><th class="deck">Slides</th><th>Duration</th><th>Ends</th><th>Status</th><th class="delall"><button id="clear-all-head" class="danger" title="Delete every item (items that have already run stay in the record, hidden)">Clear sheet</button></th></tr></thead>
           <tbody></tbody>
         </table>
         <div class="empty" id="empty">No items yet. Paste a run sheet into <b>Add items</b> on the right, or add items one by one.</div>
@@ -282,6 +288,6 @@
   <script src="help-overlay.js?v=8a5dbd9d"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="runsheet-core.js?v=d0fec52c"></script>
-  <script src="runsheet-editor.js?v=c4fdfa4f"></script>
+  <script src="runsheet-editor.js?v=94050a7f"></script>
 </body>
 </html>

@@ -1620,10 +1620,17 @@ html.runsheet:not(.reduced) #runsheet_dash { display: block; }
 /* "Auto start at 22:40" (runsheet.js; only before the show, with a start time for the first item) */
 #rs_auto { display: block; margin-top: 0.3em; padding-left: 4.4em; font-size: 0.85em; color: #ccc; cursor: pointer; pointer-events: auto; user-select: none; }
 #rs_auto[hidden] { display: none; }
-/* The preset buttons are for tablets and mouse users outside run sheet mode: gone in it (the keyboard,
-   the Stream Deck and the run sheet set durations). The wrapper takes no space of its own. */
+/* The preset buttons are for tablets and mouse users outside run sheet mode: hidden in it (the keyboard,
+   the Stream Deck and the run sheet set durations). The wrapper takes no space of its own outside it;
+   in it, it keeps the buttons' space (so Live adjust and the rest don't move) and shows the site's name
+   (data-site = location.hostname, set in timer.html). */
 .btn-presets { display: contents; }
-html.runsheet .btn-presets { display: none; }
+html.runsheet .btn-presets { display: flex; align-items: center; gap: inherit; position: relative; }
+html.runsheet .btn-presets > * { visibility: hidden; }
+html.runsheet .btn-presets::after {
+  content: attr(data-site); position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 13px; letter-spacing: 0.12em; color: var(--color-button-font); opacity: 0.35; pointer-events: none; white-space: nowrap;
+}
 #rs_auto input { vertical-align: middle; cursor: pointer; }
 
 /* In run sheet mode the controller's copy of the message moves to the top right,

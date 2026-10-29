@@ -1201,11 +1201,14 @@
     saveSheet();
   });
 
-  $('clear-all').addEventListener('click', () => {
-    if (!sheet.items.length || !confirm('Delete every item in the run sheet?' + (keptItems().length ? ' Items that have already run stay in the record, hidden.' : ''))) return;
+  // Clear sheet: in the Add items panel and above the ✕ column
+  function clearSheet() {
+    if (scaling || !sheet.items.length || !confirm('Delete every item in the run sheet?' + (keptItems().length ? ' Items that have already run stay in the record, hidden.' : ''))) return;
     sheet.items = keptItems();
     saveSheet();
-  });
+  }
+  $('clear-all').addEventListener('click', clearSheet);
+  $('clear-all-head').addEventListener('click', clearSheet);
 
   $('log-export').addEventListener('click', () => {
     const log = state.log || [];
@@ -1271,6 +1274,13 @@
     });
   }
   setInterval(renderClock, 1000);   // notices the timer window closing
+  // Time of day in the header, changing on the second
+  const tod = $('tod');
+  (function tickTod() {
+    const now = editorNow();
+    tod.textContent = clockSec(now);
+    setTimeout(tickTod, 1000 - now % 1000 + 20);
+  })();
   renderClock();
 
   $('btn-pause').addEventListener('click', () => send('pause'));

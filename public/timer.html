@@ -13,7 +13,7 @@
       <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
       <link rel="manifest" href="manifest.json">
       <title>Presentation Timer</title>
-      <link rel="stylesheet" href="timer.css?v=0bd93d93" id="style_1">
+      <link rel="stylesheet" href="timer.css?v=f7133afe" id="style_1">
       <link rel="stylesheet" href="help-overlay.css?v=ab22e694">
   </head>
   <body>
@@ -45,6 +45,13 @@
       <script src="pptx-hub.js?v=e1230167" defer></script>
       <script src="markdown-lite.js?v=938fee93" defer></script>
       <script src="help-overlay.js?v=8a5dbd9d" defer></script>
+      <script>
+        // The site's name, faint where the presets were in run sheet mode (timer.css .btn-presets::after)
+        document.addEventListener('DOMContentLoaded', function () {
+          var presets = document.querySelector('.btn-presets');
+          if (presets) presets.dataset.site = location.hostname;
+        });
+      </script>
       <script>
         // Help overlay (the "help" link, ? or F1): main controller screen only, never in a
         // presenter window or in presenter / single-screen mode (P, S: html.reduced).
