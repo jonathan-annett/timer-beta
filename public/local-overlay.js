@@ -12,6 +12,10 @@
  * so the timer's shortcuts keep working after a click on the overlay (Document PiP only: the
  * video fallback gets no keys).
  *
+ * While it's open and the timer page or the floating window has the keyboard, both show a warning
+ * that keys go to the timer, not PowerPoint (the one-laptop case: PowerPoint, a Stream Deck and
+ * this overlay, no crew): OverlayView's keysWarning, and here the html class overlay-keys (#lo-keys).
+ *
  *   window.LocalOverlay.toggle()   (timer.js togglePIPMode; needs the key press or click)
  * MIT Licensed
  */
@@ -27,6 +31,7 @@
   };
   const s = {};
   let view = null, box = null, fadeTimer = null;
+  const KEYS_WARNING = 'Keys go to the timer, not PowerPoint';
 
   const prev = window.timerAPI;
   window.timerAPI = {
@@ -55,6 +60,12 @@
       prefix: 'local_overlay_',
       onStatus: text => { showBox(); box.querySelector('.lo-note').textContent = text; },
       onWindow: forwardKeys,
+      keysWarning: KEYS_WARNING,
+      onKeys: focused => {
+        const html = document.documentElement;
+        if (focused) { if (window.setHtmlClass) setHtmlClass('overlay-keys'); else html.classList.add('overlay-keys'); }
+        else if (window.clearHtmlClass) clearHtmlClass('overlay-keys'); else html.classList.remove('overlay-keys');
+      },
       onChange: () => {
         const html = document.documentElement;
         if (view.open) { if (window.setHtmlClass) setHtmlClass('overlay'); else html.classList.add('overlay'); }
@@ -84,7 +95,11 @@
 #lo-box .lo-hide { border-radius: 4px; }
 #lo-box label { margin-right: 12px; cursor: pointer; }
 #lo-box .lo-note { color: #ffcc33; margin-top: 4px; }
-#lo-box .lo-note:empty { display: none; }`;
+#lo-box .lo-note:empty { display: none; }
+#lo-keys { display: none; position: fixed; z-index: 61; left: 50%; transform: translateX(-50%); top: calc(var(--buttons-bottom, 56px) + 8px);
+  padding: 6px 14px; border-radius: 6px; background: #c62828; color: #fff; font: bold 15px "Helvetica Neue", Arial, sans-serif;
+  box-shadow: 0 2px 10px rgba(0,0,0,.5); white-space: nowrap; pointer-events: none; }
+html.overlay-keys #lo-keys { display: block; }`;
     document.head.appendChild(st);
     box = document.createElement('div');
     box.id = 'lo-box';
@@ -94,6 +109,10 @@
       <label><input type="checkbox" data-o="msg"> Message</label><label><input type="checkbox" data-o="bar"> Progress shade</label>
       <div class="lo-note"></div>`;
     document.body.appendChild(box);
+    const keys = document.createElement('div');
+    keys.id = 'lo-keys';
+    keys.textContent = '⌨ ' + KEYS_WARNING + ': click PowerPoint to give it the keys';
+    document.body.appendChild(keys);
     // Clicks here mustn't leave focus on a button: the timer's keys (Space…) must keep working
     box.addEventListener('mousedown', e => { if (e.target.closest('button, label, input')) e.preventDefault(); });
     box.addEventListener('click', e => {

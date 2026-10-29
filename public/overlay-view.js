@@ -9,6 +9,10 @@
  *     onStatus   (text) a problem to show (the window couldn't open…)
  *     onChange   () after it opens or closes
  *     onWindow   (win) the floating window has opened (Document PiP: e.g. to listen for keys there)
+ *     keysWarning  text for a red strip along the bottom while it floats and this page or the
+ *                floating window has the keyboard (so keys aren't reaching PowerPoint underneath);
+ *                checked on focus changes and every second (moving to another app isn't always reported)
+ *     onKeys     (focused) when that changes, e.g. to show the page's own badge
  *   v.el                  the overlay element (id "ov"): put it where it should sit when not floating
  *   v.render(d)           d: { online, remain, over, impending, paused, msg, pct, bar } (remain as
  *                         shown, '+' included; msg already chosen: OverlayView.autoMsg() helps)
@@ -45,7 +49,10 @@ var OverlayView = (function () {
     #ov.impending .ov-remain { color: #ffa500; } #ov.impending .ov-shade { background: rgba(255, 165, 0, .18); }
     #ov.over { background: #2a0000; } #ov.over .ov-remain { color: #ff4d4d; } #ov.over .ov-shade { background: rgba(255, 77, 77, .2); }
     #ov.paused .ov-remain { color: #888; }
-    #ov.offline .ov-remain { color: #444; }`;
+    #ov.offline .ov-remain { color: #444; }
+    #ov .ov-warn { position: absolute; left: 0; right: 0; bottom: 0; height: 13%; display: none; align-items: center; justify-content: center;
+      background: #c62828; color: #fff; white-space: nowrap; }
+    #ov.warn .ov-warn { display: flex; }`;
 
   const LAYOUTS = { 169: [480, 270], 1: [320, 320], 916: [270, 480], stack: [270, 480] };   // floating window size (px)
   // Stacked: "12:34" → "12" over "34"; from an hour, "1:23:59" → "1 hr" over "23:59" ("+" kept in overtime)
@@ -98,13 +105,13 @@ var OverlayView = (function () {
     const el = document.createElement('div');
     el.id = 'ov';
     el.className = 'l-169 offline';
-    el.innerHTML = '<div class="ov-shade"></div><div class="ov-msg"><span></span></div><div class="ov-remain"><span class="r1">–:––</span><span class="r2"></span></div>';
+    el.innerHTML = '<div class="ov-shade"></div><div class="ov-msg"><span></span></div><div class="ov-remain"><span class="r1">–:––</span><span class="r2"></span></div><div class="ov-warn"><span></span></div>';
 
     let layout = LAYOUTS[store.get('layout')] ? store.get('layout') : '169';
     let showMsg = store.get('msg') !== '0', showBar = store.get('bar') !== '0';
     let pip = null, home = null;                   // the Document Picture-in-Picture window; where el sat before
     let video = null, canvas = null;               // or the video fallback
-    let last = { online: false, remain: '–:––', msg: '', pct: 0 };
+    let last = { online: false, remain: '–:––', msg: '', pct: 0 }, warning = '';
     const status = t => { if (opts.onStatus) opts.onStatus(t); };
     const changed = () => { if (opts.onChange) opts.onChange(); };
     const videoOpen = () => !!video && document.pictureInPictureElement === video;
@@ -121,6 +128,7 @@ var OverlayView = (function () {
       el.classList.toggle('over', !!d.online && !!d.over);
       el.classList.toggle('impending', !!d.online && !!d.impending && !d.over);
       el.classList.toggle('paused', !!d.online && !!d.paused);
+      el.classList.toggle('warn', !!warning);
       const pct = d.online && isFinite(d.pct) ? Math.max(0, Math.min(100, Number(d.pct))) : 0;
       el.querySelector('.ov-shade').style.width = pct + '%';
       el.querySelector('.ov-msg span').textContent = d.msg || '';
@@ -135,6 +143,9 @@ var OverlayView = (function () {
       if (stack && hourStack(remain)) [remBox.querySelector('.r1'), remBox.querySelector('.r2')].forEach(s => fit([s], remBox.clientWidth, remBox.clientHeight / 2));
       else if (stack) fit([remBox.querySelector('.r1'), remBox.querySelector('.r2')], remBox.clientWidth, remBox.clientHeight / 2);
       else fit([remBox.querySelector('.r1')], remBox.clientWidth, remBox.clientHeight);
+      const warnBox = el.querySelector('.ov-warn');
+      warnBox.firstChild.textContent = warning;
+      if (warning) fit([warnBox.firstChild], warnBox.clientWidth, warnBox.clientHeight);
       if (canvas) drawCanvas(d, remain, pct, msgOn, barOn);
     }
 
@@ -147,6 +158,29 @@ var OverlayView = (function () {
       }
       if (canvas) { const [w, h] = LAYOUTS[l]; canvas.width = w * 2; canvas.height = h * 2; }
       render();
+    }
+    // While it floats: does this page or the floating window have the keyboard?
+    let keysTimer = null, keysOn = null;
+    function checkKeys() {
+      let focused = false;
+      if (opts.keysWarning && (pip || videoOpen())) {
+        try { focused = document.hasFocus() || !!(pip && pip.document.hasFocus()); } catch (_) { focused = document.hasFocus(); }
+      }
+      const text = focused ? opts.keysWarning : '';
+      if (text !== warning) { warning = text; render(); }
+      if (focused !== keysOn) { keysOn = focused; if (opts.onKeys) opts.onKeys(focused); }
+    }
+    const checkSoon = () => setTimeout(checkKeys, 0);   // (on blur, focus may be moving to the other window)
+    function watchKeys() {
+      clearInterval(keysTimer);
+      window.removeEventListener('focus', checkKeys);
+      window.removeEventListener('blur', checkSoon);
+      if (opts.keysWarning && (pip || videoOpen())) {
+        keysTimer = setInterval(checkKeys, 1000);
+        window.addEventListener('focus', checkKeys);
+        window.addEventListener('blur', checkSoon);
+      }
+      checkKeys();
     }
     function setOption(name, on) {
       if (name === 'msg') showMsg = !!on; else if (name === 'bar') showBar = !!on; else return;
@@ -167,13 +201,15 @@ var OverlayView = (function () {
         home = { parent: el.parentNode, next: el.nextSibling };
         pip.document.body.appendChild(el);                 // the same element: it keeps updating
         pip.addEventListener('resize', () => render());
+        pip.addEventListener('focus', checkKeys);
+        pip.addEventListener('blur', checkSoon);
         if (opts.onWindow) opts.onWindow(pip);
         pip.addEventListener('pagehide', () => {
           if (home && home.parent) home.parent.insertBefore(el, home.next && home.next.parentNode === home.parent ? home.next : null);
           pip = null;
-          render(); changed();
+          watchKeys(); render(); changed();
         });
-        render(); changed();
+        watchKeys(); render(); changed();
         return;
       }
       // Fallback: the overlay drawn on a canvas, played as a picture-in-picture video
@@ -183,8 +219,8 @@ var OverlayView = (function () {
         video = document.createElement('video');
         video.muted = true; video.playsInline = true;
         video.srcObject = canvas.captureStream();
-        video.addEventListener('enterpictureinpicture', changed);
-        video.addEventListener('leavepictureinpicture', () => { render(); changed(); });
+        video.addEventListener('enterpictureinpicture', () => { watchKeys(); changed(); });
+        video.addEventListener('leavepictureinpicture', () => { watchKeys(); render(); changed(); });
       }
       canvas.width = w * 2; canvas.height = h * 2;
       render();
@@ -217,6 +253,12 @@ var OverlayView = (function () {
       } else {
         c.font = FONT.replace('{px}', fitPx(remain, W, H - top));
         c.fillText(remain, W / 2, top + (H - top) / 2);
+      }
+      if (warning) {
+        const wh = H * 0.13;
+        c.fillStyle = '#c62828'; c.fillRect(0, H - wh, W, wh);
+        c.fillStyle = '#fff'; c.font = FONT.replace('{px}', fitPx(warning, W, wh));
+        c.fillText(warning, W / 2, H - wh / 2);
       }
     }
 

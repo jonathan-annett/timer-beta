@@ -199,6 +199,8 @@
         el.style.width = Math.round(lw * k) + 'px'; el.style.height = Math.round(lh * k) + 'px';
       },
       onStatus: text => status(text, 'warn'),
+      keysWarning: 'Keys aren’t going to PowerPoint',   // e.g. the presenter's clicker, on the slides computer
+      onKeys: focused => { $('keyswarn').hidden = !focused; },
       onChange: () => { $('previewbox').querySelector('.floating').hidden = !view.open || !('documentPictureInPicture' in window); render(); },
     });
     $('previewbox').insertBefore(view.el, $('previewbox').firstChild);
