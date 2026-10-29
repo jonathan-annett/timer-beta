@@ -69,6 +69,11 @@ with sync_playwright() as p:
     pr.keyboard.press('"'); pr.wait_for_timeout(600)
     print("presenter window: \" pressed there -> timer paused:", was, "->", t.evaluate("document.documentElement.classList.contains('paused')"), "| presenter's own copy paused:", pr.evaluate("document.documentElement.classList.contains('paused')"))
     pr.keyboard.press('"'); pr.wait_for_timeout(600)
+    # which keys stay in the presenter window (full screen, Escape, Cmd) and which reach the timer
+    t.evaluate("window.__got = []; document.addEventListener('keydown', e => __got.push(e.key + (e.metaKey ? '+meta' : '')))")
+    pr.evaluate("window.__own = []; document.addEventListener('keydown', e => __own.push(e.key + (e.metaKey ? '+meta' : '')))")
+    for k in ["f", "F", "F11", "Escape", "Meta+Control+f", "b", "b"]: pr.keyboard.press(k); pr.wait_for_timeout(150)
+    print("presenter keeps:", pr.evaluate("__own"), "| timer got:", t.evaluate("__got"))
     t.bring_to_front(); t.wait_for_timeout(300)
     # hidden page: the bus still drives it (the timer's worker tick)
     t.evaluate("Object.defineProperty(document, 'visibilityState', {value: 'hidden', configurable: true}); document.dispatchEvent(new Event('visibilitychange'))")

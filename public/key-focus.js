@@ -13,8 +13,8 @@
  *     the timer's overlay is open (localStorage overlay_open, written by local-overlay.js) and
  *     they have the keyboard;
  *   - the presenter window passes its keys on to the timer window that opened it, as the floating
- *     overlay does, so the timer's keys work whichever of its windows has focus. F (this window's
- *     own full screen) and Cmd shortcuts stay here. The run sheet editor keeps its keys: it's typed in.
+ *     overlay does, so the timer's keys work whichever of its windows has focus. Full screen (F, F11,
+ *     Ctrl+Cmd+F), Escape and Cmd shortcuts stay here. The run sheet editor keeps its keys: it's typed in.
  * MIT Licensed
  */
 var KeysBadge = (function () {
@@ -87,12 +87,15 @@ html body div.kw-badge.kw-badge[hidden] { display: none; }
     if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
   }
 
+  // Keys the presenter window keeps: its own full screen (F, F11; Ctrl+Cmd+F and other Cmd keys on a
+  // Mac) and Escape (leaves full screen; in the timer window it would cancel typing there)
+  const LOCAL = e => e.metaKey || /^f$/i.test(e.key) || e.key === 'F11' || e.key === 'Escape';
   if (PRESENTER) {
     // Keys go to the timer window that opened this one (as if typed there), so the timer's
     // shortcuts work from here too. Captured before timer.js sees them: this window only mirrors.
     for (const type of ['keydown', 'keyup']) {
       window.addEventListener(type, e => {
-        if (e.metaKey || /^f$/i.test(e.key)) return;               // the browser's; this window's full screen
+        if (LOCAL(e)) return;                                       // full screen and the browser's own: this window's
         let main = null;
         try { main = window.opener && !window.opener.closed && window.opener.document ? window.opener : null; } catch (_) { main = null; }
         if (!main) return;                                        // opened by hand: keys stay here, as before
