@@ -12,7 +12,7 @@ FAKE_HID = """(() => {
   const listeners = {};
   const dev = { vendorId: 0x0fd9, productId: 0x0080, productName: 'Fake MK.2', opened: false, reports: 0,
     async open() { this.opened = true; }, async close() { this.opened = false; },
-    async sendReport() { this.reports++; }, async sendFeatureReport() {},
+    async sendReport() { this.reports++; }, async sendFeatureReport(id, d) { (this.features = this.features || []).push([id, d[0]]); },
     addEventListener(t, fn) { listeners[t] = fn; }, removeEventListener(t) { delete listeners[t]; } };
   // Press key i (gen2 input report: key states from byte 3), then release it
   dev.press = i => { [1, 0].forEach(v => { const b = new Uint8Array(3 + 15); b[3 + i] = v;
@@ -49,6 +49,8 @@ with sync_playwright() as p:
     r0=deck(t1)["reports"]
     t1.evaluate("__deck.press(10)"); t1.wait_for_timeout(800)
     print("Bar again -> bar on:", t1.evaluate("document.documentElement.classList.contains('showbar')"), "| reports from 1:", deck(t1)["reports"]-r0, "| from 2:", deck(t2)["reports"], "| from presenter:", deck(pr)["reports"])
+    t1.evaluate("__deck.features = []; dispatchEvent(new Event('pagehide'))")   # the page going away (closed, reloaded)
+    print("timer 1 leaving -> feature reports sent (id, first byte; reset = [3, 2]):", t1.evaluate("__deck.features"), "| timer 2 sent none:", t2.evaluate("(__deck.features || []).length === 0"))
     t1.close(); t2.wait_for_timeout(1500)
     print("timer 1 closed -> timer 2:", deck(t2))
 print("errors:", errs)

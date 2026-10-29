@@ -289,6 +289,19 @@
     }
   }
 
+  // The page is going away (closed, reloaded): reset the deck to its idle Elgato screen so it doesn't
+  // keep showing stale keys. One short feature report, sent without waiting (a closing page gets a
+  // moment at most; blanking every key would be far too slow). Best effort. The next page to attach
+  // (a reload, another timer tab) draws its keys again.
+  function resetOnLeave() {
+    if (!device || !deviceInfo || !device.opened) return;
+    try {
+      if (deviceInfo.protocol === 'gen2') { const d = new Uint8Array(31); d[0] = 0x02; device.sendFeatureReport(0x03, d).catch(() => {}); }
+      else { const d = new Uint8Array(16); d[0] = 0x63; device.sendFeatureReport(0x0b, d).catch(() => {}); }
+    } catch (_) { /* gone already */ }
+  }
+  window.addEventListener('pagehide', resetOnLeave);
+
   function setBrightness(pct) {
     brightness = Math.max(1, Math.min(100, pct | 0));
     localStorage.setItem(BRIGHTNESS_KEY, String(brightness));
