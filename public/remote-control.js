@@ -73,7 +73,8 @@
     companion: { label: 'Companion', hint: '<b>Bitfocus Companion</b> (or other automation): paste this link into the Companion connection’s settings. It gets every timer command and all the timer’s variables. It can’t set up other devices.' },
     pptx:      { label: 'PowerPoint', hint: '<b>PowerPoint</b>: open this link in Chrome or Edge on the computer that shows the slides (same network as this one). It receives the run sheet’s decks and shows how to start the PowerPoint player. It can’t control the timer.' },
   };
-  const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet', 'pptx'];   // what an admin phone can set another computer up as
+  const PPTX = !!(window.TimerFeatures && TimerFeatures.pptx);   // PowerPoint computers: an alpha-only trial (features.js)
+  const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet'].concat(PPTX ? ['pptx'] : []);   // what an admin phone can set another computer up as
   const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4, pptx: 5, overlay: 2, code: 6 };   // pairing server needed for each link (code: pairing by code)
   // 'editor' is the control link with m=runsheet: a computer opening it starts in the run sheet editor
   const linkFields = (p, mode) => mode === 'control' ? { r: p.room, k: p.key }
@@ -89,6 +90,7 @@
   const linkMode = () => {
     const m = localStorage.getItem(LINK_MODE_KEY);
     if (TOUCH && !TOUCH_MODES.includes(m)) return 'control';
+    if (m === 'pptx' && !PPTX) return 'control';
     return LINK_MODES[m] ? m : 'control';
   };
   const serverUrl = () => localStorage.getItem(SERVER_KEY) || defaultServer();
@@ -125,7 +127,7 @@
     sock.onopen = () => {
       retryDelay = 1000;
       const p = pairing();
-      sock.send(JSON.stringify({ type: 'host', room: p.room, key: p.key, viewKey: p.view, adminKey: p.admin, compKey: p.comp, pptxKey: p.pptx }));
+      sock.send(JSON.stringify({ type: 'host', room: p.room, key: p.key, viewKey: p.view, adminKey: p.admin, compKey: p.comp, pptxKey: PPTX ? p.pptx : undefined }));   // no PowerPoint key: the server refuses PowerPoint computers
     };
     sock.onmessage = ev => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
@@ -492,6 +494,7 @@
     const row = norm && norm.items.find(it => it.id === m.id);
     const size = num(m.size, 1, MAX_VIDEO);
     const kind = m.kind === 'deck' || m.kind === 'holding' ? m.kind : 'video';
+    if (kind !== 'video' && !PPTX) return fail('bad');
     const typeOk = kind === 'deck' ? typeof m.name === 'string' && /\.(pptx|ppsx|pptm|ppsm|ppt|pps|potx)$/i.test(m.name)
                  : kind === 'holding' ? typeof m.name === 'string' && /\.(png|jpe?g|bmp)$/i.test(m.name)
                  : typeof m.type === 'string' && /^video\//.test(m.type);
@@ -750,6 +753,7 @@
   #phone-panel.pp-touch .pp-qr canvas { max-height: calc(100vh - 44px); }
 }
 #phone-panel .pp-modes { display: flex; gap: 0; margin: 2px 0 6px; }
+html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
 #phone-panel .pp-modes button { border-radius: 0; margin: 0; }
 #phone-panel .pp-modes button:first-child { border-radius: 4px 0 0 4px; }
 #phone-panel .pp-modes button:last-child { border-radius: 0 4px 4px 0; }

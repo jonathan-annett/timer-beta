@@ -9,7 +9,8 @@
   "name": "timed-show-dev",
   "main": "src/worker.js",
   "compatibility_date": "2026-10-01",
-  "assets": { "directory": "../public", "binding": "ASSETS", "html_handling": "none" },   // timer.html stays timer.html
+  "assets": { "directory": "../public", "binding": "ASSETS", "html_handling": "none",   // timer.html stays timer.html
+              "run_worker_first": ["/pptx.html", "/pptx-receiver.js", "/Pptx-WsController.ps1"] },   // so FEATURES can refuse them
   "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
   "durable_objects": {
     "bindings": [
@@ -19,9 +20,11 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room", "Codes"] }],
   "observability": { "enabled": true },
+  "vars": { "FEATURES": "pptx" },                 // trial features, for local testing (see worker.js feature())
   "env": {
     "alpha": {
       "name": "timed-show-alpha",
+      "vars": { "FEATURES": "pptx" },
       "routes": [{ "pattern": "alpha.timed-show.com", "custom_domain": true }],
       "durable_objects": {
         "bindings": [
@@ -32,6 +35,7 @@
     },
     "beta": {
       "name": "timed-show-beta",
+      "vars": { "FEATURES": "" },
       "routes": [{ "pattern": "beta.timed-show.com", "custom_domain": true }],
       "durable_objects": {
         "bindings": [

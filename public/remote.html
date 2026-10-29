@@ -259,8 +259,10 @@
       width: min(100%, 30em); max-height: 100%; overflow-y: auto; }   /* scrolls on a short (landscape) screen */
     .sheet .send { margin: 0.4em 0 0; }
     .sheet p { margin: 0.3em 0 0.8em; line-height: 1.45; }
+      html.no-pptx .pptx-only { display: none; }
   </style>
   <link rel="stylesheet" href="help-overlay.css?v=ab22e694">
+  <script src="features.js?v=4136908a"></script>
 </head>
 <body>
   <div id="blocked" hidden></div>
@@ -295,7 +297,7 @@
         <button data-mode="editor">A run sheet editor<small>Edit this timer’s run sheet from that computer (it can also control the timer)</small></button>
         <button data-mode="countdown">A countdown display<small>View only: big countdown and messages</small></button>
         <button data-mode="runsheet">A run sheet display<small>View only: now, next and the schedule, e.g. for a green room</small></button>
-        <button data-mode="pptx">A PowerPoint computer<small>Receives this timer’s run sheet slides; then start the PowerPoint player on it (the page shows how)</small></button>
+        <button data-mode="pptx" class="pptx-only">A PowerPoint computer<small>Receives this timer’s run sheet slides; then start the PowerPoint player on it (the page shows how)</small></button>
       </div>
       <div class="grid g2"><button id="admscanbtn">Scan a QR code</button><button id="admstop">Stop camera</button></div>
     </div>

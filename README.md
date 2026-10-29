@@ -113,7 +113,7 @@ The timer screen shows a three-line dashboard: **previous** (when it started and
 
 Ahead/behind is measured against the sheet's start times. If it has none, it's measured from when you started the first item. Until then, the editor (and the phones' run sheet display) shows the times as if the show started now, so you can see when everything would happen and when it would finish; they move on with the clock until the first **Next**.
 
-The top of the editor shows the timer's countdown as it is now (yellow under a minute, red when over, *Paused* when paused), with **Pause** / **Resume** and **Restart**. Restart gives the current item its full time again from now (the default duration when the run sheet is off), for when the presenter walks on after a long introduction or the deck was loaded well before they took the stage. The item's start time in the log moves to the restart, and the show runs that much later. It doesn't start the slides or the video again. If you'd rather a stray click couldn't reset a talk, turn on **Restart needs a second click** under **Options** (on the right): then Restart asks for a second click within 2 seconds. Each computer remembers its own setting; it's off by default.
+The top of the editor shows the timer's countdown as it is now (yellow under a minute, red when over, *Paused* when paused), with **Pause** / **Resume** and **Restart**. Restart gives the current item its full time again from now (the default duration when the run sheet is off), for when the presenter walks on after a long introduction or the deck was loaded well before they took the stage. The item's start time in the log moves to the restart, and the show runs that much later. It doesn't start the video again. If you'd rather a stray click couldn't reset a talk, turn on **Restart needs a second click** under **Options** (on the right): then Restart asks for a second click within 2 seconds. Each computer remembers its own setting; it's off by default.
 
 **Editing during the show:** items that have finished are locked as they happened. **✕** on one hides it from the run sheet but keeps it (the log and the exported CSV still have it; *Show deleted* under the table shows them again, and **Reset show** drops them). The item running now keeps its start time. Its name can be changed, but because it's on the presenter's screen the editor asks first and only then shows the new name there; Cancel puts the old name back. Names of items still to come change without asking.
 
@@ -201,7 +201,6 @@ Click **share** in the button bar to let other devices in. Control the timer fro
    - **Run sheet**: a view-only display of now, next, ahead/behind and the schedule, e.g. for a green room or backstage.
    - **Admin**: everything Control can do, every view, and setting up other computers (below). Keep this code for yourself: Control lets someone run the timer without being able to hand it to other devices.
    - **Companion**: for Bitfocus Companion (below) and other automation. The panel shows a link to copy instead of a QR code.
-   - **PowerPoint**: for the computer that shows the slides (see *Slides on a PowerPoint computer*). Also a link to copy.
 3. Scan it with the phone or tablet. The page opens and connects.
 
 Each kind of code has its own key, and the timer enforces what each can do, even if someone fiddles with the page: view-only devices can't send anything, and only admin phones can set up other computers. The share panel lists each device as *Phone*, *Phone · admin* or *Display · view only*.
@@ -223,7 +222,7 @@ The **run sheet display** shows the time of day, what's on now with its countdow
 
 1. On that computer, open the timer, click **share** and choose **Control**.
 2. On a phone paired with this timer's **Admin** code, choose **☰ View → Admin: set up another computer** and scan the other computer's QR code.
-3. Choose **A remote control**, **A run sheet editor**, **A countdown display**, **A run sheet display** or **A PowerPoint computer** (it opens the PowerPoint receiver page; see *Slides on a PowerPoint computer*).
+3. Choose **A remote control**, **A run sheet editor**, **A countdown display** or **A run sheet display**.
 
 The phone gets the link from this timer and passes it to the other computer, which shows a notice for 8 seconds (anyone there can **Cancel**) and then opens it. It's then listed in this timer's share panel, and it remembers the link. The phone needs the other computer's *Control* code because it is telling that computer what to do; a view-only code won't work. The phone uses the browser's built-in QR reader where there is one (Chrome on Android) and otherwise a small bundled reader (jsQR), so iPhones work too.
 
@@ -253,25 +252,9 @@ A countdown that floats on top of everything on another computer, for example ov
 
 The overlay turns orange under a minute and red when time is up, and greys out while paused. The progress shade follows the timer's bar switch (**B**), and with its messages switch (**M**) on, the message strip shows the timer's own notices (*Wrap up - last minute*, *Time is Up*, *Paused*) whenever no message is up. The overlay's own **Message** and **Progress shade** boxes turn them off on that screen only. It can't control the timer. The computer stays paired: next time just open `overlay.html` (it remembers), even after the timer was closed. **Unpair this computer** forgets it; a **New code** on the timer unpairs every device. The code only works from the same network as the timer (same internet connection) and only once; a code typed from elsewhere is refused. The floating window works best in Chrome or Edge; other browsers get a simpler video overlay.
 
-### Slides on a PowerPoint computer
-
-Give a run sheet item a PowerPoint deck and it opens as a full-screen slide show on the computer that shows the slides when **Next** reaches that item. Decks are sent to that computer ahead of time, so the switch is instant. An item without slides leaves the last deck on screen; **Back** onto an item with slides shows them again. You can have a backup computer too: every PowerPoint computer gets the same decks and opens them at the same moment. Decks only open or close when you press **Next**, **Back** or **Close slides**: a computer that connects or reconnects (or the timer page being reloaded) never changes what's on screen.
-
-The PowerPoint computer needs Windows with PowerPoint, Chrome or Edge, and the same network as the timer's computer. To set it up:
-
-1. On the timer, click **share**, choose **PowerPoint** and copy the link. Open it in Chrome or Edge on the PowerPoint computer. Or, with an admin phone: open the timer on the PowerPoint computer, click **share** there, choose **Control**, and on the phone choose **Admin: set up another computer**, scan that code and pick **A PowerPoint computer**: it switches to the receiver page by itself.
-2. On that page, click **Download the player** and run the command it shows in PowerShell. The player is a small script that opens the decks in PowerPoint; keep its window open during the show. It shows its *Inbox* folder.
-3. On the page, click **Choose folder…** and pick that Inbox folder.
-
-Then attach decks in the run sheet editor: **+ slides** in the **Slides** column, or drop a .pptx file on a row (from a remote run sheet editor too, when it's on the same network).
-
-**Holding slide:** attach an image (PNG or JPG, e.g. the event logo, a slide saved as a picture) in the same Slides cell or drop it on a row. When that item starts, it becomes the PowerPoint computers' desktop wallpaper, so it's what the screen shows whenever no deck is up: during a break, or while a speaker is introduced without giving their title away. Put it on the first item of the day, or on the item before a speaker. An item can have both: the holding slide is set, then the deck starts over it. **Close slides** (in the run sheet editor's top bar, as a Stream Deck key, or from Companion) closes whatever slide show is up on the PowerPoint computers, even one opened there by hand, so the holding slide shows.
-
-**Rehearsals:** tick **Open decks for editing** on the receiver page and decks open as normal PowerPoint windows, with the show started for you (F5), so a speaker's changes can be made on that computer. Edits are saved when the run sheet moves on to another deck; they stay on that computer (the timer's copy isn't changed) and aren't overwritten when the timer syncs again. Untick it for the show. The share panel shows each PowerPoint computer and how many decks are ready on it, and the run sheet dashboard warns if the next item's slides aren't ready yet. The timer only loads and starts each deck; slides are advanced on the PowerPoint computer itself, with the presenter's clicker as usual. The details, including the player's protocol, are in [`docs/powerpoint.md`](docs/powerpoint.md).
-
 ### Pairing server
 
-Sharing needs `remote-server.js` running on a server you control (the hosted timer has one). View-only, admin, Companion and PowerPoint links need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 3* supports view-only and admin links, *4* adds Companion, *5* PowerPoint, *6* pairing a computer by code), and the timer's share panel warns if the server is too old for the code you've selected. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the share panel.
+Sharing needs `remote-server.js` running on a server you control (the hosted timer has one). View-only, admin and Companion links and pairing by code need the current version: after updating, restart the service. `curl https://your-server:8443/` shows the version (*protocol 3* supports view-only and admin links, *4* adds Companion, *6* pairing a computer by code), and the timer's share panel warns if the server is too old for the code you've selected. By default the timer looks for it at `wss://<the timer's host>:8443/`; change that under **Server** in the share panel.
 
 ```bash
 npm install

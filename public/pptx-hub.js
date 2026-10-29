@@ -27,6 +27,7 @@
 
 (function () {
   'use strict';
+  if (typeof TimerFeatures !== 'undefined' && !TimerFeatures.pptx) return;   // alpha-only trial (features.js)
 
   if (new URLSearchParams(location.search).has('presenter')) return;
 

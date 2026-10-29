@@ -28,6 +28,11 @@
   };
 
   // ─── The link ─────────────────────────────────────────────────────────────
+  if (window.TimerFeatures && !TimerFeatures.pptx) {          // an alpha-only trial (features.js)
+    $('blocked').hidden = false;
+    $('blocked').textContent = 'PowerPoint computers aren’t available on this site.';
+    return;
+  }
   const SAVED_LINK = 'pptx_saved_link';
   const parse = frag => Object.fromEntries(new URLSearchParams(frag));
   let h = parse(location.hash.slice(1));

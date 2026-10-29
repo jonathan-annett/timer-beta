@@ -68,6 +68,11 @@ function close(ws) {
   try { ws.close(1000); } catch (_) { /* already closed */ }
 }
 
+// Features on trial (wrangler.jsonc vars FEATURES, comma separated; public/features.js is the page side).
+// 'pptx': PowerPoint computers. Without it the PowerPoint pages aren't served and the PowerPoint key is refused.
+const feature = (env, name) => String(env.FEATURES || '').split(',').map(s => s.trim()).includes(name);
+const PPTX_FILES = ['/pptx.html', '/pptx-receiver.js', '/Pptx-WsController.ps1'];
+
 const codesOf = env => env.CODES.get(env.CODES.idFromName('codes'));
 const roomOf = (env, room) => env.ROOMS.get(env.ROOMS.idFromName(room));
 
@@ -80,6 +85,7 @@ export default {
       return new Response(README, { headers: { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'public, max-age=0, must-revalidate' } });
     }
     if (url.pathname === '/ws') return socket(req, env, url);
+    if (PPTX_FILES.includes(url.pathname) && !feature(env, 'pptx')) return new Response('Not found', { status: 404 });   // (run_worker_first)
     if (url.pathname === '/') return Response.redirect(new URL('/timer.html' + url.search, url).href, 302);
     if (url.pathname === '/o' || url.pathname === '/o/') return Response.redirect(new URL('/overlay.html' + url.search, url).href, 302);   // short, to type
     return env.ASSETS.fetch(req);      // anything that isn't a file: the 404
@@ -240,7 +246,7 @@ export class Room extends DurableObject {
       view: validKey(m.viewKey) ? await hash(m.viewKey) : null,
       admin: validKey(m.adminKey) ? await hash(m.adminKey) : null,
       companion: validKey(m.compKey) ? await hash(m.compKey) : null,
-      pptx: validKey(m.pptxKey) ? await hash(m.pptxKey) : null,
+      pptx: validKey(m.pptxKey) && feature(this.env, 'pptx') ? await hash(m.pptxKey) : null,
     };
     const changed = { view: s.viewHash && s.viewHash !== h.view, admin: s.adminHash && s.adminHash !== h.admin,
       companion: s.compHash && s.compHash !== h.companion, pptx: s.pptxHash && s.pptxHash !== h.pptx };
