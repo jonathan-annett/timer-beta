@@ -80,6 +80,23 @@ changed too (no same-network check, `kick`): promoting to main means a `timer-re
   `streamdeck.js` (no `timer-remote` restart). The original site (timer.sophtwhere.com, not this
   repo) has the same bug if it has the same code.
 
+## The move to beta.timed-show.com (prepared 29 Oct; waiting for the user's test and go)
+
+The user's plan, answers given: alpha → `main` → Worker `timed-show-beta` at **beta.timed-show.com**
+(timed-show.com itself is kept for the launch). The VPS beta is **frozen**: local branch
+`legacy-beta` (worktree `../timer-legacy`) = `main` as deployed + the Stream Deck pause fix +
+`index.html` landing page (announces the new address; **Next** = `location.replace` to the new
+site, "Bring my settings" ticked by default) + `deprecated-beta.html` (→ the old `timer.html`) +
+`moved.js` (a dismissable "The beta has moved" bar on the old timer page, link brings settings;
+✕ hides it for 7 days). Settings travel in the URL fragment to the new site's `import.html`
+(`import.js`, allow-listed keys; run sheet media dropped; asks before replacing different values
+already there). Not carried: share keys/approvals, the running countdown, videos.
+Check: `tests/e2e/_move_to_new_site.py` (manual; needs the worktree).
+
+On the user's go: push `alpha` → `main` (ask), `wrangler deploy --env beta`, run the suite against
+beta, push `legacy-beta`, then on the VPS `git fetch && git checkout legacy-beta` once (afterwards
+`update-server.sh` pulls that branch; `remote-server.js` there is unchanged, so no restart).
+
 ## Open (offered or asked, not started)
 
 - Warn when a share link is opened in the same browser as the timer ("use the presenter window";
