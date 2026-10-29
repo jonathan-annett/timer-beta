@@ -40,6 +40,7 @@
   if (!cfg.room || !cfg.key) {
     $('blocked').hidden = false;
     $('blocked').textContent = 'Open this page by scanning the QR code in the timer’s share panel.';
+    location.replace('control.html' + location.search);   // no link: the code screen pairs it (?remote= kept)
     return;
   }
   $('app').hidden = false;
@@ -184,11 +185,20 @@
       $('pincode').textContent = '';
       $('pinmsg').textContent = m.t === 'revoked' ? 'The timer took this device’s access away.' : 'The timer didn’t let this phone in.';
       fatal = true;                                    // the timer disconnects it: don't reconnect
-      $('pinretry').hidden = false;
       box.hidden = false;
+      // The link is no use now: forget it and go back to the code screen (to pair again, here or
+      // with another timer), saying why
+      setTimeout(() => toCodeScreen(m.t === 'revoked' ? 'revoked' : 'refused'), 2500);
     }
   }
   $('pinretry').addEventListener('click', () => location.reload());
+  function toCodeScreen(why) {
+    forget();
+    const q = new URLSearchParams();
+    if (why) q.set('left', why);
+    if (cfg.server !== RemotePeer.defaultServer()) q.set('remote', cfg.server);
+    location.replace('control.html' + (q.toString() ? '?' + q : ''));
+  }
 
   // ─── State from the timer ────────────────────────────────────────────────
 
@@ -587,17 +597,13 @@
     list.appendChild(unpairBtn);
     $('viewmenu').hidden = false;
   }
+  function forget() { try { localStorage.removeItem(SAVED_LINK); localStorage.removeItem(tokenKey()); } catch (_) { /* private mode */ } }
   function unpair() {
-    try { localStorage.removeItem(SAVED_LINK); localStorage.removeItem(tokenKey()); } catch (_) { /* private mode */ }
-    history.replaceState(null, '', location.pathname + location.search);   // the link isn't in the address bar to come back on reload
     fatal = true; clearTimeout(retryTimer);
     if (peer) peer.close();
     peer = null;
     if (ws) try { ws.close(); } catch (_) { /* closed */ }
-    $('viewmenu').hidden = true;
-    $('app').hidden = true;
-    $('blocked').hidden = false;
-    $('blocked').textContent = 'This device is unpaired. To pair it again, scan the QR code in the timer’s share panel.';
+    toCodeScreen('unpaired');                       // forgets the link; a code pairs it again, here or elsewhere
   }
   // The README, as on the timer (help-overlay.js); ? or F1 open it too
   // The phone's Back button closes whatever is open (menus, message box, tip) and otherwise does

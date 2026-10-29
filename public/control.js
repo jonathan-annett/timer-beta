@@ -15,6 +15,10 @@
   const code = document.getElementById('code'), msgEl = document.getElementById('msg');
   const server = new URLSearchParams(location.search).get('remote') || RemotePeer.defaultServer();
   const msg = (text, kind) => { msgEl.textContent = text; msgEl.className = kind || ''; };
+  // Sent back here by remote.html when the timer dropped this phone, or it was unpaired there
+  const LEFT = { revoked: 'The timer took this phone’s control away. To connect again, ask for a new code.', refused: 'The timer didn’t let this phone in. To try again, ask for a new code.', unpaired: 'This phone is unpaired. To connect to a timer, type the code it shows.' };
+  const left = new URLSearchParams(location.search).get('left');
+  if (LEFT[left]) msg(LEFT[left], left === 'unpaired' ? '' : 'bad');
 
   code.addEventListener('input', () => {
     const v = code.value.replace(/\D/g, '').slice(0, 6);

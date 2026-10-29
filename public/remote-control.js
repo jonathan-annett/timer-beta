@@ -1211,6 +1211,22 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     renderPanel();
   }
 
+  // "Take back control" (the touch ⋯ menu, once a friend has been let in): every device is told and
+  // dropped at once, the approvals go, New code makes their saved links useless, and sharing turns
+  // off. "Let a friend control this timer" starts again from scratch.
+  function shared() { return enabled && (peers.size > 0 || approvedList().length > 0); }
+  function takeBack() {
+    for (const e of peers.values()) {
+      e.rejected = true; e.approved = false;
+      try { e.peer.send({ t: e.token ? 'revoked' : 'pin-rejected' }); } catch (_) { /* gone */ }
+      setTimeout(() => sendServer({ type: 'kick', id: e.id }), 400);   // after it has seen why
+    }
+    saveApproved([]);
+    const el = document.getElementById('phone-panel');
+    if (el) { el.hidden = true; stopPairing(); }
+    setTimeout(() => { pairing(true); disable(); }, 600);
+  }
+
   function openPanel() { const el = panel(); if (el.hidden) togglePanel(); }
   // The phone's Back button closes the panel (and the full-screen code) before anything else
   if (typeof BackGuard !== 'undefined') BackGuard.register(() => {
@@ -1222,7 +1238,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
   });
 
   const hub = () => window.pptxHub || null;     // pptx-hub.js: the PowerPoint machines
-  window.remoteControl = { open: openPanel, toggle: togglePanel, enable, disable, refresh: () => renderPanel(), get peers() { return peers; }, get state() { return state; } };
+  window.remoteControl = { open: openPanel, toggle: togglePanel, enable, disable, takeBack, get shared() { return shared(); }, refresh: () => renderPanel(), get peers() { return peers; }, get state() { return state; } };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

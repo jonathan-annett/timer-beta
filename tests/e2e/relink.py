@@ -45,7 +45,7 @@ with sync_playwright() as p:
     ph.click("#viewbtn"); ph.wait_for_timeout(300)
     btn=ph.locator("#viewlist button", has_text="npair")
     btn.click(); print("first tap:", btn.inner_text().split("\n")[0]); btn.click(); ph.wait_for_timeout(1500)
-    print("unpaired:", ph.text_content("#blocked"), "| saved link:", ph.evaluate("localStorage.remote_saved_link || null"), "| hash:", repr(ph.evaluate("location.hash")),
+    print("unpaired ->", ph.url.split("/")[-1].split("?")[0], ph.text_content("#msg"), "| saved link:", ph.evaluate("localStorage.remote_saved_link || null"), "| hash:", repr(ph.evaluate("location.hash")),
           "| timer peers:", peers())
-    ph.reload(); ph.wait_for_timeout(1500); print("after reload:", ph.text_content("#blocked"))
+    ph.goto(ph.url.split("control.html")[0]+"remote.html"); ph.wait_for_timeout(1500); print("remote.html opened bare after unpairing ->", ph.url.split("/")[-1])
 print("errors:", errs)

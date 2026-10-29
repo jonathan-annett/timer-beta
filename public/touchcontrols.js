@@ -75,7 +75,17 @@
     // ⋯ : a small sheet with "let a friend control this timer" (the phone panel's QR code, see
     // remote-control.js) and the guide (README overlay; installed by timer.html as window.timerHelp)
     const more = document.getElementById('touch-more-sheet');
-    const openMore = () => { if (!more) return; more.style.display = 'flex'; requestAnimationFrame(() => more.classList.add('visible')); };
+    // Once a friend has been let in, the share item becomes "Take back control": one tap drops them
+    const remoteBtn = document.getElementById('touch-remote-btn');
+    const remoteLabel = (done) => {
+      if (!remoteBtn) return;
+      const rc = window.remoteControl;
+      remoteBtn.innerHTML = rc && rc.shared
+        ? '<b>✋ Take back control</b><small>Disconnects your friend’s phone straight away</small>'
+        : done ? '<b>📱 Let a friend control this timer</b><small>Done: your friend’s phone was disconnected. Tap here to share again with a new code.</small>'
+        : '<b>📱 Let a friend control this timer</b><small>Shows a code for their phone: a remote control, or a countdown display</small>';
+    };
+    const openMore = () => { if (!more) return; remoteLabel(); more.style.display = 'flex'; requestAnimationFrame(() => more.classList.add('visible')); };
     const closeMore = () => { if (!more) return; more.classList.remove('visible'); setTimeout(() => { more.style.display = 'none'; }, 220); };
     // On click, not pointerdown: what these open appears under the finger, and the click that
     // follows a pointerdown would land on it (the phone panel's QR code, say)
@@ -84,7 +94,12 @@
     onTap('touch-more-cancel', closeMore);
     onTap('touch-more-backdrop', closeMore);
     onTap('touch-help-btn', () => { closeMore(); if (window.timerHelp) window.timerHelp.open('phones-and-tablets'); });
-    onTap('touch-remote-btn', () => { closeMore(); if (window.remoteControl) window.remoteControl.open(); else alert('Phone control isn’t available on this copy of the timer.'); });
+    onTap('touch-remote-btn', () => {
+      const rc = window.remoteControl;
+      if (!rc) { closeMore(); alert('Phone control isn’t available on this copy of the timer.'); return; }
+      if (rc.shared) { rc.takeBack(); setTimeout(() => remoteLabel(true), 700); return; }   // stays open: the item says it's done
+      closeMore(); rc.open();
+    });
     moreSheetOpen = () => !!more && more.style.display !== 'none';
     closeMoreSheet = closeMore;
 
