@@ -428,6 +428,13 @@ html.show_custom_message #custom_message {
 /* long messages: two smaller lines, very long: three (see announceCustomMessage) */
 html.msg-long  #custom_message { font-size: 6.5vh; line-height: 1.1; }
 html.msg-xlong #custom_message { font-size: 4.5vh; line-height: 1.1; }
+/* Portrait (a phone held upright): the height-based size made a message wider than the screen,
+   wrapping over the countdown; cap it by the width as well */
+@media (orientation: portrait) {
+  #custom_message, #remain_info_message { font-size: min(10vh, 9vw); }
+  html.msg-long  #custom_message { font-size: min(6.5vh, 6.5vw); }
+  html.msg-xlong #custom_message { font-size: min(4.5vh, 4.5vw); }
+}
 
 html.edit_custom_message #custom_message {
     color: var(--color-custom-message-editing);
@@ -1290,6 +1297,15 @@ html.portrait #disp_next_mins:before{
   /* The time details sit just above the strip, whatever the screen's shape */
   html:not(.reduced) #started_disp, html:not(.reduced) #ends_disp { top: auto; bottom: calc(80px + env(safe-area-inset-bottom)); }
   html:not(.reduced):not(.future) #elapsed_disp, html:not(.reduced) #duration_disp { top: auto; bottom: calc(80px + 1.6em + env(safe-area-inset-bottom)); }
+  /* The progress bar sits just above the strip (at 80% it landed on the strip in landscape), and
+     the time details move up above it while it's shown */
+  html:not(.reduced) .mainDiv { top: auto; height: auto; bottom: calc(76px + env(safe-area-inset-bottom)); }
+  html:not(.reduced) .mainDiv > .progressDiv, html:not(.reduced) .mainDiv > .progressDiv > .progress { height: 12px; }
+  html.showbar:not(.reduced) #started_disp, html.showbar:not(.reduced) #ends_disp { bottom: calc(96px + env(safe-area-inset-bottom)); }
+  html.showbar:not(.reduced):not(.future) #elapsed_disp, html.showbar:not(.reduced) #duration_disp { bottom: calc(96px + 1.6em + env(safe-area-inset-bottom)); }
+  /* Full screen: only where the browser has it (not iPhone) */
+  #touch-fs-btn { display: none; }
+  html.can-fullscreen #touch-fs-btn { display: flex; }
 }
 .touch-btn.touch-help { flex: 0 0 44px; font-size: 18px; }
 

@@ -93,6 +93,9 @@
     onTap('touch-more-btn', openMore);
     onTap('touch-more-cancel', closeMore);
     onTap('touch-more-backdrop', closeMore);
+    // Full screen (the F key), where the browser can (iPhone Safari can't: the button stays hidden)
+    if (document.fullscreenEnabled || document.webkitFullscreenEnabled) document.documentElement.classList.add('can-fullscreen');
+    onTap('touch-fs-btn', () => pressKey('f'));
     onTap('touch-help-btn', () => { closeMore(); if (window.timerHelp) window.timerHelp.open('phones-and-tablets'); });
     onTap('touch-remote-btn', () => {
       const rc = window.remoteControl;

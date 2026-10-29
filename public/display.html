@@ -15,7 +15,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>Presentation Timer - Remote Screen</title>
-      <link rel="stylesheet" href="timer.css?v=b17e4bd7">
+      <link rel="stylesheet" href="timer.css?v=5400373c">
   </head>
   <body>
       <div id="clock_main">
@@ -63,6 +63,10 @@
         // F toggles full screen, as in the presenter window (the page around this one does it)
         document.addEventListener('keydown', function (e) {
           if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) window.parent.postMessage({ t: 'display-key', key: 'f' }, location.origin);
+          else if (e.key !== 'f' && e.key !== 'F') {   // the rest: remote.html passes the timer's shortcuts on (controllers only)
+            window.parent.postMessage({ t: 'display-key', key: e.key, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey, repeat: e.repeat }, location.origin);
+            if (/^(Arrow|Page| $)/.test(e.key)) e.preventDefault();
+          }
         });
         window.parent.postMessage({ t: 'display-ready' }, location.origin);
       })();

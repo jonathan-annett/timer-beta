@@ -684,6 +684,22 @@
     if (e.origin !== location.origin || e.source !== $('cdframe').contentWindow || !e.data) return;
     if (e.data.t === 'display-ready') { frameReady = true; postDisplay(); }
     if (e.data.t === 'display-key' && e.data.key === 'f' && presenterMode()) toggleFullscreen();
+    else if (e.data.t === 'display-key' && typeof e.data.key === 'string') passKey(e.data);
+  });
+  // The timer's own keyboard shortcuts work from this keyboard too (a controller, in every view but
+  // the run sheet editor, which has its own keys; the desktop countdown display's iframe passes its
+  // keys up as display-key): each allow-listed key is sent as {t:'kbd', key, ctrl, shift} and the
+  // timer replays it. View-only devices never send keys (and the timer would ignore them).
+  function passKey(e) {
+    if (role === 'view' || editorMode() || e.metaKey || e.altKey || !peer || $('app').hidden || !$('pinwait').hidden) return false;
+    if (!RemotePeer.remoteKeyOk(e.key, e.ctrlKey)) return false;
+    if (!e.repeat) peer.send({ t: 'kbd', key: e.key, ctrl: !!e.ctrlKey, shift: !!e.shiftKey });   // held keys: once (the server allows 40 messages a second)
+    return true;
+  }
+  document.addEventListener('keydown', e => {
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (passKey(e)) e.preventDefault();
   });
   // F toggles full screen on a desktop countdown display, like the presenter window
   document.addEventListener('keydown', e => {

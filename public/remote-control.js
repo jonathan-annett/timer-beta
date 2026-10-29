@@ -314,6 +314,8 @@
     } else if (m.t === 'key') {                // virtual deck key pressed: index only, never a command
       const i = num(m.i, 0, 31);
       if (e.deck && i !== null && i === Math.floor(i) && window.StreamDeck) window.StreamDeck.press(i, 'xl');
+    } else if (m.t === 'kbd') {                // a key typed on the remote's keyboard: allow-listed (RemotePeer.remoteKeyOk)
+      remoteKey(m);
     } else if (m.t === 'cmd' && Object.prototype.hasOwnProperty.call(ALLOWED, m.cmd)) {
       const apiMsg = ALLOWED[m.cmd](m);
       if (apiMsg && typeof processTimerApiMessage === 'function') processTimerApiMessage(apiMsg);
@@ -347,6 +349,17 @@
     } else if (m.t === 'vup-cancel') {
       if (e.upload && e.upload.up === m.up) dropUpload(e, null);
     }
+  }
+
+  // The timer only learns Ctrl/Shift from key events (onDocKeyUp sets them from the event's flags),
+  // so a remote key is replayed as: a keyup carrying its modifiers, the keydown, then a keyup with
+  // none, leaving them as they were (not held) rather than stuck down for the operator.
+  function remoteKey(m) {
+    if (typeof m.key !== 'string' || !RemotePeer.remoteKeyOk(m.key, !!m.ctrl)) return;
+    const ev = (type, key, mods) => document.dispatchEvent(new KeyboardEvent(type, { key, ctrlKey: mods && !!m.ctrl, shiftKey: mods && !!m.shift, bubbles: true, cancelable: true }));
+    ev('keyup', 'Unidentified', true);
+    ev('keydown', m.key, true);
+    ev('keyup', m.key, false);
   }
 
   // ─── Bitfocus Companion (role 'companion') ──────────────────────────────

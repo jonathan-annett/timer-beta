@@ -289,6 +289,17 @@ var RemotePeer = (function () {
     ws.onerror = () => {};
   }
 
+  // Keys a controlling device may pass to the timer (the timer's own shortcuts, typed on the remote's
+  // keyboard; checked again on the timer). Durations (digits, :, ., Backspace, Enter), Space restart,
+  // " pause, ' undo pause, arrows (Ctrl: a minute), Ctrl+Enter/Space catch up, B/M/T switches, X,
+  // the default-duration nudges and Page Up/Down. Not O (overlay), F (full screen), R (remote
+  // window), C (message editing: the remote has its own box), nor P/S/E/D/V/W/Q/L/I and the rest
+  // that open windows or editors on the timer's screen.
+  const REMOTE_KEYS = new Set(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':', '.', 'Backspace', 'Enter', ' ', '"', "'", '/', '*',
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'b', 'B', 'm', 'M', 't', 'T', 'x', 'X', '(', ')', '[', ']', '{', '}', '_']);
+  const REMOTE_CTRL_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', ' ']);   // the only ones with Ctrl
+  const remoteKeyOk = (key, ctrl) => REMOTE_KEYS.has(key) && (!ctrl || REMOTE_CTRL_KEYS.has(key));
+
   // A name the timer can show for this device until someone gives it a better one ("iPhone · Safari")
   function deviceName() {
     const ua = navigator.userAgent;
@@ -298,5 +309,5 @@ var RemotePeer = (function () {
     return browser ? os + ' · ' + browser : os;
   }
 
-  return { create, parts, joiner, sendBig, defaultServer, socketUrl, keepAlive, retryOnNetworkChange, deviceName, claim, CLAIM_ERRORS };
+  return { create, parts, joiner, sendBig, defaultServer, socketUrl, keepAlive, retryOnNetworkChange, deviceName, claim, CLAIM_ERRORS, remoteKeyOk };
 })();
