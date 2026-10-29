@@ -80,7 +80,8 @@ export default {
       return new Response(README, { headers: { 'content-type': 'text/markdown; charset=utf-8', 'cache-control': 'public, max-age=0, must-revalidate' } });
     }
     if (url.pathname === '/ws') return socket(req, env, url);
-    return env.ASSETS.fetch(req);
+    if (url.pathname === '/') return Response.redirect(new URL('/timer.html' + url.search, url).href, 302);
+    return env.ASSETS.fetch(req);      // anything that isn't a file: the 404
   },
 };
 

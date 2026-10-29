@@ -9,7 +9,7 @@
   "name": "timed-show-dev",
   "main": "src/worker.js",
   "compatibility_date": "2026-10-01",
-  "assets": { "directory": "../public", "html_handling": "none" },   // timer.html stays timer.html
+  "assets": { "directory": "../public", "binding": "ASSETS", "html_handling": "none" },   // timer.html stays timer.html
   "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
   "durable_objects": {
     "bindings": [
