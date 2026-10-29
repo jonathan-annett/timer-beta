@@ -393,7 +393,7 @@ Setup, behaviour and the full protocol are in `docs/powerpoint.md`; read it befo
 ## Mobile / Touch
 
 `touchcontrols.js` activates only when `'ontouchstart' in window` is true. It:
-- Shows the `#touch-strip` (fixed bottom bar: Presets, Start, Pause, ±1 min, **⛶** full screen (the F key; only with `html.can-fullscreen`, i.e. not iPhone), and **?**, which opens the help via `window.timerHelp`, set by the inline script in `timer.html`)
+- Shows the `#touch-strip` (fixed bottom bar: Presets, Restart, Pause (reads *Resume* while paused and blinks with *ends at*: `html.paused #touch-pause-btn`, the same `blinker` and colours), ±1 min, **⛶** full screen (the F key; only with `html.can-fullscreen`, i.e. not iPhone), and **?**, which opens the help via `window.timerHelp`, set by the inline script in `timer.html`)
 - ±1 min use the `adjust` command (a synthetic Ctrl+arrow gave ±1 s: the timer only knows Ctrl is held from a real Control keydown)
 - No swipe gestures (removed: easy to trigger by accident, and the ±1 min buttons do the same)
 - Handles long-press on `#clock_main` (600ms) = pause/resume
