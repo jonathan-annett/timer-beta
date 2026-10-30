@@ -2,6 +2,9 @@
 
 One entry per shipped version (`npm run ship -- "what changed"` writes it).
 
+## 0.1.7
+- The glasses page and its menu are sent exactly as Mischief Mews sends them
+
 ## 0.1.6
 - Next corner in the glasses' menu (built as the starter kit builds its menu)
 

@@ -10,16 +10,16 @@
  * The glasses' menu (tap, then tap and hold: Even's own, with brightness and close) gets Next corner.
  */
 import {
-  type EvenAppBridge, CreateStartUpPageContainer, type MenuContainerProperty, StartUpPageCreateResult, RebuildPageContainer, TextContainerProperty, TextContainerUpgrade,
+  type EvenAppBridge, type CreateStartUpPageContainer, type RebuildPageContainer, StartUpPageCreateResult, TextContainerUpgrade,
 } from '@evenrealities/even_hub_sdk'
 import { getTextWidth, measureTextWrap } from '@evenrealities/pretext'
 
 export type Corner = 'tl' | 'tr' | 'bl' | 'br'
 export const CORNERS: Corner[] = ['tl', 'tr', 'bl', 'br']
 export const MENU = { corner: 1 }
-// Rebuilding without a menu drops it, so every create and rebuild sends it. A plain object, as the
-// g2-claude-starter's (confirmed on the glasses) passes it
-const menuObject = () => ({ menuItems: [{ itemID: MENU.corner, itemName: 'Next corner' }] }) as unknown as MenuContainerProperty
+// Rebuilding without a menu drops it, so every create and rebuild sends it. The page goes to the
+// bridge as plain objects, as the g2-claude-starter's Mischief Mews (confirmed on the glasses) sends it
+const menuObject = () => ({ menuItems: [{ itemID: MENU.corner, itemName: 'Next corner' }] })
 
 const W = 576, H = 288, MARGIN = 14, INFO_W = 300
 const lines = (n: number) => (n <= 1 ? 30 : n * 28)   // a box n lines high
@@ -54,7 +54,7 @@ export class Glasses {
     this.busy = this.busy.then(() => this.apply(want, force)).catch(() => { /* the next change tries again */ })
   }
 
-  private boxes(v: View): TextContainerProperty[] {
+  private boxes(v: View) {
     const left = this.corner === 'tl' || this.corner === 'bl', top = this.corner === 'tl' || this.corner === 'tr'
     const cw = v.clock ? Math.min(W - 2 * MARGIN, getTextWidth(shape(v.clock)) + 8) : 10
     const ch = lines(1)
@@ -63,11 +63,11 @@ export class Glasses {
     const y = (h: number) => (top ? MARGIN : H - MARGIN - h)
     return [
       // Takes the taps and swipes; blank (a capturing box's text would scroll)
-      new TextContainerProperty({ xPosition: 0, yPosition: 0, width: W, height: H, containerID: BG.id, containerName: BG.name,
+      ({ xPosition: 0, yPosition: 0, width: W, height: H, containerID: BG.id, containerName: BG.name,
         content: ' ', isEventCapture: 1, textColor: 0 }),
-      new TextContainerProperty({ xPosition: x(cw), yPosition: y(ch), width: cw, height: ch,
+      ({ xPosition: x(cw), yPosition: y(ch), width: cw, height: ch,
         containerID: CLK.id, containerName: CLK.name, content: v.clock || ' ', isEventCapture: 0, textColor: v.bright }),
-      new TextContainerProperty({ xPosition: x(iw), yPosition: y(ih), width: iw, height: ih,
+      ({ xPosition: x(iw), yPosition: y(ih), width: iw, height: ih,
         containerID: INFO.id, containerName: INFO.name, content: v.info || ' ', isEventCapture: 0, textColor: 2 }),
     ]
   }
@@ -77,11 +77,11 @@ export class Glasses {
     if (!this.started || key !== this.layoutKey || force) {
       const textObject = this.boxes(v)
       if (!this.started) {
-        const res = await this.bridge.createStartUpPageContainer(new CreateStartUpPageContainer({ containerTotalNum: 3, textObject, menuObject: menuObject() }))
+        const res = await this.bridge.createStartUpPageContainer({ containerTotalNum: 3, textObject, menuObject: menuObject() } as unknown as CreateStartUpPageContainer)
         this.onSetup?.(res === StartUpPageCreateResult.success ? '' : 'Glasses page setup failed (' + res + ')')
         this.started = true
       } else {
-        await this.bridge.rebuildPageContainer(new RebuildPageContainer({ containerTotalNum: 3, textObject, menuObject: menuObject() }))
+        await this.bridge.rebuildPageContainer({ containerTotalNum: 3, textObject, menuObject: menuObject() } as unknown as RebuildPageContainer)
       }
       this.layoutKey = key
       this.shown = { ...v }
