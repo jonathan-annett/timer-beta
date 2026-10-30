@@ -7,7 +7,7 @@
  */
 
 export interface Anchor { r: number; e: number; d: number; rr: number; er: number; f?: number; p?: number; s?: number; sa?: number; a?: number }
-export interface ClockValues { remain: string; over: boolean; impending: boolean; paused: boolean; standby: boolean; elapsed: string; total: string }
+export interface ClockValues { remain: string; over: boolean; impending: boolean; paused: boolean; standby: boolean; standbyIn: number; elapsed: string; total: string }
 
 // timer.js secToStr, exactly (the texts must match the timer's)
 export function secToStr(sec: number): string {
@@ -42,8 +42,9 @@ export class Clock {
     const dt = performance.now() - this.at
     const r = c.r + c.rr * dt, e = c.e + c.er * dt
     const paused = !!c.p, standby = !!c.s, total = secToStr(c.d / 1000)
-    if (c.f) return { remain: total, over: false, impending: e > -60000, paused, standby, elapsed: secToStr(Math.ceil(-e / 1000)), total }   // before the start: elapsed is the time to go
+    const standbyIn = standby && Number.isFinite(c.sa) && (c.sa as number) >= 0 ? (c.sa as number) - dt : -1   // ms to the auto start, -1 none
+    if (c.f) return { remain: total, over: false, impending: e > -60000, paused, standby, standbyIn, elapsed: secToStr(Math.ceil(-e / 1000)), total }   // before the start: elapsed is the time to go
     const s = r / 1000, over = s < 0
-    return { remain: over ? secToStr(-s) : secToStr(s + 1), over, impending: !over && e >= 0 && s <= 60, paused, standby, elapsed: secToStr(Math.max(0, e) / 1000), total }
+    return { remain: over ? secToStr(-s) : secToStr(s + 1), over, impending: !over && e >= 0 && s <= 60, paused, standby, standbyIn, elapsed: secToStr(Math.max(0, e) / 1000), total }
   }
 }

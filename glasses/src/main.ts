@@ -22,11 +22,13 @@
  *   ts_role    presenter | operator: as the timer last said
  *   ts_wants   presenter | operator: the role asked for when pairing
  *   ts_corner  tl | tr | bl | br
+ *   ts_minimal '1': the operator's layout without its corner items (the glasses' menu)
+ *   ts_taps    3 | 4 | 5: the taps an operator needs for Next (more makes an accident less likely)
  */
 import { waitForEvenAppBridge, OsEventTypeList, type EvenAppBridge } from '@evenrealities/even_hub_sdk'
 import { claim, CLAIM_ERRORS, TimerLink, type Paired, type Status, type Mode } from './link'
 import { Clock, secToStr, type ClockValues } from './clock'
-import { Glasses, CORNERS, MENU, type Corner, type Layout } from './glasses'
+import { Glasses, CORNERS, MENU, type Corner, type Layout, type MenuItem } from './glasses'
 import { scan, readCode, codeFromPhoto } from './scan'
 
 declare const __APP_VERSION__: string
@@ -34,7 +36,7 @@ const $ = (id: string) => document.getElementById(id) as HTMLElement
 
 // ─── Saved settings ──────────────────────────────────────────────────────────
 
-const KEYS = ['ts_link', 'ts_ctl', 'ts_token', 'ts_role', 'ts_wants', 'ts_corner']
+const KEYS = ['ts_link', 'ts_ctl', 'ts_token', 'ts_role', 'ts_wants', 'ts_corner', 'ts_minimal', 'ts_taps']
 const cache: Record<string, string> = {}
 let storeBridge: EvenAppBridge | null = null
 const store = {
@@ -72,6 +74,8 @@ const state: Record<string, unknown> = {}
 let glasses: Glasses | null = null
 let corner: Corner = 'tl'
 let hidden = false                    // a presenter's tap hides the countdown
+let minimal = false                   // an operator's layout without its corners (elapsed, total, started, ends)
+let tapsNeeded = 3                    // an operator's taps for Next (3–5, set on the phone page)
 let flash = '', flashUntil = 0        // a moment of feedback on the glasses ("Next...")
 
 // ─── The glasses ─────────────────────────────────────────────────────────────
@@ -81,7 +85,7 @@ const DEMO = location.hash.startsWith('#demo')
 const demoStart = Date.now()
 const demoValues = (): ClockValues => {
   const sec = 75 - Math.floor((Date.now() - demoStart) / 1000)
-  return { remain: secToStr(Math.abs(sec)), over: sec < 0, impending: sec >= 0 && sec <= 60, paused: false, standby: false, elapsed: secToStr(Math.max(0, 600 - sec)), total: '10:00' }
+  return { remain: secToStr(Math.abs(sec)), over: sec < 0, impending: sec >= 0 && sec <= 60, paused: false, standby: false, standbyIn: -1, elapsed: secToStr(Math.max(0, 600 - sec)), total: '10:00' }
 }
 
 function cornerPlace(): { h: 'l' | 'r'; v: 't' | 'b' } { return { h: corner[1] === 'l' ? 'l' : 'r', v: corner[0] === 't' ? 't' : 'b' } }
@@ -99,56 +103,111 @@ function glassesView(): Layout {
     if (status !== 'online') return { info: info('Timer offline - reconnecting...') }
   }
   const v = DEMO ? demoValues() : clock.values()
-  const clk = v ? (v.over ? '+' : '') + v.remain + (v.paused ? ' paused' : '') : ''
+  const sb = v && v.standby ? standbyText(v.standbyIn) : ''      // the run sheet's standby (Reset show)
+  const clk = !v ? '' : (v.over ? '+' : '') + v.remain + (v.standby ? '' : v.paused ? ' paused' : '')
   const bright = !v ? 0 : v.over ? 4 : v.impending ? 3 : v.paused ? 1 : 2
   const showFlash = flash && Date.now() < flashUntil ? flash : ''
   if (role === 'operator' || (DEMO && location.hash.includes('operator'))) {
     // The operator's screen: elapsed / total, the message, the countdown, started / ends at
     const msg = showFlash || String(state.msg || (DEMO ? 'Keynote: the future of timing' : ''))
     const started = String(state.started || (DEMO ? '17:23:18' : '')), ends = String(state.ends || (DEMO ? '17:33:18' : ''))
+    // Before the show: the auto start's state (the menu turns it on or off) where "started" goes
+    const auto = String(state.rsAuto || ''), autoText = auto ? 'auto start ' + (auto.startsWith('on') ? 'on, ' : 'off, ') + auto.replace(/^\w+ /, '') : ''
+    const c = (t: string) => (minimal ? '' : t)
     return {
-      elapsed: { text: v ? 'elapsed ' + v.elapsed : '', bright: 2, h: 'l', v: 't' },
-      total: { text: v ? v.total + ' total' : '', bright: 2, h: 'r', v: 't' },
+      elapsed: { text: c(v ? 'elapsed ' + v.elapsed : ''), bright: 2, h: 'l', v: 't' },
+      total: { text: c(v ? v.total + ' total' : ''), bright: 2, h: 'r', v: 't' },
       msg: { text: msg, bright: 4, h: 'c', v: 84, lines: 2, bottom: true },
-      clk: { text: clk, bright, h: 'c', v: 146 },
-      started: { text: started ? 'started ' + started : '', bright: 2, h: 'l', v: 'b' },
-      ends: { text: ends ? 'ends at ' + ends : '', bright: 2, h: 'r', v: 'b' },
+      clk: { text: sb ? clk + ' - ' + sb : clk, bright, h: 'c', v: 146 },
+      started: { text: c(autoText || (started ? (sb ? 'starts ' : 'started ') + started : '')), bright: auto.startsWith('on') ? 3 : 2, h: 'l', v: 'b' },
+      ends: { text: c(ends ? 'ends at ' + ends : ''), bright: 2, h: 'r', v: 'b' },
     }
   }
   return {
-    clk: { text: hidden || showFlash ? '' : clk, bright, ...p },
+    clk: { text: hidden || showFlash ? '' : sb || clk, bright, ...p },
     info: info(showFlash),
   }
 }
 
+// The standby notice in the timer's words (its notices panel; state.words), without emoji, which the
+// glasses' font may not have
+function standbyText(ms: number): string {
+  let w: Record<string, string> = {}
+  try { w = JSON.parse(String(state.words || '{}')) || {} } catch { /* defaults */ }
+  const plain = (t: string | undefined, d: string) => (t || '').replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '').trim() || d
+  const sec = Math.ceil(ms / 1000)
+  return ms > 0 ? plain(w.standbyIn, 'Standing by · starts in {t}').replace('{t}', secToStr(sec)) : plain(w.standby, 'Standing by')
+}
+
+// The glasses' menu for the role: a presenter's corner; an operator's show controls
+function menuFor(r: Mode): MenuItem[] {
+  if (r !== 'operator') return [{ itemID: MENU.corner, itemName: 'Next corner' }]
+  return [
+    { itemID: MENU.next, itemName: 'Next item' },
+    { itemID: MENU.back, itemName: 'Back (undo Next)' },
+    { itemID: MENU.pause, itemName: 'Pause / resume' },
+    { itemID: MENU.reset, itemName: 'Reset show' },
+    { itemID: MENU.auto, itemName: 'Auto start on / off' },
+    { itemID: MENU.minimal, itemName: 'Minimal view on / off' },
+  ]
+}
+function onMenu(id: number): void {
+  if (role !== 'operator') { if (id === MENU.corner) setCorner(CORNERS[(CORNERS.indexOf(corner) + 1) % CORNERS.length]); return }
+  if (id === MENU.minimal) { minimal = !minimal; store.set('ts_minimal', minimal ? '1' : ''); render(); return }
+  if (status !== 'online' || !link) return
+  if (id === MENU.next) { link.command('runsheetnext'); showFlash('Next...') }
+  else if (id === MENU.back) { link.command('runsheetprev'); showFlash('Back...') }
+  else if (id === MENU.pause) link.command('pause')
+  else if (id === MENU.reset) { link.command('reset'); showFlash('Show reset') }
+  else if (id === MENU.auto) {
+    const auto = String(state.rsAuto || '')
+    if (!auto) showFlash('No auto start: the first item needs a start time, before the show')
+    else { const on = !auto.startsWith('on'); link.command('autostart', { on }); showFlash('Auto start ' + (on ? 'on' : 'off')) }
+  }
+  render()
+}
+
 // ─── Taps ────────────────────────────────────────────────────────────────────
 // Taps are gathered until none comes for 600 ms. A presenter's gathering (one tap or several) hides
-// or shows the countdown; an operator's three or more fire Next, and anything less does nothing.
-let taps = 0, tapTimer = 0
+// or shows the countdown. An operator's third tap (or fourth or fifth: tapsNeeded) fires Next at once
+// (waiting for the burst to end delayed the timer); more taps in the same burst, or fewer, do nothing.
+let taps = 0, tapTimer = 0, fired = false
 function onTap(n: number): void {
+  lastTapAt = Date.now()
+  clearTimeout(holdTimer)
   taps += n
   clearTimeout(tapTimer)
+  if (role === 'operator' && taps >= tapsNeeded && !fired && status === 'online') {
+    fired = true
+    link?.command('runsheetnext')
+    showFlash('Next...')
+    render()
+  }
   tapTimer = window.setTimeout(() => {
-    const count = taps
     taps = 0
+    if (role === 'operator') { fired = false; return }
     if (status !== 'online') return
-    if (role === 'operator') {
-      if (count < 3) return
-      link?.next()
-      showFlash('Next...')
-    } else {
-      hidden = !hidden
-      if (hidden) showFlash('Countdown hidden - tap to show')
-    }
+    hidden = !hidden
+    if (hidden) showFlash('Countdown hidden - tap to show')
     render()
   }, 600)
 }
-function showFlash(text: string): void { flash = text; flashUntil = Date.now() + 1500 }
+// A hold of 2 s (an operator's) toggles Minimal view, as soon as the 2 s are up, finger still down.
+// (Tap, then tap and hold, is Even's menu; a plain hold is ours.) Let go sooner and nothing happens.
+// Not part of tapping: a hold starting within 0.8 s of a tap is ignored (a long tap in a burst, or the
+// menu's tap-then-hold), and any tap, menu choice or other input cancels one under way.
+let holdTimer = 0, lastTapAt = 0
+function onHold(down: boolean): void {
+  clearTimeout(holdTimer)
+  if (!down || role !== 'operator' || Date.now() - lastTapAt < 800) return
+  holdTimer = window.setTimeout(() => { minimal = !minimal; store.set('ts_minimal', minimal ? '1' : ''); render() }, 2000)
+}
+function showFlash(text: string): void { flash = text; flashUntil = Date.now() + 1000 }
 
 // ─── The phone page ──────────────────────────────────────────────────────────
 
 function statusText(): string {
-  if (status === 'online') return role === 'operator' ? 'Connected as the operator’s glasses: the message and times are on your glasses, and three quick taps fire Next.'
+  if (status === 'online') return role === 'operator' ? `Connected as the operator’s glasses: the message and times are on your glasses, and ${tapsNeeded} quick taps fire Next.`
     : 'Connected. The countdown is on your glasses' + (hidden ? ' (hidden: tap to show).' : '.')
   return ({
     connecting: 'Connecting to the timer…',
@@ -169,7 +228,10 @@ function render(): void {
   $('cornerbox').hidden = role === 'operator'
   document.querySelectorAll<HTMLButtonElement>('#corners button').forEach(b => b.classList.toggle('on', b.dataset.c === corner))
   document.querySelectorAll<HTMLInputElement>('input[name=wants]').forEach(i => { i.checked = i.value === wants })
+  $('tapsbox').hidden = role !== 'operator'
+  document.querySelectorAll<HTMLButtonElement>('#taps button').forEach(b => b.classList.toggle('on', Number(b.dataset.n) === tapsNeeded))
   const view = glassesView()
+  glasses?.setMenu(menuFor(role))
   glasses?.show(view)
   mirror(view)
 }
@@ -322,6 +384,7 @@ function setup(): void {
   $('scan').addEventListener('click', startScan)
   $('scanstop').addEventListener('click', stopScan)
   document.querySelectorAll<HTMLButtonElement>('#corners button').forEach(b => b.addEventListener('click', () => setCorner(b.dataset.c as Corner)))
+  document.querySelectorAll<HTMLButtonElement>('#taps button').forEach(b => b.addEventListener('click', () => { tapsNeeded = Number(b.dataset.n); store.set('ts_taps', String(tapsNeeded)); render() }))
   document.querySelectorAll<HTMLInputElement>('input[name=wants]').forEach(i => i.addEventListener('change', () => { wants = i.value === 'operator' ? 'operator' : 'presenter'; store.set('ts_wants', wants) }))
   let armed = 0
   $('unpair').addEventListener('click', () => {
@@ -344,17 +407,18 @@ function attach(bridge: EvenAppBridge): void {
   appBridge = bridge
   glasses = new Glasses(bridge)
   glasses.onSetup = problem => { if (problem) { $('nobridge').textContent = problem; $('nobridge').hidden = false } }
+  glasses.setMenu(menuFor(role))
   glasses.show(glassesView(), true)
   bridge.onEvenHubEvent(ev => {
-    if (ev.menuItemClickEvent) {
-      if (Number(ev.menuItemClickEvent.itemID) === MENU.corner && role !== 'operator') setCorner(CORNERS[(CORNERS.indexOf(corner) + 1) % CORNERS.length])
-      return
-    }
+    if (ev.menuItemClickEvent) { clearTimeout(holdTimer); onMenu(Number(ev.menuItemClickEvent.itemID)); return }
     // A plain tap comes with no eventType (the SDK drops 0); a double tap is 3 (counted as two taps)
     const sys = ev.sysEvent as { eventType?: number; eventSource?: number } | undefined
     const txt = ev.textEvent as { eventType?: number } | undefined
     const type = sys ? sys.eventType : txt ? txt.eventType : null
+    if (type !== OsEventTypeList.LONG_PRESS_EVENT && type !== OsEventTypeList.LONG_PRESS_RELEASE_EVENT) clearTimeout(holdTimer)
     if (type === OsEventTypeList.FOREGROUND_ENTER_EVENT) { link?.wake(); glasses?.show(glassesView(), true); return }
+    if (type === OsEventTypeList.LONG_PRESS_EVENT) { onHold(true); return }
+    if (type === OsEventTypeList.LONG_PRESS_RELEASE_EVENT) { onHold(false); return }
     if (type === OsEventTypeList.DOUBLE_CLICK_EVENT) onTap(2)
     else if ((type === undefined || type === OsEventTypeList.CLICK_EVENT) && (txt || sys?.eventSource !== undefined)) onTap(1)
   })
@@ -368,6 +432,8 @@ async function boot(): Promise<void> {
   control = savedLink('ts_ctl')
   role = store.get('ts_role') === 'operator' ? 'operator' : 'presenter'
   wants = store.get('ts_wants') === 'operator' ? 'operator' : 'presenter'
+  minimal = store.get('ts_minimal') === '1'
+  tapsNeeded = [3, 4, 5].includes(Number(store.get('ts_taps'))) ? Number(store.get('ts_taps')) : 3
   status = paired ? 'connecting' : 'unpaired'
   if ((CORNERS as string[]).includes(store.get('ts_corner'))) corner = store.get('ts_corner') as Corner
   for (const p of location.hash.startsWith('#demo=') ? location.hash.slice(6).split(',') : []) if ((CORNERS as string[]).includes(p)) corner = p as Corner
@@ -379,5 +445,7 @@ boot()
 const w = window as unknown as { __g2view: () => Record<string, string>; __g2tap: (n: number) => void }
 w.__g2view = () => Object.fromEntries(Object.entries(glassesView()).filter(([, b]) => b && b.text).map(([k, b]) => [k, b!.text + (k === 'clk' ? ' @' + b!.bright : '')]))
 w.__g2tap = onTap
+;(window as unknown as { __g2hold: (down: boolean) => void }).__g2hold = onHold   // a hold starting / ending
+;(window as unknown as { __g2menu: (id: number) => void }).__g2menu = onMenu   // a menu item chosen on the glasses
 ;(window as unknown as { __g2scanned: (t: string) => void }).__g2scanned = scanned   // a QR code's text, as the camera would read it
 ;(window as unknown as { __g2photo: (b: string) => Promise<string> }).__g2photo = b => codeFromPhoto(b)   // a photo's QR code

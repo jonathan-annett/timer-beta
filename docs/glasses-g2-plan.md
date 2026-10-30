@@ -36,6 +36,11 @@ Decisions since this plan was written (they override the sections below):
   bottom; Next corner ignored), three or more taps in a burst fire Next (*Next...* flashes), fewer do
   nothing. The phone page asks for a role before pairing (*I'm the presenter / operator*); the
   timer's request row and device list decide (see CLAUDE.md, Phone Remote Control).
+- **Operator menu (0.1.13):** Next item, Back (undo Next), Pause / resume, Reset show, Auto start
+  on / off, Minimal view on / off (the four corner items hidden); Next fires on the 3rd tap (4th / 5th
+  as set on the phone page) at once; standby shows on the glasses (presenter: in the corner; operator:
+  after the countdown, the auto start's state bottom left). The menu is per role (`menuFor`).
+  Rebuilding the page for text changes rebooted the glasses (fixed in 0.1.12: fixed slots, spaces).
 - **Next, once Operator is proven on the glasses:** more operator commands, e.g. the phone remote's run
   sheet view and controls (Back / Pause / Next, nudges) on the plugin's phone page, so the operator
   needs only the Even app. (The owner finds typing the 6-digit code fine; the QR photo is a nice-to-have.)

@@ -313,10 +313,11 @@
       else if (e.role === 'control' || e.role === 'admin') e.peer.send({ t: 'rs-edit', state: e.edit || 'no' });
       panelConnected();
     } else if (e.client === 'g2') {
-      // Glasses: an Operator's may fire Next (three taps), and that's all; a Presenter's nothing.
-      // Checked against the timer's own record, not what the glasses claim: a pair changed back to
-      // Presenter still holds the control key until it reconnects
-      if (e.g2 === 'operator' && m.t === 'cmd' && m.cmd === 'runsheetnext' && typeof processTimerApiMessage === 'function') processTimerApiMessage(ALLOWED.runsheetnext(m));
+      // Glasses: an Operator's may work the show (three taps = Next; the glasses' menu: Back, Pause /
+      // resume, Reset show, auto start), and nothing else; a Presenter's nothing. Checked against the
+      // timer's own record, not what the glasses claim: a pair changed back to Presenter still holds
+      // the control key until it reconnects
+      if (e.g2 === 'operator' && m.t === 'cmd') glassesCommand(m);
       return;
     } else if (e.role === 'companion' && m.t === 'api') {
       apiFromCompanion(e, m);
@@ -738,6 +739,7 @@
     rs_active: ['rsOn', truthy], rs_current: ['rsNow', String], rs_next: ['rsNext', String],
     rs_can_back: ['rsBack', truthy], rs_status: ['rsStatus', String], rs_late: ['rsLate', v => (v === '' ? null : Number(v))],
     rs_title: ['rsTitle', String], rs_text: ['rsText', String], rs_list: ['rsList', String],
+    rs_auto: ['rsAuto', String],         // "on 09:00" / "off 09:00" while an auto start can be set, else ''
     // The timer's B / T / M switches and the progress bar, for the phone's countdown display
     showbar: ['bar', truthy], showtimenow: ['clock', truthy], showmessages: ['msgs', truthy], barpct: ['pct', Number],
     htmlclass: ['cls', String],          // the timer's class list, for desktop displays (display.html)
@@ -1291,6 +1293,13 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
   function sendGlassesRole(e) {
     if (e.g2 === 'operator') e.peer.send(e.role === 'view' ? { t: 'role', role: 'operator', frag: shareFragment('control') } : { t: 'role', role: 'operator' });
     else e.peer.send({ t: 'role', role: 'presenter' });
+  }
+  function glassesCommand(m) {
+    const rs = window.runsheet, api = typeof processTimerApiMessage === 'function' ? processTimerApiMessage : null;
+    if (!api) return;
+    if (m.cmd === 'runsheetnext' || m.cmd === 'runsheetprev' || m.cmd === 'pause') api(ALLOWED[m.cmd](m));
+    else if (m.cmd === 'reset' && rs && rs.reset) rs.reset();
+    else if (m.cmd === 'autostart' && rs && rs.setAutostart) rs.setAutostart(m.on === true);
   }
   function setGlassesRole(token, role) {
     role = role === 'operator' ? 'operator' : 'presenter';

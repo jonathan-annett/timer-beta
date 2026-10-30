@@ -11,7 +11,8 @@
  * spaces (digits measured as the font's widest, so a ticking time stays put; pretext measures the
  * glasses' font). Only the latest layout is sent: one overtaken while a call was out is dropped.
  *
- * The glasses' menu (tap, then tap and hold: Even's own, with brightness and close) gets Next corner.
+ * The glasses' menu (tap, then tap and hold: Even's own, with brightness and close) gets our items too
+ * (setMenu: Next corner for a presenter; the show's controls for an operator).
  * Hardware rules from the owner's g2-claude-starter: no zOrderIndex (stacking is declaration order),
  * text boxes a whole number of lines high (30 / 56 / 84 px) or a scrollbar shows, the page and menu as
  * plain objects (as its Mischief Mews sends them; confirmed on the glasses), centring with spaces.
@@ -21,7 +22,9 @@ import { getTextWidth } from '@evenrealities/pretext'
 
 export type Corner = 'tl' | 'tr' | 'bl' | 'br'
 export const CORNERS: Corner[] = ['tl', 'tr', 'bl', 'br']
-export const MENU = { corner: 1 }
+// The glasses' menu items, by role (menuFor in main.ts); the menu changes only with a page rebuild
+export const MENU = { corner: 1, next: 2, back: 3, pause: 4, reset: 5, auto: 6, minimal: 7 }
+export interface MenuItem { itemID: number; itemName: string }   // itemName ≤ 32 bytes
 export const W = 576, H = 288, MARGIN = 12
 
 // The boxes, by name (ids fixed; 1 is the tap catcher)
@@ -44,7 +47,6 @@ const lineH = (n: number) => (n <= 1 ? 30 : n * 28)   // a text box n lines high
 const WIDEST = '0123456789'.split('').reduce((a, d) => (getTextWidth(d) > getTextWidth(a) ? d : a), '0')
 const shape = (t: string) => t.replace(/\d/g, WIDEST)
 const SPACE = getTextWidth(' ') || 5
-const menuObject = () => ({ menuItems: [{ itemID: MENU.corner, itemName: 'Next corner' }] })
 
 interface Placed { x: number; y: number; w: number; h: number }
 function place(b: Box): Placed {
@@ -92,11 +94,15 @@ export class Glasses {
   private shown: Record<string, { text: string; bright: number }> = {}
   private pending: { layout: Layout; force: boolean } | null = null
   private running = false
+  private menu: MenuItem[] = [{ itemID: MENU.corner, itemName: 'Next corner' }]
 
   /** Told the outcome of the first page setup: '' when it worked */
   onSetup?: (problem: string) => void
 
   constructor(private bridge: EvenAppBridge) {}
+
+  /** The menu's items (rebuilds the page when they change: only on a role change) */
+  setMenu(items: MenuItem[]): void { this.menu = items }
 
   /** Shows the layout (one call to the glasses at a time, the latest layout only). force: rebuild the page */
   show(layout: Layout, force = false): void {
@@ -116,7 +122,7 @@ export class Glasses {
   private async apply(layout: Layout, force: boolean): Promise<void> {
     const placed: Record<string, Placed> = {}, text: Record<string, string> = {}
     for (const n of NAMES) { const b = layout[n]; if (b) { placed[n] = place(b); text[n] = fill(b, placed[n].w) } }
-    const key = JSON.stringify(NAMES.map(n => (placed[n] ? [n, placed[n]] : 0)))
+    const key = JSON.stringify([NAMES.map(n => (placed[n] ? [n, placed[n]] : 0)), this.menu])
     if (!this.started || key !== this.layoutKey || force) {
       const textObject = [
         // Takes the taps and swipes; blank (a capturing box's text would scroll)
@@ -127,7 +133,7 @@ export class Glasses {
             : { xPosition: 0, yPosition: 0, width: 10, height: 30, containerID: ID[n], containerName: n, content: ' ', isEventCapture: 0, textColor: 0 }
         }),
       ]
-      const page = { containerTotalNum: textObject.length, textObject, menuObject: menuObject() }
+      const page = { containerTotalNum: textObject.length, textObject, menuObject: { menuItems: this.menu } }
       if (!this.started) {
         const res = await this.bridge.createStartUpPageContainer(page as unknown as CreateStartUpPageContainer)
         this.onSetup?.(res === StartUpPageCreateResult.success ? '' : 'Glasses page setup failed (' + res + ')')

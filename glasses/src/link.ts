@@ -11,7 +11,8 @@
  *             {t:'role', role:'presenter'|'operator', frag?}: the role the timer gave us (frag: the control
  *             link, sent only to an operator still on the view-only one)
  *   us -> timer (up {msg: {k:'data', d}}):    {t:'hello', clock:1, token?, client, mode}, {t:'pin', code, name},
- *             {t:'cmd', cmd:'runsheetnext'} (an operator's three taps; the timer ignores it from a presenter)
+ *             {t:'cmd', cmd} (an operator's: three taps = runsheetnext; the menu's runsheetprev, pause, reset,
+ *             autostart {on}; the timer ignores them from a presenter)
  */
 
 // The timer site's pairing server (the app's network whitelist allows only it). Tests set
@@ -114,8 +115,9 @@ export class TimerLink {
 
   private set(s: Status, detail?: string): void { this.status = s; this.on.status(s, detail) }
 
-  /** Next on the timer's run sheet (an operator's three taps) */
-  next(): void { this.up({ t: 'cmd', cmd: 'runsheetnext' }) }
+  /** A command for the timer (an operator's: runsheetnext, runsheetprev, pause, reset, autostart {on});
+   * the timer acts on them only from glasses it has made its operator's */
+  command(cmd: string, extra: Record<string, unknown> = {}): void { this.up({ t: 'cmd', cmd, ...extra }) }
 
   private up(d: unknown): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'up', msg: { k: 'data', d } }))

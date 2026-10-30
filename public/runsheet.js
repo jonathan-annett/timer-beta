@@ -765,6 +765,8 @@
       rs_title: isActive() ? (sheet.title || '') : '',
       rs_text: info.text,
       rs_list: scheduleList(),
+      // Auto start, while it can be offered (before the show, the first start still ahead): "on 09:00" / "off 09:00"
+      rs_auto: (o => (o == null ? '' : (firstAuto() ? 'on ' : 'off ') + clockOf(o)))(autostartOffer()),
     };
     const v = JSON.stringify(vars);
     if ((force || v !== lastVars) && window.timerAPI) {

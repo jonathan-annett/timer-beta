@@ -25,6 +25,9 @@
     #code:focus { outline: none; border-color: var(--accent); }
     .wants { color: var(--text); } .wants label { margin-left: 10px; white-space: nowrap; }
     .note { font-size: 13px; }
+    #taps { display: flex; gap: 6px; }
+    #taps button { flex: 1; font: inherit; font-size: 15px; color: var(--dim); background: #1a1a1a; border: 1px solid #333; border-radius: 6px; padding: 9px 2px; }
+    #taps button.on { color: #9cf59c; border-color: #2e6b2e; background: #123a12; }
     /* What the glasses show (576×288), scaled to the page; text sized as the glasses' ~20 px font */
     #mirror { position: relative; aspect-ratio: 2 / 1; background: #000; border: 1px solid #1d3a1d; border-radius: 10px; margin: 4px 0 12px;
       container-type: inline-size; overflow: hidden; color: #5fff5f; font-family: "Helvetica Neue", Arial, sans-serif; }
@@ -78,6 +81,11 @@
       <p id="status"></p>
       <div id="mirror" hidden title="What your glasses show"></div>
       <p class="note">Shown as: <b id="rolename"></b> (set on the timer)</p>
+      <div id="tapsbox" hidden>
+        <h2>Taps for Next</h2>
+        <div id="taps"><button data-n="3">3 taps</button><button data-n="4">4 taps</button><button data-n="5">5 taps</button></div>
+        <p class="note">More taps make it harder to fire Next by accident.</p>
+      </div>
       <div id="cornerbox">
         <h2>Where on the glasses</h2>
         <div id="corners">
@@ -95,7 +103,7 @@
       <li>This works with timers at <b>beta.timed-show.com</b>.</li>
       <li>The timer’s operator chooses whether these glasses are a <b>presenter’s</b> or the <b>operator’s</b>, and can change it at any time (share → the device list).</li>
       <li><b>Presenter:</b> the time left, small and dim, in a corner. It gets brighter in the last minute and when time is up (shown as <b>+</b> and the time over), and says <b>paused</b> while the timer is paused. Tap the glasses to hide or show it. Choose the corner here, or on the glasses: tap, then tap and hold to open the menu, and choose <b>Next corner</b>.</li>
-      <li><b>Operator:</b> the operator’s screen in miniature: elapsed and total along the top, the message on screen and the countdown in the middle, started and ends-at times along the bottom. <b>Tap three times quickly</b> to go to the next item in the run sheet (fewer taps do nothing).</li>
+      <li><b>Operator:</b> the operator’s screen in miniature: elapsed and total along the top, the message on screen and the countdown in the middle, started and ends-at times along the bottom. <b>Tap three times quickly</b> (or four or five: choose here) to go to the next item in the run sheet; fewer taps do nothing. The glasses’ menu (tap, then tap and hold) has <b>Next item</b>, <b>Back</b> (undo a Next), <b>Pause / resume</b>, <b>Reset show</b>, <b>Auto start on / off</b> (the run sheet’s first item, before the show) and <b>Minimal view</b> (just the message and the countdown). Pressing and holding on the glasses for 2 seconds also turns Minimal view on or off.</li>
       <li>Before pairing, the glasses say <i>Timer not connected</i>. If the timer closes they say <i>Timer offline</i> and reconnect when it reopens. The pairing is remembered.</li>
       <li>To close the app, tap, then tap and hold on the glasses (Even’s menu) and choose close.</li>
       <li><b>Unpair</b> forgets the timer. The timer’s operator can also take the glasses’ access away at any time (share → the device list).</li>
