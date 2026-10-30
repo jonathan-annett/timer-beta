@@ -8,8 +8,15 @@
   "scripts": {
     "dev": "vite --host",
     "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "pack": "npm run build && evenhub pack app.json dist -o timed-show.ehpk",
+    "ship": "node scripts/ship.mjs",
     "sim": "evenhub-simulator http://localhost:5173",
-    "pack": "npm run build && evenhub pack app.json dist -o timed-show.ehpk"
+    "sim:start": "node scripts/sim.mjs start",
+    "sim:shot": "node scripts/sim.mjs shot",
+    "sim:do": "node scripts/sim.mjs do",
+    "sim:log": "node scripts/sim.mjs log",
+    "sim:stop": "node scripts/sim.mjs stop"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "0.0.16",
@@ -19,6 +26,7 @@
     "@evenrealities/evenhub-cli": "0.2.0",
     "@evenrealities/evenhub-simulator": "0.9.5",
     "typescript": "^5.6.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vite-plugin-singlefile": "^2.3.4"
   }
 }

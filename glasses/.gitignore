@@ -1,3 +1,5 @@
 node_modules/
 dist/
 *.ehpk
+sim/
+ship.config.json

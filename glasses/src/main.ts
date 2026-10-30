@@ -14,9 +14,10 @@
  */
 import { waitForEvenAppBridge, OsEventTypeList, type EvenAppBridge } from '@evenrealities/even_hub_sdk'
 import { claim, CLAIM_ERRORS, TimerLink, type Paired, type Status, type Mode } from './link'
-import { Clock } from './clock'
+import { Clock, secToStr } from './clock'
 import { Glasses, CORNERS, type Corner, type View } from './glasses'
 
+declare const __APP_VERSION__: string
 const MODE: Mode = 'presenter'
 const $ = (id: string) => document.getElementById(id) as HTMLElement
 
@@ -36,11 +37,20 @@ const clock = new Clock()
 const state: Record<string, unknown> = {}
 let glasses: Glasses | null = null
 let corner = (CORNERS as string[]).includes(store.get('ts_corner')) ? store.get('ts_corner') as Corner : 'tl'
+if (location.hash.startsWith('#demo=') && (CORNERS as string[]).includes(location.hash.slice(6))) corner = location.hash.slice(6) as Corner   // #demo=br
 
 // ─── The glasses ─────────────────────────────────────────────────────────────
 
 // Words only, so nothing here can be mistaken for the countdown
+// #demo (the simulator, for checking the layout): a made-up countdown, as if paired and running
+const DEMO = location.hash.startsWith('#demo')
+const demoStart = Date.now()
+
 function glassesView(): View {
+  if (DEMO) {
+    const sec = 75 - Math.floor((Date.now() - demoStart) / 1000)
+    return { clock: sec < 0 ? '+' + secToStr(-sec) : secToStr(sec), bright: sec < 0 ? 4 : sec <= 60 ? 3 : 2, info: '' }
+  }
   if (status === 'unpaired' || status === 'refused') return { clock: '', bright: 0, info: 'Timer not connected - open the Even app to pair' }
   if (status === 'pin') return { clock: '', bright: 0, info: 'Pairing - finish on your phone' }
   if (status !== 'online') return { clock: '', bright: 0, info: 'Timer offline - reconnecting...' }
@@ -150,7 +160,7 @@ function setup(): void {
     armed = 0; $('unpair').textContent = 'Unpair'
     unpair('Unpaired. Type a new code to pair again.')
   })
-  $('origin').textContent = location.origin || location.protocol
+  $('origin').textContent = 'version ' + __APP_VERSION__ + ' · origin ' + (location.origin || location.protocol)
   render()
   if (paired) connect(paired)
   // The countdown ticks here; the glasses get a change only when the text or brightness changes
@@ -165,6 +175,7 @@ async function attach(): Promise<void> {
   const bridge = await Promise.race([waitForEvenAppBridge(), new Promise<null>(r => setTimeout(() => r(null), 4000))]) as EvenAppBridge | null
   if (!bridge) { $('nobridge').hidden = false; return }
   glasses = new Glasses(bridge, corner)
+  glasses.onSetup = problem => { if (problem) { $('nobridge').textContent = problem; $('nobridge').hidden = false } }
   glasses.show(glassesView(), true)
   bridge.onEvenHubEvent(ev => {
     const kind = (e: { eventType?: number } | undefined) => (e ? (e.eventType ?? OsEventTypeList.CLICK_EVENT) : null)

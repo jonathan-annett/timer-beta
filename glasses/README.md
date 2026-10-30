@@ -33,11 +33,18 @@ make-icon.mjs     writes icon.png (24×24, #F4F4F4 in 2×2 blocks, as Even asks)
 
 ## Develop
 
+Built on the owner's kit, [g2-claude-starter](https://github.com/jonathan-annett/g2-claude-starter):
+its hardware rules (no `zOrderIndex`, text boxes 30 / 56 / 84 px high, a single-file build, how taps
+arrive) and its `scripts/ship.mjs` and `scripts/sim.mjs` are used here. Read its `CLAUDE.md`
+before changing the glasses page.
+
 ```sh
 npm install
-npm run dev          # Vite on the LAN; the phone page also works in a browser (no glasses)
-npm run sim          # Even's simulator against the dev server
-npm run build        # type-check + dist/
+npm run dev                        # Vite on the LAN; the phone page also works in a browser (no glasses)
+npm run build                      # type-check + dist/index.html (one self-contained file)
+SIM_HASH='#demo=br' npm run sim:start   # Even's simulator; #demo[=tl|tr|bl|br] fakes a running countdown
+npm run sim:shot [name]            # the glasses' framebuffer -> sim/<name>.png (needs Pillow, else .raw.png)
+npm run sim:log; npm run sim:stop
 ```
 
 `tests/e2e/glasses_pair.py` (in the main repo) pairs the built page with a local timer and
@@ -45,17 +52,17 @@ pairing server; tests set `window.TS_SERVER` to point it at the local server.
 
 ## Release to testers
 
+One-time: `npx evenhub login` (the portal account), and copy `ship.config.example.json` to
+`ship.config.json` (git-ignored) with the email the Even app uses as `testerEmail`. Then:
+
 ```sh
-# bump "version" in app.json first (an upload can't reuse a version)
-npm run pack                                   # -> timed-show.ehpk
+npm run ship -- "one line of what changed"
 ```
 
-Then either upload `timed-show.ehpk` in the developer portal (it carries the id, name and version;
-the first upload registers the app), or from the command line after `npx evenhub login`:
-`npx evenhub create timed-show.ehpk --name "Timed Show" --tagline "The presentation timer on your glasses" --icon icon.png`
-the first time, `npx evenhub upload timed-show.ehpk -m "what changed"` after that, and
-`npx evenhub promote <version> --to beta` to make it the beta build. Testers: `npx evenhub testers add a@b.com`
-(or the portal's Testing group); they accept the email, then install from the Even app → Me → Beta tester.
+That bumps the version in `app.json`, adds the line to `CHANGELOG.md`, builds, packs, uploads (the
+first time it creates the app), promotes the build to beta and invites the tester. Install from
+the Even app → Me → Beta tester (or the invite email). Other testers: `npx evenhub testers add a@b.com`
+or the portal's Testing group.
 
 ## Known unknowns (check on real glasses)
 
