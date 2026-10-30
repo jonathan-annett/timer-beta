@@ -26,7 +26,9 @@ Decisions since this plan was written (they override the sections below):
   a presenter's glasses only ever hold a view-only key. So the claim is granted a **view-only** link
   by default and control is granted by the timer separately (e.g. a new `{t:'role'}` message carrying
   a control link after the operator picks Controller), not chosen on the phone page.
-- **Corner only** on the phone page and the glasses' menu (*Next corner*); no size choice (the owner
+- **Corner only** on the phone page and the glasses' menu (*Next corner*; works on the glasses from
+  0.1.7, with the page and menu sent as plain objects like the g2-claude-starter's Mischief Mews;
+  settings in the Even app's storage from 0.1.5, since the plugin's 127.0.0.1 port changes per launch); no size choice (the owner
   decided to keep it simple; bigger digits would need drawn images, 288×144 max per image box).
 - **Next versions:** two modes, the role chosen on the timer (above). *Controller* (the operator wears them,
   e.g. while vision switching): 3+ rapid taps fire Next, every other input ignored; needs the
