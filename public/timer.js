@@ -276,7 +276,7 @@ custom_message.addEventListener('focus', function(){
 					  this.innerHTML = enterTimeText;
 					  clearHtmlClass("editing");
 					  dispNextMins.textContent = secToStr(defaultDuration/1000);
-					  enterTimeText = "";
+					  enterTimeText = enterHoursText = "";
 					  return;
 
 				  } else {
@@ -1734,9 +1734,13 @@ function onDocKeyDown(ev){
 					updateEnteredTimeText();
 				}
 				break;
-			case "Backspace" :
+			case "Backspace" :		// like text: digits, then the ":" (the hours become plain digits again), then it closes
 				if (enterTimeText !== "" ) {
 					enterTimeText = enterTimeText.substr(0,enterTimeText.length-1);
+					updateEnteredTimeText () ;
+				} else if (enterHoursText !== "") {
+					enterTimeText = enterHoursText;
+					enterHoursText = "";
 					updateEnteredTimeText () ;
 				} else {
 					clearHtmlClass("editing");
@@ -1856,7 +1860,16 @@ function onDocKeyDown(ev){
 			    break;
 			case "*":// numkey pad use
 			case " ":
-				
+				// In run sheet mode a Space typed on a keyboard (here, or passed on by the presenter window,
+				// the overlay, the video window or a phone's keyboard: all real key events) is Next, like
+				// Page Down, unless a time was just typed (Space then starts it, as ever). Space made up by a
+				// button (the touch strip's Restart, the deck's Start key, presets: plain objects) is unchanged.
+				if (!controlling && !shifting && typeof ev.stopPropagation === "function" && !html.classList.contains("editing") && enterTimeText === ""
+					&& window.runsheet && window.runsheet.isActive && window.runsheet.isActive()) {
+					ev.preventDefault();				// not also a focused button's click
+					if (!ev.repeat) processTimerApiMessage({ cmd: "runsheetnext" });	// a held Space is one Next
+					break;
+				}
 				 if (controlling) {
 					onKey_Control_Space(ev);
 				 } else {	  

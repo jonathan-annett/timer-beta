@@ -42,9 +42,9 @@ At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. O
 |---|---|
 | digits, then **Enter** | Set the default duration in minutes (`:` separates hours, e.g. `1:30`) |
 | digits, then **Space** | Start that duration once, without changing the default |
-| **Space** | Start / restart with the default duration |
+| **Space** | Start / restart with the default duration. In run sheet mode: the next item (like Page Down), unless you just typed a time |
 | **Shift+Space** or **X** | Extend the running timer to the default duration |
-| **Backspace** | Edit the typed duration |
+| **Backspace** | Edit the typed duration (digits, then the `:`, then it closes) |
 | **[** / **]** | Default duration −/+ 1 second |
 | **{** / **}** | Default duration −/+ 1 minute |
 
@@ -74,7 +74,7 @@ At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. O
 | **O** | Floating countdown overlay that stays on top of other apps (e.g. over PowerPoint's Presenter View): the same overlay as *Countdown overlay on another computer* below, with its shape, message and progress shade set in a small box under the buttons (it fades after 30 seconds; **Hide** puts it away). **O** again closes it. Keeps running with the timer minimized, so a Stream Deck can drive everything; the timer's keys also work while the overlay window or the presenter window has focus (Chrome/Edge). Opening the overlay needs the timer window itself (browsers only let the window you're typing in open a floating window): **O** in the presenter window closes it, but to open it press **O** on the timer. While the timer or the overlay has the keyboard, both show a blinking red ⌨ (with *Warning: timer still owns the keyboard* beside it for a few seconds; hover over the timer's for the message again), so you know to click back into PowerPoint before using the clicker or the keyboard. Opening it needs the key press or a click on the **overlay** button. |
 | **?** or **F1** | This guide, shown over the timer (main screen only, not in presenter or single-screen mode). The *help* link at the bottom does the same |
 | **E** | Run sheet editor (opens in its own window) |
-| **Page Down / Page Up** | Run sheet mode: next item / back. Otherwise, in PowerPoint mode, Page Down restarts the timer |
+| **Page Down / Page Up** | Run sheet mode: next item / back (Space is next too, here and in the run sheet editor, unless you're typing). Otherwise, in PowerPoint mode, Page Down restarts the timer |
 | **^** | PowerPoint mode: a clicker's **Page Down** restarts the timer |
 | **D** | Stream Deck layout editor |
 | **Ctrl+S** | Edit the timer's styles (CSS); **Ctrl+S** again saves. Only the rules you add or change are saved, so updates to the timer still come through. **Ctrl+Shift+S** resets them |

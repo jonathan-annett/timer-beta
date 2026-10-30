@@ -1383,6 +1383,19 @@
     if (e.repeat) return;
     send(e.key === 'PageDown' ? 'next' : 'back');
   });
+  // In run sheet mode Space is Next here too, as on the timer, unless something is being typed (a text
+  // box, a list) or a question is open. A focused button (Reset show… just clicked, say) doesn't get it:
+  // Space would press it again. Checkboxes neither: they're not typing.
+  const typingIn = t => t && (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' ||
+    (t.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|reset|range|color|file)$/.test(t.type)))
+  const spaceIsNext = e => e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !!state.active &&
+    !typingIn(e.target) && !document.querySelector('.ask')
+  document.addEventListener('keydown', e => {
+    if (!spaceIsNext(e)) return;
+    e.preventDefault();
+    if (!e.repeat) send('next');
+  });
+  document.addEventListener('keyup', e => { if (spaceIsNext(e)) e.preventDefault(); });   // buttons act on Space's keyup
 
   // ─── Help (README overlay, see help-overlay.js; ? / F1 also open it) ───────
 
