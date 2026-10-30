@@ -66,9 +66,8 @@ or the portal's Testing group.
 
 ## Known unknowns (check on real glasses)
 
-- The Origin the Even WebView sends: the timer site's pairing server only accepts pages from known
-  origins. If pairing says *Couldn't reach the timer's server*, the phone page's footer shows the
-  origin; add it to the beta Worker's `ORIGINS`.
+- Solved: the Even app serves the plugin from `http://127.0.0.1:<port>`; the Worker accepts loopback
+  origins (the VPS `remote-server.js` doesn't yet). The phone page's footer shows the origin.
 - Whether text placement in the right-hand corners lines up (widths come from `@evenrealities/pretext`).
 - Taps do nothing yet; closing is Even's menu (tap, then tap and hold). Next: presenter = a tap toggles the
   display, controller = 3+ taps fire Next.

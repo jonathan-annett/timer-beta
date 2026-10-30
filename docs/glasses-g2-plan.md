@@ -3,7 +3,10 @@
 Status (30 Oct 2026): **version 0.1 built** in `glasses/` (see its README): countdown only, in a
 corner chosen on the phone page, pairing by the share panel's 6-digit code against
 beta.timed-show.com, released to testers through the Even Hub developer portal's beta group (not
-the one-off QR/prototype mode). Not yet run on real glasses.
+the one-off QR/prototype mode). **Works on real glasses** (0.1.3, 30 Oct 2026: paired with a beta
+timer, showed an expired countdown counting up). The Even app serves plugins from
+`http://127.0.0.1:<port>` (a changing port), so the pairing server accepts loopback origins (the
+Worker since 30 Oct; `remote-server.js` doesn't yet).
 
 Decisions since this plan was written (they override the sections below):
 - **Pairing = the friend-code route** (`RemotePeer.claim`'s protocol), not a new claim/give
