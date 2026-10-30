@@ -2,6 +2,9 @@
 
 One entry per shipped version (`npm run ship -- "what changed"` writes it).
 
+## 0.1.15
+- Message layers: presenter chooses what shows (messages by default); quiet mode; operator Quiet on/off
+
 ## 0.1.14
 - A 2-second hold toggles Minimal view (operator); not when it follows a tap
 
