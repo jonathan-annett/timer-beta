@@ -2,6 +2,9 @@
 
 One entry per shipped version (`npm run ship -- "what changed"` writes it).
 
+## 0.1.14
+- A 2-second hold toggles Minimal view (operator); not when it follows a tap
+
 ## 0.1.13
 - Operator: Next on the 3rd tap (or 4th or 5th, set on the phone page), at once; menu: Next, Back, Pause / resume, Reset show, Auto start on / off, Minimal view; standby and auto start shown on the glasses
 
