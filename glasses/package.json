@@ -1,7 +1,7 @@
 {
   "name": "timed-show-glasses",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Timed Show for Even Realities G2: the timer's countdown in a corner of the glasses (Even Hub app)",
   "license": "MIT",
   "type": "module",

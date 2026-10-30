@@ -20,8 +20,9 @@ Decisions since this plan was written (they override the sections below):
   e.g. while vision switching): 3+ rapid taps fire Next, every other input ignored; needs the
   timer to grant a control link when the claim says `mode:'controller'` (forward `client`/`mode`
   in `remote-server.js` and the Worker's claim → the host's `{type:'claim', id, client, mode}`).
-  *Presenter*: no control; a double tap toggles the display (but Even's store review expects a
-  double tap on the main page to exit: fine for beta testers, rethink before a public release).
+  *Presenter*: no control; a single tap toggles the display on/off (3+ taps do the same). Taps
+  aren't used to close the app: people close plugins with press-and-hold → close in Even's menu
+  (the double-tap-to-exit guidance isn't enforced in practice, per the owner).
   Optionally the message (item name) too, configurable on the phone page.
 - **Later: glasses per run sheet item.** Tag a run sheet entry with a specific pair of glasses (by
   the device's approval token / name in the share panel), so that presenter's glasses show the HUD

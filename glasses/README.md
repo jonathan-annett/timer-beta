@@ -63,5 +63,5 @@ the first time, `npx evenhub upload timed-show.ehpk -m "what changed"` after tha
   origins. If pairing says *Couldn't reach the timer's server*, the phone page's footer shows the
   origin; add it to the beta Worker's `ORIGINS`.
 - Whether text placement in the right-hand corners lines up (widths come from `@evenrealities/pretext`).
-- Double tap asks to close the app (Even's convention for the main page). The presenter mode's
-  double-tap toggle will need care before any public release (store review expects the exit).
+- Taps do nothing yet; closing is Even's press-and-hold menu. Next: presenter = a tap toggles the
+  display, controller = 3+ taps fire Next.

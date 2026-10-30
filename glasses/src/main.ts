@@ -4,7 +4,8 @@
  * (or a short status line in words), small and dim in the corner chosen on the phone.
  *
  * First version: the countdown only. The mode (presenter / controller) is sent to the timer but not
- * used yet; taps do nothing except a double tap, which asks to close the app (Even's convention).
+ * used yet, and taps do nothing (they're kept for the presenter's and controller's cues; people close
+ * the app with press-and-hold → close in Even's menu).
  *
  * Kept on the phone (localStorage, which the Even app keeps until the app is removed):
  *   ts_link    {server, room, key, view}: the paired timer
@@ -168,9 +169,8 @@ async function attach(): Promise<void> {
   bridge.onEvenHubEvent(ev => {
     const kind = (e: { eventType?: number } | undefined) => (e ? (e.eventType ?? OsEventTypeList.CLICK_EVENT) : null)
     const s = kind(ev.sysEvent as { eventType?: number } | undefined), t = kind(ev.textEvent as { eventType?: number } | undefined)
-    if (s === OsEventTypeList.FOREGROUND_ENTER_EVENT) { link?.wake(); glasses?.show(glassesView(), true); return }
-    // Double tap: Even's usual "close this app?" (the presenter / controller gestures come later)
-    if (s === OsEventTypeList.DOUBLE_CLICK_EVENT || t === OsEventTypeList.DOUBLE_CLICK_EVENT) bridge.shutDownPageContainer(1)
+    void t   // taps: not used yet (presenter: a tap toggles the display; controller: 3+ taps = Next)
+    if (s === OsEventTypeList.FOREGROUND_ENTER_EVENT) { link?.wake(); glasses?.show(glassesView(), true) }
   })
 }
 
