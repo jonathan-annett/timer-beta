@@ -174,6 +174,7 @@
     } else if (m.t === 'state' && m.s && typeof m.s === 'object') {
       if (m.full) for (const k of Object.keys(state)) delete state[k];
       Object.assign(state, m.s);
+      if ('words' in m.s) clock.words(TimerNotices.words(m.s.words || {}));
       if (m.s.clk) clock.set(m.s.clk);
       if (clock.active) Object.assign(state, clock.values());
       render();

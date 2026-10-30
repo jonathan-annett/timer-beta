@@ -548,65 +548,16 @@ html.reduced.future.paused #remain_disp {
 
 
 
-#disp_next_mins {
+/* The keyboard hints and the duration Space would start (#disp_next_mins), bottom right */
+#key_line {
   position : absolute;
   right :0;
   bottom :0;
-
 }
 
-html.editing #disp_next_mins {
-    
-    color: var(--color-next-default-editing);
-}
 
-#remain_disp_video_text {
-    background-color: var(--color-pip-background);
-    color : var(--color-pip-running);
-    display:none;
-}  
-
-#remain_disp_video_text:before {
-    content : "";
-}  
-
-html.impending.showmessages  #remain_disp_video_text {
-    color : var(--color-pip-impending);
-}  
-
-html.impending.showmessages  #remain_disp_video_text:before {
-    content : "One Minute Left";
-}  
-
-html.over  #remain_disp_video_text {
-    color : var(--color-pip-expired);
-}  
-html.over.showmessages #remain_disp_video_text:before {
-    content : "Time is Up";
-}  
-
-
-html.paused  #remain_disp_video_text {
-    color : var(--color-pip-paused);
-} 
-html.paused.showmessages   #remain_disp_video_text:before {
-    content : "(Paused)";
-} 
-  
- 
-html.paused  #remain_disp_video_text {
-    color : var(--color-pip-paused);
-}  
-
-
-
-html.impending.showmessages #remain_info_message:before {
-    content : "Wrap up - last minute";
-}
-
-html.over.showmessages #remain_info_message:before {
-    content : "Time is Up";
-}
+/* The notice's words come from timer.js (notices.js: the operator can change them); these rules
+   only say when it shows and in what colour */
 
 
 
@@ -655,28 +606,7 @@ html.over.paused #ends_disp {
 }
 
 
-html.over.showmessages.paused #remain_info_message:before,
-html.impending.showmessages.paused #remain_info_message:before,
-html.paused #remain_info_message:before {
-    content : "Paused (for ";
-}
-
-html.paused #remain_info_message:after {
-    content : ")";
-}
-
-html.reduced.paused #remain_info_message:before {
-    content : "";
-}
-
-html.reduced.paused #remain_info_message:after {
-    content : "";
-}
-
-/* Standby (run sheet Reset show): the notice is the whole text ("Standing by." / "Standing by to start
-   in 5:23…", set by timer.js), and it shows above the first item's name, which is the message */
-html.standby.paused #remain_info_message:before,
-html.standby.paused #remain_info_message:after { content: "" !important; }
+/* Standby (run sheet Reset show): the notice shows above the first item's name, which is the message */
 html.standby.paused #remain_info_message { display: block !important; }
 /* The operator's screen shows that notice in the run sheet dashboard instead (#rs_standby), and the
    times as what will happen: "will start at" / "will end at" (timer.js), steady, no pause total */
@@ -688,77 +618,34 @@ html.standby #extra_time_disp { display: none !important; }
 
 
 
-/* keyboard help text*/
-#disp_next_mins:before {
-    content:"[←],[→] = fix a late/early start (seconds), [↓],[↑] = Nudge end time (seconds), [Space] = start countdown using "; 
-    color: var(--color-keyboard-help-text);
-}
-
-html.video-start-fullscreen  #disp_next_mins,
-html.video-live-fullscreen  #disp_next_mins {
-    color: var(--color-main-background);
-}
-
+/* Keyboard hints (timer.html #key_hints): one line per state, key caps and emoji; the state classes
+   pick which. Shift/Ctrl held change what the arrows do; typing a time, editing the message and the
+   video modes have their own. The duration after it hides when it doesn't apply. */
+#key_hints { color: var(--color-keyboard-help-text); }
+#key_hints .kh { display: none; }
+#key_hints kbd { display: inline-block; min-width: 1.1em; padding: 0 0.35em; margin: 0 0.1em; border: 1px solid #444; border-bottom-width: 2px;
+  border-radius: 4px; background: #1a1a1a; color: #ccc; font: inherit; font-size: 0.9em; line-height: 1.3; text-align: center; }
+html:not(.editing):not(.edit_custom_message):not(.video-live-fullscreen):not(.video-start-fullscreen):not(.controlling):not(.shifting) #key_hints .kh-plain,
+html.controlling:not(.shifting):not(.editing):not(.edit_custom_message) #key_hints .kh-ctrl,
+html.shifting:not(.controlling):not(.editing):not(.edit_custom_message) #key_hints .kh-shift,
+html.shifting.controlling:not(.editing):not(.edit_custom_message) #key_hints .kh-shiftctrl,
+html.editing:not(.edit_custom_message) #key_hints .kh-edit,
+html.edit_custom_message #key_hints .kh-msg,
+html.video-live-fullscreen:not(.editing):not(.edit_custom_message) #key_hints .kh-vlive,
+html.video-start-fullscreen:not(.editing):not(.edit_custom_message) #key_hints .kh-vstart { display: inline; }
 
 html.video-start-fullscreen  #link,
 html.video-live-fullscreen  #link {
    display:none;
 }
 
-html.video-live-fullscreen  #disp_next_mins:before{
-    content:"showing video preview fullscreen               "; 
-    color: var(--color-keyboard-help-text);
-}
-
-html.video-start-fullscreen  #disp_next_mins:before{
-	content:"video assist zoom mode (ctrl-v toggles)"; 
-	color: var(--color-keyboard-help-text);
-}
-
-
-/*keyboard help text displayed while control key is held down*/
-html.controlling #disp_next_mins:before {
-    content:"[←],[→] = fix a late/early start (minutes), [↓],[↑] = Nudge end time (minutes), [Enter] = catchup to real time. "; 
-    color: var(--color-keyboard-help-text);
-}
-
-/*keyboard help text displayed while typing in a minutes value*/
-html.editing #disp_next_mins:before {
-    content:  "[Enter] = save default countdown... or  [Space] = start countdown using "; 
-    color: var(--color-keyboard-help-text);
-}
-
-/*keyboard help text displayed while shift key is held down*/
-html.shifting #disp_next_mins:before {
-    content:  "[←],[→] = fix a late/early start (seconds), [↓],[↑] = Nudge start time (seconds), [Space] = change current countdown to... "; 
-}
-
-
-/*keyboard help text displayed while control and shift keys are held down*/
-html.shifting.controlling #disp_next_mins:before {
-    content:  "[←],[→] = fix a late/early start (minutes), [↓],[↑] = Nudge start time (minutes), [Enter] = catchup to real time. "; 
-}
-
-/*while editing the custom message, hide the minutes entry field by making it the same colour as the background*/
-html.edit_custom_message #disp_next_mins {
-    color: var(--color-main-background);
-}
-
-/*keyboard help text displayed while editing the custom message text*/
-html.edit_custom_message #disp_next_mins:before {
-   content : "Editing custom message...          [Enter] = Show On Remote Display.  ";
-   color:var(--color-keyboard-help-text--editing-custom);
-}
-
-/*change the colour of minutes entry field while the custom message is displayed*/
-html.show_custom_message #disp_next_mins {
-    color:yellow;
-}
-
-
-html.controlling #disp_next_mins{
-    color:var(--color-main-background);
-}
+/* the duration: lime while typing it, yellow with a message up, hidden where Space doesn't start it */
+html.show_custom_message #disp_next_mins { color: yellow; }
+html.editing #disp_next_mins { color: var(--color-next-default-editing); }
+html.controlling:not(.editing) #disp_next_mins,
+html.edit_custom_message #disp_next_mins,
+html.video-start-fullscreen #disp_next_mins,
+html.video-live-fullscreen #disp_next_mins { visibility: hidden; }
 
 .fs_only {
    display : none;    
@@ -1072,9 +959,7 @@ html.portrait #ends_disp {
 }
 
 
-html.portrait #disp_next_mins:before{
-    content : "";
-}
+html.portrait #key_hints { display: none; }
 
 
 
@@ -1344,7 +1229,7 @@ html.portrait #disp_next_mins:before{
   html.reduced #touch-strip { display: none; }
   /* No keyboard hints or "open display / help" links on a phone (they sat under the strip):
      the strip's ? button opens the help */
-  #link, #disp_next_mins { display: none !important; }
+  #link, #key_line { display: none !important; }
   /* The time details sit just above the strip, whatever the screen's shape */
   html:not(.reduced) #started_disp, html:not(.reduced) #ends_disp { top: auto; bottom: calc(80px + env(safe-area-inset-bottom)); }
   html:not(.reduced):not(.future) #elapsed_disp, html:not(.reduced) #duration_disp { top: auto; bottom: calc(80px + 1.6em + env(safe-area-inset-bottom)); }
@@ -1617,14 +1502,38 @@ html:not(.reduced) :is(#remain_disp, #custom_message, #remain_info_message, #now
 :where(html:not(.reduced)) :where(#elapsed_disp, #started_disp, #ends_disp)::before,
 :where(html:not(.reduced)) :where(#duration_disp)::after { color: var(--ui-dim); }
 :where(html:not(.reduced)) :where(#elapsed_disp, #started_disp) { margin-left: 14px; }
-:where(html:not(.reduced)) :where(#ends_disp, #duration_disp, #extra_time_disp, #disp_next_mins) { margin-right: 14px; }
+:where(html:not(.reduced)) :where(#ends_disp, #duration_disp, #extra_time_disp, #key_line) { margin-right: 14px; }
 :where(html:not(.reduced)) :where(#extra_time_disp) { color: var(--ui-dim); }
 /* The links and the keyboard hints: quiet text, not blue underlined links */
 #link { margin: 0 0 0 14px; font-size: 14px; color: var(--ui-faint); font-family: var(--ui-font); }
 #link a { color: var(--ui-dim); text-decoration: none; }
 #link a:hover { color: var(--ui-accent); }
-#disp_next_mins { font-size: 1.8vh; margin-bottom: 6px; }
-#disp_next_mins:before { opacity: 0.6; }
+#key_line { font-size: 1.8vh; margin-bottom: 6px; white-space: nowrap; }
+#key_hints { opacity: 0.75; }
+
+/* Typing a time (html.editing): a big panel over the countdown with the digits typed and the duration
+   they make, so an operator on a numeric keypad sees it without hunting for the hint line. Operator only. */
+#entry_pad { display: none; }
+html.editing:not(.reduced):not(.edit_custom_message) #entry_pad {
+  display: block; position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9000;
+  min-width: min(46vw, 90vw); max-width: 90vw; box-sizing: border-box; padding: 2.4vh 3vw 2.2vh;
+  background: rgba(12, 14, 12, 0.985); border: 2px solid var(--ui-ok-line); border-radius: 18px;
+  box-shadow: 0 0 0 1px #000, 0 12px 60px rgba(0,0,0,.7), 0 0 40px rgba(46,107,46,.35);
+  font-family: var(--ui-font); text-align: center; color: var(--ui-text);
+  animation: ep-in .14s ease-out both;
+}
+@keyframes ep-in { from { opacity: 0; transform: translate(-50%, -46%) scale(.97); } }
+#entry_pad .ep-label { font-size: 2.2vh; letter-spacing: .12em; text-transform: uppercase; color: var(--ui-dim); }
+#entry_pad .ep-typed { font-size: 16vh; line-height: 1.05; font-weight: 600; color: var(--ui-ok); font-variant-numeric: tabular-nums; white-space: nowrap; }
+#entry_pad #ep_unit { font-size: 3.4vh; font-weight: normal; color: var(--ui-dim); margin-left: .5em; letter-spacing: .04em; }
+#entry_pad .ep-caret { display: inline-block; width: .06em; height: .8em; margin-left: .08em; vertical-align: -0.06em; background: var(--ui-ok); animation: blinker 1s step-end infinite; }
+#entry_pad .ep-result { font-size: 4.6vh; margin-top: .4vh; display: flex; justify-content: center; align-items: baseline; gap: .7em; flex-wrap: wrap; }
+#entry_pad #ep_clock { color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; }
+#entry_pad #ep_clock::before { content: "= "; color: var(--ui-dim); font-weight: normal; }
+#entry_pad #ep_words { color: var(--ui-dim); font-size: .7em; }
+#entry_pad .ep-keys { margin-top: 2vh; font-size: 2.1vh; color: var(--ui-dim); display: flex; justify-content: center; gap: 1.6em; flex-wrap: wrap; }
+#entry_pad kbd { display: inline-block; min-width: 1.1em; padding: 0 .4em; border: 1px solid #555; border-bottom-width: 2px; border-radius: 5px;
+  background: #1a1a1a; color: #ddd; font: inherit; font-size: .9em; line-height: 1.35; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    RUN SHEET DASHBOARD (controller only; html.runsheet is set by runsheet.js)

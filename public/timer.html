@@ -13,7 +13,7 @@
       <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
       <link rel="manifest" href="manifest.json">
       <title>Presentation Timer</title>
-      <link rel="stylesheet" href="timer.css?v=46dce2df" id="style_1">
+      <link rel="stylesheet" href="timer.css?v=a578d278" id="style_1">
       <link rel="stylesheet" href="help-overlay.css?v=ab22e694">
   </head>
   <body>
@@ -24,15 +24,17 @@
       <script src="features.js?v=4136908a"></script>
       <script src="whats-new.js?v=1c7b0b76"></script>   <!-- not deferred: it checks for earlier timer state before timer.js writes any -->
       <script>var timerAPI = null; /* populated by streamdeck.js, remote-control.js and the others (each chains the previous one) */</script>
+      <script src="notices.js?v=d42b0943"></script>
       <script src="key-focus.js?v=4b14eb98"></script>
-      <script src="overlay-view.js?v=ba17c1fa"></script>
-      <script src="local-overlay.js?v=aab1518d"></script>
+      <script src="overlay-view.js?v=abca4a81"></script>
+      <script src="local-overlay.js?v=c124fbf2"></script>
       <script src="elementcolors.js?v=3346b988"></script>
-      <script src="timerapi.js?v=47e065d9"></script>
-      <script src="timer.js?v=65a40a6e" defer></script>    
+      <script src="timerapi.js?v=5ee38730"></script>
+      <script src="timer.js?v=1f414abc" defer></script>    
       <script src="FileSaver.js?v=de19cbb6" defer></script>    
       <script src="video-store.js?v=069f77d9" defer></script>
       <script src="dropPlayer.js?v=3514f595" defer></script>
+      <script src="notice-panel.js?v=5ae3f7e7" defer></script>
       <script src="video-library.js?v=bfdbb3f7" defer></script>
       <script src="deck-face.js?v=c546849b" defer></script>
       <script src="streamdeck.js?v=4bf1bb42" defer></script>
@@ -41,7 +43,7 @@
       <script src="runsheet-core.js?v=d0fec52c" defer></script>
       <script src="runsheet.js?v=4e107dd5" defer></script>
       <script src="remote-peer.js?v=a4dfabd5" defer></script>
-      <script src="remote-control.js?v=e4dc870b" defer></script>
+      <script src="remote-control.js?v=7371644e" defer></script>
       <script src="pptx-hub.js?v=e1230167" defer></script>
       <script src="markdown-lite.js?v=938fee93" defer></script>
       <script src="help-overlay.js?v=8a5dbd9d" defer></script>
@@ -163,7 +165,24 @@
           <div id="now_disp"></div>
       </div>
        
-      <div class="xfs_only" id="disp_next_mins">mins</div>
+      <!-- Keyboard hints: timer.css shows the one for the state (Ctrl/Shift held, typing a time, …) -->
+      <div class="xfs_only" id="key_line"><span id="key_hints">
+          <span class="kh kh-plain"><kbd>←</kbd><kbd>→</kbd> late/early start · <kbd>↓</kbd><kbd>↑</kbd> nudge the end · seconds (<kbd>Ctrl</kbd> minutes) · <kbd>Space</kbd> ▶️ start </span>
+          <span class="kh kh-ctrl"><kbd>Ctrl</kbd> <kbd>←</kbd><kbd>→</kbd> late/early start · <kbd>↓</kbd><kbd>↑</kbd> nudge the end · in minutes · <kbd>Enter</kbd> ⏩ catch up</span>
+          <span class="kh kh-shift"><kbd>Shift</kbd> <kbd>←</kbd><kbd>→</kbd> late/early start · <kbd>↓</kbd><kbd>↑</kbd> nudge the start · seconds · <kbd>Space</kbd> 🔁 make this countdown </span>
+          <span class="kh kh-shiftctrl"><kbd>Shift</kbd><kbd>Ctrl</kbd> <kbd>←</kbd><kbd>→</kbd> late/early start · <kbd>↓</kbd><kbd>↑</kbd> nudge the start · in minutes · <kbd>Enter</kbd> ⏩ catch up</span>
+          <span class="kh kh-edit">Typing a time · <kbd>Enter</kbd> 💾 set as the default · <kbd>Space</kbd> ▶️ start </span>
+          <span class="kh kh-msg">💬 Editing the message · <kbd>Enter</kbd> 📺 show it</span>
+          <span class="kh kh-vlive">📹 Video preview, full screen</span>
+          <span class="kh kh-vstart">📹 Video assist zoom · <kbd>Ctrl</kbd><kbd>V</kbd> toggles</span>
+        </span><span id="disp_next_mins">mins</span></div>
+      <!-- Typing a time: big, for operators on a numeric keypad (timer.js renderEntryPad; shown while html.editing) -->
+      <div id="entry_pad">
+        <div class="ep-label">New time</div>
+        <div class="ep-typed"><span id="ep_typed"></span><span class="ep-caret"></span><span id="ep_unit"></span></div>
+        <div class="ep-result"><span id="ep_clock"></span><span id="ep_words"></span></div>
+        <div class="ep-keys"><span><kbd>Enter</kbd> 💾 set as the default</span><span><kbd>Space</kbd> or <kbd>*</kbd> ▶️ start now</span><span><kbd>⌫</kbd> delete · <kbd>Esc</kbd> cancel</span></div>
+      </div>
       
       <video id="webcam" autoplay style="display: none;"></video>
       <canvas id="wc_canvas" style="display: none; width : auto; height:1080px;"></canvas>
@@ -173,7 +192,7 @@
  
      
       <div id="key_disp"></div>
-      <p id="link">open timer <a href="timer.html#" onclick="return openTimerWindow();">display</a> screen. <a href="https://github.com/jonathan-annett/timer-beta#quick-start" target="_blank" rel="noopener">help</a> · <a href="changelog.html" target="_blank" rel="noopener">what’s new</a></p>
+      <p id="link">open timer <a href="timer.html#" onclick="return openTimerWindow();">display</a> screen. <a href="https://github.com/jonathan-annett/timer-beta#quick-start" target="_blank" rel="noopener">help</a> · <a href="changelog.html" target="_blank" rel="noopener">what’s new</a> · <a href="#" onclick="window.noticePanel &amp;&amp; noticePanel.toggle(); return false;" title="The words the screens show: last minute, time’s up, paused, standing by">notices</a></p>
     
       <div class="media_query_detect"></div>
        <div class="mainDiv">
@@ -183,7 +202,6 @@
            </div>
        </div>
 
-        <span id="remain_disp_video_text"></span>
         <video id="remain_disp_video" muted autoplay></video>
 
        <div id="drag_to_monitor">Drag window to appropriate monitor and press F to make it Fullscreen</div>

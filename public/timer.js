@@ -136,10 +136,17 @@ let startedAt	   = readNumber ( "startedAt",	   timeProvider.now()	 );
 let endsAt		  = readNumber ( "endsAt",		  startedAt + defaultDuration  ) ;
 let seekEndsAt	  = readNumber ( "seekEndsAt",	  endsAt		);
 // Standby (the run sheet's Reset show): paused at the first item's full time, its name as the
-// message, "Standing by." (or "Standing by to start in 5:23…" with an auto start at `at`) instead of
-// "Paused (for …)". Set by the `standby` API command, kept over a reload, ended by any start.
+// message, "🎬 Standing by" (or "… · starts in 5:23" with an auto start at `at`) instead of
+// "⏸️ Paused · 2:13". Set by the `standby` API command, kept over a reload, ended by any start.
 var standby = (function () { try { const v = JSON.parse(localStorage.getItem("standby")); return v && typeof v === "object" ? v : null; } catch (e) { return null; } })();
 var lastRemainInfo = null;		// the notice as sent to the presenter window (localStorage remainInfo)
+// The notices' words (notices.js; the operator's own from the ✎ notices panel, notice_words), re-read when they change
+var noticeWords = null;
+function announceNoticeWords() {
+	noticeWords = null;
+	if (timerAPI) timerAPI.send({ setVariableValues: { notice_words: JSON.stringify(TimerNotices.stored()) } });
+}
+document.addEventListener("notice-words", announceNoticeWords);
 if (standby && !window.location.search.startsWith("?presenter")) html.classList.add("standby");	// (setHtmlClass isn't defined yet here)
 
 
@@ -350,7 +357,7 @@ custom_message.addEventListener('focus', function(){
 	  if (timerAPI) timerAPI.send({ setVariableValues: { standby: !!standby, standby_at: standby && standby.at ? local24HourTime(timeProvider.date(standby.at)) : "" } });
   }
   function standbyText(t) {
-	  return standby && standby.at && standby.at > t ? "Standing by to start in " + secToStr(Math.ceil((standby.at - t) / 1000)) + "…" : "Standing by.";
+	  return TimerNotices.standby(standby && standby.at ? standby.at - t : 0, noticeWords || (noticeWords = TimerNotices.words()));
   }
   // Resume or restart while standing by starts the show (the run sheet's first item), not just the countdown
   function standbyStart() {
@@ -496,7 +503,6 @@ custom_message.addEventListener('focus', function(){
 		 
 		 if (pausedMsec!=0) {
 			 const pausedTimeStr = secToStr(pausedMsec / oneSecond);
-			 remainInfoDisp.textContent = standby ? standbyText(timeNow) : runMode === "presenter" ? "Paused" : pausedTimeStr;
 			 endsDisp.textContent =  local24HourTime ( timeProvider.date(seekEndsAt+pausedMsec) );
 			 const accumTimeStr = secToStr((pauseAcum+pausedMsec) / oneSecond);
 			 extraTimeDisp.textContent = "+ "+accumTimeStr+" pauses";
@@ -525,7 +531,6 @@ custom_message.addEventListener('focus', function(){
 			
 			 
 		 } else {
-			 remainInfoDisp.textContent = "";
 			 if (pauseAcum===0) {
 				 extraTimeDisp.textContent = "";
 			 } else {
@@ -573,12 +578,22 @@ custom_message.addEventListener('focus', function(){
 		 }
 		 
 		 announceClock(remainMsecAbs, elapsedMSec, !!pausedAt, elapsedMSec < 0, adjusting_up ? -1.25 : adjusting_down ? -0.75 : -1);
-		 // The notice for a presenter window beside this one (it doesn't work the timer out itself)
-		 const remainInfo = !pausedAt ? "" : standby ? standbyText(timeNow) : "Paused";
+		 // The notice (notices.js): paused, standing by, and with M on the last minute and time up. The
+		 // operator's screen adds how long it's been paused; the presenter window (localStorage remainInfo)
+		 // doesn't. Over/impending are last tick's classes (set below).
+		 if (!noticeWords) noticeWords = TimerNotices.words();
+		 const noticeState = {
+			 standby: standby && pausedAt ? standbyText(timeNow) : "", paused: !!pausedAt,
+			 over: html.classList.contains("over"), impending: html.classList.contains("impending"), msgs: html.classList.contains("showmessages"),
+		 };
+		 const remainInfo = TimerNotices.notice(noticeState, noticeWords);
+		 noticeState.pausedFor = pausedMsec ? secToStr(pausedMsec / oneSecond) : "";
+		 const ownNotice = runMode === "presenter" ? remainInfo : TimerNotices.notice(noticeState, noticeWords);
+		 if (remainInfoDisp.textContent !== ownNotice) remainInfoDisp.textContent = ownNotice;
 		 if (remainInfo !== lastRemainInfo) {
 			 lastRemainInfo = remainInfo; localStorage.setItem("remainInfo", remainInfo);
-			 // the standby notice on the bus (the timer's own overlay, Companion); devices work it out from the anchor
-			 if (timerAPI) timerAPI.send({ setVariableValues: { standby_text: standby && pausedAt ? remainInfo : "" } });
+			 // on the bus (the timer's own overlay, Companion): the notice, and standby's on its own; devices work them out from the anchor
+			 if (timerAPI) timerAPI.send({ setVariableValues: { notice: remainInfo, standby_text: noticeState.standby } });
 		 }
 
 		 if (lastTimeText !== timeText) {
@@ -640,7 +655,25 @@ custom_message.addEventListener('focus', function(){
 	   nowDisp.textContent = timeNowStr();
   }
   
+  // The big entry display (timer.html #entry_pad, shown while html.editing): what's been typed and the
+  // duration Enter or Space would use, in big type, for operators working from a numeric keypad
+  function durationWords(sec) {
+	  sec = Math.round(sec);
+	  if (!(sec > 0)) return "⏱️ counts up from zero";
+	  const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, x = sec % 60;
+	  return [h && h + (h === 1 ? " hour" : " hours"), m && m + " min", x && x + " s"].filter(Boolean).join(" ");
+  }
+  function renderEntryPad(sec) {
+	  const typed = getEl("ep_typed"), clock = getEl("ep_clock"), words = getEl("ep_words");
+	  if (!typed) return;
+	  typed.textContent = enterHoursText !== "" ? enterHoursText + ":" + enterTimeText : enterTimeText;
+	  getEl("ep_unit").textContent = enterHoursText !== "" ? (enterTimeText === "" ? "hours :" : "h : min") : "min";
+	  clock.textContent = secToStr(sec);
+	  words.textContent = durationWords(sec);
+  }
+
   function updateEnteredTimeText () {
+		 renderEntryPad((Number(enterHoursText) * 3600) + (Number(enterTimeText) * 60));
 		 if (enterHoursText === "") {
 			dispNextMins.textContent = secToStr(Number(enterTimeText) * 60);
 		 } else {
@@ -948,6 +981,7 @@ function extendDefaultToCurrentTimer() {
 
 
 function onLocalStorage(ev){
+	 if (ev.key === "notice_words") announceNoticeWords();
 	 
 	 if ((ev.key=== "remote-json") && ((runMode==="controller" || tabCount=== 1) && !isLinked ) ){
 	     
@@ -1697,7 +1731,7 @@ function onDocKeyDown(ev){
 					enterHoursText = enterTimeText;
 					enterTimeText  = "";
 					setHtmlClass("editing");
-					dispNextMins.textContent = secToStr((Number(enterHoursText) * 3600) + (Number(enterTimeText) * 60));
+					updateEnteredTimeText();
 				}
 				break;
 			case "Backspace" :
@@ -1708,6 +1742,13 @@ function onDocKeyDown(ev){
 					clearHtmlClass("editing");
 					dispNextMins.textContent = secToStr(defaultDuration/1000);
 					
+				}
+				break;
+			case "Escape" :		// drops a time being typed
+				if (html.classList.contains("editing")) {
+					enterTimeText = enterHoursText = "";
+					clearHtmlClass("editing");
+					dispNextMins.textContent = secToStr(defaultDuration/1000);
 				}
 				break;
 			case "Enter" : 

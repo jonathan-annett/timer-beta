@@ -231,6 +231,7 @@ function processTimerApiMessage(msg) {
                 lastTimeText = "";
                 if (typeof clockAnchor !== "undefined") clockAnchor = null;   // the countdown anchor goes out again next tick (timer.js announceClock)
                 announceCustomMessage(true);
+                announceNoticeWords();        // the operator's notice words (notices.js), for devices
                 if (window.runsheet) window.runsheet.announce(true);
                 if (window.pptxHub) window.pptxHub.opened();
                 if (togglePIPMode) togglePIPMode.lastContent = "";

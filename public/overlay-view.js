@@ -75,12 +75,13 @@ var OverlayView = (function () {
 
   // The timer's own notices, as its presenter screen shows them (timer.css #remain_info_message),
   // for when its messages switch (M) is on and no message of the operator's is up.
-  // s: { msgs, paused, over, impending, standby }. Standby (run sheet Reset show) always shows,
-  // like the timer's own notice; see withStandby for the message strip
+  // s: { msgs, paused, over, impending, standby, words }. Standby (run sheet Reset show) always shows,
+  // like the timer's own notice; see stripText for the message strip. The words are the timer's
+  // (notices.js; s.words is its notice_words JSON)
   function autoMsg(s) {
     if (s.standby) return s.standby;
     if (!s.msgs) return '';
-    return s.paused ? 'Paused' : s.over ? 'Time is Up' : s.impending ? 'Wrap up - last minute' : '';
+    return TimerNotices.notice({ paused: s.paused, over: s.over, impending: s.impending, msgs: true }, TimerNotices.words(s.words || {}));
   }
 
   // Largest font at which each span's text fits a box of w × h (both ways); spans given together

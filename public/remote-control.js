@@ -731,6 +731,7 @@
     showbar: ['bar', truthy], showtimenow: ['clock', truthy], showmessages: ['msgs', truthy], barpct: ['pct', Number],
     htmlclass: ['cls', String],          // the timer's class list, for desktop displays (display.html)
     clock: ['clk', v => (v && typeof v === 'object' ? v : null)],   // the countdown anchor (timer.js announceClock)
+    notice_words: ['words', String],     // the operator's notice words, JSON (notices.js; devices word their own notices)
   };
   // A device that says {t:'hello', clock: 1} works the countdown out itself from clk (remote-clock.js):
   // it isn't sent these, which change every second; older devices get them and not clk

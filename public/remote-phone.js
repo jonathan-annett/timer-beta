@@ -216,9 +216,17 @@
     if (!m || m.t !== 'state' || typeof m.s !== 'object') return;
     if (m.full) for (const k of Object.keys(state)) delete state[k];
     Object.assign(state, m.s);
+    if ('words' in m.s) clock.words(TimerNotices.words(m.s.words || {}));
     if (m.s.clk) clock.set(m.s.clk);
     if (clock.active) Object.assign(state, clock.values());
     render();
+  }
+
+  // The timer's notice in its words (notices.js): standby, paused, and the last minute / time up while the
+  // timer's M switch is on (or always: caller checked it)
+  function notice(always) {
+    return TimerNotices.notice({ standby: state.standby, paused: state.paused, over: state.over, impending: state.impending,
+      msgs: always || state.msgs }, TimerNotices.words(state.words || {}));
   }
 
   function render() {
@@ -228,7 +236,7 @@
     document.body.classList.toggle('over', !!state.over);
     document.body.classList.toggle('impending', !!state.impending && !state.over);
     document.body.classList.toggle('paused', !!state.paused);
-    $('substate').textContent = state.standby ? state.standby : state.paused ? 'Paused' : (state.adjUp || state.adjDown) ? 'Adjusting…' : (state.def ? 'Default ' + state.def : '');
+    $('substate').textContent = state.standby || state.paused ? notice() : (state.adjUp || state.adjDown) ? 'Adjusting…' : (state.def ? 'Default ' + state.def : '');
     $('pause').textContent = state.paused ? 'Resume' : 'Pause';
     $('catchup').disabled = !(state.adjUp || state.adjDown);
     $('catchup').classList.toggle('on', !!(state.adjUp || state.adjDown));
@@ -686,7 +694,7 @@
     if (!presenterMode() || !frameReady) return;
     $('cdframe').contentWindow.postMessage({
       t: 'display', cls: state.cls || '', remain: state.remain || '', msg: state.msg || '',
-      pct: state.pct || 0, full: isFull(), info: state.standby || (state.paused ? 'Paused' : ''),   // the presenter's notice
+      pct: state.pct || 0, full: isFull(), info: notice(),   // the presenter's notice (shown as its classes say)
     }, location.origin);
   }
   window.addEventListener('message', e => {
@@ -902,7 +910,7 @@
   let lastList = null, cdSig = '', rsvSig = '';
   function renderDisplays() {
     const remain = (state.over ? '+' : '') + (state.remain || '–:––');
-    const sub = state.standby ? state.standby : state.paused && state.msgs ? 'Paused' : '';     // status messages follow the timer's M switch (standby always shows)
+    const sub = state.standby ? state.standby : state.msgs ? notice(true) : '';     // status messages follow the timer's M switch (standby always shows)
 
     postDisplay();
 

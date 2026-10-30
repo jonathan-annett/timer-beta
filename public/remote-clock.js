@@ -12,6 +12,7 @@
  *                                                   whenever one of them changes
  *   clock.set(anchor)      a new anchor (state.clk)
  *   clock.values()         the current values, or null before the first anchor
+ *   clock.words(w)         the timer's notice words (notices.js), for the standby text
  *
  * Ticks come from a tiny worker, so it keeps counting in a background or minimized window (browsers
  * slow a hidden page's own timers to once a second, then to once a minute).
@@ -31,12 +32,13 @@ var RemoteClock = (function () {
   }
 
   // The values the timer shows at this moment for anchor c, aged dt ms (timer.js displayUpdate).
-  // standby: the run sheet's standby notice ("Standing by." / "Standing by to start in 5:23…",
-  // timer.js standbyText), or ''.
-  function compute(c, dt) {
+  // standby: the run sheet's standby notice ("🎬 Standing by" / "… · starts in 5:23", notices.js in
+  // the timer's words), or ''.
+  function compute(c, dt, words) {
     const r = c.r + c.rr * dt, e = c.e + c.er * dt;
     const sa = c.s && c.sa >= 0 ? c.sa - dt : -1;
-    const standby = !c.s ? '' : sa > 0 ? 'Standing by to start in ' + secToStr(Math.ceil(sa / 1000)) + '…' : 'Standing by.';
+    const standby = !c.s ? '' : typeof TimerNotices !== 'undefined' ? TimerNotices.standby(sa, words)
+      : sa > 0 ? 'Standing by to start in ' + secToStr(Math.ceil(sa / 1000)) + '…' : 'Standing by.';
     if (c.f) return { remain: secToStr(c.d / 1000), over: false, impending: e > -60000, pct: 0, standby };   // before the start
     const s = r / 1000, over = s < 0;
     return {
@@ -60,9 +62,9 @@ var RemoteClock = (function () {
   }
 
   function create(onChange) {
-    let anchor = null, at = 0, last = '';
+    let anchor = null, at = 0, last = '', words = null;
     const valid = c => c && typeof c === 'object' && [c.r, c.e, c.d, c.rr, c.er].every(Number.isFinite) && c.d > 0;
-    function values() { return anchor ? compute(anchor, performance.now() - at) : null; }
+    function values() { return anchor ? compute(anchor, performance.now() - at, words) : null; }
     function check() {
       const v = values();
       if (!v) return;
@@ -78,6 +80,7 @@ var RemoteClock = (function () {
         check();
       },
       values,
+      words(w) { words = w; last = ''; check(); },   // the timer's notice words (TimerNotices.words)
       get active() { return !!anchor; },
     };
   }
