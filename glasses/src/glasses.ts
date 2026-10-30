@@ -10,15 +10,16 @@
  * The glasses' menu (tap, then tap and hold: Even's own, with brightness and close) gets Next corner.
  */
 import {
-  type EvenAppBridge, CreateStartUpPageContainer, MenuContainerProperty, MenuItemProperty, StartUpPageCreateResult, RebuildPageContainer, TextContainerProperty, TextContainerUpgrade,
+  type EvenAppBridge, CreateStartUpPageContainer, type MenuContainerProperty, StartUpPageCreateResult, RebuildPageContainer, TextContainerProperty, TextContainerUpgrade,
 } from '@evenrealities/even_hub_sdk'
 import { getTextWidth, measureTextWrap } from '@evenrealities/pretext'
 
 export type Corner = 'tl' | 'tr' | 'bl' | 'br'
 export const CORNERS: Corner[] = ['tl', 'tr', 'bl', 'br']
 export const MENU = { corner: 1 }
-// Rebuilding without a menu drops it, so every create and rebuild sends it
-const menuObject = () => new MenuContainerProperty({ menuItems: [new MenuItemProperty({ itemID: MENU.corner, itemName: 'Next corner' })] })
+// Rebuilding without a menu drops it, so every create and rebuild sends it. A plain object, as the
+// g2-claude-starter's (confirmed on the glasses) passes it
+const menuObject = () => ({ menuItems: [{ itemID: MENU.corner, itemName: 'Next corner' }] }) as unknown as MenuContainerProperty
 
 const W = 576, H = 288, MARGIN = 14, INFO_W = 300
 const lines = (n: number) => (n <= 1 ? 30 : n * 28)   // a box n lines high

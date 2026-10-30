@@ -2,6 +2,9 @@
 
 One entry per shipped version (`npm run ship -- "what changed"` writes it).
 
+## 0.1.6
+- Next corner in the glasses' menu (built as the starter kit builds its menu)
+
 ## 0.1.5
 - The pairing and corner are kept by the Even app, so they survive closing and reopening the plugin
 
