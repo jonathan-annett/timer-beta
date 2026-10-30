@@ -13,7 +13,7 @@
       <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
       <link rel="manifest" href="manifest.json">
       <title>Presentation Timer</title>
-      <link rel="stylesheet" href="timer.css?v=86c76ff8" id="style_1">
+      <link rel="stylesheet" href="timer.css?v=de558127" id="style_1">
       <link rel="stylesheet" href="help-overlay.css?v=ab22e694">
   </head>
   <body>
@@ -41,7 +41,7 @@
       <script src="back-guard.js?v=1ffc51f1" defer></script>
       <script src="touchcontrols.js?v=a4339318" defer></script>
       <script src="runsheet-core.js?v=d0fec52c" defer></script>
-      <script src="runsheet.js?v=6d18f8b1" defer></script>
+      <script src="runsheet.js?v=4a122310" defer></script>
       <script src="remote-peer.js?v=a4dfabd5" defer></script>
       <script src="remote-control.js?v=0a2757b8" defer></script>
       <script src="pptx-hub.js?v=e1230167" defer></script>
@@ -124,6 +124,9 @@
           <div id="btnresume" class="btn btn2" data-keys="&quot;">
               resume
           </div>
+          <div id="btnnotices" class="btn btn2" data-keys="m" title="Notices on the presenter's screen: last minute and time's up (M). Lit while on">
+            notices
+          </div>
           <div id="btnfloat" class="btn btn2" data-keys="o">
             overlay
          </div>
@@ -133,7 +136,7 @@
           <div id="btndeck" class="btn btn2">
             deck
           </div>
-          <div id="btnrunsheet" class="btn btn2" title="Run sheet editor (E)">
+          <div id="btnrunsheet" class="btn btn2" title="Run sheet editor (E). Shift+click: run sheet mode on / off. Lit while run sheet mode is on">
             run&nbsp;sheet
           </div>
           <div id="btnvideo" class="btn btn2" title="Video: the player window (drag it to the video screen, F for full screen), browse for a video, recent videos">
@@ -193,7 +196,7 @@
  
      
       <div id="key_disp"></div>
-      <p id="link">open timer <a href="timer.html#" onclick="return openTimerWindow();">display</a> screen. <a href="https://github.com/jonathan-annett/timer-beta#quick-start" target="_blank" rel="noopener">help</a> · <a href="changelog.html" target="_blank" rel="noopener">what’s new</a> · <a href="#" onclick="window.noticePanel &amp;&amp; noticePanel.toggle(); return false;" title="The words the screens show: last minute, time’s up, paused, standing by">notices</a></p>
+      <p id="link">open timer <a href="timer.html#" onclick="return openTimerWindow();">display</a> screen. <a href="https://github.com/jonathan-annett/timer-beta#quick-start" target="_blank" rel="noopener">help</a> · <a href="changelog.html" target="_blank" rel="noopener">what’s new</a> · <a href="#" onclick="window.noticePanel &amp;&amp; noticePanel.toggle(); return false;" title="The words the screens show: last minute, time’s up, paused, standing by">notice words</a></p>
     
       <div class="media_query_detect"></div>
        <div class="mainDiv">

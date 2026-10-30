@@ -1634,3 +1634,10 @@ html.quiet.reduced .mainDiv { display: none !important; }
 html.quiet:not(.reduced):not(.edit_custom_message) #custom_message,
 html.quiet:not(.reduced) #remain_info_message,
 html.quiet:not(.reduced) .mainDiv { opacity: 0.3; }
+
+/* Toggles in the button bar, lit while on: notices (M; replaces the yellow "messages enabled" line,
+   which is kept only on touch screens, where there's no button bar) and run sheet mode, however it
+   was turned on (Shift+click on the button, the editor, a phone, the deck) */
+html.showmessages div.buttons #btnnotices,
+html.runsheet div.buttons #btnrunsheet { border-color: #2a5a7a; color: #9fd8ff; }
+@media not (pointer: coarse) { #messages_enabled { display: none !important; } }

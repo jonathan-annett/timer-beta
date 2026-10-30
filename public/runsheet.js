@@ -841,7 +841,9 @@
 
   function init() {
     trackButtonBar();
-    document.getElementById('btnrunsheet')?.addEventListener('click', openEditor);
+    // The run sheet button opens the editor; Shift+click turns run sheet mode on or off instead
+    // (timer.css lights the button while it's on: html.runsheet)
+    document.getElementById('btnrunsheet')?.addEventListener('click', ev => { if (ev.shiftKey) { if (!state.active && !norm.items.length) flash("The run sheet is empty: open it (click, or E) to add items"); else setActive(!state.active); } else openEditor(); });
     // When the player window opens (or anything about it changes), cue the next video if needed
     if (vp()) vp().onChange(() => preloadNext());
     // The auto start used to be its own setting; it's now the first item's hard start
