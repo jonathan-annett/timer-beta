@@ -24,7 +24,7 @@
  *   ts_role    presenter | operator: as the timer last said
  *   ts_wants   presenter | operator: the role asked for when pairing
  *   ts_corner  tl | tr | bl | br
- *   ts_minimal '1': the operator's layout without its corner items (the glasses' menu)
+ *   ts_minimal '1': the operator's layout as just the countdown and message, in the corner (ts_corner)
  *   ts_taps    3 | 4 | 5: the taps an operator needs for Next (more makes an accident less likely)
  *   ts_see     a presenter's own choice of what shows beside the countdown, JSON {custom, item, notices}
  *              (default: the operator's messages only; the countdown's brightness already says last
@@ -85,7 +85,7 @@ const state: Record<string, unknown> = {}
 let glasses: Glasses | null = null
 let corner: Corner = 'tl'
 let hidden = false                    // a presenter's tap hides the countdown
-let minimal = false                   // an operator's layout without its corners (elapsed, total, started, ends)
+let minimal = false                   // an operator's layout as just the countdown and message, in the corner
 let tapsNeeded = 3                    // an operator's taps for Next (3–5, set on the phone page)
 // What a presenter sees beside the countdown (set on the phone page)
 interface See { custom: boolean; item: boolean; notices: boolean }
@@ -135,14 +135,21 @@ function glassesView(): Layout {
     const started = String(state.started || (DEMO ? '17:23:18' : '')), ends = String(state.ends || (DEMO ? '17:33:18' : ''))
     // Before the show: the auto start's state (the menu turns it on or off) where "started" goes
     const auto = String(state.rsAuto || ''), autoText = auto ? 'auto start ' + (auto.startsWith('on') ? 'on, ' : 'off, ') + auto.replace(/^\w+ /, '') : ''
-    const c = (t: string) => (minimal ? '' : t)
+    // Minimal view: the countdown in the corner (as a presenter's; Next corner moves it) with the message beside it
+    if (minimal) {
+      const top = p.v === 't'
+      return {
+        clk: { text: sb || clk, bright, ...p },
+        msg: { text: msg, bright: msgBright, h: p.h, v: top ? 44 : 186, lines: 2, width: 300, bottom: !top },
+      }
+    }
     return {
-      elapsed: { text: c(v ? 'elapsed ' + v.elapsed : ''), bright: 2, h: 'l', v: 't' },
-      total: { text: c(v ? v.total + ' total' : ''), bright: 2, h: 'r', v: 't' },
+      elapsed: { text: v ? 'elapsed ' + v.elapsed : '', bright: 2, h: 'l', v: 't' },
+      total: { text: v ? v.total + ' total' : '', bright: 2, h: 'r', v: 't' },
       msg: { text: msg, bright: msgBright, h: 'c', v: 84, lines: 2, bottom: true },
       clk: { text: sb ? clk + ' - ' + sb : clk, bright, h: 'c', v: 146 },
-      started: { text: c(autoText || (started ? (sb ? 'starts ' : 'started ') + started : '')), bright: auto.startsWith('on') ? 3 : 2, h: 'l', v: 'b' },
-      ends: { text: c(ends ? 'ends at ' + ends : ''), bright: 2, h: 'r', v: 'b' },
+      started: { text: autoText || (started ? (sb ? 'starts ' : 'started ') + started : ''), bright: auto.startsWith('on') ? 3 : 2, h: 'l', v: 'b' },
+      ends: { text: ends ? 'ends at ' + ends : '', bright: 2, h: 'r', v: 'b' },
     }
   }
   // A presenter: the countdown in the corner, and next to it what they've chosen to see (none in quiet mode)
@@ -174,7 +181,7 @@ function standbyText(ms: number): string {
   return ms > 0 ? plainWord('standbyIn', 'Standing by · starts in {t}').replace('{t}', secToStr(sec)) : plainWord('standby', 'Standing by')
 }
 
-// The glasses' menu for the role: a presenter's corner; an operator's show controls
+// The glasses' menu for the role: a presenter's corner; an operator's show controls (and the corner, for Minimal view)
 function menuFor(r: Mode): MenuItem[] {
   if (r !== 'operator') return [{ itemID: MENU.corner, itemName: 'Next corner' }]
   return [
@@ -185,10 +192,12 @@ function menuFor(r: Mode): MenuItem[] {
     { itemID: MENU.auto, itemName: 'Auto start on / off' },
     { itemID: MENU.minimal, itemName: 'Minimal view on / off' },
     { itemID: MENU.quiet, itemName: 'Quiet on / off' },
+    { itemID: MENU.corner, itemName: 'Next corner (minimal view)' },
   ]
 }
 function onMenu(id: number): void {
-  if (role !== 'operator') { if (id === MENU.corner) setCorner(CORNERS[(CORNERS.indexOf(corner) + 1) % CORNERS.length]); return }
+  if (id === MENU.corner) { setCorner(CORNERS[(CORNERS.indexOf(corner) + 1) % CORNERS.length]); return }   // an operator's: for Minimal view
+  if (role !== 'operator') return
   if (id === MENU.minimal) { minimal = !minimal; store.set('ts_minimal', minimal ? '1' : ''); render(); return }
   if (status !== 'online' || !link) return
   if (id === MENU.next) { link.command('runsheetnext'); showFlash('Next...') }
@@ -265,7 +274,7 @@ function render(): void {
   $('status').textContent = statusText()
   $('status').className = status === 'online' ? 'ok' : ''
   $('rolename').textContent = role === 'operator' ? 'Operator' : 'Presenter'
-  $('cornerbox').hidden = role === 'operator'
+  $('cornernote').hidden = role !== 'operator'
   document.querySelectorAll<HTMLButtonElement>('#corners button').forEach(b => b.classList.toggle('on', b.dataset.c === corner))
   document.querySelectorAll<HTMLInputElement>('input[name=wants]').forEach(i => { i.checked = i.value === wants })
   $('tapsbox').hidden = role !== 'operator'
@@ -496,5 +505,6 @@ w.__g2view = () => Object.fromEntries(Object.entries(glassesView()).filter(([, b
 w.__g2tap = onTap
 ;(window as unknown as { __g2hold: (down: boolean) => void }).__g2hold = onHold   // a hold starting / ending
 ;(window as unknown as { __g2menu: (id: number) => void }).__g2menu = onMenu   // a menu item chosen on the glasses
+;(window as unknown as { __g2where: () => Record<string, string> }).__g2where = () => Object.fromEntries(Object.entries(glassesView()).filter(([, b]) => b && b.text).map(([k, b]) => [k, b!.h + b!.v]))   // where each box sits
 ;(window as unknown as { __g2scanned: (t: string) => void }).__g2scanned = scanned   // a QR code's text, as the camera would read it
 ;(window as unknown as { __g2photo: (b: string) => Promise<string> }).__g2photo = b => codeFromPhoto(b)   // a photo's QR code

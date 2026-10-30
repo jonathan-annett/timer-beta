@@ -41,6 +41,10 @@ Decisions since this plan was written (they override the sections below):
   as set on the phone page) at once; standby shows on the glasses (presenter: in the corner; operator:
   after the countdown, the auto start's state bottom left). The menu is per role (`menuFor`).
   Rebuilding the page for text changes rebooted the glasses (fixed in 0.1.12: fixed slots, spaces).
+- **Minimal view in the corner (0.1.17):** an operator's Minimal view is the countdown in the corner
+  (`ts_corner`) with the message beside it, laid out like a presenter's; *Next corner* is on the
+  operator's menu too, and the phone page's corner picker shows for both roles. Toggling it rebuilds
+  the page (the boxes move): a user action, never in a hurry.
 - **Next, once Operator is proven on the glasses:** more operator commands, e.g. the phone remote's run
   sheet view and controls (Back / Pause / Next, nudges) on the plugin's phone page, so the operator
   needs only the Even app. (The owner finds typing the 6-digit code fine; the QR photo is a nice-to-have.)

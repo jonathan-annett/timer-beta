@@ -12,7 +12,7 @@
  * glasses' font). Only the latest layout is sent: one overtaken while a call was out is dropped.
  *
  * The glasses' menu (tap, then tap and hold: Even's own, with brightness and close) gets our items too
- * (setMenu: Next corner for a presenter; the show's controls for an operator).
+ * (setMenu: Next corner for a presenter; the show's controls and Next corner for an operator).
  * Hardware rules from the owner's g2-claude-starter: no zOrderIndex (stacking is declaration order),
  * text boxes a whole number of lines high (30 / 56 / 84 px) or a scrollbar shows, the page and menu as
  * plain objects (as its Mischief Mews sends them; confirmed on the glasses), centring with spaces.
