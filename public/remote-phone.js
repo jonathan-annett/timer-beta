@@ -722,12 +722,16 @@
   // (LAN) link: as binary data-channel messages, never through the server.
 
   let editorReady = false, editorSub = false;
-  function editorMode() { return desktop && view === 'runsheet' && role !== 'view'; }
+  // On a phone/tablet the run sheet view is the display, with ✎ Edit: the timer's operator has to
+  // allow it (editState from the timer's rs-edit), then the editor (laid out for a phone) replaces
+  // the display until Done. On a desktop the editor is always there, view only until allowed.
+  let editState = 'no', editMsg = 'no', phoneEdit = false, wantEdit = false;
+  function editorMode() { return (desktop || phoneEdit) && view === 'runsheet' && role !== 'view'; }
   function updateEditorMode() {
     const on = editorMode();
     document.body.classList.toggle('rs-editor', on);
     const f = $('rsframe');
-    if (on && !f.getAttribute('src')) { editorReady = false; f.src = 'runsheet.html?remote'; }
+    if (on && !f.getAttribute('src')) { editorReady = false; f.src = 'runsheet.html?remote' + (desktop ? '' : '&touch'); }
     if (on !== editorSub && peer) { editorSub = on; peer.send({ t: 'rs-sub', on }); }
     if (on) postLink();
   }
@@ -739,7 +743,38 @@
     postEditor({ t: 'rs-link', online: !!(ws && ws.readyState === WebSocket.OPEN && hostOnline && peer),
       lan: !!(peer && peer.mode === 'lan') });
   }
+  function onEditState(st) {
+    editMsg = ['no', 'asked', 'yes', 'refused', 'stopped'].includes(st) ? st : 'no';
+    editState = st === 'yes' || st === 'asked' ? st : 'no';
+    if (editState === 'yes' && wantEdit) { wantEdit = false; phoneEdit = true; }
+    if (editState === 'no') wantEdit = false;
+    $('rcednote').textContent = st === 'refused' ? 'The timer said no.' : st === 'stopped' ? 'The timer stopped your editing.' : '';
+    if (editState !== 'yes') phoneEdit = false;
+    renderEditBtn();
+    updateEditorMode();
+  }
+  function renderEditBtn() {
+    const waiting = wantEdit && editState === 'asked';
+    $('rcedit').textContent = waiting ? 'Asked the timer… (tap to cancel)' : '✎ Edit run sheet';
+    $('rcedit').classList.toggle('waiting', waiting);
+  }
+  pressable($('rcedit'), () => {
+    if (!peer) return;
+    if (editState === 'yes') { phoneEdit = true; updateEditorMode(); return; }
+    wantEdit = !(wantEdit && editState === 'asked');
+    $('rcednote').textContent = '';
+    peer.send({ t: 'rs-edit', on: wantEdit });
+    renderEditBtn();
+  });
+  function closePhoneEditor() {
+    if (!phoneEdit) return false;
+    phoneEdit = false;
+    updateEditorMode();
+    return true;
+  }
+  if (typeof BackGuard !== 'undefined') BackGuard.register(closePhoneEditor);   // Back leaves the editor
   function onEditorMessage(m) {
+    if (m.t === 'rs-edit') { onEditState(m.state); postEditor({ t: 'rs-edit', state: editMsg }); return; }
     if (m.t === 'rs-data') postEditor(m);
     else if (m.t === 'rs-refused') alert('The timer didn’t accept that change to the run sheet.');
     else if (m.t.startsWith('vup-') && upload && m.up === upload.up) upload.onReply(m);
@@ -750,10 +785,16 @@
     if (m.t === 'rs-ready') {
       editorReady = true;
       postLink();
+      postEditor({ t: 'rs-edit', state: editMsg });
       render();                                    // the countdown preview
       if (peer && editorMode()) { editorSub = true; peer.send({ t: 'rs-sub', on: true }); }   // a fresh copy for it
     } else if (!peer || role === 'view') {
       return;
+    } else if (m.t === 'rs-edit-ask') {
+      wantEdit = !!m.on;
+      peer.send({ t: 'rs-edit', on: !!m.on });
+    } else if (m.t === 'rs-done') {
+      closePhoneEditor();
     } else if (m.t === 'rs-save' && m.sheet && typeof m.sheet === 'object') {
       RemotePeer.sendBig(peer, { t: 'rs-save', sheet: m.sheet });
     } else if (m.t === 'rs-cmd' && typeof m.cmd === 'string') {

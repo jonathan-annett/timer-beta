@@ -4,7 +4,7 @@ PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
 SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing server (run_all.sh; wss://localhost:8787/ws = the Cloudflare Worker via wrangler dev)
 import sys, os, mimetypes, json, datetime
-from _proximity import approve   # the proximity check: type each new device's number on the timer
+from _proximity import approve, allow_edit   # the proximity check: type each new device's number on the timer
 from playwright.sync_api import sync_playwright
 ROOT=PUBLIC; OUT=OUTDIR; BASE="https://timer.sophtwhere.com/beta/"
 n=datetime.datetime.now(); base=n.hour*3600+n.minute*60
@@ -33,6 +33,12 @@ with sync_playwright() as p:
     d.goto(link); approve(t); d.wait_for_timeout(3000); d.click("#viewbtn"); d.click("#viewlist button:has-text('Run sheet')"); d.wait_for_timeout(3500)
     F=lambda: d.frame(url=lambda u: 'runsheet.html' in u)
     sheet=lambda: {it["id"]:(it.get("start"),it.get("duration"),it["name"]) for it in json.loads(t.evaluate("localStorage.runsheet"))["items"]}
+    # View only until the timer allows editing: a change is put back and the timer's sheet is untouched
+    print("view only:", F().text_content("#remote-tag"), "| name readOnly:", F().evaluate("document.querySelector('#rs-table tr[data-id=c] [data-field=name]').readOnly"))
+    F().evaluate("(i=>{i.readOnly=false;i.value='Hacked';i.dispatchEvent(new Event('change',{bubbles:true}))})(document.querySelector('#rs-table tr[data-id=c] [data-field=name]'))"); d.wait_for_timeout(1500)
+    print(" forced change -> timer sheet c:", sheet()["c"][2], "| editor shows:", F().input_value("#rs-table tr[data-id=c] [data-field=name]"))
+    F().click("#remote-tag button"); allow_edit(t); d.wait_for_timeout(1500)
+    print("asked, allowed:", F().text_content("#remote-tag"), "| panel:", t.text_content("#phone-panel .pp-peers")[:80])
     snap=lambda: t.evaluate("processTimerApiMessage({cmd:'snapshot'})")
     def edit(rid, field, val):
         sel=f"#rs-table tr[data-id={rid}] [data-field={field}]"; F().fill(sel, val); F().press(sel, "Tab"); d.wait_for_timeout(500)
@@ -45,7 +51,13 @@ with sync_playwright() as p:
     edit("b","start",hm(T)); F().click(".ask button:has-text('Yes')"); d.wait_for_timeout(2500)
     s2=sheet(); print("remote next start yes -> b:", hm(s2["b"][0]), "typed", hm(T), "| timer:", t.text_content("#remain_disp"), "| ends", t.text_content("#ends_disp") if t.query_selector('#ends_disp') else '')
     t.evaluate("window.runsheet.next()"); d.wait_for_timeout(2500)
-    print("remote a locked:", F().evaluate("[...document.querySelectorAll('#rs-table tr[data-id=a] input')].every(i=>i.readOnly)"))
+    print("remote a locked:", F().evaluate("[...document.querySelectorAll('#rs-table tr[data-id=a] input[data-field]')].every(i=>i.readOnly)"),
+          "| tick disabled:", F().evaluate("document.querySelector('#rs-table tr[data-id=a] input.hard').disabled"),
+          "| moves disabled:", F().evaluate("[...document.querySelectorAll('#rs-table tr[data-id=a] button[data-act=up], #rs-table tr[data-id=a] button[data-act=down]')].every(b=>b.disabled)"))
+    # A save that changes an item that has run (or the live one) is held by the timer: only hiding a run item counts
+    forged=json.loads(t.evaluate("localStorage.runsheet")); forged["items"][0]["name"]="Rewritten"; forged["items"][0]["duration"]=60; forged["items"][1]["name"]="Live renamed"
+    F().evaluate("s=>parent.postMessage({t:'rs-save', sheet:s}, location.origin)", forged); d.wait_for_timeout(2500)
+    s3=sheet(); print("forged save -> a:", s3["a"][2], s3["a"][1], "| b (live):", s3["b"][2], "| editor shows a:", F().input_value("#rs-table tr[data-id=a] [data-field=name]"))
     F().click("#rs-table tr[data-id=a] button[data-act=del]"); d.wait_for_timeout(2500)
     print("remote del a -> hidden on timer:", json.loads(t.evaluate("localStorage.runsheet"))["items"][0].get("hidden"))
 print("errors:", errs)

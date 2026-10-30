@@ -273,6 +273,7 @@
       const known = m.t === 'hello' && typeof m.token === 'string' ? approvedEntry(m.token) : null;
       if (known) {
         e.approved = true; e.token = m.token; e.name = known.name || '';
+        e.edit = known.edit ? 'yes' : 'no';      // allowed to edit the run sheet (kept with its approval)
         updateApproved(m.token, { seen: Date.now(), role: e.role });
       } else if (m.t === 'hello') {
         e.peer.send({ t: 'pin-required' });
@@ -304,6 +305,7 @@
       e.sent = {}; e.faces = []; e.varsSent = {};
       e.clock = m.clock === 1;                   // counts the countdown itself (remote-clock.js)
       pushTo(e, true);
+      if (e.role === 'control' || e.role === 'admin') e.peer.send({ t: 'rs-edit', state: e.edit || 'no' });
       panelConnected();
     } else if (e.role === 'companion' && m.t === 'api') {
       apiFromCompanion(e, m);
@@ -338,15 +340,17 @@
       adopt(e, m);                             // this computer is the "other computer"
     } else if (m.t === 'part') {               // a piece of a big message (the run sheet)
       const whole = e.join(m);
-      if (whole && whole.t === 'rs-save') rsSave(e, whole);
+      if (whole && whole.t === 'rs-save' && mayEdit(e)) rsSave(e, whole);
     } else if (m.t === 'rs-sub') {
       rsSubscribe(e, !!m.on);
+    } else if (m.t === 'rs-edit') {
+      editRequest(e, !!m.on);
     } else if (m.t === 'rs-save') {
-      rsSave(e, m);
+      if (mayEdit(e)) rsSave(e, m);
     } else if (m.t === 'rs-cmd') {
-      rsCommand(m);
+      if (!EDIT_CMDS.has(m.cmd) || mayEdit(e)) rsCommand(m);
     } else if (m.t === 'vup-start') {
-      uploadStart(e, m, via);
+      if (mayEdit(e)) uploadStart(e, m, via);
     } else if (m.t === 'vup-cancel') {
       if (e.upload && e.upload.up === m.up) dropUpload(e, null);
     }
@@ -399,6 +403,42 @@
   // window's own writes give no storage events), and sends back a whole edited sheet or an
   // editor command. Everything is checked: the sheet is rebuilt field by field, and videos can
   // only be ones already on the sheet or uploaded below.
+
+  // Editing needs the operator's say-so: a device asks ({t:'rs-edit', on}), the share panel shows
+  // Allow / Refuse, and the answer is kept with the device's approval (remote_approved .edit) until
+  // the operator clicks Stop editing (or revokes the device). Without it the editor is view only:
+  // the sheet, uploads and the commands that change the sheet or the show are refused here.
+  // Next, Back, Pause, Restart, ▶ and run sheet mode are control, not editing.
+  const EDIT_CMDS = new Set(['reset', 'autostart', 'curdur', 'curend', 'livename']);
+  function mayEdit(e) {
+    if (e.edit === 'yes') return true;
+    e.peer.send({ t: 'rs-edit', state: e.edit || 'no' });
+    return false;
+  }
+  function editRequest(e, on) {
+    if (e.role !== 'control' && e.role !== 'admin') return;
+    if (on && e.edit !== 'yes' && e.edit !== 'asked') { e.edit = 'asked'; openPanel(); }
+    else if (!on && e.edit === 'asked') e.edit = 'no';
+    e.peer.send({ t: 'rs-edit', state: e.edit || 'no' });
+    renderPanel();
+  }
+  function answerEdit(e, yes) {
+    if (!e || e.edit !== 'asked') return;
+    e.edit = yes ? 'yes' : 'no';
+    if (yes && e.token) updateApproved(e.token, { edit: true });
+    e.peer.send({ t: 'rs-edit', state: yes ? 'yes' : 'refused' });
+    if (yes && e.rsSub) rsPush(e, true);
+    renderPanel();
+  }
+  function stopEditing(token) {
+    updateApproved(token, { edit: false });
+    for (const e of peers.values()) {
+      if (e.token !== token || e.edit !== 'yes') continue;
+      e.edit = 'no';
+      e.peer.send({ t: 'rs-edit', state: 'stopped' });
+    }
+    renderPanel();
+  }
 
   let rsTimer = null;
   const rsRaw = () => ({
@@ -479,10 +519,38 @@
     });
     return text;
   }
+  // Items that have run, and the one running now, stay as the timer has them: a remote save can only
+  // hide a finished one (its ✕). The editor shows them read-only; this holds whatever it sends.
+  // (The live item changes through its own commands: curdur, curend, livename.)
+  function keepRun(sheet, current) {
+    const st = parseOr(localStorage.getItem('runsheet_state'), {});
+    const old = Array.isArray(current.items) ? current.items : [];
+    if (!st.active || !old.length) return sheet;
+    const ran = new Set((Array.isArray(st.log) ? st.log : []).map(x => x && x.id));
+    const cur = st.finished ? old.length : old.findIndex(it => it.id === st.currentId);
+    if (cur < 0) return sheet;
+    const fixed = new Map();
+    old.forEach((it, i) => { if ((i < cur && ran.has(it.id)) || (i === cur && !st.finished)) fixed.set(it.id, { it, i, now: i === cur }); });
+    if (!fixed.size) return sheet;
+    const items = sheet.items.map(it => {
+      const f = fixed.get(it.id);
+      if (!f) return it;
+      const out = Object.assign({}, f.it);
+      if (!f.now && it.hidden === true) out.hidden = true;
+      return out;
+    });
+    for (const [id, f] of fixed) if (!items.some(it => it.id === id)) items.splice(Math.min(f.i, items.length), 0, Object.assign({}, f.it, f.now ? {} : { hidden: true }));
+    return Object.assign({}, sheet, { items });
+  }
   function rsSave(e, m) {
-    const sheet = cleanSheet(m.sheet, parseOr(localStorage.getItem('runsheet'), { items: [] }));
+    const current = parseOr(localStorage.getItem('runsheet'), { items: [] });
+    let sheet = cleanSheet(m.sheet, current);
     if (!sheet) { e.peer.send({ t: 'rs-refused' }); return; }
-    e.rsSent.sheet = writeSheet(sheet);    // the sender has it already: don't echo it back mid-typing
+    const asSent = JSON.stringify(sheet);
+    sheet = keepRun(sheet, current);
+    const text = writeSheet(sheet);
+    // The sender has it already: don't echo it back mid-typing (unless run items were put back)
+    e.rsSent.sheet = JSON.stringify(sheet) === asSent ? text : '';
   }
   function rsCommand(m) {
     const rs = window.runsheet;
@@ -891,12 +959,14 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       if (!b) return;
       const row = b.closest('[data-id]');
       const e = peers.get(row.dataset.id);
-      if (b.dataset.act === 'ok') approvePeer(e, row.querySelector('input').value.trim());
+      if (b.dataset.act === 'edit-ok' || b.dataset.act === 'edit-no') answerEdit(e, b.dataset.act === 'edit-ok');
+      else if (b.dataset.act === 'ok') approvePeer(e, row.querySelector('input').value.trim());
       else rejectPeer(e);
     });
     el.querySelector('.pp-pending').addEventListener('keydown', ev => {
       if (ev.key !== 'Enter' || ev.target.tagName !== 'INPUT') return;
       const row = ev.target.closest('[data-id]');
+      if (!row.querySelector('input')) return;
       approvePeer(peers.get(row.dataset.id), ev.target.value.trim());
     });
     el.querySelector('.pp-peers').addEventListener('click', ev => {
@@ -904,6 +974,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       if (!b) return;
       const token = b.dataset.token;
       if (b.dataset.dev === 'rename') renameDevice(token);
+      else if (b.dataset.dev === 'noedit') stopEditing(token);
       else if (armed(token)) { armedRevoke.delete(token); revokeDevice(token); }
       else { armedRevoke.set(token, Date.now()); renderPanel(); setTimeout(renderPanel, 3100); }
     });
@@ -1023,17 +1094,20 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     // Rebuilt only when the requests change (a rebuild loses focus and the caret mid-typing). A new
     // request, or the panel being opened with one waiting, puts the caret in its box (touch too),
     // unless someone is typing in another field.
-    const sig = rows.map(e => e.id + '|' + (e.suggest || '') + '|' + e.role).join(',');
+    const asks = [...peers.values()].filter(e => e.approved && !e.rejected && e.edit === 'asked');   // want to edit the run sheet
+    const sig = rows.map(e => e.id + '|' + (e.suggest || '') + '|' + e.role).join(',') + '/' + asks.map(e => e.id + '|' + deviceLabel(e)).join(',');
     const opened = !el.hidden && el.dataset.shown !== '1';
     el.dataset.shown = el.hidden ? '' : '1';
     const changed = pend.dataset.sig !== sig;
     if (changed) {
       const keep = {}, had = pend.contains(document.activeElement) ? document.activeElement.closest('[data-id]')?.dataset.id : null;
-      pend.querySelectorAll('[data-id]').forEach(r => { keep[r.dataset.id] = r.querySelector('input').value; });
+      pend.querySelectorAll('[data-id]').forEach(r => { const i = r.querySelector('input'); if (i) keep[r.dataset.id] = i.value; });
       pend.dataset.sig = sig;
       pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.suggest ? esc(e.suggest) + (e.role === 'view' ? ' (a display)' : '') : e.role === 'view' ? 'A display' : e.role === 'companion' ? 'Companion' : e.role === 'pptx' ? 'A PowerPoint computer' : 'A phone'} wants to connect.</b> Type the number it shows${e.role === 'companion' ? ' (in its connection log)' : e.role === 'pptx' ? ' (on its receiver page or in the player window)' : ''}. A wrong number disconnects it:
         <span class="pp-askrow"><input inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="###" value="${esc(keep[e.id] || '')}">
-        <button data-act="ok">Let it in</button><button data-act="no">Refuse</button></span></div>`).join('');
+        <button data-act="ok">Let it in</button><button data-act="no">Refuse</button></span></div>`).join('') +
+        asks.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${esc(deviceLabel(e))} wants to edit the run sheet.</b> You can stop it later (Stop editing, below).
+        <span class="pp-askrow"><button data-act="edit-ok">Allow</button><button data-act="edit-no">Refuse</button></span></div>`).join('');
       const back = had && pend.querySelector(`[data-id="${had}"] input`);
       if (back) { back.focus(); back.setSelectionRange(back.value.length, back.value.length); }
     }
@@ -1052,12 +1126,13 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       pptxLines + live.map(e => `<div class="pp-dev"><span><b>${esc(deviceLabel(e))}</b> · ` +
         (!e.approved ? '<span class="pp-warn">waiting for its number</span> · ' : '') +
         (e.role === 'view' ? '<span class="pp-view">view only</span> · ' : e.role === 'admin' ? '<span class="pp-admin">admin</span> · ' : e.role === 'companion' ? 'Companion · ' : '') +
+        (e.edit === 'yes' ? '<span class="pp-admin">editing</span> · ' : '') +
         `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : e.peer.mode === 'p2p' ? '<b class="pp-lan" title="A direct link over the internet: not the same network">direct</b>' : '<b class="pp-srv">via server</b>'}</span>` +
-        (e.approved && e.token ? deviceButtons(e.token) : '') + '</div>').join('') +
+        (e.approved && e.token ? deviceButtons(e.token, e.edit === 'yes') : '') + '</div>').join('') +
       (lanCount < [...peers.values()].filter(e => e.role !== 'pptx').length ? '<div class="pp-hint">"via server": no direct link could be made (a network in between blocks it).</div>' : '') +
       (shareNote ? `<div class="pp-hint">${shareNote}</div>` : '')) +
       (away.length ? `<details class="pp-known"${knownOpen ? ' open' : ''}><summary>Known devices, not connected (${away.length})</summary>` +
-        away.map(x => `<div class="pp-dev"><span><b>${esc(x.name || 'Unnamed device')}</b>${x.role ? ' · ' + esc(deviceKind(x.role)) : ''}${x.seen ? ' · last seen ' + when(x.seen) : ''}</span>${deviceButtons(x.t)}</div>`).join('') +
+        away.map(x => `<div class="pp-dev"><span><b>${esc(x.name || 'Unnamed device')}</b>${x.role ? ' · ' + esc(deviceKind(x.role)) : ''}${x.edit ? ' · can edit' : ''}${x.seen ? ' · last seen ' + when(x.seen) : ''}</span>${deviceButtons(x.t, !!x.edit)}</div>`).join('') +
         '</details>' : '');
   }
 
@@ -1156,8 +1231,10 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     const d = new Date(t), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     return d.toDateString() === new Date().toDateString() ? hm : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' + hm;
   }
-  function deviceButtons(token) {
-    return `<span class="pp-devbtns"><button data-dev="rename" data-token="${esc(token)}" title="Give this device a name">Rename</button>` +
+  function deviceButtons(token, editing) {
+    return `<span class="pp-devbtns">` +
+      (editing ? `<button data-dev="noedit" data-token="${esc(token)}" title="It can still see the run sheet; to edit again it has to ask">Stop editing</button>` : '') +
+      `<button data-dev="rename" data-token="${esc(token)}" title="Give this device a name">Rename</button>` +
       `<button data-dev="revoke" data-token="${esc(token)}" title="Disconnect this device and remove its approval (click twice)"${armed(token) ? ' class="pp-armed"' : ''}>${armed(token) ? 'Sure?' : 'Revoke'}</button></span>`;
   }
   const pending = () => [...peers.values()].filter(e => !e.approved && e.pin && !e.rejected);
@@ -1167,7 +1244,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     const token = randomString(24, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789');
     const now = Date.now();
     saveApproved(approvedList().concat({ t: token, name: e.suggest || '', role: e.role, added: now, seen: now }));
-    e.approved = true; e.pin = null; e.token = token; e.name = e.suggest || '';
+    e.approved = true; e.pin = null; e.token = token; e.name = e.suggest || ''; e.edit = 'no';
     e.peer.send({ t: 'pin-ok', token });       // the phone says hello again and gets its state
     renderPanel();
   }

@@ -27,6 +27,14 @@
   const REMOTE = new URLSearchParams(location.search).has('remote') && window.parent !== window;
   const toParent = msg => window.parent.postMessage(msg, location.origin);
   let link = { online: false, lan: false };          // remote mode: the link to the timer
+  // Remote mode: editing needs the timer operator's say-so (remote-control.js editRequest). Until then
+  // the editor is view only (Next, Back, Pause and Restart still work). editState: 'no', 'asked', 'yes',
+  // 'refused' or 'stopped' (the last two: the operator's answer, shown until asked again).
+  const TOUCH_UI = REMOTE && new URLSearchParams(location.search).has('touch');   // in the phone remote
+  let editState = REMOTE ? 'no' : 'yes';
+  let canEdit = !REMOTE;
+  let lastSheet = '';                                // remote: the sheet as the timer has it (to undo refused edits)
+  const EDIT_CMDS = ['reset', 'autostart', 'curdur', 'curend', 'livename'];   // as remote-control.js
 
   let sheet = REMOTE ? { title: '', perItem: 20, items: [] } : readJSON(SHEET_KEY, { title: '', perItem: 20, items: [] });
   let state = REMOTE ? {} : readJSON(STATE_KEY, {});
@@ -45,7 +53,8 @@
   // focus is moving (Tab), and rebuilding the table synchronously would drop the new focus.
   let renderPending = false;
   function saveSheet() {
-    if (REMOTE) toParent({ t: 'rs-save', sheet });
+    if (!canEdit) { refused(); return; }
+    if (REMOTE) { toParent({ t: 'rs-save', sheet }); lastSheet = JSON.stringify(sheet); }
     else localStorage.setItem(SHEET_KEY, JSON.stringify(sheet));
     if (!renderPending) {
       renderPending = true;
@@ -54,6 +63,7 @@
   }
 
   function send(cmd, extra) {
+    if (!canEdit && EDIT_CMDS.includes(cmd)) { refused(); return; }
     if (REMOTE) { toParent(Object.assign({ t: 'rs-cmd', cmd }, extra || {})); return; }
     localStorage.setItem(CMD_KEY, JSON.stringify(Object.assign({ cmd, nonce: Date.now() + Math.random() }, extra || {})));
   }
@@ -89,6 +99,7 @@
       const m = e.data;
       if (m.t === 'rs-data') {
         if (m.sheet && Array.isArray(m.sheet.items)) {
+          lastSheet = JSON.stringify(m.sheet);
           sheet = m.sheet;
           sheet.items.forEach(it => { if (!it.id) it.id = C.newId(); });
           if (!sheet.perItem) sheet.perItem = 20;
@@ -96,6 +107,13 @@
         if (m.state) { state = m.state; state.history = new Array(Math.min(1000, m.state.historyLen || 0)); }
         if (m.live) live = m.live;
         if (m.sheet) renderAll(); else { renderStatus(); renderLive(); }
+      } else if (m.t === 'rs-edit') {
+        const was = canEdit;
+        editState = ['no', 'asked', 'yes', 'refused', 'stopped'].includes(m.state) ? m.state : 'no';
+        canEdit = editState === 'yes';
+        if (was && !canEdit) undoLocal();
+        renderEditBar();
+        renderAll();
       } else if (m.t === 'rs-link') {
         link = { online: !!m.online, lan: !!m.lan };
         renderLive();
@@ -111,6 +129,34 @@
         renderAll();
       }
     });
+  }
+
+  // ─── View only (remote, until the timer allows editing) ───────────────────
+  function renderEditBar() {
+    document.documentElement.classList.toggle('viewonly', !canEdit);
+    $('title').readOnly = $('per-item').readOnly = !canEdit;
+    const tag = $('remote-tag');
+    if (!tag) return;
+    const ask = label => ` <button>${label}</button>`;
+    tag.classList.toggle('ro', !canEdit);
+    tag.innerHTML = canEdit ? 'Editing the timer on another computer'
+      : editState === 'asked' ? 'View only · asked the timer to allow editing…'
+      : editState === 'refused' ? 'View only · the timer said no.' + ask('Ask again')
+      : editState === 'stopped' ? 'View only · the timer stopped your editing.' + ask('Ask again')
+      : 'View only' + ask('Ask to edit');
+  }
+  // A change while view only: put the sheet back as the timer has it, and point at the bar
+  function undoLocal() {
+    if (!REMOTE || !lastSheet) return;
+    try { sheet = JSON.parse(lastSheet); } catch (_) { return; }
+    sheet.items.forEach(it => { if (!it.id) it.id = C.newId(); });
+    if (!sheet.perItem) sheet.perItem = 20;
+  }
+  function refused() {
+    undoLocal();
+    setTimeout(renderAll, 0);
+    const tag = $('remote-tag');
+    if (tag) { tag.classList.remove('nudge'); void tag.offsetWidth; tag.classList.add('nudge'); }
   }
 
   // ─── Planned times (mirrors runsheet.js) ──────────────────────────────────
@@ -317,7 +363,7 @@
       tr.querySelector('td.num').title = canPick(i) ? 'Click to select it for scaling (Shift+click: a range)' : '';
       tr.querySelectorAll('input[data-field]').forEach(inp => {
         const ro = role === 'done' || it.hidden || (role === 'now' && inp.dataset.field === 'start');
-        inp.readOnly = ro || scaling;
+        inp.readOnly = ro || scaling || !canEdit;
         inp.title = scaling ? 'Apply or cancel the scaling first' : ro ? (role === 'now' ? 'Running now: it started when it started' : 'Already run: kept as it happened') : (inp.classList.contains('invalid') ? inp.title : '');
       });
       tr.querySelectorAll('td.vid button, td.vid select, td.deck button').forEach(b => { b.disabled = role === 'done' || it.hidden || scaling; });
@@ -330,7 +376,7 @@
         const armedNow = i === firstIdx ? active && !started && !state.finished : started && i > curIdx;
         // An item without a typed start gets the one it shows when ticked, so it needs a clock time
         const noClock = it.startDerived && !it.auto && (provisional() || plannedMs(it.planned) == null);
-        hard.disabled = role === 'done' || role === 'now' || it.hidden || scaling || noClock;
+        hard.disabled = role === 'done' || role === 'now' || it.hidden || scaling || noClock || !canEdit;
         hard.classList.toggle('idle', !armedNow);
         hard.title = noClock && !(role === 'done' || role === 'now' || it.hidden || scaling)
           ? 'Hard start: needs a clock time. Type a start time, or start the show first'
@@ -443,6 +489,7 @@
     const auto = $('autostart'), at = state.active && Number.isFinite(live.autoAt) ? live.autoAt : null;
     auto.hidden = at == null;
     if (at != null) { auto.querySelector('span').textContent = 'Auto start at ' + clockOf(at); auto.querySelector('input').checked = !!live.auto; }
+    auto.querySelector('input').disabled = !canEdit;
     $('conn').classList.toggle('show', !controllerAlive());
     if (REMOTE) $('conn').textContent = 'Not connected to the timer right now: reconnecting… Changes made now may not reach it.';
   }
@@ -514,6 +561,7 @@
     const item = sheet.items.find(it => it.id === id);
     if (!item || !file) return;
     if (!/^video\//.test(file.type)) { alert('That isn’t a video file.'); return; }
+    if (!canEdit) return refused();
     if (REMOTE) return sendVideo(id, file);
     if (!window.videoStore) { alert('Videos can’t be stored in this browser.'); return; }
     busy.add(id); renderAll();
@@ -602,6 +650,7 @@
     if (!item || !file) return;
     const kind = isDeck(file) ? 'deck' : isHolding(file) ? 'holding' : null;
     if (!kind) { alert('That isn’t a PowerPoint file (.pptx, .ppsx, .ppt …) or an image for a holding slide (.png, .jpg).'); return; }
+    if (!canEdit) return refused();
     if (REMOTE) return sendDeck(id, file, kind);
     if (!window.videoStore) { alert('Slides can’t be stored in this browser.'); return; }
     deckBusy.add(id); renderAll();
@@ -766,7 +815,7 @@
 
   function canPick(i) {
     const it = norm.items[i];
-    if (!it || it.isEnd || it.hidden || it.video || state.finished) return false;
+    if (!it || it.isEnd || it.hidden || it.video || state.finished || !canEdit) return false;
     const role = rowRole(i);
     return role !== 'done' && role !== 'now';
   }
@@ -1346,8 +1395,16 @@
     document.title = (location.hostname || 'Timer') + ' - Run sheet (remote)';
     const tag = document.createElement('span');
     tag.id = 'remote-tag';
-    tag.textContent = 'Editing the timer on another computer';
     $('live').before(tag);
+    tag.addEventListener('click', e => { if (e.target.closest('button')) { toParent({ t: 'rs-edit-ask', on: true }); } });
+    if (TOUCH_UI) {                                  // the phone remote: Done goes back to its run sheet display
+      document.documentElement.classList.add('touchui');
+      const done = document.createElement('button');
+      done.id = 'btn-done'; done.textContent = 'Done';
+      done.addEventListener('click', () => toParent({ t: 'rs-done' }));
+      $('title').before(done);
+    }
+    renderEditBar();
     toParent({ t: 'rs-ready' });
   }
   renderAll();

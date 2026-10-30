@@ -199,6 +199,10 @@
     #rsvctl .rc5 button { font-size: 0.8em; padding: 0.6em 0.1em; white-space: normal; line-height: 1.1; }   /* "Catch up" may wrap rather than clip */
     #rsvctl .go { background: #0e3a12; border-color: #2a6a2a; color: #9cf59c; }
     #rsvctl #rcpause.paused { background: #3a2a00; border-color: #a07a20; color: #ffd27a; }
+    #rsvctl #rcedit { font-size: 0.9em; padding: 0.55em 0.2em; }
+    #rsvctl #rcedit.waiting { background: #3a2a00; border-color: #a07a20; color: #ffd27a; }
+    #rcednote { font-size: 0.8em; color: #ffd27a; text-align: center; }
+    #rcednote:empty { display: none; }
     #rsvctl #rccatch.on { background: #0b3d5c; border-color: #2a6a9a; color: #9fd8ff; }
     #rsvempty { color: var(--dim); text-align: center; margin-top: 20vh; font-size: 1.2em; }
     /* Wide screens (a tablet on the green room wall): status on the left, schedule on the right */
@@ -328,6 +332,8 @@
           <button id="rcp10" title="Nudge the end 10 seconds later">+10 s</button>
           <button id="rcp60" title="Nudge the end a minute later (the countdown runs slow until it gets there)">+1 min</button>
         </div>
+        <button id="rcedit">✎ Edit run sheet</button>
+        <div id="rcednote"></div>
       </div>
     </div>
 
@@ -405,6 +411,6 @@
   <script src="deck-face.js?v=c546849b"></script>
   <script src="remote-peer.js?v=a4dfabd5"></script>
   <script src="remote-clock.js?v=29d80ee8"></script>
-  <script src="remote-phone.js?v=3c5589ae"></script>
+  <script src="remote-phone.js?v=473b0dbf"></script>
 </body>
 </html>

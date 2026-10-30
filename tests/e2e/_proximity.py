@@ -15,3 +15,10 @@ def approve(t, expect=1, timeout=10000):
         t.wait_for_timeout(200)
     t.wait_for_timeout(500)
     return len(done)
+
+# Run sheet editing (remote-control.js editRequest): a device asks, the share panel shows Allow / Refuse.
+def allow_edit(t, yes=True, timeout=10000):
+    sel = "#phone-panel .pp-pending button[data-act=%s]" % ("edit-ok" if yes else "edit-no")
+    t.wait_for_selector(sel, timeout=timeout)
+    t.click(sel)
+    t.wait_for_timeout(500)

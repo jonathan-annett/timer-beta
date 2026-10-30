@@ -187,6 +187,65 @@
     .ask-btns { display: flex; gap: 0.6rem; justify-content: flex-end; flex-wrap: wrap; }
     .ask-btns button { padding: 0.5rem 1rem; }
     #btn-help { width: 2.2rem; padding: 0.3rem 0; font-weight: bold; }
+
+    /* Remote, until the timer allows editing (runsheet-editor.js renderEditBar): view only */
+    #remote-tag.ro { color: var(--warn); border-color: #6b5a12; }
+    #remote-tag button { font-size: 0.857rem; padding: 0.071rem 0.571rem; margin-left: 0.286rem; color: var(--text); }
+    @keyframes nudge { 0%, 100% { transform: none; } 25% { transform: translateX(-0.3rem); } 75% { transform: translateX(0.3rem); } }
+    #remote-tag.nudge { animation: nudge 0.25s 2; }
+    html.viewonly #add-row, html.viewonly th.delall button, html.viewonly #imp, html.viewonly #btn-reset,
+    html.viewonly td.acts button:not(.go), html.viewonly td.vid button, html.viewonly td.vid select,
+    html.viewonly td.deck button { display: none; }
+    html.viewonly #rs-table input:hover { border-color: transparent; }
+    #btn-done { font-weight: bold; }
+
+    /* A phone (or a narrow window): one card per item, page scrolling, the side panels below.
+       Sized in px from here (the vw root would be tiny); inputs 16px so iOS doesn't zoom on focus. */
+    @media (max-width: 760px) {
+      html { font-size: 14px; }
+      html, body { height: auto; }
+      .app { display: block; height: auto; }
+      header { gap: 0.5rem; padding: 0.5rem 0.75rem; }
+      header #title { flex: 1 1 100%; max-width: none; width: auto; order: -1; }
+      html.touchui header #title { flex-basis: 0; }
+      html.touchui #btn-done { order: -2; }
+      #clock { min-width: 7rem; }
+      #live { margin-left: 0; flex-basis: 100%; white-space: normal; }
+      #remote-tag { white-space: normal; }
+      .transport { padding: 0.5rem 0.75rem; gap: 0.5rem; }
+      .transport .hint { display: none; }
+      .transport .now-next { flex-basis: 100%; order: 5; margin-left: 0; white-space: normal; }
+      .transport button { padding: 0.6rem 1rem; }
+      .main { display: block; }
+      .sheet { overflow: visible; padding: 0.25rem 0.5rem 1rem; }
+      aside { border-left: 0; border-top: 1px solid var(--line); }
+      input, textarea { font-size: 16px; }
+      #rs-table, #rs-table tbody { display: block; }
+      #rs-table thead tr { display: flex; justify-content: flex-end; }
+      #rs-table thead th { display: none; position: static; }
+      #rs-table thead th.delall { display: block; }
+      #rs-table tr { display: grid; grid-template-columns: 2rem 7.6rem minmax(0, 1fr) auto;
+        grid-template-areas: "num start name name" ". dur ends acts" ". st st st";
+        align-items: center; border-bottom: 1px solid var(--line); padding: 0.25rem 0; }
+      #rs-table td { display: block; width: auto !important; min-width: 0 !important; border: 0; padding: 0.1rem 0.2rem; }
+      #rs-table td.num { grid-area: num; }
+      #rs-table td.start { grid-area: start; }
+      #rs-table td.name { grid-area: name; }
+      #rs-table td.dur { grid-area: dur; display: flex; align-items: center; gap: 0.3rem; }
+      #rs-table td.ends { grid-area: ends; display: flex; align-items: center; gap: 0.3rem; }
+      #rs-table td.dur::before { content: 'for'; color: var(--faint); font-size: 0.8rem; }
+      #rs-table td.ends:not(:empty)::before { content: 'ends'; color: var(--faint); font-size: 0.8rem; }
+      #rs-table td.status { grid-area: st; }
+      #rs-table td.status:empty { display: none; }
+      #rs-table td.acts { grid-area: acts; }
+      #rs-table td.acts button { padding: 0.4rem 0.55rem; font-size: 1rem; }
+      #rs-table td.vid, #rs-table td.deck { display: none; }     /* videos and slides: from a computer */
+      #rs-table tr.endrow { grid-template-areas: "num start name name"; }
+      #rs-table input.hard { width: 1.2rem; height: 1.2rem; }
+      #rs-table td.start input[data-field=start] { width: calc(100% - 1.7rem); }
+      .add-row { padding: 0.6rem 1rem; }
+      .ask-box { margin: 0 0.75rem; }
+    }
   </style>
   <script src="features.js?v=4136908a"></script>
   <script src="key-focus.js?v=4b14eb98"></script>
@@ -288,6 +347,6 @@
   <script src="help-overlay.js?v=8a5dbd9d"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="runsheet-core.js?v=d0fec52c"></script>
-  <script src="runsheet-editor.js?v=e4c949fd"></script>
+  <script src="runsheet-editor.js?v=4fdd0ba8"></script>
 </body>
 </html>
