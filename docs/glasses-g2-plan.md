@@ -19,7 +19,16 @@ Decisions since this plan was written (they override the sections below):
   Network whitelist: `https://beta.timed-show.com`, `wss://beta.timed-show.com`.
 - **No documentation in the web app** until the plugin reaches beta proper; the instructions live
   on the plugin's phone page.
-- **Next versions:** two modes chosen on the phone page. *Controller* (the operator wears them,
+- **The role is set on the timer, never by the glasses** (the owner's rule: a presenter mustn't be
+  able to take over the timer). The glasses may say which mode they'd like (`mode` in the claim and
+  hello), but the operator chooses Presenter or Controller when approving them in the share panel
+  (and can change it later in the device list). Only Controller gets a link that can work the timer;
+  a presenter's glasses only ever hold a view-only key. So the claim is granted a **view-only** link
+  by default and control is granted by the timer separately (e.g. a new `{t:'role'}` message carrying
+  a control link after the operator picks Controller), not chosen on the phone page.
+- **Corner only** on the phone page and the glasses' menu (*Next corner*); no size choice (the owner
+  decided to keep it simple; bigger digits would need drawn images, 288×144 max per image box).
+- **Next versions:** two modes, the role chosen on the timer (above). *Controller* (the operator wears them,
   e.g. while vision switching): 3+ rapid taps fire Next, every other input ignored; needs the
   timer to grant a control link when the claim says `mode:'controller'` (forward `client`/`mode`
   in `remote-server.js` and the Worker's claim → the host's `{type:'claim', id, client, mode}`).

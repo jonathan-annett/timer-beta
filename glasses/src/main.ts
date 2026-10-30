@@ -15,7 +15,7 @@
 import { waitForEvenAppBridge, OsEventTypeList, type EvenAppBridge } from '@evenrealities/even_hub_sdk'
 import { claim, CLAIM_ERRORS, TimerLink, type Paired, type Status, type Mode } from './link'
 import { Clock, secToStr } from './clock'
-import { Glasses, CORNERS, type Corner, type View } from './glasses'
+import { Glasses, CORNERS, MENU, type Corner, type View } from './glasses'
 
 declare const __APP_VERSION__: string
 const MODE: Mode = 'presenter'
@@ -145,14 +145,12 @@ function onCode(): void {
   })
 }
 
+// The corner: from the phone page, or Next corner in the glasses' menu
+function setCorner(c: Corner): void { corner = c; store.set('ts_corner', c); glasses?.setCorner(c); render() }
+
 function setup(): void {
   $('code').addEventListener('input', onCode)
-  document.querySelectorAll<HTMLButtonElement>('#corners button').forEach(b => b.addEventListener('click', () => {
-    corner = b.dataset.c as Corner
-    store.set('ts_corner', corner)
-    glasses?.setCorner(corner)
-    render()
-  }))
+  document.querySelectorAll<HTMLButtonElement>('#corners button').forEach(b => b.addEventListener('click', () => setCorner(b.dataset.c as Corner)))
   let armed = 0
   $('unpair').addEventListener('click', () => {
     // Two taps within 3 s, like the phone remote's Unpair
@@ -178,6 +176,7 @@ async function attach(): Promise<void> {
   glasses.onSetup = problem => { if (problem) { $('nobridge').textContent = problem; $('nobridge').hidden = false } }
   glasses.show(glassesView(), true)
   bridge.onEvenHubEvent(ev => {
+    if (ev.menuItemClickEvent) { if (Number(ev.menuItemClickEvent.itemID) === MENU.corner) setCorner(CORNERS[(CORNERS.indexOf(corner) + 1) % CORNERS.length]); return }
     const kind = (e: { eventType?: number } | undefined) => (e ? (e.eventType ?? OsEventTypeList.CLICK_EVENT) : null)
     const s = kind(ev.sysEvent as { eventType?: number } | undefined), t = kind(ev.textEvent as { eventType?: number } | undefined)
     void t   // taps: not used yet (presenter: a tap toggles the display; controller: 3+ taps = Next)

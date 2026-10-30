@@ -2,6 +2,9 @@
 
 One entry per shipped version (`npm run ship -- "what changed"` writes it).
 
+## 0.1.4
+- Next corner in the glasses' menu (tap, then tap and hold); the page's setup result is checked
+
 ## 0.1.3
 - First version: pairs with a beta.timed-show.com timer by its 6-digit code; the countdown, small and dim, in a corner chosen on the phone.
 
