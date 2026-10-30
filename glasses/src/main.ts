@@ -24,10 +24,9 @@
  *   ts_corner  tl | tr | bl | br
  */
 import { waitForEvenAppBridge, OsEventTypeList, type EvenAppBridge } from '@evenrealities/even_hub_sdk'
-import { measureTextWrap } from '@evenrealities/pretext'
 import { claim, CLAIM_ERRORS, TimerLink, type Paired, type Status, type Mode } from './link'
 import { Clock, secToStr, type ClockValues } from './clock'
-import { Glasses, CORNERS, MENU, fitLines, type Corner, type Layout } from './glasses'
+import { Glasses, CORNERS, MENU, type Corner, type Layout } from './glasses'
 import { scan, readCode, codeFromPhoto } from './scan'
 
 declare const __APP_VERSION__: string
@@ -87,36 +86,39 @@ const demoValues = (): ClockValues => {
 
 function cornerPlace(): { h: 'l' | 'r'; v: 't' | 'b' } { return { h: corner[1] === 'l' ? 'l' : 'r', v: corner[0] === 't' ? 't' : 'b' } }
 
-// What the glasses show now. Status lines are words only, so nothing can be mistaken for the countdown
+// What the glasses show now. Status lines are words only, so nothing can be mistaken for the countdown.
+// Each role always declares the same boxes (empty when there's nothing to show), so a new message, a
+// hidden countdown or "Next..." changes only text; the page is rebuilt only when the role or corner
+// changes or the glasses connect or disconnect (see glasses.ts: rebuilds in a hurry rebooted them).
 function glassesView(): Layout {
   const p = cornerPlace()
-  const say = (text: string): Layout => ({ info: { text, bright: 2, ...p, wrap: 300, lines: 2 } })
+  const info = (text: string, bright = 2) => ({ text, bright, ...p, lines: 2, width: 300, bottom: p.v === 'b' })
   if (!DEMO) {
-    if (status === 'unpaired' || status === 'refused') return say('Timer not connected - open the Even app to pair')
-    if (status === 'pin') return say('Pairing - finish on your phone')
-    if (status !== 'online') return say('Timer offline - reconnecting...')
+    if (status === 'unpaired' || status === 'refused') return { info: info('Timer not connected - open the Even app to pair') }
+    if (status === 'pin') return { info: info('Pairing - finish on your phone') }
+    if (status !== 'online') return { info: info('Timer offline - reconnecting...') }
   }
   const v = DEMO ? demoValues() : clock.values()
-  if (!v) return {}
-  const clk = (v.over ? '+' : '') + v.remain + (v.paused ? ' paused' : '')
-  const bright = v.over ? 4 : v.impending ? 3 : v.paused ? 1 : 2
-  const showFlash = flash && Date.now() < flashUntil
+  const clk = v ? (v.over ? '+' : '') + v.remain + (v.paused ? ' paused' : '') : ''
+  const bright = !v ? 0 : v.over ? 4 : v.impending ? 3 : v.paused ? 1 : 2
+  const showFlash = flash && Date.now() < flashUntil ? flash : ''
   if (role === 'operator' || (DEMO && location.hash.includes('operator'))) {
     // The operator's screen: elapsed / total, the message, the countdown, started / ends at
-    const msg = showFlash ? flash : fitLines(String(state.msg || (DEMO ? 'Keynote: the future of timing' : '')), 540, 2)
-    const msgLines = msg ? Math.min(2, measureTextWrap(msg, 532).lineCount) : 1
+    const msg = showFlash || String(state.msg || (DEMO ? 'Keynote: the future of timing' : ''))
     const started = String(state.started || (DEMO ? '17:23:18' : '')), ends = String(state.ends || (DEMO ? '17:33:18' : ''))
     return {
-      elapsed: { text: 'elapsed ' + v.elapsed, bright: 2, h: 'l', v: 't' },
-      total: { text: v.total + ' total', bright: 2, h: 'r', v: 't' },
-      msg: { text: msg, bright: 4, h: 'c', v: 140 - (msgLines > 1 ? 56 : 30), wrap: 540, lines: 2 },
+      elapsed: { text: v ? 'elapsed ' + v.elapsed : '', bright: 2, h: 'l', v: 't' },
+      total: { text: v ? v.total + ' total' : '', bright: 2, h: 'r', v: 't' },
+      msg: { text: msg, bright: 4, h: 'c', v: 84, lines: 2, bottom: true },
       clk: { text: clk, bright, h: 'c', v: 146 },
       started: { text: started ? 'started ' + started : '', bright: 2, h: 'l', v: 'b' },
       ends: { text: ends ? 'ends at ' + ends : '', bright: 2, h: 'r', v: 'b' },
     }
   }
-  if (showFlash) return say(flash)
-  return hidden ? {} : { clk: { text: clk, bright, ...p } }
+  return {
+    clk: { text: hidden || showFlash ? '' : clk, bright, ...p },
+    info: info(showFlash),
+  }
 }
 
 // ─── Taps ────────────────────────────────────────────────────────────────────
@@ -189,8 +191,7 @@ function mirror(view: Layout): void {
     const st = el.style
     if (b!.h === 'l') st.left = '2%'; else if (b!.h === 'r') st.right = '2%'; else { st.left = '0'; st.right = '0'; st.textAlign = 'center' }
     if (b!.v === 't') st.top = '4%'; else if (b!.v === 'b') st.bottom = '4%'; else st.top = (Number(b!.v) / 288 * 100) + '%'
-    if (b!.wrap) st.maxWidth = (b!.wrap / 576 * 100) + '%'
-    if (b!.wrap && b!.h === 'c') { st.margin = '0 auto' }
+    if (b!.width) st.maxWidth = (b!.width / 576 * 100) + '%'
     return el
   }))
 }

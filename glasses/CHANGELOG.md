@@ -2,6 +2,9 @@
 
 One entry per shipped version (`npm run ship -- "what changed"` writes it).
 
+## 0.1.12
+- Fix: the glasses rebooted after Next (whole-page rebuilds in a hurry); boxes now stay put and only their text changes
+
 ## 0.1.11
 - The phone page shows what the glasses show (a stand-in, and where the countdown sits)
 
