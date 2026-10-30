@@ -16,6 +16,8 @@
  * the Even app serves the plugin from http://127.0.0.1:<port> with a new port each launch, and browser
  * storage belongs to the origin, port included, so it started empty every time. localStorage is still
  * written, for a plain browser (development, tests), and read when the bridge has nothing.
+ * The Even app's storage is shared between plugins (the dev copy found the real app's pairing), so
+ * the dev copy (__APP_DEV__) keeps its settings under 'dev_' + the names below.
  *   ts_link    {server, room, key, view}: the paired timer (the view-only link the code gave)
  *   ts_ctl     the control link, while the timer has made these glasses its operator's
  *   ts_token   the proximity check's token for that room
@@ -39,6 +41,8 @@ import { Glasses, CORNERS, MENU, type Corner, type Layout, type MenuItem } from 
 import { scan, readCode, codeFromPhoto } from './scan'
 
 declare const __APP_VERSION__: string
+declare const __APP_DEV__: boolean
+const KEY_PREFIX = __APP_DEV__ ? 'dev_' : ''
 const $ = (id: string) => document.getElementById(id) as HTMLElement
 
 // ─── Saved settings ──────────────────────────────────────────────────────────
@@ -50,8 +54,8 @@ const store = {
   get(k: string): string { return cache[k] || '' },
   set(k: string, v: string): void {
     cache[k] = v
-    try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k) } catch { /* no storage */ }
-    storeBridge?.setLocalStorage(k, v).catch(() => { /* kept for this session at least */ })
+    try { if (v) localStorage.setItem(KEY_PREFIX + k, v); else localStorage.removeItem(KEY_PREFIX + k) } catch { /* no storage */ }
+    storeBridge?.setLocalStorage(KEY_PREFIX + k, v).catch(() => { /* kept for this session at least */ })
   },
 }
 // Reads the saved settings once at start (the bridge's storage is asynchronous)
@@ -59,8 +63,8 @@ async function loadStore(bridge: EvenAppBridge | null): Promise<void> {
   storeBridge = bridge
   for (const k of KEYS) {
     let v = ''
-    if (bridge) { try { v = (await bridge.getLocalStorage(k)) || '' } catch { /* none */ } }
-    if (!v) { try { v = localStorage.getItem(k) || '' } catch { /* none */ } }
+    if (bridge) { try { v = (await bridge.getLocalStorage(KEY_PREFIX + k)) || '' } catch { /* none */ } }
+    if (!v) { try { v = localStorage.getItem(KEY_PREFIX + k) || '' } catch { /* none */ } }
     cache[k] = v
   }
 }
@@ -437,7 +441,7 @@ function setup(): void {
     armed = 0; $('unpair').textContent = 'Unpair'
     unpair('Unpaired. Type a new code to pair again.')
   })
-  $('origin').textContent = 'version ' + __APP_VERSION__ + ' · origin ' + (location.origin || location.protocol)
+  $('origin').textContent = 'version ' + __APP_VERSION__ + (__APP_DEV__ ? ' dev' : '') + ' · origin ' + (location.origin || location.protocol)
   render()
   if (paired) connect()
   // The countdown ticks here; the glasses get a change only when some text or brightness changes

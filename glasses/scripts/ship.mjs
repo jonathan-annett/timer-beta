@@ -69,7 +69,7 @@ if (argText) {
 console.log(`Changelog: ${changelog}`);
 
 // 3. build + pack
-sh('npm', ['run', 'build'], { stdio: 'inherit' });
+sh('npm', ['run', 'build'], { stdio: 'inherit', env: { ...process.env, TS_DEV: dev ? '1' : '' } });   // the dev copy keeps its own settings (vite.config.ts)
 const slug = pkg.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const ehpk = `${slug}-${pkg.version}.ehpk`;
 sh('npx', ['evenhub', 'pack', manifestFile, 'dist', '-o', ehpk], { stdio: 'inherit' });
