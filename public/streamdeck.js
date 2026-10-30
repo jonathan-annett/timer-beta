@@ -692,7 +692,7 @@
     const forgetBtn = document.getElementById('deck-forget-btn');
     if (forgetBtn) forgetBtn.style.display = (device || pausedDevice) ? '' : 'none';
     const btn = document.getElementById('btndeck');
-    if (btn) btn.textContent = device ? 'deck ✓' : 'deck';
+    if (btn) { btn.textContent = device ? 'deck ✓' : 'deck'; btn.classList.toggle('on', !!device); }
   }
 
   // ─── In-app visual editor ─────────────────────────────────────────────────

@@ -1075,7 +1075,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     const el = document.getElementById('phone-panel');
     const btn = document.getElementById('btnshare');
     const lanCount = [...peers.values()].filter(e => e.peer.mode !== 'server' && e.role !== 'pptx').length;   // direct, either way
-    if (btn) btn.textContent = !enabled ? 'share' : peers.size ? `share ${peers.size}` : 'share ·';
+    if (btn) { btn.textContent = !enabled ? 'share' : peers.size ? `share ${peers.size}` : 'share ·'; btn.classList.toggle('on', enabled); }
     if (!el) return;
     const st = el.querySelector('.pp-status');
     st.textContent = statusText; st.dataset.kind = statusKind;

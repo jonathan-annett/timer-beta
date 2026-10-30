@@ -450,6 +450,7 @@ The `#touch-strip` is hidden via CSS on non-touch devices (`@media (pointer: coa
 
 ## Conventions to Follow
 
+- **The operator screen's look (Oct 2026)** — the controller's chrome (button bar, the elapsed/started/total/ends lines, the link line, keyboard hints) uses the newer pages' palette: `--ui-*` tokens in `timer.css` `:root` (the run sheet editor's colours), with the old `--color-button-*` defaults pointing at them, so `settimercolors` and Ctrl+S styles still override. Buttons are dark, outlined, 5 px radius (still px-sized); Pause/Resume green; `.btn.on` (share on: `remote-control.js renderPanel`; deck connected: `streamdeck.js`) and `html.overlay #btnfloat` light blue. The bar is as wide as its buttons (`max-width: calc(100% - 180px)`, clear of the time of day). *OPERATOR SCREEN TEXT* in `timer.css`: `html:not(.reduced) body` uses `--ui-font`, but the countdown, message, pause notice and time of day keep the presenter's `'Lucida', sans-serif`, and the detail rules are wrapped in `:where()` so state colours (future, paused, standby) still win. Nothing changes under `html.reduced` (the presenter view, which `display.html` copies). New operator UI should use the `--ui-*` tokens.
 - **Window titles start with the site's host name** — `location.hostname + ' - ' + what` ("timed-show.com - Control Screen"; timer.js `siteTitle()`), set by each page's script; the static `<title>` is only the fallback (file://, before the script runs).
 
 - **State via CSS classes** — visual state always via `setHtmlClass`/`clearHtmlClass`, never via `element.style`.

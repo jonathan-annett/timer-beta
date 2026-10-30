@@ -57,14 +57,14 @@
     --color-keyboard-help-text: #a0a0a0;
     --color-keyboard-help-text--editing-custom :lime;
 
-    --color-button-background : #008CBA;
-    --color-button-font : white;
+    --color-button-background : var(--ui-button);
+    --color-button-font : var(--ui-text);
     
-    --color-button2-background : #e7e7e7;
-    --color-button2-font : black;
+    --color-button2-background : var(--ui-button);
+    --color-button2-font : var(--ui-text);
 
-    --color-button-background-hover:lime;
-    --color-button-font-hover:black;
+    --color-button-background-hover: var(--ui-button-hover);
+    --color-button-font-hover: #fff;
     
     --color-button-background-hover-set:purple;
     --color-button-font-hover-set:black;
@@ -84,6 +84,22 @@
     --color-pip-paused : rgba(169, 169, 169, 0.726);
     --color-pip-impending : orange;
     --color-pip-expired : red;
+
+    /* The operator screen's look, shared with the newer pages (run sheet editor, phone remote):
+       panels, lines, text and accents. The countdown and the presenter view keep their own colours. */
+    --ui-font: "Helvetica Neue", Arial, sans-serif;
+    --ui-panel: #131313;
+    --ui-line: #262626;
+    --ui-line2: #333;
+    --ui-button: #1e1e1e;
+    --ui-button-hover: #2a2a2a;
+    --ui-text: #ddd;
+    --ui-dim: #888;
+    --ui-faint: #555;
+    --ui-accent: #4aa8ff;
+    --ui-ok: #9cf59c;
+    --ui-ok-bg: #123a12;
+    --ui-ok-line: #2e6b2e;
     
     
 
@@ -885,9 +901,14 @@ div.buttons  {
   position : absolute;
   top:    0;
   left:   0;
-  right:  180px;
-  padding: 6px 8px;
-  background-color:var(--color-main-background);
+  max-width: calc(100% - 180px);   /* as wide as its buttons, clear of the time of day (T) */
+  box-sizing: border-box;
+  padding: 7px 12px;
+  background-color: var(--ui-panel);
+  border: 1px solid var(--ui-line);
+  border-width: 0 1px 1px 0;
+  border-bottom-right-radius: 8px;
+  font-family: var(--ui-font);
   opacity: 0.5;
   z-index: 9999;
 }
@@ -906,9 +927,10 @@ div.buttons div.btn2,
 div.buttons div.btn {
    min-width: 34px;
    background-color:  var(--color-button-background);
-   border: none;
+   border: 1px solid var(--ui-line2);
+   border-radius: 5px;
    color:  var(--color-button-font);
-   padding: 7px 9px;
+   padding: 6px 8px;
    text-align: center;
    text-decoration: none;
    display: inline-block;
@@ -917,20 +939,25 @@ div.buttons div.btn {
    margin: 2px 1px;
    white-space: nowrap;
    cursor: pointer;
+   transition: background-color .12s, border-color .12s;
 }
 
 div.buttons .btn-label {
-   font-size: 13px;
-   margin: 0 4px 0 10px;
+   font-size: 11px;
+   text-transform: uppercase;
+   letter-spacing: 0.06em;
+   color: var(--ui-dim);
+   margin: 0 2px 0 10px;
 }
 div.buttons .btn-label:first-child { margin-left: 2px; }
+div.buttons .btn-presets div.btn { font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* Flex instead of inline-block: no stray whitespace gaps, so the row fits narrower screens */
 html.showbuttons div.buttons {
    display: flex;
    flex-wrap: wrap;
    align-items: center;
-   gap: 3px 2px;
+   gap: 4px 3px;
 }
 div.buttons div.btn2,
 div.buttons div.btn { margin: 0; }
@@ -943,8 +970,8 @@ div.buttons div.btn { margin: 0; }
 
 div.buttons div.btn2 {
     
-   min-width: 48px;
-   padding: 7px 7px;
+   min-width: 44px;
+   padding: 6px 7px;
    background-color:  var(--color-button2-background);
    color: var(--color-button2-font);
    
@@ -955,7 +982,17 @@ div.buttons div.btn2 {
 
 div.buttons div.btn:hover {
   background-color:  var(--color-button-background-hover);
+  border-color: #555;
   color: var(--color-button-font-hover);
+}
+/* Pause/Resume: the main action, green like the editor's primary buttons. On: overlay floating,
+   sharing on (remote-control.js), deck connected (streamdeck.js) */
+div.buttons #btnpause, div.buttons #btnresume {
+  background-color: var(--ui-ok-bg); border-color: var(--ui-ok-line); color: var(--ui-ok);
+}
+div.buttons #btnpause:hover, div.buttons #btnresume:hover { border-color: #4a9a4a; color: #c8ffc8; }
+div.buttons div.btn.on, html.overlay div.buttons #btnfloat {
+  border-color: #2a5a7a; color: #9fd8ff;
 }
 
 html.shifting div.buttons div.btn:hover {
@@ -1556,15 +1593,38 @@ html.over.paused #touch-pause-btn { color: var(--color-remain-paused-expired-bli
 #btncatchup { opacity: 0.3; pointer-events: none; }
 html.adjusting_time #btncatchup {
   opacity: 1; pointer-events: auto;
-  color: lime; border-color: lime;
+  color: var(--ui-ok); border-color: var(--ui-ok-line);
   animation: catchup-pulse 1.2s ease-in-out infinite;
 }
-@keyframes catchup-pulse { 50% { box-shadow: 0 0 8px lime; } }
+@keyframes catchup-pulse { 50% { box-shadow: 0 0 8px var(--ui-ok-line); } }
 .deck-brightness-label { font-size: 12px; color: #888; display: flex; gap: 4px; align-items: center; }
 .deck-key-options textarea {
   background: #1a1a1a; border: 1px solid #333; color: #ddd;
   padding: 4px 8px; border-radius: 3px; font: 12px sans-serif; resize: vertical;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   OPERATOR SCREEN TEXT (not the presenter view: html.reduced). The countdown, the message, the
+   pause notice and the time of day keep the presenter's typeface, so both screens match; the
+   rest uses the newer pages' font, dim labels and brighter values. :where() keeps these weak,
+   so the state colours (future, paused, standby) still win.
+═══════════════════════════════════════════════════════════════════════════ */
+html:not(.reduced) body { font-family: var(--ui-font); }
+html:not(.reduced) :is(#remain_disp, #custom_message, #remain_info_message, #now_disp) { font-family: 'Lucida', sans-serif; }
+:where(html:not(.reduced)) :where(#elapsed_disp, #started_disp, #ends_disp, #duration_disp) {
+  color: var(--ui-text); font-variant-numeric: tabular-nums;
+}
+:where(html:not(.reduced)) :where(#elapsed_disp, #started_disp, #ends_disp)::before,
+:where(html:not(.reduced)) :where(#duration_disp)::after { color: var(--ui-dim); }
+:where(html:not(.reduced)) :where(#elapsed_disp, #started_disp) { margin-left: 14px; }
+:where(html:not(.reduced)) :where(#ends_disp, #duration_disp, #extra_time_disp, #disp_next_mins) { margin-right: 14px; }
+:where(html:not(.reduced)) :where(#extra_time_disp) { color: var(--ui-dim); }
+/* The links and the keyboard hints: quiet text, not blue underlined links */
+#link { margin: 0 0 0 14px; font-size: 14px; color: var(--ui-faint); font-family: var(--ui-font); }
+#link a { color: var(--ui-dim); text-decoration: none; }
+#link a:hover { color: var(--ui-accent); }
+#disp_next_mins { font-size: 1.8vh; margin-bottom: 6px; }
+#disp_next_mins:before { opacity: 0.6; }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    RUN SHEET DASHBOARD (controller only; html.runsheet is set by runsheet.js)
