@@ -66,4 +66,13 @@ with sync_playwright() as p:
     o=oc.new_page(); o.on("pageerror", lambda e: errs.append("overlay: "+str(e))); o.goto(vlink); o.wait_for_timeout(2000); approve(t); o.wait_for_timeout(1500)
     t.evaluate("processTimerApiMessage({cmd:'start', msecs: 5*60000})"); t.wait_for_timeout(2000)
     print("overlay:", o.evaluate("document.querySelector('#ov .ov-remain').textContent"), "| timer:", tr(), "| overlay peer clock:", t.evaluate("[...window.remoteControl.peers.values()].filter(e=>e.role==='view').map(e=>e.clock)"))
+    # A device that connects while a countdown has been running a while: the last anchor is that old, so
+    # it's worked forward to the moment it's sent (it was sent with its age, and devices cap that at 5 s)
+    t.evaluate("processTimerApiMessage({cmd:'start', msecs: 10*60000})"); t.wait_for_timeout(12000)
+    lc=b.new_context(ignore_https_errors=True, viewport={"width":400,"height":800}); lc.route("**/*",h)
+    lc.add_init_script("window.RTCPeerConnection = undefined;")
+    late=lc.new_page(); late.on("pageerror", lambda e: errs.append("late phone: "+str(e)))
+    late.goto(link); late.wait_for_timeout(2000); approve(t); late.wait_for_timeout(2000)
+    pr=lambda: late.text_content("#remain").strip().lstrip("+"); ph=late
+    compare("phone joining 12 s into a countdown", 4)
 print("errors:", errs)

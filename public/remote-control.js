@@ -782,6 +782,15 @@
     if (any || blNew) { e.blSent = bl; e.peer.send({ t: 'deck', full, cols: 8, rows: 4, k, bl }); }
   }
 
+  // The anchor as of now: a running countdown makes no new anchors (that's the point), so the last
+  // one can be minutes old when a device connects. Worked forward to this moment (its rates say
+  // how), it leaves with age 0; the device only allows for the trip (it caps the age at 5 s).
+  function currentAnchor(c) {
+    const dt = Math.max(0, performance.now() - c.t);
+    return { ...c, r: Math.round(c.r + c.rr * dt), e: Math.round(c.e + c.er * dt),
+      sa: c.sa >= 0 ? Math.max(0, Math.round(c.sa - dt)) : c.sa, a: 0, t: undefined };
+  }
+
   // Sends only the fields that changed since the last message to this phone (low bandwidth)
   function pushTo(e, full) {
     if (e.role === 'pptx') return;             // PowerPoint machines get no timer state
@@ -791,7 +800,7 @@
       if (e.clock ? CLOCK_FIELDS.has(k) : k === 'clk') continue;
       if (full || e.sent[k] !== v) { diff[k] = v; e.sent[k] = v; any = true; }
     }
-    if (diff.clk) diff.clk = { ...diff.clk, a: Math.round(performance.now() - diff.clk.t), t: undefined };   // its age as it leaves
+    if (diff.clk) diff.clk = currentAnchor(diff.clk);
     if (any || full) e.peer.send({ t: 'state', full: !!full, s: diff });
     if (e.role === 'companion') pushVars(e, full);
     if (e.deck && e.role !== 'view') pushDeck(e);
