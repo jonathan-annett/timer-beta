@@ -30,6 +30,17 @@ Decisions since this plan was written (they override the sections below):
   0.1.7, with the page and menu sent as plain objects like the g2-claude-starter's Mischief Mews;
   settings in the Even app's storage from 0.1.5, since the plugin's 127.0.0.1 port changes per launch); no size choice (the owner
   decided to keep it simple; bigger digits would need drawn images, 288×144 max per image box).
+- **Roles built (0.1.8, 31 Oct 2026; needs the timer side, on alpha):** Presenter = corner countdown, a
+  tap (gathered over 600 ms: one or several) hides/shows it. Operator = fixed layout (elapsed | total
+  along the top, the message (2 lines max) and the countdown centred, started | ends at along the
+  bottom; Next corner ignored), three or more taps in a burst fire Next (*Next...* flashes), fewer do
+  nothing. The phone page asks for a role before pairing (*I'm the presenter / operator*); the
+  timer's request row and device list decide (see CLAUDE.md, Phone Remote Control).
+- **Next, once Operator is proven on the glasses:** more operator commands, e.g. the phone remote's run
+  sheet view and controls (Back / Pause / Next, nudges) on the plugin's phone page, so the operator
+  needs only the Even app. (The owner finds typing the 6-digit code fine; the QR photo is a nice-to-have.)
+- **Done in 0.1.10 (photo, not live):** scan the share panel's QR code on the phone page (the `camera` permission; the
+  glasses have no camera) instead of typing the code: check the Even WebView allows getUserMedia.
 - **Next versions:** two modes, the role chosen on the timer (above). *Controller* (the operator wears them,
   e.g. while vision switching): 3+ rapid taps fire Next, every other input ignored; needs the
   timer to grant a control link when the claim says `mode:'controller'` (forward `client`/`mode`

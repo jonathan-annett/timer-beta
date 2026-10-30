@@ -23,6 +23,16 @@
     #code { display: block; font: bold 40px/1.1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .3em; text-align: center; width: 100%;
       background: #0a0a0a; color: #fff; border: 2px solid #333; border-radius: 12px; padding: 10px 0 10px .3em; font-variant-numeric: tabular-nums; }
     #code:focus { outline: none; border-color: var(--accent); }
+    .wants { color: var(--text); } .wants label { margin-left: 10px; white-space: nowrap; }
+    .note { font-size: 13px; }
+    /* What the glasses show (576×288), scaled to the page; text sized as the glasses' ~20 px font */
+    #mirror { position: relative; aspect-ratio: 2 / 1; background: #000; border: 1px solid #1d3a1d; border-radius: 10px; margin: 4px 0 12px;
+      container-type: inline-size; overflow: hidden; color: #5fff5f; font-family: "Helvetica Neue", Arial, sans-serif; }
+    #mirror > div { position: absolute; font-size: 4cqw; line-height: 1.3; white-space: pre-wrap; font-variant-numeric: tabular-nums; }
+    #scan, #scanstop { font: inherit; font-size: 15px; color: #9fd8ff; background: #0e2a3a; border: 1px solid #2a5a7a; border-radius: 8px; padding: 9px 14px; }
+    #scanbox { text-align: center; margin-top: 12px; } #scanbox p { margin: 8px 0; }
+    #video { width: 100%; max-height: 50vh; border-radius: 10px; background: #111; object-fit: cover; }
+    #scanstop { color: #ccc; background: #1a1a1a; border-color: #333; }
     #msg { min-height: 1.5em; margin-top: 10px; text-align: center; }
     .bad { color: var(--bad); } .ok { color: var(--ok); }
     #pinbox { text-align: center; }
@@ -45,13 +55,18 @@
 <body>
   <main>
     <h1>Timed Show</h1>
-    <p class="sub">The presentation timer’s countdown in the corner of your glasses.</p>
+    <p class="sub">The presentation timer on your glasses: the countdown for a presenter, the operator’s screen for the operator.</p>
 
     <section id="pair">
       <h2 style="margin-top:0">Pair with a timer</h2>
-      <p>On the timer, click <b>share</b>, then <b>Pair a computer</b> (on a phone or tablet: <b>⋯</b> → <b>Let a friend control this timer</b>). Type the 6-digit code it shows:</p>
+      <p>On the timer, click <b>share</b>, then <b>Pair a computer</b> (on a phone or tablet: <b>⋯</b> → <b>Let a friend control this timer</b>). Type the 6-digit code it shows. Or, with the share panel on <b>Countdown</b>, scan its QR code.</p>
+      <p class="wants">I’m the <label><input type="radio" name="wants" value="presenter" checked> presenter</label>
+        <label><input type="radio" name="wants" value="operator"> operator</label></p>
       <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······" aria-label="Pairing code">
       <div id="msg"></div>
+      <p style="text-align:center;margin:12px 0 0"><button id="scan">Or photograph the timer’s QR code</button></p>
+      <div id="scanbox" hidden><video id="video" muted playsinline></video><p>Point at the share panel’s <b>Countdown</b> QR code.</p><button id="scanstop">Cancel</button></div>
+      <p class="note">The timer’s operator decides which these glasses are when letting them in; your choice is passed on as a request.</p>
     </section>
 
     <section id="paired" hidden>
@@ -61,10 +76,14 @@
         <p style="margin:0">It’s shown here only, not on your glasses. One wrong number and the timer refuses the glasses.</p>
       </div>
       <p id="status"></p>
-      <h2>Where on the glasses</h2>
-      <div id="corners">
-        <button data-c="tl">Top left</button><button data-c="tr">Top right</button>
-        <button data-c="bl">Bottom left</button><button data-c="br">Bottom right</button>
+      <div id="mirror" hidden title="What your glasses show"></div>
+      <p class="note">Shown as: <b id="rolename"></b> (set on the timer)</p>
+      <div id="cornerbox">
+        <h2>Where on the glasses</h2>
+        <div id="corners">
+          <button data-c="tl">Top left</button><button data-c="tr">Top right</button>
+          <button data-c="bl">Bottom left</button><button data-c="br">Bottom right</button>
+        </div>
       </div>
       <div class="row"><button id="unpair">Unpair</button></div>
     </section>
@@ -74,8 +93,9 @@
     <h2>How it works</h2>
     <ul>
       <li>This works with timers at <b>beta.timed-show.com</b>.</li>
-      <li>The glasses show the time left, small and dim. It gets brighter in the last minute and when time is up (shown as <b>+</b> and the time over), and says <b>paused</b> while the timer is paused.</li>
-      <li>Choose the corner here, or on the glasses: tap, then tap and hold to open the menu, and choose <b>Next corner</b>.</li>
+      <li>The timer’s operator chooses whether these glasses are a <b>presenter’s</b> or the <b>operator’s</b>, and can change it at any time (share → the device list).</li>
+      <li><b>Presenter:</b> the time left, small and dim, in a corner. It gets brighter in the last minute and when time is up (shown as <b>+</b> and the time over), and says <b>paused</b> while the timer is paused. Tap the glasses to hide or show it. Choose the corner here, or on the glasses: tap, then tap and hold to open the menu, and choose <b>Next corner</b>.</li>
+      <li><b>Operator:</b> the operator’s screen in miniature: elapsed and total along the top, the message on screen and the countdown in the middle, started and ends-at times along the bottom. <b>Tap three times quickly</b> to go to the next item in the run sheet (fewer taps do nothing).</li>
       <li>Before pairing, the glasses say <i>Timer not connected</i>. If the timer closes they say <i>Timer offline</i> and reconnect when it reopens. The pairing is remembered.</li>
       <li>To close the app, tap, then tap and hold on the glasses (Even’s menu) and choose close.</li>
       <li><b>Unpair</b> forgets the timer. The timer’s operator can also take the glasses’ access away at any time (share → the device list).</li>

@@ -8,14 +8,19 @@
  *   room:     ?room=  join {room, key} -> joined {id, hostOnline, role}; host-online / host-offline
  *   timer -> us (down {msg: {k:'data', d}}):  {t:'state', full, s}, {t:'pin-required'}, {t:'pin-ok', token},
  *             {t:'pin-rejected'}, {t:'revoked'}
- *   us -> timer (up {msg: {k:'data', d}}):    {t:'hello', clock:1, token?, client, mode}, {t:'pin', code, name}
+ *             {t:'role', role:'presenter'|'operator', frag?}: the role the timer gave us (frag: the control
+ *             link, sent only to an operator still on the view-only one)
+ *   us -> timer (up {msg: {k:'data', d}}):    {t:'hello', clock:1, token?, client, mode}, {t:'pin', code, name},
+ *             {t:'cmd', cmd:'runsheetnext'} (an operator's three taps; the timer ignores it from a presenter)
  */
 
 // The timer site's pairing server (the app's network whitelist allows only it). Tests set
 // window.TS_SERVER to use a local one.
 export const SERVER: string = (globalThis as { TS_SERVER?: string }).TS_SERVER || 'wss://beta.timed-show.com/ws'
+/** The timer site whose QR codes we accept (tests set window.TS_SITE) */
+export const SITE: string = (globalThis as { TS_SITE?: string }).TS_SITE || 'beta.timed-show.com'
 export const CLIENT = 'g2'
-export type Mode = 'presenter' | 'controller'
+export type Mode = 'presenter' | 'operator'   // the role the glasses ask for; the timer decides
 
 export interface Paired { server: string; room: string; key: string; view: boolean }
 
@@ -77,6 +82,7 @@ export interface LinkEvents {
   state: (s: Record<string, unknown>, full: boolean) => void
   pin: (code: string) => void
   token: (token: string) => void
+  role: (role: Mode, control: Paired | null) => void
 }
 
 export class TimerLink {
@@ -107,6 +113,9 @@ export class TimerLink {
   }
 
   private set(s: Status, detail?: string): void { this.status = s; this.on.status(s, detail) }
+
+  /** Next on the timer's run sheet (an operator's three taps) */
+  next(): void { this.up({ t: 'cmd', cmd: 'runsheetnext' }) }
 
   private up(d: unknown): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify({ type: 'up', msg: { k: 'data', d } }))
@@ -181,6 +190,11 @@ export class TimerLink {
         this.hello()
         this.set('online')
         break
+      case 'role': {
+        const role: Mode = d.role === 'operator' ? 'operator' : 'presenter'
+        this.on.role(role, role === 'operator' && typeof d.frag === 'string' ? parseFrag(d.frag) : null)
+        break
+      }
       case 'pin-rejected': this.pinCode = ''; this.set('refused', 'rejected'); this.close(); break
       case 'revoked': this.set('refused', 'revoked'); this.close(); break
     }
