@@ -106,7 +106,11 @@
     api({ cmd: 'default', msecs: ms });
     api({ cmd: 'start', msecs: ms });
     noteTimerStart();
-    api({ cmd: 'custommessage', text: it.name });
+    // The item's name is the item layer of the message; a new item also drops the operator's message
+    // and quiet mode (what was said to the last speaker isn't for this one)
+    api({ cmd: 'itemmessage', text: it.name });
+    api({ cmd: 'custommessage', text: '' });
+    api({ cmd: 'quiet', on: false });
     if (it.video) playItemVideo(it);              // the player restarts the timer at the video's length
     else stopRunsheetVideo();                     // moving on from a video item stops its video
     // Slides: every PowerPoint machine sets the item's holding slide as its wallpaper and opens its
@@ -123,6 +127,7 @@
     if (!it) { api({ cmd: 'start' }); return; }
     api({ cmd: 'start', msecs: it.eff * 1000 });
     noteTimerStart();
+    api({ cmd: 'quiet', on: false });
     const e = state.log[state.log.length - 1];
     if (e && e.id === it.id) {
       if (e.orig == null) e.orig = e.actual;      // keeps an unanchored sheet pinned to the first start
@@ -136,7 +141,7 @@
     state.finished = true;
     const end = norm.endIdx >= 0 ? norm.items[norm.endIdx] : null;
     state.log.push({ id: 'end', name: end ? end.name : 'Finish', planned: plannedFinishMs(), plannedDur: 0, actual: now() });
-    api({ cmd: 'custommessage', text: '' });
+    api({ cmd: 'itemmessage', text: '' });
   }
 
   function next() {
@@ -234,7 +239,9 @@
     api({ cmd: 'start', msecs: ms });
     // paused a moment after the start: paused at exactly N.000 s the display reads N+1 (as dropPlayer's rewind)
     setTimeout(() => { const s = api({ cmd: 'snapshot' }); if (state.standby && s && s.pausedAt == null) api({ cmd: 'pause' }); }, 60);
-    api({ cmd: 'custommessage', text: it.name });
+    api({ cmd: 'itemmessage', text: it.name });
+    api({ cmd: 'custommessage', text: '' });
+    api({ cmd: 'quiet', on: false });
     state.standby = true;
     sendStandby();
   }
@@ -388,8 +395,8 @@
     name = name.trim().slice(0, 300);
     const e = state.log[state.log.length - 1];
     const s = api({ cmd: 'snapshot' });
-    const shown = s ? s.message : null;
-    if (e && e.id === src.id && (shown === e.name || shown === src.name)) api({ cmd: 'custommessage', text: name });
+    const shown = s ? ('itemMessage' in s ? s.itemMessage : s.message) : null;
+    if (e && e.id === src.id && (shown === e.name || shown === src.name)) api({ cmd: 'itemmessage', text: name });
     if (e && e.id === src.id) e.name = name;
     if (src.name !== name) { src.name = name; writeSheet(); }
     commit();

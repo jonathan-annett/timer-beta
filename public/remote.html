@@ -64,6 +64,9 @@
     .msg span { flex: 1; overflow-wrap: anywhere; }
     .msg button { padding: 0.3em 0.8em; }
     .msg.empty span { color: var(--dim); font-style: italic; }
+    .msg.item span { color: var(--dim); }               /* the run sheet item's name: not a message of the operator's */
+    .msg.quiet span { color: #ffcc33; font-style: normal; }
+    #msgquiet.on { background: #3d2a00; border-color: #8a6a1a; color: #ffcc33; }
 
     .rs { background: var(--card); border: 1px solid var(--line); border-radius: 0.6em; padding: 0.6em 0.7em; margin: 0.6em 0; }
     .rs[hidden] { display: none; }
@@ -342,7 +345,7 @@
         <div id="remain">–:––</div>
         <div id="substate"></div>
 
-        <div class="msg empty" id="msgbox"><span id="msgtext">No message on screen</span><button id="msgclear" disabled>Clear</button></div>
+        <div class="msg empty" id="msgbox"><span id="msgtext">No message on screen</span><button id="msgclear" disabled>Clear</button><button id="msgquiet" title="Quiet: only the countdown on the presenter screens (the next item ends it)">Quiet</button></div>
 
         <div class="rs" id="rs" hidden>
           <div class="lbl">Now</div><div class="now" id="rsnow"></div>
@@ -410,8 +413,8 @@
   <script src="help-overlay.js?v=8a5dbd9d"></script>
   <script src="deck-face.js?v=c546849b"></script>
   <script src="remote-peer.js?v=a4dfabd5"></script>
-  <script src="notices.js?v=d42b0943"></script>
+  <script src="notices.js?v=7f9aa52c"></script>
   <script src="remote-clock.js?v=4358371f"></script>
-  <script src="remote-phone.js?v=62f922b3"></script>
+  <script src="remote-phone.js?v=7cdb3b62"></script>
 </body>
 </html>

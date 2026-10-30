@@ -13,7 +13,7 @@
       <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
       <link rel="manifest" href="manifest.json">
       <title>Presentation Timer</title>
-      <link rel="stylesheet" href="timer.css?v=a578d278" id="style_1">
+      <link rel="stylesheet" href="timer.css?v=86c76ff8" id="style_1">
       <link rel="stylesheet" href="help-overlay.css?v=ab22e694">
   </head>
   <body>
@@ -24,26 +24,26 @@
       <script src="features.js?v=4136908a"></script>
       <script src="whats-new.js?v=1c7b0b76"></script>   <!-- not deferred: it checks for earlier timer state before timer.js writes any -->
       <script>var timerAPI = null; /* populated by streamdeck.js, remote-control.js and the others (each chains the previous one) */</script>
-      <script src="notices.js?v=d42b0943"></script>
+      <script src="notices.js?v=7f9aa52c"></script>
       <script src="key-focus.js?v=4b14eb98"></script>
-      <script src="overlay-view.js?v=abca4a81"></script>
-      <script src="local-overlay.js?v=c124fbf2"></script>
+      <script src="overlay-view.js?v=8086ceed"></script>
+      <script src="local-overlay.js?v=63b67b83"></script>
       <script src="elementcolors.js?v=3346b988"></script>
-      <script src="timerapi.js?v=5ee38730"></script>
-      <script src="timer.js?v=60af139d" defer></script>    
+      <script src="timerapi.js?v=1f48d7a0"></script>
+      <script src="timer.js?v=eeaf48b6" defer></script>    
       <script src="FileSaver.js?v=de19cbb6" defer></script>    
       <script src="video-store.js?v=069f77d9" defer></script>
-      <script src="dropPlayer.js?v=3514f595" defer></script>
+      <script src="dropPlayer.js?v=ba43f571" defer></script>
       <script src="notice-panel.js?v=5ae3f7e7" defer></script>
       <script src="video-library.js?v=bfdbb3f7" defer></script>
       <script src="deck-face.js?v=c546849b" defer></script>
-      <script src="streamdeck.js?v=4bf1bb42" defer></script>
+      <script src="streamdeck.js?v=b0dc7e83" defer></script>
       <script src="back-guard.js?v=1ffc51f1" defer></script>
       <script src="touchcontrols.js?v=a4339318" defer></script>
       <script src="runsheet-core.js?v=d0fec52c" defer></script>
-      <script src="runsheet.js?v=b08600eb" defer></script>
+      <script src="runsheet.js?v=6d18f8b1" defer></script>
       <script src="remote-peer.js?v=a4dfabd5" defer></script>
-      <script src="remote-control.js?v=ac169ee3" defer></script>
+      <script src="remote-control.js?v=0a2757b8" defer></script>
       <script src="pptx-hub.js?v=e1230167" defer></script>
       <script src="markdown-lite.js?v=938fee93" defer></script>
       <script src="help-overlay.js?v=8a5dbd9d" defer></script>
@@ -155,6 +155,7 @@
           <div class="xfs_only" id="started_disp"></div>
           <div class="xfs_only" id="elapsed_disp"></div>
           <div id="messages_enabled">messages enabled</div>
+          <div id="quiet_badge" title="Quiet: the presenter screens show only the countdown. Q (or the next item) ends it.">QUIET · only the countdown is showing · <kbd>Q</kbd> ends it</div>
           
           <div id="remain_info_message"></div>
           <div id="custom_message"></div>

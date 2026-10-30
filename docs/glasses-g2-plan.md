@@ -56,6 +56,15 @@ Decisions since this plan was written (they override the sections below):
   hold) is the system's and always opens its menu (brightness, close), which apps can't block but can
   add items to (`menuObject` on the page: e.g. *Hide / show countdown*).
   Optionally the message (item name) too, configurable on the phone page.
+- **Message layers and quiet mode (0.1.15, Nov 2026):** the timer now keeps the run sheet item's name
+  and the operator's message apart (state `msgKind`, `itemMsg`, `opMsg`) and has quiet mode (`quiet`).
+  A presenter's glasses show only the operator's messages by default (the item name is usually their
+  own name: not news); on the phone page the wearer can add the item name and the last-minute /
+  time's-up notices (`ts_see`): a frequent flyer's personal choice. Quiet leaves only the countdown.
+  Operator glasses show everything (item name dimmer) and have *Quiet on / off* in the menu.
+- **Later: a green room cue call.** The run sheet item tags the people (glasses, but also run sheet
+  viewers in a green room, or a courtesy device lent to a keynote speaker) who should be called when
+  their item is coming up; the per-item glasses idea below becomes one case of it.
 - **Later: glasses per run sheet item.** Tag a run sheet entry with a specific pair of glasses (by
   the device's approval token / name in the share panel), so that presenter's glasses show the HUD
   only while their item is next up or live, and stay blank otherwise.

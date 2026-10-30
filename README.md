@@ -16,6 +16,7 @@ A keyboard-driven countdown timer for talks, conferences and live events. One wi
    - **Ctrl+↑ / Ctrl+↓** adds or removes a minute.
    - **"** (or numpad **/**) pauses and resumes.
    - **C** sends a message to the presenter: type it and press **Enter**. Press **C** again to clear it.
+   - **Q** (quiet) leaves only the countdown on the presenter's screen; **Q** again brings the rest back.
    - The countdown turns **orange** in the last minute and **red** once time is up, then counts the overtime.
 
 That's all you need for most events. Everything below is optional.
@@ -70,7 +71,8 @@ At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. O
 | **B** | Progress bar on / off |
 | **T** | Show the time of day |
 | **M** | Messages on / off |
-| **C** | Write a message for the presenter (**Enter** to show, **C** again to clear) |
+| **C** | Write a message for the presenter (**Enter** to show, **C** again to clear). In run sheet mode the item's name is shown when there's no message of yours: your message goes over it, and clearing yours brings the name back |
+| **Q** | Quiet mode: only the countdown on the presenter's screens (no message, notice, time of day or progress bar) until **Q** again or the next run sheet item. Your own screen keeps them, dimmed, under a *QUIET* badge |
 | **O** | Floating countdown overlay that stays on top of other apps (e.g. over PowerPoint's Presenter View): the same overlay as *Countdown overlay on another computer* below, with its shape, message and progress shade set in a small box under the buttons (it fades after 30 seconds; **Hide** puts it away). **O** again closes it. Keeps running with the timer minimized, so a Stream Deck can drive everything; the timer's keys also work while the overlay window or the presenter window has focus (Chrome/Edge). Opening the overlay needs the timer window itself (browsers only let the window you're typing in open a floating window): **O** in the presenter window closes it, but to open it press **O** on the timer. While the timer or the overlay has the keyboard, both show a blinking red ⌨ (with *Warning: timer still owns the keyboard* beside it for a few seconds; hover over the timer's for the message again), so you know to click back into PowerPoint before using the clicker or the keyboard. Opening it needs the key press or a click on the **overlay** button. |
 | **?** or **F1** | This guide, shown over the timer (main screen only, not in presenter or single-screen mode). The *help* link at the bottom does the same |
 | **E** | Run sheet editor (opens in its own window) |
@@ -100,8 +102,8 @@ Load the show's running order and step through it with a presentation clicker, t
 
 | | |
 |---|---|
-| **Next** (Page Down, clicker, deck key, editor button, phone) | Starts the next item: shows its name to the presenter, sets the timer to its duration and starts it. The start time goes into the log. |
-| **Back** (Page Up, deck key, editor button, phone) | Undoes the last Next exactly, as if it never happened: the previous countdown (including a pause), its duration and its message come back. Press repeatedly to step back further. |
+| **Next** (Page Down, clicker, deck key, editor button, phone) | Starts the next item: shows its name to the presenter, sets the timer to its duration and starts it. The start time goes into the log. It also clears a message you sent the last speaker and ends quiet mode. |
+| **Back** (Page Up, deck key, editor button, phone) | Undoes the last Next exactly, as if it never happened: the previous countdown (including a pause), its duration, its item name, any message of yours and quiet mode come back. Press repeatedly to step back further. |
 | **Space** | Restarts the current item's countdown, as usual. |
 | **▶** on a row in the editor | Jumps straight to that item (Back undoes it). |
 
@@ -152,7 +154,7 @@ In the editor you can drag actions from the palette onto keys, set per-key label
 - **Presets** and **controls**: start, pause, ±1 min, ±15 s, clear pauses.
 - **Countdown keys**: show the remaining time on the deck. *Min / Hr* and *Sec / Min* work as a pair: `01` `30` for 90 seconds, `1h` `25m` for 85 minutes, and `+00` `45` in overtime. *Timer* shows the whole time on one key.
 - **Display toggles**: bar, clock and messages.
-- **Messages**: drag a *Message* action onto a key, and its text field opens in the editor. Pressing the key shows that message on the presenter screen; pressing it again clears it. The key lights up while its message is showing. *Clear message* removes whatever is showing, and *Type message* opens the on-screen message box. The XL comes with two examples (*Please wrap up*, *Time for questions*).
+- **Messages**: drag a *Message* action onto a key, and its text field opens in the editor. Pressing the key shows that message on the presenter screen; pressing it again clears it. The key lights up while its message is showing. *Clear message* removes your message (in run sheet mode the item's name comes back), and *Type message* opens the on-screen message box. *Quiet* turns quiet mode on and off (lit while on). The XL comes with two examples (*Please wrap up*, *Time for questions*).
 - **Run sheet**: *Back*, *Next* (shows the next item's name) and *Schedule* (time ahead in green, or behind in red). The XL has all three in row 2 by default.
 - **Video**: *Play video* (lit when a video is ready), *Stop video* and *Rewind video* (lit while one plays; rewinding goes back to the start, ready to play again). They work for dropped and run sheet videos. The XL has Stop and Rewind in the last two keys by default (if you saved your own XL layout, add them in the editor or use Reset defaults).
 - **Catch up**: lights up while the timer is running fast or slow after a nudge; press it to jump straight to the adjusted time.
@@ -267,8 +269,8 @@ The timer on a pair of [Even Realities G2](https://www.evenrealities.com/) smart
 
 Two roles, and **the timer decides which** (the glasses can only ask):
 
-- **Presenter:** the time left, small and dim, in a corner of the view, brighter in the last minute and when time is up, *paused* while paused, *Standing by* before the show. A tap on the glasses hides or shows it. Choose the corner on the phone, or from the glasses' menu (tap, then tap and hold): **Next corner**. A presenter's glasses can't control the timer.
-- **Operator:** the operator's screen in miniature: elapsed and total along the top, the message on screen and the countdown in the middle, started and ends-at times along the bottom (before the show, whether auto start is on). **Three quick taps** (or four or five, set on the phone) go to the next run sheet item. The glasses' menu has **Next item**, **Back**, **Pause / resume**, **Reset show**, **Auto start on / off** and **Minimal view** (just the message and the countdown; a 2-second press and hold also toggles it).
+- **Presenter:** the time left, small and dim, in a corner of the view, brighter in the last minute and when time is up, *paused* while paused, *Standing by* before the show. Next to it, the messages you send them; on their phone the wearer can also choose to see the run sheet item's name and the *last minute* / *time's up* notices. Quiet mode leaves only the countdown. A tap on the glasses hides or shows it. Choose the corner on the phone, or from the glasses' menu (tap, then tap and hold): **Next corner**. A presenter's glasses can't control the timer.
+- **Operator:** the operator's screen in miniature: elapsed and total along the top, the message on screen and the countdown in the middle, started and ends-at times along the bottom (before the show, whether auto start is on). **Three quick taps** (or four or five, set on the phone) go to the next run sheet item. The glasses' menu has **Next item**, **Back**, **Pause / resume**, **Reset show**, **Auto start on / off**, **Minimal view** (just the message and the countdown; a 2-second press and hold also toggles it) and **Quiet on / off**. The item's name shows dimmer than a message of yours, and *QUIET* is shown while quiet mode is on.
 
 To pair:
 

@@ -1,4 +1,4 @@
-/* global timerAPI,onKey_Pause,onKey_UndoPause,catchUpNow,announceCustomMessage,captureTimerState,restoreTimerState*/
+/* global timerAPI,onKey_Pause,onKey_UndoPause,catchUpNow,announceCustomMessage,captureTimerState,restoreTimerState,restoreMessages,setOperatorMessage,setItemMessage,setQuiet,quiet*/
 
 function processTimerApiMessage(msg) {
     const { error,cmd, code } = msg ;
@@ -74,7 +74,7 @@ function processTimerApiMessage(msg) {
 
         case "restore": {
             restoreTimerState(msg.state);
-            if (msg.state) processTimerApiMessage({ cmd: 'custommessage', text: msg.state.message || '' });
+            restoreMessages(msg.state);
             break;
         }
 
@@ -123,18 +123,21 @@ function processTimerApiMessage(msg) {
             break;
         }
 
+        // The operator's message ('' clears it, and the run sheet item's name shows again)
         case "custommessage": {
+            setOperatorMessage(typeof msg.text === "string" ? msg.text : "");
+            break;
+        }
 
-            html.classList.remove("edit_custom_message");
-            html.classList.remove("show_custom_message");
-            custom_message.innerText = msg.text.trim();
-            custom_message.contentEditable = false;
+        // The run sheet item's name: shown whenever there's no operator's message
+        case "itemmessage": {
+            setItemMessage(typeof msg.text === "string" ? msg.text : "");
+            break;
+        }
 
-
-            if (custom_message.innerText.length > 0) {
-                html.classList.add("show_custom_message");
-            }
-            localStorage.setItem("custom_message", custom_message.innerText);
+        // Quiet mode: only the countdown on the presenter screens. {on: true|false}; no `on` toggles
+        case "quiet": {
+            setQuiet(typeof msg.on === "boolean" ? msg.on : !quiet);
             break;
         }
 

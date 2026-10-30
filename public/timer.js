@@ -232,6 +232,8 @@ custom_message.addEventListener('focus', function(){
   // Show the current message on load. Without this, a presenter window opened after a
   // message was set (or a reloaded controller) stayed blank until the message changed.
   (function restoreStoredMessage() {
+	  loadMessages();
+	  if (runMode !== "presenter") { renderMessage(false); return; }
 	  const msg = localStorage.getItem("custom_message");
 	  if (msg) {
 		  custom_message.textContent = msg;
@@ -317,21 +319,71 @@ custom_message.addEventListener('focus', function(){
   }
   
   
-  // The message currently on screen ('' when none). Messages are set from several places
-  // (C key, custommessage command, remote-json, storage sync), so it is announced from one point.
+  // Messages come in two layers: the run sheet item's name (itemMessage, the `itemmessage` command) and
+  // the operator's own (operatorMessage: C, the `custommessage` command from phones, the deck, Companion).
+  // The screen shows the operator's if there is one, else the item's, so clearing the operator's brings
+  // the item's name back. (The automatic notices, notices.js, are a third kind with their own line.)
+  // Quiet mode (Q, the `quiet` command; html.quiet) takes everything but the countdown off the presenter
+  // screens for a while; the run sheet ends it when an item starts. localStorage: message_item,
+  // message_operator, quiet; custom_message holds what's on screen (the presenter window shows it).
+  // var and no initial values: loadMessages() runs (restoreStoredMessage) before these lines execute
+  var itemMessage, operatorMessage, quiet;
+  function shownMessage() { return operatorMessage || itemMessage || ""; }
+  function loadMessages() {
+	  const item = localStorage.getItem("message_item"), op = localStorage.getItem("message_operator");
+	  if (item === null && op === null) {			// saved before the layers: whatever was showing counts as the operator's
+		  itemMessage = ""; operatorMessage = (localStorage.getItem("custom_message") || "").trim();
+	  } else {
+		  itemMessage = (item || "").trim(); operatorMessage = (op || "").trim();
+	  }
+	  quiet = localStorage.getItem("quiet") === "1";
+	  if (quiet) setHtmlClass("quiet"); else clearHtmlClass("quiet");
+  }
+  // Puts the shown message on screen (not over one being typed); store: save the layers (own changes only)
+  function renderMessage(store) {
+	  const msg = shownMessage();
+	  if (!html.classList.contains("edit_custom_message")) {
+		  custom_message.contentEditable = false;
+		  custom_message.innerText = msg;
+		  if (msg) setHtmlClass("show_custom_message"); else clearHtmlClass("show_custom_message");
+	  }
+	  if (store) {
+		  localStorage.setItem("message_item", itemMessage);
+		  localStorage.setItem("message_operator", operatorMessage);
+		  localStorage.setItem("custom_message", msg);
+	  }
+  }
+  function setOperatorMessage(text) {
+	  operatorMessage = String(text || "").trim();
+	  clearHtmlClass("edit_custom_message");
+	  renderMessage(true);
+  }
+  function setItemMessage(text) {
+	  itemMessage = String(text || "").trim();
+	  renderMessage(true);
+  }
+  function setQuiet(on) {
+	  quiet = !!on;
+	  if (quiet) { setHtmlClass("quiet"); localStorage.setItem("quiet", "1"); }
+	  else { clearHtmlClass("quiet"); localStorage.removeItem("quiet"); }
+  }
+
+  // The message currently on screen ('' when none), announced from one point each tick
   function currentCustomMessage() {
-	  return html.classList.contains("show_custom_message") ? custom_message.textContent.trim() : "";
+	  return shownMessage();
   }
   var lastAnnouncedMessage = null;   // var: displayUpdate runs before later lines execute
   function announceCustomMessage(force) {
 	  const msg = currentCustomMessage();
-	  if (!force && msg === lastAnnouncedMessage) return;
-	  lastAnnouncedMessage = msg;
+	  const kind = operatorMessage ? "operator" : itemMessage ? "item" : "";
+	  const sig = [msg, itemMessage, operatorMessage, !!quiet].join("\u0000");
+	  if (!force && sig === lastAnnouncedMessage) return;
+	  lastAnnouncedMessage = sig;
 	  // Long messages (e.g. run sheet item names) get a smaller font so they don't run into the countdown
 	  if (msg.length > 90) { setHtmlClass("msg-xlong"); clearHtmlClass("msg-long"); }
 	  else if (msg.length > 28) { setHtmlClass("msg-long"); clearHtmlClass("msg-xlong"); }
 	  else { clearHtmlClass("msg-long"); clearHtmlClass("msg-xlong"); }
-	  if (timerAPI) timerAPI.send({ setVariableValues: { custommsg: msg } });
+	  if (timerAPI) timerAPI.send({ setVariableValues: { custommsg: msg, item_msg: itemMessage || "", operator_msg: operatorMessage || "", msg_kind: kind, quiet: !!quiet } });
   }
 
   // The tick that drives everything (display, bus, Stream Deck, phones, Companion). In a
@@ -902,13 +954,24 @@ custom_message.addEventListener('focus', function(){
 		  pausedAt: pausedAt === undefined ? null : pausedAt,
 		  pauseAcum,
 		  message: currentCustomMessage(),
+		  itemMessage: itemMessage || "", operatorMessage: operatorMessage || "", quiet: !!quiet,
 		  standby: !!standby,
 		  standbyText: standby && pausedAt ? standbyText(timeProvider.now()) : "",	// for the run sheet dashboard
 	  };
   }
 
-  // Restores the countdown. The message is restored separately by the `restore`
-  // API command (via `custommessage`), so it reaches the presenter screen too.
+  // Restores the countdown. The messages and quiet mode are restored separately by the `restore`
+  // API command (restoreMessages), so they reach the presenter screen too.
+  function restoreMessages(s) {
+	  if (!s) return;
+	  if ("operatorMessage" in s) {
+		  itemMessage = String(s.itemMessage || "").trim();
+		  setOperatorMessage(s.operatorMessage);
+		  setQuiet(s.quiet);
+	  } else {
+		  setOperatorMessage(s.message || "");		// a snapshot from before the layers
+	  }
+  }
   function restoreTimerState(s) {
 	  if (!s || !isFinite(s.startedAt)) return;
 	  setDefaultDuration(s.defaultDuration);          // first: it may also set thisDuration
@@ -992,32 +1055,13 @@ function onLocalStorage(ev){
 	            const {cmd, msg, msecs, endTime } = JSON.parse(json);
 	            
 	            const doMsg = (msg)=>{
-	                 if (typeof msg==='string') {
-                        html.classList.remove("edit_custom_message");
-                        if (msg.length===0) {
-                            html.classList.remove("show_custom_message");
-                        } else {
-                        	html.classList.add("show_custom_message");
-                        }
-                    	custom_message.innerText=msg;
-                    	custom_message.contentEditable=false;
-                    }
+	                 if (typeof msg==='string') setOperatorMessage(msg);
 	            };
 	            
 	            switch (cmd) {
 	                
 	                case 'custom' : 
-	                    if (msg && msg.length>0) {
-	                        html.classList.remove("edit_custom_message");
-                        	html.classList.add("show_custom_message");
-                        	custom_message.innerText=msg;
-                        	custom_message.contentEditable=false;
-	                    } else {
-	                         html.classList.remove("edit_custom_message");
-	                         html.classList.remove("show_custom_message");
-	                         custom_message.innerText="";
-                        	 custom_message.contentEditable=false;
-	                    }
+	                    setOperatorMessage(msg || "");
 	                    break;
 	                case 'restart' :
 	                    restartTimer(msecs);
@@ -1089,7 +1133,9 @@ function onLocalStorage(ev){
 
 	  }
 	  
-	  if (ev.key==="custom_message") {
+	  if (runMode!=="presenter" && ev.key==="quiet") { quiet = ev.newValue === "1"; if (quiet) setHtmlClass("quiet"); else clearHtmlClass("quiet"); }
+	  if (runMode!=="presenter" && ev.key==="custom_message") { loadMessages(); renderMessage(false); }
+	  else if (ev.key==="custom_message") {
 		  let msg = localStorage.getItem("custom_message");
 		  custom_message.textContent=msg;
 		  if (msg==="") {
@@ -1159,7 +1205,6 @@ function getTabCount(cont) {
 	return count;
 }
 
-let custom_msg_timeout;
 
 function onKey_Pause(ev) {
 		if (standby && html.classList.contains("paused") && standbyStart()) return;   // Resume in standby: the show starts
@@ -1647,33 +1692,17 @@ function onDocKeyDown(ev){
 	   
 		if  ( ev.key === "Enter") {
 			   custom_message.contentEditable=false;
-			   html.classList.remove("edit_custom_message");
-			   if (custom_message.textContent==="custom message") {
-				   html.classList.remove("show_custom_message");
-				   localStorage.setItem("custom_message","");
-				   
-			   } else {
-				   html.classList.add("show_custom_message");
-				   custom_msg_timeout = setTimeout(function(){
-					   custom_msg_timeout = undefined;
-					   localStorage.setItem("custom_message",custom_message.textContent);
-				   },500);
-			   }
+			   const typed = custom_message.textContent.trim();
+			   setOperatorMessage(typed === "custom message" ? "" : typed);	// nothing typed: the item's name comes back
 		}
 	   return checkModifiers();
    } else {
-	   if (html.classList.contains("show_custom_message")) {
+	   // C clears the operator's message (the item's name comes back); over just an item name it opens the editor
+	   if (operatorMessage && !ev.ctrlKey) {
 
 			if  ( ev.key ==="c" || ev.key==="C") {
-			   html.classList.remove("edit_custom_message");
-			   html.classList.remove("show_custom_message");
-			   if (custom_msg_timeout) {
-				   clearTimeout(custom_msg_timeout);
-				   custom_msg_timeout = undefined;
-			   }
-			   localStorage.setItem("custom_message","");
-			   return checkModifiers();		   
-			   
+			   setOperatorMessage("");
+			   return checkModifiers();
 			}
 
 	   }
@@ -1769,6 +1798,8 @@ function onDocKeyDown(ev){
 			case "Q":
 					if (controlling) {
 						onKey_Ctrl_Q(ev);
+					} else if (runMode !== "presenter" && !ev.repeat) {
+						setQuiet(!quiet);		// quiet mode: only the countdown on the presenter screens
 					}
 	
 					break;

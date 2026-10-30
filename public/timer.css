@@ -1616,3 +1616,21 @@ html.runsheet:not(.reduced) #custom_message {
   overflow: hidden;
 }
 
+
+/* QUIET MODE (html.quiet: Q, the `quiet` command; ends when a run sheet item starts). The presenter
+   screens (html.reduced: the presenter window, display.html) show only the countdown: no message,
+   notice, time of day or bar. The operator's screen keeps them, dimmed, under a QUIET badge. */
+#quiet_badge { display: none; }
+html.quiet:not(.reduced) #quiet_badge {
+    display: block; position: absolute; top: 48px; left: 50%; transform: translateX(-50%); z-index: 5;
+    font: 13px var(--ui-font); color: #111; background: #ffcc33; border-radius: 5px; padding: 3px 10px; white-space: nowrap;
+}
+html.quiet:not(.reduced) #quiet_badge kbd { font: inherit; font-weight: bold; }
+html.quiet.reduced #custom_message,
+html.quiet.reduced #remain_info_message,
+html.quiet.reduced #now_disp,
+html.quiet.reduced #messages_enabled,
+html.quiet.reduced .mainDiv { display: none !important; }
+html.quiet:not(.reduced):not(.edit_custom_message) #custom_message,
+html.quiet:not(.reduced) #remain_info_message,
+html.quiet:not(.reduced) .mainDiv { opacity: 0.3; }

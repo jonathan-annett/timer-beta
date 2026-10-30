@@ -225,7 +225,7 @@
       if (playing !== s) return;
       const remaining = Math.max(0, s.el.duration - s.el.currentTime);
       api({ cmd: 'start', msecs: wholeSeconds(remaining) });
-      api({ cmd: 'custommessage', text: messageFor(s) });
+      api({ cmd: 'itemmessage', text: messageFor(s) });   // context, like a run sheet item's name: an operator's message stays on top
       const p = s.el.play();
       // Recent videos (video-library.js): noted when it actually plays
       if (s.history && window.videoLibrary) {
@@ -245,7 +245,7 @@
   }
 
   function clearTimer() {
-    api({ cmd: 'custommessage', text: '' });
+    api({ cmd: 'itemmessage', text: '' });
     api({ cmd: 'start', msecs: 0 });
     api({ cmd: 'pause' });
   }
@@ -282,7 +282,7 @@
     arrange();
     whenReady(s.el, () => {
       api({ cmd: 'start', msecs: wholeSeconds(s.el.duration) });
-      api({ cmd: 'custommessage', text: messageFor(s) });
+      api({ cmd: 'itemmessage', text: messageFor(s) });   // context, like a run sheet item's name: an operator's message stays on top
       // Pause a moment later: paused at exactly N.000 s the timer would read N+1
       setTimeout(() => { if (cued === s) api({ cmd: 'pause' }); }, 60);
     });

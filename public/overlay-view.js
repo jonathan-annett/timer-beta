@@ -331,9 +331,10 @@ var OverlayView = (function () {
   const supported = () => 'documentPictureInPicture' in window || !!document.pictureInPictureEnabled;
   // The video fallback is used here (Safari, Firefox): create the view at load, not in the click
   const needsVideo = () => !('documentPictureInPicture' in window) && !!document.pictureInPictureEnabled;
-  // The message strip's text: the operator's message, with the standby notice after it while standing by
+  // The message strip's text ('' in quiet mode): the message on screen, with the standby notice after it while standing by
   // (the message is then the first item's name: "Keynote · Standing by to start in 5:23…")
   function stripText(s, msg) {
+    if (s.quiet) return '';                      // quiet mode: only the countdown
     msg = String(msg || '').trim();
     if (s.standby) return msg ? msg + ' · ' + s.standby : s.standby;
     return msg || autoMsg(s);

@@ -225,7 +225,7 @@
       remain: online && state.remain ? (state.over ? '+' : '') + state.remain : '–:––',
       over: state.over, impending: state.impending, paused: state.paused,
       msg: online ? OverlayView.stripText(state, state.msg) : '',
-      pct: state.pct, bar: state.bar,                 // the shade follows the timer's B too
+      pct: state.pct, bar: state.bar && !state.quiet,   // the shade follows the timer's B too (and quiet mode)
     });
     $('layout').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.l === view.layout));
     $('start').textContent = view.open ? 'Stop overlay' : 'Start overlay';

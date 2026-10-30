@@ -241,10 +241,17 @@
     $('catchup').disabled = !(state.adjUp || state.adjDown);
     $('catchup').classList.toggle('on', !!(state.adjUp || state.adjDown));
 
-    const msg = state.msg || '';
-    $('msgtext').textContent = msg || 'No message on screen';
-    $('msgbox').classList.toggle('empty', !msg);
-    $('msgclear').disabled = !msg;
+    // The message on screen is the operator's, else the run sheet item's name (msgKind; older timers
+    // don't say, so it counts as the operator's). Clear clears the operator's only. Quiet hides both.
+    const msg = state.msg || '', item = state.msgKind === 'item', quiet = !!state.quiet;
+    $('msgtext').textContent = quiet ? 'Quiet: only the countdown is showing' + (msg ? ' (' + msg + ' hidden)' : '')
+      : msg ? (item ? 'Item: ' + msg : msg) : 'No message on screen';
+    $('msgbox').classList.toggle('empty', !msg && !quiet);
+    $('msgbox').classList.toggle('item', item && !quiet);
+    $('msgbox').classList.toggle('quiet', quiet);
+    $('msgclear').disabled = !msg || item;
+    $('msgquiet').classList.toggle('on', quiet);
+    $('msgquiet').hidden = !('quiet' in state);        // an older timer has no quiet mode
 
     $('rs').hidden = !state.rsOn;
     if (state.rsOn) {
@@ -394,6 +401,7 @@
   pressable($('rsnextbtn'), () => cmd('runsheetnext'));
   pressable($('rsback'), () => cmd('runsheetprev'));
   pressable($('msgclear'), () => cmd('custommessage', { text: '' }));
+  pressable($('msgquiet'), () => cmd('quiet', { on: !state.quiet }));
   // Run sheet view, control and admin phones: Back / Pause / Next, live adjust and catch up
   pressable($('rcback'), () => cmd('runsheetprev'));
   pressable($('rcnext'), () => cmd('runsheetnext'));
@@ -910,20 +918,21 @@
   let lastList = null, cdSig = '', rsvSig = '';
   function renderDisplays() {
     const remain = (state.over ? '+' : '') + (state.remain || '–:––');
-    const sub = state.standby ? state.standby : state.msgs ? notice(true) : '';     // status messages follow the timer's M switch (standby always shows)
+    const quiet = !!state.quiet;                    // quiet mode: only the countdown
+    const sub = quiet ? '' : state.standby ? state.standby : state.msgs ? notice(true) : '';     // status messages follow the timer's M switch (standby always shows)
 
     postDisplay();
 
     // Countdown display: the time of day (T), progress bar (B) and status messages (M) follow the
     // timer's own switches, like the presenter screen
-    document.body.classList.toggle('cd-clock', !!state.clock);
-    document.body.classList.toggle('cd-bar', !!state.bar);
+    document.body.classList.toggle('cd-clock', !!state.clock && !quiet);
+    document.body.classList.toggle('cd-bar', !!state.bar && !quiet);
     $('cdbarfill').style.width = Math.max(0, Math.min(100, Number(state.pct) || 0)) + '%';
     $('cdclocktime').textContent = clockNow(true);
     $('cdremain').textContent = remain;
     $('cdsub').textContent = sub;
-    $('cdmsg').textContent = state.msg || '';
-    const sig = [remain.length, state.msg || '', sub, !!state.clock, !!state.bar].join('|');
+    $('cdmsg').textContent = quiet ? '' : state.msg || '';
+    const sig = [remain.length, quiet ? '' : state.msg || '', sub, !!state.clock && !quiet, !!state.bar && !quiet].join('|');
     if (sig !== cdSig) { cdSig = sig; fitCountdown(); }
 
     // Run sheet

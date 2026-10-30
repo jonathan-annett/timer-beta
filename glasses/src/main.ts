@@ -24,6 +24,13 @@
  *   ts_corner  tl | tr | bl | br
  *   ts_minimal '1': the operator's layout without its corner items (the glasses' menu)
  *   ts_taps    3 | 4 | 5: the taps an operator needs for Next (more makes an accident less likely)
+ *   ts_see     a presenter's own choice of what shows beside the countdown, JSON {custom, item, notices}
+ *              (default: the operator's messages only; the countdown's brightness already says last
+ *              minute and time up)
+ *
+ * The timer's message comes in layers (its state: msg on screen, msgKind item | operator, itemMsg,
+ * opMsg) and quiet mode (quiet: only the countdown). A presenter sees what ts_see allows, nothing but
+ * the countdown in quiet mode; an operator sees everything, the item's name dimmer than a message.
  */
 import { waitForEvenAppBridge, OsEventTypeList, type EvenAppBridge } from '@evenrealities/even_hub_sdk'
 import { claim, CLAIM_ERRORS, TimerLink, type Paired, type Status, type Mode } from './link'
@@ -36,7 +43,7 @@ const $ = (id: string) => document.getElementById(id) as HTMLElement
 
 // ─── Saved settings ──────────────────────────────────────────────────────────
 
-const KEYS = ['ts_link', 'ts_ctl', 'ts_token', 'ts_role', 'ts_wants', 'ts_corner', 'ts_minimal', 'ts_taps']
+const KEYS = ['ts_link', 'ts_ctl', 'ts_token', 'ts_role', 'ts_wants', 'ts_corner', 'ts_minimal', 'ts_taps', 'ts_see']
 const cache: Record<string, string> = {}
 let storeBridge: EvenAppBridge | null = null
 const store = {
@@ -76,6 +83,10 @@ let corner: Corner = 'tl'
 let hidden = false                    // a presenter's tap hides the countdown
 let minimal = false                   // an operator's layout without its corners (elapsed, total, started, ends)
 let tapsNeeded = 3                    // an operator's taps for Next (3–5, set on the phone page)
+// What a presenter sees beside the countdown (set on the phone page)
+interface See { custom: boolean; item: boolean; notices: boolean }
+const SEE_DEFAULT: See = { custom: true, item: false, notices: false }
+let see: See = { ...SEE_DEFAULT }
 let flash = '', flashUntil = 0        // a moment of feedback on the glasses ("Next...")
 
 // ─── The glasses ─────────────────────────────────────────────────────────────
@@ -107,9 +118,16 @@ function glassesView(): Layout {
   const clk = !v ? '' : (v.over ? '+' : '') + v.remain + (v.standby ? '' : v.paused ? ' paused' : '')
   const bright = !v ? 0 : v.over ? 4 : v.impending ? 3 : v.paused ? 1 : 2
   const showFlash = flash && Date.now() < flashUntil ? flash : ''
+  const quiet = !!state.quiet
+  // The message's layers; an older timer sends only msg (the operator's, as far as we can tell)
+  const layered = typeof state.msgKind === 'string'
+  const opMsg = String((layered ? state.opMsg : state.msg) || ''), itemMsg = String((layered ? state.itemMsg : '') || '')
   if (role === 'operator' || (DEMO && location.hash.includes('operator'))) {
-    // The operator's screen: elapsed / total, the message, the countdown, started / ends at
-    const msg = showFlash || String(state.msg || (DEMO ? 'Keynote: the future of timing' : ''))
+    // The operator's screen: elapsed / total, the message, the countdown, started / ends at. The item's
+    // name is dimmer than a message of the operator's; quiet mode is marked (the presenters see neither)
+    const shown = opMsg || itemMsg || (DEMO ? 'Keynote: the future of timing' : '')
+    const msg = showFlash || (quiet ? 'QUIET - ' : '') + shown
+    const msgBright = showFlash || opMsg ? 4 : quiet ? 3 : 2
     const started = String(state.started || (DEMO ? '17:23:18' : '')), ends = String(state.ends || (DEMO ? '17:33:18' : ''))
     // Before the show: the auto start's state (the menu turns it on or off) where "started" goes
     const auto = String(state.rsAuto || ''), autoText = auto ? 'auto start ' + (auto.startsWith('on') ? 'on, ' : 'off, ') + auto.replace(/^\w+ /, '') : ''
@@ -117,26 +135,39 @@ function glassesView(): Layout {
     return {
       elapsed: { text: c(v ? 'elapsed ' + v.elapsed : ''), bright: 2, h: 'l', v: 't' },
       total: { text: c(v ? v.total + ' total' : ''), bright: 2, h: 'r', v: 't' },
-      msg: { text: msg, bright: 4, h: 'c', v: 84, lines: 2, bottom: true },
+      msg: { text: msg, bright: msgBright, h: 'c', v: 84, lines: 2, bottom: true },
       clk: { text: sb ? clk + ' - ' + sb : clk, bright, h: 'c', v: 146 },
       started: { text: c(autoText || (started ? (sb ? 'starts ' : 'started ') + started : '')), bright: auto.startsWith('on') ? 3 : 2, h: 'l', v: 'b' },
       ends: { text: c(ends ? 'ends at ' + ends : ''), bright: 2, h: 'r', v: 'b' },
     }
   }
+  // A presenter: the countdown in the corner, and next to it what they've chosen to see (none in quiet mode)
+  const note = !v || quiet ? '' : see.custom && opMsg ? opMsg : see.item && itemMsg ? itemMsg : see.notices ? noticeText(v) : ''
+  const top = p.v === 't'
   return {
     clk: { text: hidden || showFlash ? '' : sb || clk, bright, ...p },
     info: info(showFlash),
+    msg: { text: hidden || showFlash ? '' : note, bright: opMsg && note === opMsg ? 4 : 2, h: p.h, v: top ? 44 : 186, lines: 2, width: 300, bottom: !top },
   }
+}
+
+// The timer's words without emoji, which the glasses' font may not have
+function plainWord(key: string, fallback: string): string {
+  let w: Record<string, string> = {}
+  try { w = JSON.parse(String(state.words || '{}')) || {} } catch { /* defaults */ }
+  return (w[key] || '').replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '').trim() || fallback
+}
+// Last minute / time up, for a presenter who asked for notices (paused is on the countdown already)
+function noticeText(v: ClockValues): string {
+  if (v.standby || v.paused) return ''
+  return v.over ? plainWord('over', 'Time’s up') : v.impending ? plainWord('wrap', 'Wrap up - last minute') : ''
 }
 
 // The standby notice in the timer's words (its notices panel; state.words), without emoji, which the
 // glasses' font may not have
 function standbyText(ms: number): string {
-  let w: Record<string, string> = {}
-  try { w = JSON.parse(String(state.words || '{}')) || {} } catch { /* defaults */ }
-  const plain = (t: string | undefined, d: string) => (t || '').replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '').trim() || d
   const sec = Math.ceil(ms / 1000)
-  return ms > 0 ? plain(w.standbyIn, 'Standing by · starts in {t}').replace('{t}', secToStr(sec)) : plain(w.standby, 'Standing by')
+  return ms > 0 ? plainWord('standbyIn', 'Standing by · starts in {t}').replace('{t}', secToStr(sec)) : plainWord('standby', 'Standing by')
 }
 
 // The glasses' menu for the role: a presenter's corner; an operator's show controls
@@ -149,6 +180,7 @@ function menuFor(r: Mode): MenuItem[] {
     { itemID: MENU.reset, itemName: 'Reset show' },
     { itemID: MENU.auto, itemName: 'Auto start on / off' },
     { itemID: MENU.minimal, itemName: 'Minimal view on / off' },
+    { itemID: MENU.quiet, itemName: 'Quiet on / off' },
   ]
 }
 function onMenu(id: number): void {
@@ -159,6 +191,10 @@ function onMenu(id: number): void {
   else if (id === MENU.back) { link.command('runsheetprev'); showFlash('Back...') }
   else if (id === MENU.pause) link.command('pause')
   else if (id === MENU.reset) { link.command('reset'); showFlash('Show reset') }
+  else if (id === MENU.quiet) {
+    if (!('quiet' in state)) showFlash('This timer has no quiet mode')
+    else { const on = !state.quiet; link.command('quiet', { on }); showFlash(on ? 'Quiet: only the countdown' : 'Quiet off') }
+  }
   else if (id === MENU.auto) {
     const auto = String(state.rsAuto || '')
     if (!auto) showFlash('No auto start: the first item needs a start time, before the show')
@@ -230,6 +266,8 @@ function render(): void {
   document.querySelectorAll<HTMLInputElement>('input[name=wants]').forEach(i => { i.checked = i.value === wants })
   $('tapsbox').hidden = role !== 'operator'
   document.querySelectorAll<HTMLButtonElement>('#taps button').forEach(b => b.classList.toggle('on', Number(b.dataset.n) === tapsNeeded))
+  $('seebox').hidden = role === 'operator'
+  document.querySelectorAll<HTMLButtonElement>('#see button').forEach(b => b.classList.toggle('on', !!see[b.dataset.s as keyof See]))
   const view = glassesView()
   glasses?.setMenu(menuFor(role))
   glasses?.show(view)
@@ -385,6 +423,12 @@ function setup(): void {
   $('scanstop').addEventListener('click', stopScan)
   document.querySelectorAll<HTMLButtonElement>('#corners button').forEach(b => b.addEventListener('click', () => setCorner(b.dataset.c as Corner)))
   document.querySelectorAll<HTMLButtonElement>('#taps button').forEach(b => b.addEventListener('click', () => { tapsNeeded = Number(b.dataset.n); store.set('ts_taps', String(tapsNeeded)); render() }))
+  document.querySelectorAll<HTMLButtonElement>('#see button').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.s as keyof See
+    see = { ...see, [k]: !see[k] }
+    store.set('ts_see', JSON.stringify(see))
+    render()
+  }))
   document.querySelectorAll<HTMLInputElement>('input[name=wants]').forEach(i => i.addEventListener('change', () => { wants = i.value === 'operator' ? 'operator' : 'presenter'; store.set('ts_wants', wants) }))
   let armed = 0
   $('unpair').addEventListener('click', () => {
@@ -434,6 +478,7 @@ async function boot(): Promise<void> {
   wants = store.get('ts_wants') === 'operator' ? 'operator' : 'presenter'
   minimal = store.get('ts_minimal') === '1'
   tapsNeeded = [3, 4, 5].includes(Number(store.get('ts_taps'))) ? Number(store.get('ts_taps')) : 3
+  try { const v = JSON.parse(store.get('ts_see') || '{}'); see = { custom: v.custom ?? SEE_DEFAULT.custom, item: !!v.item, notices: !!v.notices } } catch { see = { ...SEE_DEFAULT } }
   status = paired ? 'connecting' : 'unpaired'
   if ((CORNERS as string[]).includes(store.get('ts_corner'))) corner = store.get('ts_corner') as Corner
   for (const p of location.hash.startsWith('#demo=') ? location.hash.slice(6).split(',') : []) if ((CORNERS as string[]).includes(p)) corner = p as Corner

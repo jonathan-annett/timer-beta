@@ -259,6 +259,7 @@
     catchup:       () => ({ cmd: 'catchup' }),
     nudge:         m => num(m.msecs, 1000, HOUR) && { cmd: 'nudge', addtime: !!m.addtime, msecs: m.msecs },   // eases; catch up snaps
     custommessage: m => typeof m.text === 'string' && { cmd: 'custommessage', text: m.text.slice(0, 200) },
+    quiet:         m => ({ cmd: 'quiet', on: typeof m.on === 'boolean' ? m.on : undefined }),   // no `on`: toggles
     runsheetnext:  () => ({ cmd: 'runsheetnext' }),
     runsheetprev:  () => ({ cmd: 'runsheetprev' }),
   };
@@ -736,6 +737,8 @@
     remain: ['remain', String], expired: ['over', truthy], impending: ['impending', truthy],
     pausing: ['paused', truthy], adjusting_up: ['adjUp', truthy], adjusting_down: ['adjDown', truthy],
     custommsg: ['msg', String], default: ['def', String],
+    // The message's layers (msg is the one on screen: the operator's, else the item's), and quiet mode
+    item_msg: ['itemMsg', String], operator_msg: ['opMsg', String], msg_kind: ['msgKind', String], quiet: ['quiet', truthy],
     rs_active: ['rsOn', truthy], rs_current: ['rsNow', String], rs_next: ['rsNext', String],
     rs_can_back: ['rsBack', truthy], rs_status: ['rsStatus', String], rs_late: ['rsLate', v => (v === '' ? null : Number(v))],
     rs_title: ['rsTitle', String], rs_text: ['rsText', String], rs_list: ['rsList', String],
@@ -1297,7 +1300,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
   function glassesCommand(m) {
     const rs = window.runsheet, api = typeof processTimerApiMessage === 'function' ? processTimerApiMessage : null;
     if (!api) return;
-    if (m.cmd === 'runsheetnext' || m.cmd === 'runsheetprev' || m.cmd === 'pause') api(ALLOWED[m.cmd](m));
+    if (m.cmd === 'runsheetnext' || m.cmd === 'runsheetprev' || m.cmd === 'pause' || m.cmd === 'quiet') api(ALLOWED[m.cmd](m));
     else if (m.cmd === 'reset' && rs && rs.reset) rs.reset();
     else if (m.cmd === 'autostart' && rs && rs.setAutostart) rs.setAutostart(m.on === true);
   }

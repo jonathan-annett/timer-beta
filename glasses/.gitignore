@@ -3,3 +3,4 @@ dist/
 *.ehpk
 sim/
 ship.config.json
+app.dev.json

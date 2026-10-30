@@ -64,6 +64,21 @@ first time it creates the app), promotes the build to beta and invites the teste
 the Even app → Me → Beta tester (or the invite email). Other testers: `npx evenhub testers add a@b.com`
 or the portal's Testing group.
 
+## Testing without bothering the testers
+
+- **Dev copy:** `npm run ship -- --dev "what changed"` ships the build as a separate app,
+  **Timed Show dev** (`com.timedshow.glasses.dev`), with only you as its tester, so the real app's beta
+  slot only gets builds meant for the testers. Same version numbers and `CHANGELOG.md`; install both
+  from Even app → Me → Beta tester.
+- **Against alpha's timer:** the plugin only knows beta's pairing server, and beta's server accepts
+  alpha's pages (`ORIGINS` on the beta Worker). Open the timer as
+  `https://alpha.timed-show.com/?remote=wss://beta.timed-show.com/ws` (or put that server in the share
+  panel's *Server* field), then pair as usual: the glasses see alpha's timer code. It doesn't test
+  alpha's Worker itself (that would need alpha's `/ws` let through Cloudflare Access and alpha added to
+  the network whitelist). Clear the *Server* field afterwards to go back to alpha's own server.
+- **Quick iteration:** Prototype mode (`npm run dev`, then `npx evenhub qr --url http://<LAN-IP>:5173`,
+  scanned in the Even app) reloads on save with no upload; the laptop must be on the phone's network.
+
 ## Known unknowns (check on real glasses)
 
 - Solved: the Even app serves the plugin from `http://127.0.0.1:<port>`; the Worker accepts loopback

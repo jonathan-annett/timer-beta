@@ -23,7 +23,7 @@ import { getTextWidth } from '@evenrealities/pretext'
 export type Corner = 'tl' | 'tr' | 'bl' | 'br'
 export const CORNERS: Corner[] = ['tl', 'tr', 'bl', 'br']
 // The glasses' menu items, by role (menuFor in main.ts); the menu changes only with a page rebuild
-export const MENU = { corner: 1, next: 2, back: 3, pause: 4, reset: 5, auto: 6, minimal: 7 }
+export const MENU = { corner: 1, next: 2, back: 3, pause: 4, reset: 5, auto: 6, minimal: 7, quiet: 8 }
 export interface MenuItem { itemID: number; itemName: string }   // itemName ≤ 32 bytes
 export const W = 576, H = 288, MARGIN = 12
 

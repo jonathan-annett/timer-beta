@@ -72,13 +72,16 @@
     toggle_time:      { label: 'Clock',     group: 'Display',   toggleState: 'showtimenow',  cmd: () => _sendCmd({ cmd: 'time' }) },
     toggle_messages:  { label: 'Messages',  group: 'Display',   toggleState: 'showmessages', cmd: () => _sendCmd({ cmd: 'messages' }) },
     toggle_presenter: { label: 'Remote',    group: 'Display',   cmd: () => _sendCmd({ cmd: 'presenter' }) },
+    // Quiet mode: only the countdown on the presenter screens (lit while on; the next run sheet item ends it)
+    toggle_quiet:     { label: 'Quiet',     group: 'Display',   toggleState: 'quiet',        cmd: () => _sendCmd({ cmd: 'quiet' }) },
     brightness_cycle: { label: 'Backlight', group: 'Display',   cmd: () => cycleBrightness() },
     // Display-only keys showing the remaining time (see countdownText). Pressing them does nothing.
     countdown:        { label: 'Timer',     group: 'Countdown', display: 'full',  cmd: null },
     countdown_major:  { label: 'Min / Hr',  group: 'Countdown', display: 'major', cmd: null },
     countdown_minor:  { label: 'Sec / Min', group: 'Countdown', display: 'minor', cmd: null },
     // Preset message: text is stored per key (keyOverrides[...].message). Press shows it on the
-    // presenter screen; press again (while it's showing) clears it.
+    // presenter screen; press again (while it's showing) clears it. These and Clear message work the
+    // operator's message only: clearing it brings back the run sheet item's name.
     message:          { label: 'Message',   group: 'Messages',  isMessage: true, cmd: (i, m) => toggleMessage(i, m) },
     message_clear:    { label: 'Clear\nmessage', group: 'Messages', cmd: () => _sendCmd({ cmd: 'custommessage', text: '' }) },
     // Run sheet (see runsheet.js). Next shows the upcoming item's name; Schedule shows ahead/behind.
@@ -124,13 +127,13 @@
   // whole deck ~10x a second.
   let deckState = {
     expired: false, impending: false, adjusting_up: false, adjusting_down: false,
-    pausing: false, showbar: false, showtimenow: false, showmessages: false,
+    pausing: false, showbar: false, showtimenow: false, showmessages: false, quiet: false,
     video_cued: false, video_playing: false,    // from the bus's video_status
   };
 
   // Remaining time, from the timer's `remain` text ("M:SS" or "H:MM:SS"; counts up overtime
   // once `expired`). Kept out of deckState: only countdown keys repaint when it changes.
-  let currentMessage = '';   // message on the presenter screen ('' = none), from `custommsg`
+  let currentMessage = '';   // the operator's message ('' = none), from `operator_msg` (older timers: `custommsg`)
   // Run sheet state pushed by runsheet.js (rs_* variables). Kept out of deckState so a
   // change repaints only the run sheet keys.
   let rs = { active: false, next: '', canBack: false, status: '', late: null };
@@ -181,8 +184,9 @@
               if (device && !changed) scheduleRsKeys();
             }
           }
-          if (typeof v.custommsg === 'string' && v.custommsg !== currentMessage) {
-            currentMessage = v.custommsg;
+          const opMsg = typeof v.operator_msg === 'string' ? v.operator_msg : 'msg_kind' in v ? undefined : v.custommsg;
+          if (typeof opMsg === 'string' && opMsg !== currentMessage) {
+            currentMessage = opMsg;
             if (device && !changed) scheduleMessageKeys();
           }
           if (typeof v.remain === 'string' && v.remain !== remainText) {

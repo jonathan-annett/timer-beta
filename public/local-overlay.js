@@ -28,7 +28,7 @@
   const truthy = v => v === true || v === 'true' || v === '1' || v === 1;
   const MAP = {      // timerAPI variable -> [field, convert]
     remain: ['remain', String], expired: ['over', truthy], impending: ['impending', truthy], pausing: ['paused', truthy],
-    custommsg: ['msg', String], showbar: ['bar', truthy], showmessages: ['msgs', truthy], barpct: ['pct', Number],
+    custommsg: ['msg', String], quiet: ['quiet', truthy], showbar: ['bar', truthy], showmessages: ['msgs', truthy], barpct: ['pct', Number],
     standby_text: ['standby', String],     // the run sheet's standby notice (timer.js)
     notice_words: ['words', String],       // the operator's notice words (notices.js)
   };
@@ -59,7 +59,7 @@
       remain: s.remain ? (s.over ? '+' : '') + s.remain : '–:––',
       over: s.over, impending: s.impending, paused: s.paused,
       msg: OverlayView.stripText(s, s.msg),
-      pct: s.pct, bar: s.bar,
+      pct: s.pct, bar: s.bar && !s.quiet,
     });
   }
 
