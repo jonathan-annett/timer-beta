@@ -1,9 +1,41 @@
 # Even Realities G2 glasses: countdown + messages for the presenter (plan)
 
-Status: **not started**. Written October 2026 before the glasses arrived, from public docs and
-community write-ups; verify anything marked *(check)* against the official docs at
-https://hub.evenrealities.com/docs before building. Everything here is a plan, not a description
-of code that exists.
+Status (30 Oct 2026): **version 0.1 built** in `glasses/` (see its README): countdown only, in a
+corner chosen on the phone page, pairing by the share panel's 6-digit code against
+beta.timed-show.com, released to testers through the Even Hub developer portal's beta group (not
+the one-off QR/prototype mode). Not yet run on real glasses.
+
+Decisions since this plan was written (they override the sections below):
+- **Pairing = the friend-code route** (`RemotePeer.claim`'s protocol), not a new claim/give
+  exchange: the app claims the timer's 6-digit code with extra fields `client:'g2', mode`
+  (`presenter` | `controller`), which servers ignore for now. The proximity check's 3-digit number
+  is shown **on the phone page only**, never on the glasses. Before pairing the glasses say
+  *Timer not connected - open the Even app to pair*; with the timer gone, *Timer offline -
+  reconnecting...* (words only, nothing that looks like a time).
+- **Beta only** at first: alpha is behind Cloudflare Access, which the Even WebView can't pass.
+  Network whitelist: `https://beta.timed-show.com`, `wss://beta.timed-show.com`.
+- **No documentation in the web app** until the plugin reaches beta proper; the instructions live
+  on the plugin's phone page.
+- **Next versions:** two modes chosen on the phone page. *Controller* (the operator wears them,
+  e.g. while vision switching): 3+ rapid taps fire Next, every other input ignored; needs the
+  timer to grant a control link when the claim says `mode:'controller'` (forward `client`/`mode`
+  in `remote-server.js` and the Worker's claim → the host's `{type:'claim', id, client, mode}`).
+  *Presenter*: no control; a double tap toggles the display (but Even's store review expects a
+  double tap on the main page to exit: fine for beta testers, rethink before a public release).
+  Optionally the message (item name) too, configurable on the phone page.
+- **Later: glasses per run sheet item.** Tag a run sheet entry with a specific pair of glasses (by
+  the device's approval token / name in the share panel), so that presenter's glasses show the HUD
+  only while their item is next up or live, and stay blank otherwise.
+
+SDK facts verified Oct 2026 (from the npm packages' typings and Even's docs): `app.json` with
+`package_id`/`edition 202601`/`permissions[{name:'network', whitelist}]`; `waitForEvenAppBridge()`;
+`createStartUpPageContainer` once then `rebuildPageContainer`; `textContainerUpgrade` for in-place
+text; text containers have no alignment or font size, `textColor` 0–4 is brightness; exactly one
+`isEventCapture` container; taps arrive with `eventType` undefined (CLICK = 0 is dropped),
+`DOUBLE_CLICK_EVENT` = 3; plain WebSockets allowed to whitelisted origins; `localStorage` persists;
+the font lacks `⏸` and probably `…`; `@evenrealities/pretext` measures text.
+
+The original plan follows.
 
 ## Goal
 

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+ * Timed Show for Even Realities G2: the page on the phone (in the Even app). Pairing, the corner,
+ * and the instructions; the glasses themselves show only the countdown. See src/main.ts.
+ * MIT Licensed
+-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Timed Show</title>
+  <style>
+    :root { --bg: #000; --panel: #121212; --line: #2a2a2a; --text: #e8e8e8; --dim: #8a8a8a; --accent: #4aa8ff; --ok: #5fd35f; --bad: #ff8080; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font: 16px/1.45 "Helvetica Neue", Arial, sans-serif; }
+    main { max-width: 480px; margin: 0 auto; padding: max(24px, env(safe-area-inset-top)) 16px 40px; }
+    h1 { font-size: 22px; margin: 0 0 4px; color: #fff; }
+    h2 { font-size: 15px; margin: 22px 0 8px; color: #fff; }
+    p, li { color: var(--dim); }
+    p { margin: 0 0 12px; }
+    .sub { margin-bottom: 20px; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+    #code { display: block; font: bold 40px/1.1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .3em; text-align: center; width: 100%;
+      background: #0a0a0a; color: #fff; border: 2px solid #333; border-radius: 12px; padding: 10px 0 10px .3em; font-variant-numeric: tabular-nums; }
+    #code:focus { outline: none; border-color: var(--accent); }
+    #msg { min-height: 1.5em; margin-top: 10px; text-align: center; }
+    .bad { color: var(--bad); } .ok { color: var(--ok); }
+    #pinbox { text-align: center; }
+    #pinnum { font: bold 64px/1.1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .15em; color: #fff; margin: 6px 0; font-variant-numeric: tabular-nums; }
+    #corners { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-width: 260px; aspect-ratio: 2 / 1; margin: 0 auto;
+      border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+    #corners button { font: inherit; font-size: 14px; color: var(--dim); background: #1a1a1a; border: 1px solid #333; border-radius: 6px; }
+    #corners button.on { color: #9cf59c; border-color: #2e6b2e; background: #123a12; }
+    #corners button:nth-child(odd) { text-align: left; padding-left: 10px; } #corners button:nth-child(even) { text-align: right; padding-right: 10px; }
+    #corners button:nth-child(-n+2) { align-self: start; } #corners button:nth-child(n+3) { align-self: end; }
+    #corners button { height: 2.4em; }
+    .row { display: flex; gap: 8px; margin-top: 14px; }
+    #unpair { flex: 1; font: inherit; font-size: 14px; color: #ff9a9a; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 9px; }
+    ol, ul { padding-left: 20px; margin: 0 0 8px; } li { margin-bottom: 6px; }
+    b { color: var(--text); }
+    .tech { font-size: 12px; color: #555; margin-top: 18px; word-break: break-all; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Timed Show</h1>
+    <p class="sub">The presentation timer’s countdown in the corner of your glasses.</p>
+
+    <section id="pair">
+      <h2 style="margin-top:0">Pair with a timer</h2>
+      <p>On the timer, click <b>share</b>, then <b>Pair a computer</b> (on a phone or tablet: <b>⋯</b> → <b>Let a friend control this timer</b>). Type the 6-digit code it shows:</p>
+      <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="······" aria-label="Pairing code">
+      <div id="msg"></div>
+    </section>
+
+    <section id="paired" hidden>
+      <div id="pinbox" hidden>
+        <p style="margin:0">Ask the timer’s operator to type this number in the timer’s share panel:</p>
+        <div id="pinnum"></div>
+        <p style="margin:0">It’s shown here only, not on your glasses. One wrong number and the timer refuses the glasses.</p>
+      </div>
+      <p id="status"></p>
+      <h2>Where on the glasses</h2>
+      <div id="corners">
+        <button data-c="tl">Top left</button><button data-c="tr">Top right</button>
+        <button data-c="bl">Bottom left</button><button data-c="br">Bottom right</button>
+      </div>
+      <div class="row"><button id="unpair">Unpair</button></div>
+    </section>
+
+    <p id="nobridge" hidden class="bad">The Even app isn’t connected: this page works, but nothing will show on glasses.</p>
+
+    <h2>How it works</h2>
+    <ul>
+      <li>This works with timers at <b>beta.timed-show.com</b>.</li>
+      <li>The glasses show the time left, small and dim. It gets brighter in the last minute and when time is up (shown as <b>+</b> and the time over), and says <b>paused</b> while the timer is paused.</li>
+      <li>Before pairing, the glasses say <i>Timer not connected</i>. If the timer closes they say <i>Timer offline</i> and reconnect when it reopens. The pairing is remembered.</li>
+      <li>Double tap on the glasses to close the app.</li>
+      <li><b>Unpair</b> forgets the timer. The timer’s operator can also take the glasses’ access away at any time (share → the device list).</li>
+    </ul>
+    <p class="tech">Origin: <span id="origin"></span></p>
+  </main>
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>

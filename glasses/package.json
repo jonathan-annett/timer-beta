@@ -1,0 +1,24 @@
+{
+  "name": "timed-show-glasses",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Timed Show for Even Realities G2: the timer's countdown in a corner of the glasses (Even Hub app)",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc --noEmit && vite build",
+    "sim": "evenhub-simulator http://localhost:5173",
+    "pack": "npm run build && evenhub pack app.json dist -o timed-show.ehpk"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "0.0.16",
+    "@evenrealities/pretext": "0.1.4"
+  },
+  "devDependencies": {
+    "@evenrealities/evenhub-cli": "0.2.0",
+    "@evenrealities/evenhub-simulator": "0.9.5",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  }
+}

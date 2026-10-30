@@ -39,6 +39,7 @@ timer_build/
 ├── tools/serve-local.mjs  Local HTTPS preview of public/ at https://localhost:8444/ (no caching; same cert as the tests)
 ├── tools/stamp-versions.mjs  Cache busting: stamps ?v=<content hash> on the HTML pages' script/style links (run before each commit)
 ├── companion/             Bitfocus Companion module (TypeScript, its own npm project; see "Bitfocus Companion" below)
+├── glasses/               Even Realities G2 app (Even Hub; TypeScript + Vite, its own npm project): the countdown on the glasses, see its README and docs/glasses-g2-plan.md
 ├── package.json           Dependency: ws (for remote-server.js)
 └── public/                Served as static files
     ├── timer.html          Controller page
@@ -444,7 +445,7 @@ The `#touch-strip` is hidden via CSS on non-touch devices (`@media (pointer: coa
 - `currentdevice.js` is still in `public/` but unused. It can be deleted.
 - **PowerPoint player untested on Windows:** `Pptx-WsController.ps1` was written for PowerShell 5.1/7 but couldn't be run in the build environment. First real test: `-Simulate` (protocol only), then with PowerPoint: does the show window appear with the expected class/title, does Menu-key + R open Presenter View reliably, does `WM_CLOSE` end a show cleanly, which monitor it uses, Protected View / `Unblock-File`. Not done yet: the timer computer itself as the PowerPoint machine (no receiver page: the timer writes the inbox directly), title-card wallpaper between decks.
 - Run sheet: the touch strip has no Next/Back yet.
-- **Even Realities G2 glasses (planned, not started):** a presenter-facing countdown + messages app for the glasses, as a third kind of view-only display. The plan, the G2 app model as understood in Oct 2026, the message contract it must follow, the pairing options and the open questions are in `docs/glasses-g2-plan.md`. Read that before starting; verify the SDK facts marked *(check)* against the official docs first, since they came from community write-ups. The app would live in `glasses/` (its own Node/Even CLI project, not in `public/`).
+- **Even Realities G2 glasses (version 0.1 built, Oct 2026; not yet tried on real glasses):** `glasses/` is an Even Hub app (its own npm project, not in `public/`): pairs by the share panel's 6-digit code with `client:'g2', mode` in the claim and hello (ignored by the timer and servers so far), proximity number on the phone page only, the countdown in a corner of the glasses. Beta only (alpha's Access blocks it). Undocumented in the web app on purpose. Decisions, verified SDK facts and the next versions (controller: 3+ taps = Next; presenter: double tap toggles) are at the top of `docs/glasses-g2-plan.md`. Test: `tests/e2e/glasses_pair.py` (needs `glasses/dist`).
 
 ---
 
