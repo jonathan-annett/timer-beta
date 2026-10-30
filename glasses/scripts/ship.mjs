@@ -7,7 +7,7 @@
 //         EVEN_TESTER_EMAIL=you@example.com npm run ship
 // First time only: npx evenhub login
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 
 const root = new URL('..', import.meta.url).pathname;
 const argText = process.argv.slice(2).join(' ').trim();
@@ -70,7 +70,8 @@ const known = JSON.stringify(apps).includes(manifest.package_id);
 if (known) {
   console.log(evenhub(['upload', ehpk, '-m', changelog], false));
 } else {
-  console.log(evenhub(['create', ehpk, '--name', manifest.name, '--tagline', readConfig('tagline') || manifest.name], false));
+  const icon = existsSync(root + 'icon.png') ? ['--icon', 'icon.png'] : [];   // the 24×24 icon (make-icon.mjs)
+  console.log(evenhub(['create', ehpk, '--name', manifest.name, '--tagline', readConfig('tagline') || manifest.name, ...icon], false));
 }
 
 // 5. promote to beta (the one beta slot; replaces the previous build)
