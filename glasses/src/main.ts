@@ -7,7 +7,10 @@
  * used yet, and taps do nothing (they're kept for the presenter's and controller's cues; people close
  * the app with Even's menu (tap, then tap and hold) → close).
  *
- * Kept on the phone (localStorage, which the Even app keeps until the app is removed):
+ * Kept by the Even app (bridge.setLocalStorage / getLocalStorage). Not the page's own localStorage:
+ * the Even app serves the plugin from http://127.0.0.1:<port> with a new port each launch, and browser
+ * storage belongs to the origin, port included, so it started empty every time. localStorage is still
+ * written, for a plain browser (development, tests), and read when the bridge has nothing.
  *   ts_link    {server, room, key, view}: the paired timer
  *   ts_token   the proximity check's token for that room
  *   ts_corner  tl | tr | bl | br
@@ -21,23 +24,39 @@ declare const __APP_VERSION__: string
 const MODE: Mode = 'presenter'
 const $ = (id: string) => document.getElementById(id) as HTMLElement
 
+const KEYS = ['ts_link', 'ts_token', 'ts_corner']
+const cache: Record<string, string> = {}
+let storeBridge: EvenAppBridge | null = null
 const store = {
-  get(k: string): string { try { return localStorage.getItem(k) || '' } catch { return '' } },
-  set(k: string, v: string): void { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k) } catch { /* no storage */ } },
+  get(k: string): string { return cache[k] || '' },
+  set(k: string, v: string): void {
+    cache[k] = v
+    try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k) } catch { /* no storage */ }
+    storeBridge?.setLocalStorage(k, v).catch(() => { /* kept for this session at least */ })
+  },
+}
+// Reads the saved settings once at start (the bridge's storage is asynchronous)
+async function loadStore(bridge: EvenAppBridge | null): Promise<void> {
+  storeBridge = bridge
+  for (const k of KEYS) {
+    let v = ''
+    if (bridge) { try { v = (await bridge.getLocalStorage(k)) || '' } catch { /* none */ } }
+    if (!v) { try { v = localStorage.getItem(k) || '' } catch { /* none */ } }
+    cache[k] = v
+  }
 }
 function savedLink(): Paired | null {
   try { const p = JSON.parse(store.get('ts_link')); return p && p.room && p.key && p.server ? p : null } catch { return null }
 }
 
-let paired = savedLink()
+let paired: Paired | null = null      // set by boot() once the saved settings are read
 let link: TimerLink | null = null
-let status: Status | 'unpaired' = paired ? 'connecting' : 'unpaired'
+let status: Status | 'unpaired' = 'unpaired'
 let pin = ''
 const clock = new Clock()
 const state: Record<string, unknown> = {}
 let glasses: Glasses | null = null
-let corner = (CORNERS as string[]).includes(store.get('ts_corner')) ? store.get('ts_corner') as Corner : 'tl'
-if (location.hash.startsWith('#demo=') && (CORNERS as string[]).includes(location.hash.slice(6))) corner = location.hash.slice(6) as Corner   // #demo=br
+let corner: Corner = 'tl'
 
 // ─── The glasses ─────────────────────────────────────────────────────────────
 
@@ -168,10 +187,7 @@ function setup(): void {
 
 // ─── The Even app ────────────────────────────────────────────────────────────
 
-async function attach(): Promise<void> {
-  // Opened in a plain browser (development), the bridge never comes: the phone page still works
-  const bridge = await Promise.race([waitForEvenAppBridge(), new Promise<null>(r => setTimeout(() => r(null), 4000))]) as EvenAppBridge | null
-  if (!bridge) { $('nobridge').hidden = false; return }
+function attach(bridge: EvenAppBridge): void {
   glasses = new Glasses(bridge, corner)
   glasses.onSetup = problem => { if (problem) { $('nobridge').textContent = problem; $('nobridge').hidden = false } }
   glasses.show(glassesView(), true)
@@ -184,6 +200,16 @@ async function attach(): Promise<void> {
   })
 }
 
-setup()
-attach()
+async function boot(): Promise<void> {
+  // Opened in a plain browser (development, tests), the bridge never comes: the phone page still works
+  const bridge = await Promise.race([waitForEvenAppBridge(), new Promise<null>(r => setTimeout(() => r(null), 4000))]) as EvenAppBridge | null
+  await loadStore(bridge)
+  paired = savedLink()
+  status = paired ? 'connecting' : 'unpaired'
+  if ((CORNERS as string[]).includes(store.get('ts_corner'))) corner = store.get('ts_corner') as Corner
+  if (location.hash.startsWith('#demo=') && (CORNERS as string[]).includes(location.hash.slice(6))) corner = location.hash.slice(6) as Corner   // #demo=br
+  setup()
+  if (bridge) attach(bridge); else $('nobridge').hidden = false
+}
+boot()
 ;(window as unknown as { __g2view: () => View }).__g2view = glassesView   // for tests: what the glasses would show

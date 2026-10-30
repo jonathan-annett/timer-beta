@@ -40,7 +40,7 @@ with sync_playwright() as p:
     gc=b.new_context(ignore_https_errors=True, viewport={"width":390,"height":800}, has_touch=True, is_mobile=True)
     gc.add_init_script("window.TS_SERVER=%r" % SERVER); gc.route("**/*",h)
     g=gc.new_page(); g.on("pageerror", lambda e: errs.append("g2: "+str(e)))
-    g.goto(G2+"index.html"); g.wait_for_timeout(800)
+    g.goto(G2+"index.html"); g.wait_for_timeout(4500)   # no Even bridge here: the page waits 4 s for it
     print("phone page: pair shown:", g.is_visible("#pair"), "| origin:", g.text_content("#origin"))
     g.fill("#code", "000000" if code != "000000" else "111111"); g.wait_for_timeout(1200)
     print("wrong code ->", g.text_content("#msg"))
@@ -57,7 +57,7 @@ with sync_playwright() as p:
     t.evaluate("processTimerApiMessage({cmd:'pause'})"); t.wait_for_timeout(1500)
     print("paused -> glasses", g.evaluate("window.__g2view()"))
     g.click("#corners button[data-c=br]"); print("corner kept:", g.evaluate("localStorage.ts_corner"))
-    g.reload(); g.wait_for_timeout(2500)
+    g.reload(); g.wait_for_timeout(6500)
     print("after reload: paired:", g.is_visible("#paired"), "| status:", g.text_content("#status"), "| glasses", g.evaluate("window.__g2view()"))
     t.close(); g.wait_for_timeout(2500)
     print("timer closed -> glasses", g.evaluate("window.__g2view()"), "| status:", g.text_content("#status"))
