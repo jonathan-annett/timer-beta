@@ -21,8 +21,9 @@ Decisions since this plan was written (they override the sections below):
   timer to grant a control link when the claim says `mode:'controller'` (forward `client`/`mode`
   in `remote-server.js` and the Worker's claim → the host's `{type:'claim', id, client, mode}`).
   *Presenter*: no control; a single tap toggles the display on/off (3+ taps do the same). Taps
-  aren't used to close the app: people close plugins with press-and-hold → close in Even's menu
-  (the double-tap-to-exit guidance isn't enforced in practice, per the owner).
+  aren't used to close the app: people close plugins with Even's menu (tap, then tap and hold) → close
+  (the double-tap-to-exit guidance isn't enforced in practice, per the owner). The menu gesture starts with a tap, so the toggle must wait briefly
+  (~400 ms) for a following hold (LONG_PRESS_EVENT) before acting, or the display flips as the menu opens.
   Optionally the message (item name) too, configurable on the phone page.
 - **Later: glasses per run sheet item.** Tag a run sheet entry with a specific pair of glasses (by
   the device's approval token / name in the share panel), so that presenter's glasses show the HUD

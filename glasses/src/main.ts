@@ -5,7 +5,7 @@
  *
  * First version: the countdown only. The mode (presenter / controller) is sent to the timer but not
  * used yet, and taps do nothing (they're kept for the presenter's and controller's cues; people close
- * the app with press-and-hold → close in Even's menu).
+ * the app with Even's menu (tap, then tap and hold) → close).
  *
  * Kept on the phone (localStorage, which the Even app keeps until the app is removed):
  *   ts_link    {server, room, key, view}: the paired timer
