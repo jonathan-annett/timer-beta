@@ -86,6 +86,10 @@ let glasses: Glasses | null = null
 let corner: Corner = 'tl'
 let hidden = false                    // a presenter's tap hides the countdown
 let minimal = false                   // an operator's layout as just the countdown and message, in the corner
+// When the link last went down (0 while online; counts from launch until the first connect). A presenter
+// isn't told about a short drop: their countdown runs on from the last anchor for DOWN_GRACE first
+let downSince = performance.now()
+const DOWN_GRACE = 60000
 let tapsNeeded = 3                    // an operator's taps for Next (3–5, set on the phone page)
 // What a presenter sees beside the countdown (set on the phone page)
 interface See { custom: boolean; item: boolean; notices: boolean }
@@ -115,7 +119,8 @@ function glassesView(): Layout {
   if (!DEMO) {
     if (status === 'unpaired' || status === 'refused') return { info: info('Timer not connected - open the Even app to pair') }
     if (status === 'pin') return { info: info('Pairing - finish on your phone') }
-    if (status !== 'online') return { info: info('Timer offline - reconnecting...') }
+    const grace = role !== 'operator' && downSince > 0 && performance.now() - downSince < DOWN_GRACE
+    if (status !== 'online' && !grace) return { info: info('Timer offline - reconnecting...') }
   }
   const v = DEMO ? demoValues() : clock.values()
   const sb = v && v.standby ? standbyText(v.standbyIn) : ''      // the run sheet's standby (Reset show)
@@ -327,7 +332,9 @@ function connect(): void {
         unpair(detail === 'revoked' ? 'The timer took these glasses’ access away. Pair again with a new code.' : 'The timer didn’t accept the number. Pair again with a new code.')
         return
       }
-      if (s !== 'online') clock.clear()
+      if (s === 'online') downSince = 0
+      else if (!downSince) downSince = performance.now()
+      if (s !== 'online' && role === 'operator') clock.clear()   // a presenter's runs on through a short drop
       render()
     },
     state: (s, full) => {
@@ -505,6 +512,7 @@ w.__g2view = () => Object.fromEntries(Object.entries(glassesView()).filter(([, b
 w.__g2tap = onTap
 ;(window as unknown as { __g2hold: (down: boolean) => void }).__g2hold = onHold   // a hold starting / ending
 ;(window as unknown as { __g2menu: (id: number) => void }).__g2menu = onMenu   // a menu item chosen on the glasses
+;(window as unknown as { __g2down: (ago: number) => void }).__g2down = ago => { if (downSince) downSince = performance.now() - ago }   // tests: pretend the drop began ago ms back
 ;(window as unknown as { __g2where: () => Record<string, string> }).__g2where = () => Object.fromEntries(Object.entries(glassesView()).filter(([, b]) => b && b.text).map(([k, b]) => [k, b!.h + b!.v]))   // where each box sits
 ;(window as unknown as { __g2scanned: (t: string) => void }).__g2scanned = scanned   // a QR code's text, as the camera would read it
 ;(window as unknown as { __g2photo: (b: string) => Promise<string> }).__g2photo = b => codeFromPhoto(b)   // a photo's QR code

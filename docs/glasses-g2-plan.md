@@ -44,7 +44,9 @@ Decisions since this plan was written (they override the sections below):
 - **Minimal view in the corner (0.1.17):** an operator's Minimal view is the countdown in the corner
   (`ts_corner`) with the message beside it, laid out like a presenter's; *Next corner* is on the
   operator's menu too, and the phone page's corner picker shows for both roles. Toggling it rebuilds
-  the page (the boxes move): a user action, never in a hurry.
+  the page (the boxes move): a user action, never in a hurry. A presenter's glasses don't show
+  *Timer offline* for the first 60 s of a drop (`downSince`, `DOWN_GRACE`; counted from launch until
+  the first connect): the countdown runs on from the last anchor. An operator's show it at once.
 - **Next, once Operator is proven on the glasses:** more operator commands, e.g. the phone remote's run
   sheet view and controls (Back / Pause / Next, nudges) on the plugin's phone page, so the operator
   needs only the Even app. (The owner finds typing the 6-digit code fine; the QR photo is a nice-to-have.)

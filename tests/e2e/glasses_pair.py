@@ -89,6 +89,7 @@ with sync_playwright() as p:
     print(" | four taps -> item", t.evaluate("JSON.parse(localStorage.runsheet_state).index"), "| status:", g.text_content("#status")[-30:])
     g.click("#taps button[data-n='3']")
     g.evaluate("window.__g2menu(3)"); t.wait_for_timeout(1000)
+    # (an operator's glasses say Timer offline at once; a presenter's only after 60 s down: see the end)
     # the operator's menu (MENU in glasses.ts: corner 1, next 2, back 3, pause 4, reset 5, auto 6, minimal 7)
     gv=lambda: g.evaluate("window.__g2view()")
     g.evaluate("window.__g2menu(3)"); t.wait_for_timeout(1200); print("menu Back: run sheet item", t.evaluate("JSON.parse(localStorage.runsheet_state).index"))
@@ -121,7 +122,9 @@ with sync_playwright() as p:
     g.reload(); g.wait_for_timeout(6500)
     print("after reload: paired:", g.is_visible("#paired"), "| status:", g.text_content("#status"), "| glasses", g.evaluate("window.__g2view()"))
     t.close(); g.wait_for_timeout(2500)
-    print("timer closed -> glasses", g.evaluate("window.__g2view()"), "| status:", g.text_content("#status"))
+    print("timer closed -> presenter's glasses run on:", g.evaluate("window.__g2view()"), "| status:", g.text_content("#status"))
+    g.evaluate("window.__g2down(61000)"); g.wait_for_timeout(400)
+    print("  down over 60 s -> glasses", g.evaluate("window.__g2view()"))
     g.click("#unpair"); g.click("#unpair"); g.wait_for_timeout(300)
     print("unpaired: pair shown:", g.is_visible("#pair"), "| glasses", g.evaluate("window.__g2view()"))
     # QR codes (the camera's reading handed straight in): the control code is refused, the countdown one pairs
