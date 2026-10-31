@@ -13,14 +13,13 @@
       <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
       <link rel="manifest" href="manifest.json">
       <title>Presentation Timer</title>
-      <link rel="stylesheet" href="timer.css?v=de558127" id="style_1">
+      <link rel="stylesheet" href="timer.css?v=bd0a1f86" id="style_1">
       <link rel="stylesheet" href="help-overlay.css?v=ab22e694">
   </head>
   <body>
       <script src="w3color.js?v=bdf5431f"></script> 
       <script src="fsapi.js?v=3ce5f801"></script>
       <script src="inettime.js?v=cf74160a"></script>
-      <script src="tsview.js?v=dd5ebb23"></script>
       <script src="features.js?v=4136908a"></script>
       <script src="whats-new.js?v=1c7b0b76"></script>   <!-- not deferred: it checks for earlier timer state before timer.js writes any -->
       <script>var timerAPI = null; /* populated by streamdeck.js, remote-control.js and the others (each chains the previous one) */</script>
@@ -29,8 +28,8 @@
       <script src="overlay-view.js?v=8086ceed"></script>
       <script src="local-overlay.js?v=63b67b83"></script>
       <script src="elementcolors.js?v=3346b988"></script>
-      <script src="timerapi.js?v=1f48d7a0"></script>
-      <script src="timer.js?v=a8389679" defer></script>    
+      <script src="timerapi.js?v=b70f03fe"></script>
+      <script src="timer.js?v=b80931ec" defer></script>    
       <script src="FileSaver.js?v=de19cbb6" defer></script>    
       <script src="video-store.js?v=069f77d9" defer></script>
       <script src="dropPlayer.js?v=ba43f571" defer></script>
@@ -41,9 +40,9 @@
       <script src="back-guard.js?v=1ffc51f1" defer></script>
       <script src="touchcontrols.js?v=a4339318" defer></script>
       <script src="runsheet-core.js?v=d0fec52c" defer></script>
-      <script src="runsheet.js?v=4a122310" defer></script>
+      <script src="runsheet.js?v=0ade198e" defer></script>
       <script src="remote-peer.js?v=a4dfabd5" defer></script>
-      <script src="remote-control.js?v=0a2757b8" defer></script>
+      <script src="remote-control.js?v=c253e661" defer></script>
       <script src="pptx-hub.js?v=e1230167" defer></script>
       <script src="markdown-lite.js?v=938fee93" defer></script>
       <script src="help-overlay.js?v=8a5dbd9d" defer></script>
@@ -177,8 +176,6 @@
           <span class="kh kh-shiftctrl"><kbd>Shift</kbd><kbd>Ctrl</kbd> <kbd>←</kbd><kbd>→</kbd> late/early start · <kbd>↓</kbd><kbd>↑</kbd> nudge the start · in minutes · <kbd>Enter</kbd> ⏩ catch up</span>
           <span class="kh kh-edit">Typing a time · <kbd>Enter</kbd> 💾 set as the default · <kbd>Space</kbd> ▶️ start </span>
           <span class="kh kh-msg">💬 Editing the message · <kbd>Enter</kbd> 📺 show it</span>
-          <span class="kh kh-vlive">📹 Video preview, full screen</span>
-          <span class="kh kh-vstart">📹 Video assist zoom · <kbd>Ctrl</kbd><kbd>V</kbd> toggles</span>
         </span><span id="disp_next_mins">mins</span></div>
       <!-- Typing a time: big, for operators on a numeric keypad (timer.js renderEntryPad; shown while html.editing) -->
       <div id="entry_pad">
@@ -188,10 +185,6 @@
         <div class="ep-keys"><span><kbd>Enter</kbd> 💾 set as the default</span><span><kbd>Space</kbd> or <kbd>*</kbd> ▶️ start now</span><span><kbd>⌫</kbd> delete · <kbd>Esc</kbd> cancel</span></div>
       </div>
       
-      <video id="webcam" autoplay style="display: none;"></video>
-      <canvas id="wc_canvas" style="display: none; width : auto; height:1080px;"></canvas>
-      <canvas class="xfs_only" id="wc_canvas2" style="display:none;"></canvas>
-      <canvas class="xfs_only" id="wc_canvas3" style="display:none;"></canvas>
   
  
      
@@ -209,8 +202,6 @@
         <video id="remain_disp_video" muted autoplay></video>
 
        <div id="drag_to_monitor">Drag window to appropriate monitor and press F to make it Fullscreen</div>
-       <div id="video-track">Video Assist</div>
-       <div id="video-auto">Auto Zoom</div>
 
 
       <!-- Stream Deck editor overlay -->

@@ -201,92 +201,7 @@ html.reduced #now_disp:before {
       font-size:2vh;
 }
 
- #wc_canvas2 {
-    position : absolute;
-    left     : 4px;
-  top : calc( 50% - 44px );
-    width    : 15vw;
-    height   : auto;
- }
- #wc_canvas3 {
-    position : absolute;
-    right    : 4px;
-   top : calc( 50% - 44px );
-    width    : 15vw;
-    height   : auto;
- }
- 
 
-
-#video-track, #video-auto {
-    font-size:2vh;
-    position : absolute;
-    left : 0;
-    bottom : 0;
-    width : auto;
-    display:none;
-}
-html.video-auto #video-auto {
-    left : 140px;
-    display : block;
-    color : red;
-}
-html.video-track #video-track {
-    display : block;
-    color : lime;
-}
- 
-video.screenVideoElement {
-    display : none;
-}
- 
- html.video-start-fullscreen  #wc_canvas3  {
-    top	  : 0;
-	left	 : 0;
-	width	: 0;
-	height   : 0;
-	
- }
- 
- html.video-start-fullscreen  #wc_canvas2,
- html.video-live-fullscreen   #wc_canvas3 {
-	 
-	position : absolute;
-	left	 : 5vw;
-	top	  : 2vh;
-	width	: 90vw;
-	height   : auto;
-	z-index  : 999998;
- }
-
-
- html.video-live-fullscreen  div.buttons span,
- html.video-live-fullscreen  div.buttons div,
- html.video-live-fullscreen  #elapsed_disp,
- html.video-live-fullscreen  #started_disp,
- html.video-live-fullscreen  #ends_disp,
- html.video-live-fullscreen  #duration_disp,
- 
- html.video-start-fullscreen  div.buttons span,
- html.video-start-fullscreen  div.buttons div,
- html.video-start-fullscreen  #elapsed_disp,
- html.video-start-fullscreen  #started_disp,
- html.video-start-fullscreen  #ends_disp,
- html.video-start-fullscreen  #duration_disp {
-     
-     display : none;
- } 
-
-html.video-start-fullscreen body.fullscreen  #wc_canvas2,
-html.video-live-fullscreen  body.fullscreen #wc_canvas3 {
-    position : absolute;
-    top	  : 0;
-    left	 : 0;
-    width	: 100vw;
-    height   : auto;
-    
-    z-index  : 999999;
-}
 
 /* (video player controls: styled by dropPlayer.js) */
 
@@ -411,12 +326,6 @@ html.show_custom_message.paused #remain_info_message {
     display:none;
 }
  
-html.reduced #video-track,
-html.reduced #video-auto,
-html.reduced #wc_canvas,
-html.reduced #webcam,
-html.reduced #wc_canvas2,
-html.reduced #wc_canvas3,
 html.reduced #messages_enabled {
     display:none;
     
@@ -619,33 +528,24 @@ html.standby #extra_time_disp { display: none !important; }
 
 
 /* Keyboard hints (timer.html #key_hints): one line per state, key caps and emoji; the state classes
-   pick which. Shift/Ctrl held change what the arrows do; typing a time, editing the message and the
-   video modes have their own. The duration after it hides when it doesn't apply. */
+   pick which. Shift/Ctrl held change what the arrows do; typing a time and editing the message have
+   their own. The duration after it hides when it doesn't apply. */
 #key_hints { color: var(--color-keyboard-help-text); }
 #key_hints .kh { display: none; }
 #key_hints kbd { display: inline-block; min-width: 1.1em; padding: 0 0.35em; margin: 0 0.1em; border: 1px solid #444; border-bottom-width: 2px;
   border-radius: 4px; background: #1a1a1a; color: #ccc; font: inherit; font-size: 0.9em; line-height: 1.3; text-align: center; }
-html:not(.editing):not(.edit_custom_message):not(.video-live-fullscreen):not(.video-start-fullscreen):not(.controlling):not(.shifting) #key_hints .kh-plain,
+html:not(.editing):not(.edit_custom_message):not(.controlling):not(.shifting) #key_hints .kh-plain,
 html.controlling:not(.shifting):not(.editing):not(.edit_custom_message) #key_hints .kh-ctrl,
 html.shifting:not(.controlling):not(.editing):not(.edit_custom_message) #key_hints .kh-shift,
 html.shifting.controlling:not(.editing):not(.edit_custom_message) #key_hints .kh-shiftctrl,
 html.editing:not(.edit_custom_message) #key_hints .kh-edit,
-html.edit_custom_message #key_hints .kh-msg,
-html.video-live-fullscreen:not(.editing):not(.edit_custom_message) #key_hints .kh-vlive,
-html.video-start-fullscreen:not(.editing):not(.edit_custom_message) #key_hints .kh-vstart { display: inline; }
-
-html.video-start-fullscreen  #link,
-html.video-live-fullscreen  #link {
-   display:none;
-}
+html.edit_custom_message #key_hints .kh-msg { display: inline; }
 
 /* the duration: lime while typing it, yellow with a message up, hidden where Space doesn't start it */
 html.show_custom_message #disp_next_mins { color: yellow; }
 html.editing #disp_next_mins { color: var(--color-next-default-editing); }
 html.controlling:not(.editing) #disp_next_mins,
-html.edit_custom_message #disp_next_mins,
-html.video-start-fullscreen #disp_next_mins,
-html.video-live-fullscreen #disp_next_mins { visibility: hidden; }
+html.edit_custom_message #disp_next_mins { visibility: hidden; }
 
 .fs_only {
    display : none;    

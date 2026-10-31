@@ -111,6 +111,23 @@ function processTimerApiMessage(msg) {
             break;
         }
 
+        // Move the start by msecs (+ = later: the speaker actually began after the timer started).
+        // whole (the default): the end moves too, so they still get their full time; whole false:
+        // only the start, so elapsed is put right and the end stays. From the assist station
+        // (remote-control.js); the run sheet records the moved start as the item's actual start.
+        case "shiftstart": {
+            const ms = Math.round(Number(msg.msecs));
+            if (!Number.isFinite(ms) || !ms) break;
+            const was = startedAt;
+            bumpStart(ms);
+            if (msg.whole !== false) bumpEnd(ms, ms);
+            durationDisp.textContent = secToStr((seekEndsAt - startedAt) / 1000);
+            lastTimeText = "";
+            displayUpdate();
+            if (window.runsheet && window.runsheet.startShifted) window.runsheet.startShifted(was, ms);
+            return { startedAt, seekEndsAt };
+        }
+
         case "nudge": {
             if (msg.addtime) {
                 bumpEnd(msg.msecs, 0);

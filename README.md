@@ -263,6 +263,19 @@ A countdown that floats on top of everything on another computer, for example ov
 
 The overlay turns orange under a minute and red when time is up, and greys out while paused. While it floats and this page or the overlay has the keyboard, both show a blinking red ⌨ (with *Warning: timer still owns the keyboard* beside it for a few seconds): click PowerPoint before using the clicker. The progress shade follows the timer's bar switch (**B**), and with its messages switch (**M**) on, the message strip shows the timer's own notices (*Wrap up – last minute*, *Time's up*, *Paused*, or your own words from **notice words**) whenever no message is up. The overlay's own **Message** and **Progress shade** boxes turn them off on that screen only. It can't control the timer. The computer stays paired: next time just open `overlay.html` (it remembers), even after the timer was closed. **Unpair this computer** forgets it; a **New code** on the timer unpairs every device. The code works once, from any network (it can be read out over the phone); the proximity check is what makes sure the right computer gets in. The floating window works best in Chrome or Edge; other browsers get a simpler video overlay.
 
+### Assist station: when did the speaker really start?
+
+A second computer that listens to the room and keeps a time-stamped transcript, so you can put the timer's start where the speaker actually began (the walk to the lectern, the applause and the thank-yous don't count against them).
+
+1. On the other computer, open `assist.html` next to the timer (e.g. `alpha.timed-show.com/assist.html`) in Chrome or Edge.
+2. Pair it like an overlay: **share** → **Pair a computer** on the timer, type the 6-digit code on the station, then type the station's 3-digit number into the timer's share panel.
+3. On the station, click **Ask to move start times**, and **Allow** it in the timer's share panel. (Until then it only watches. **Stop moving starts** in the device list takes it back.)
+4. Click **Start listening** (allow the microphone). Each phrase appears with the time it was heard and how long after the timer's start that was. When the speaker gets going, click the line where they began, then **Move it**.
+
+**A move shifts the whole timer** by default: start and end together, so the speaker still gets their full time. Choose **only the start** to correct the elapsed time and leave the end where it is. Every move shows on the timer as *Start moved 0:42 later by …* with **Undo** (the station has its own Undo too), and the run sheet records the moved start as the item's actual start. Lines more than 15 minutes from the start can't move it.
+
+The transcript stays on the station (it's kept there across reloads until you **Clear** it; **Save transcript** downloads it as text); the timer is only told how far to move the start. Transcription is the browser's own speech recognition, so the audio goes to the browser maker's service, and times are when each phrase was first heard: allow a second or so.
+
 ### Even Realities G2 glasses (beta)
 
 The timer on a pair of [Even Realities G2](https://www.evenrealities.com/) smart glasses, through the **Timed Show** app for the Even app (an Even Hub plugin). It works with timers at **beta.timed-show.com**. It's in beta testing: to get it, [contact the developer](https://github.com/jonathan-annett/timer-beta/issues/new?title=Even%20G2%20beta%20tester) to be added to the Even Hub testers (you'll be asked privately for the email address your Even app uses: don't post it in the issue, which is public). You'll get an invitation email; accept it, then install from the Even app → **Me** → **Beta tester**.

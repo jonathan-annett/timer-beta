@@ -137,6 +137,20 @@
     commit();
   }
 
+  // The timer's start was moved by ms (the shiftstart command: the assist station's "started
+  // here"). If it's this item's countdown, the log's actual start moves with it (orig keeps the
+  // first, as for a restart) and syncFromTimer keeps following it.
+  function startShifted(was, ms) {
+    if (!isActive() || state.finished || state.timerStart == null || was !== state.timerStart) return;
+    state.timerStart += ms;
+    const e = state.log[state.log.length - 1];
+    if (e && e.id === state.currentId) {
+      if (e.orig == null) e.orig = e.actual;
+      e.actual += ms;
+    }
+    commit();
+  }
+
   function finishShow() {
     state.finished = true;
     const end = norm.endIdx >= 0 ? norm.items[norm.endIdx] : null;
@@ -822,7 +836,7 @@
   // sheetChanged(): the sheet in localStorage was rewritten by this window (the remote editor,
   // remote-control.js); the storage event that the editor window's writes give doesn't fire then.
   window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive, sheetChanged: onSheetChanged, flash, restart: restartCountdown,
-    curDuration, curEnd, liveName, standbyStart, setAutostart };
+    curDuration, curEnd, liveName, standbyStart, setAutostart, startShifted };
   // The dashboard's "Auto start at …" box; blurred after a click so Space goes back to the timer
   if ($('rs_auto')) $('rs_auto').addEventListener('change', e => { setAutostart(e.target.checked); e.target.blur(); });
 

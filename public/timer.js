@@ -32,15 +32,6 @@ if (
 
 window.addEventListener ("pagehide",onControlUnload);
 
-const wc_canvas = document.getElementById('wc_canvas');
-const wc_canvas2 = document.getElementById('wc_canvas2');
-const wc_canvas3 = document.getElementById('wc_canvas3');
-const wc_videoElement = document.getElementById('webcam');
-      
-wc_canvas.width = 1270;
-wc_canvas.height = 720;
-  
-let wc_viewer ;
 
 let doc = document;
 let qs = doc.querySelector.bind(doc);
@@ -693,9 +684,6 @@ custom_message.addEventListener('focus', function(){
 					 }
 					 
 					 
-					 if (wc_viewer && wc_viewer.updateFlyoutVideoFrame) {
-                        wc_viewer.updateFlyoutVideoFrame (undefined,undefined,elapsedMsecAbs,remainMsecAbs);
-					 }
 				  }
 		 }
 		 localStorage.setItem("remainDispClass",html.className);
@@ -902,12 +890,6 @@ custom_message.addEventListener('focus', function(){
 	thisDuration = useDuration ===undefined ? defaultDuration : useDuration;
 	lastUpdateTick = 0;
 	startedAt  = timeProvider.now();  
-	if (wc_viewer) {
-	    wc_viewer.reset();
-	    setHtmlClass('video-track');
-	} else {
-	    clearHtmlClass('video-track');
-	}
 	endsAt	 = startedAt + thisDuration;
 	pausedAt=undefined;
 	pauseAcum=0;
@@ -933,6 +915,7 @@ custom_message.addEventListener('focus', function(){
 		timerAPI.send( {
 			setVariableValues:{
 				startedAt:startedDisp.textContent,
+				started_ms:startedAt,			// the start as a time (the assist station's "started here")
 				endsAt:endsDisp.textContent,
 				default:durationDisp.textContent,
 				paused:'0:00',
@@ -1003,6 +986,7 @@ custom_message.addEventListener('focus', function(){
 	  if (timerAPI) {
 		  timerAPI.send({ setVariableValues: {
 			  startedAt: startedDisp.textContent,
+			  started_ms: startedAt,
 			  endsAt: endsDisp.textContent,
 			  default: secToStr(defaultDuration / 1000),
 			  pausing: pausedAt !== undefined,
@@ -1409,167 +1393,6 @@ function catchUpNow() {
 	writeNumber("endsAt",endsAt);
 }
 
-let videoFrameTimer;
-
-function hideFSVideoAfterTimeout () {
-    if (videoFrameTimer) {
-        clearTimeout(videoFrameTimer);
-        videoFrameTimer = undefined;
-    }
-    clearHtmlClass("video-live-fullscreen");
-	clearHtmlClass("video-start-fullscreen");
-	if (wc_viewer) {
-        wc_viewer.updateTimestamp(wc_viewer.getTimestamp());
-	}
-    clearHtmlClass("video-live-fullscreen");
-	clearHtmlClass("video-start-fullscreen");}
-
-function onVideoUpdate () {
-    if (videoFrameTimer) {
-		clearTimeout(videoFrameTimer);
-		videoFrameTimer = undefined;
-    }
-	if (wc_viewer.showingLive() &&  html.classList.contains("video-auto") ) {	
-        clearHtmlClass("video-live-fullscreen");
-        setHtmlClass("video-start-fullscreen");
-	    videoFrameTimer = setTimeout(hideFSVideoAfterTimeout,2000);
-	}
-	
-}
-
-function onVideoReset () {
-    onVideoUpdate ();
-}
-
-function onKey_V(ev) {
-   // V by itself = toggle live view
-    if (!wc_viewer) {   
-			wc_viewer = createTimestampViewer(wc_videoElement,wc_canvas,wc_canvas2,wc_canvas3);
-			wc_viewer.on('update',onVideoUpdate);
-			wc_viewer.on('reset',onVideoReset);
-		    setHtmlClass('video-track');
-		    clearHtmlClass("video-auto");
-	} else {
-		wc_viewer.showLive(!wc_viewer.showingLive());
-		setHtmlClass('video-track');
-		clearHtmlClass("video-auto");
-    }
-    clearHtmlClass("video-live-fullscreen");
-    clearHtmlClass("video-start-fullscreen");
-}
-
-function onKey_Shift_V(ev) {
-	if (!wc_viewer) {   
-		
-			wc_viewer = createTimestampViewer(wc_videoElement,wc_canvas,wc_canvas2,wc_canvas3);
-			wc_viewer.on('update',onVideoUpdate);
-			wc_viewer.on('reset',onVideoReset);
-			clearHtmlClass("video-live-fullscreen");
-			clearHtmlClass("video-start-fullscreen");
-			setHtmlClass('video-track');
-	
-	} else {
-		// shift V = choose next camera
-		wc_viewer.nextCamera();
-	}
-}
-
-
-
-function onKey_Control_V(ev) {
-	if (!wc_viewer) {   
-		wc_viewer = createTimestampViewer(wc_videoElement,wc_canvas,wc_canvas2,wc_canvas3);
-		wc_viewer.on('update',onVideoUpdate);
-		wc_viewer.on('reset',onVideoReset);
-		clearHtmlClass("video-start-fullscreen");
-		setHtmlClass("video-live-fullscreen");
-		wc_viewer.showLive(true);
-		setHtmlClass("video-auto");
-		setHtmlClass('video-track');
-	} else {
-	
-		if (wc_viewer.getTimestamp()) {
-		    
-		    if (html.classList.contains("video-auto")) {
-                clearHtmlClass("video-auto");
-                hideFSVideoAfterTimeout ();
-		    } else {
-		        setHtmlClass("video-auto");
-		        wc_viewer.showLive(true);
-		
-		    }
-
-	        onVideoUpdate ();
-	
-		} else {
-	    	setHtmlClass("video-live-fullscreen");
-	    	clearHtmlClass("video-start-fullscreen");
-    		setHtmlClass('video-track');
-	    	toggleHtmlClass('video-auto');
-	    	if (html.classList.contains('video-auto')) {
-	            wc_viewer.showLive(true);
-	    	}	
-    		onVideoUpdate ();
-		}
-	}
-}
-
-function onKey_Control_Shift_V(ev) {
-	if (wc_viewer) {   
-		// ctrl-shift-v = stop using video mode
-		hideFSVideoAfterTimeout ();
-		 wc_viewer.stop();
-		 wc_viewer=undefined;
-		 
-	 }
-	 
-	 if (window.top.flyoutVideoWin) {
-		 window.top.flyoutVideoWin.close();
-		 window.top.flyoutVideoWin = undefined;
-	 }
-	  
-	clearHtmlClass("video-live-fullscreen");
-	clearHtmlClass("video-start-fullscreen");
-	clearHtmlClass('video-track');
-	clearHtmlClass('video-auto');
-	wc_canvas.style.display="none";
-	wc_canvas2.style.display="none";
-	wc_canvas3.style.display="none";
-	
-}
-
-function onKey_Control_Shift_W(ev) {
-	if (wc_viewer) {   
-		// ctrl-shift-v = stop using video mode
-		hideFSVideoAfterTimeout ();
-		 wc_viewer.stop();
-		 wc_viewer=undefined;
-		 
-	 }
-	 clearHtmlClass('video-track');
-}
-function onKey_Shift_W(ev) {
-    if (!wc_viewer) {   
-		wc_viewer = createTimestampViewer(wc_videoElement,wc_canvas,wc_canvas2,wc_canvas3,true);
-		wc_viewer.on('update',onVideoUpdate);
-		wc_viewer.on('reset',onVideoReset);
-		clearHtmlClass("video-live-fullscreen");
-		clearHtmlClass("video-start-fullscreen");
-	    setHtmlClass('video-track');
-	} else {
-	    wc_viewer.useScreenCapture();
-        clearHtmlClass("video-live-fullscreen");
-        clearHtmlClass("video-start-fullscreen");
-	}
-}
-
-function onKey_W (ev) {
-
-}
-
-function onKey_Control_W (ev) {
-
-}
 
 
 function onKey_M (ev) {
@@ -1979,45 +1802,6 @@ function onDocKeyDown(ev){
 			    
 				break;
 				
-			case "v":
-			    
-			case "V":
-			    if (window.location.search !== "?presenter") {
-			        
-			        if (controlling) {
-			            if (shifting) {
-			                onKey_Control_Shift_V (ev);
-						} else {
-							onKey_Control_V (ev);
-						}
-			        } else {
-			            if (shifting) {
-			              
-			                onKey_Shift_V (ev);
-			                
-			            } else {
-			                onKey_V (ev);
-			            }
-			        }
-			        
-    			   
-
-			    }			    
-			    break;
-			 case "w" :
-			 case "W" :
-			     
-			     if (window.location.search !== "?presenter") {
-					 
-					 	 if (shifting) {
-        				    onKey_Shift_W (ev);
-            			 }
-				 
-					
- 
-				 }				
-				 break;
-
 			case "o":
 			case "O":
 				if (!controlling) {onKey_O (ev);}
@@ -2133,10 +1917,7 @@ add milliseconds to the start time
 		writeNumber("startedAt",startedAt);
 		lastTimeText="";
 		if (timerAPI) {
-			timerAPI.send ({setVariableValues:{startedAt:startedDisp.textContent}});
-		}
-		if (wc_viewer) {
-		    wc_viewer.updateTimestamp(startedAt);
+			timerAPI.send ({setVariableValues:{startedAt:startedDisp.textContent, started_ms:startedAt}});
 		}
 	}
 	
@@ -2278,11 +2059,6 @@ add milliseconds to the start time
 	 if (timerWin) {
 		timerWin.close();
 		timerWin = undefined;
-	 }
-	 
-	 if (window.top.flyoutVideoWin) {
-		window.top.flyoutVideoWin.close();
-		window.top.flyoutVideoWin = undefined;
 	 }
 	 
 	 if ( window.top.flyoutPlayerWin ) {
