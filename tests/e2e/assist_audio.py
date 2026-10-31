@@ -11,6 +11,10 @@ SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing 
 # is replaced by a stand-in that answers at once, so this runs offline; the real thing was checked by
 # hand (Whisper tiny.en / base.en on WebGPU, Nov 2026). Then: ▶ plays a line back, ▶ Hear the start
 # shows once the timer's start is in the recording, and a line clicked moves the timer's start.
+# Pictures (assist-video.js) from Chromium's fake camera: taken 4 a second, kept one every 10 s and
+# at both ends of every pause between words (the stand-in's lines are 0.8 s long, so each phrase
+# follows a pause); the rest let go once transcribed; pause rows and strips beside the lines; a
+# picture enlarged; kept across a reload.
 import os, mimetypes, json
 from playwright.sync_api import sync_playwright
 WAV=os.path.join(HERE, "media", "speech.wav")
@@ -46,7 +50,8 @@ with sync_playwright() as p:
     t.click("#btnshare"); t.wait_for_timeout(1500)
     t.click("#phone-panel .pp-pair"); t.wait_for_timeout(800)
     code=t.text_content("#phone-panel .pp-digits").replace(" ","")
-    a_ctx=b.new_context(ignore_https_errors=True, viewport={"width":1100,"height":900}, permissions=["microphone"]); a_ctx.route("**/*",h)
+    a_ctx=b.new_context(ignore_https_errors=True, viewport={"width":1100,"height":900}, permissions=["microphone","camera"]); a_ctx.route("**/*",h)
+    a_ctx.add_init_script("localStorage.assist_cam=''")   # pictures from the default camera (Chromium's fake one)
     a=a_ctx.new_page(); a.on("pageerror", lambda e: errs.append("assist: "+str(e)))
     a.goto(BASE+"assist.html?remote="+SERVER); a.wait_for_timeout(800)
     a.fill("#code", code); a.wait_for_timeout(3000)
@@ -59,6 +64,14 @@ with sync_playwright() as p:
     t.evaluate("window.runsheet.next()")
     a.wait_for_timeout(18000)
     print("listening:", a.text_content("#listenstate"), "| level:", a.evaluate("document.getElementById('level').style.width"), "| status:", a.text_content("#asrstate"))
+    print("pictures:", a.text_content("#camstate")[:60], "| live preview:", a.evaluate("!!document.getElementById('camview').srcObject"))
+    fr=a.evaluate("window.__assistFrames()")
+    print("frames kept:", len(fr["kept"]), "(grid %d, gap ends %d) | still held undecided: %d (of ~%d taken)" % (fr["kept"].count("grid"), fr["kept"].count("gap"), fr["held"], 18*4))
+    print("pause rows:", a.evaluate("[...document.querySelectorAll('#log .gap')].map(g=>g.querySelector('.gl').textContent+' ['+g.querySelectorAll('img.th').length+' pictures, '+g.querySelectorAll('img.th.edge').length+' at the ends]')"))
+    print("pictures beside lines:", a.evaluate("document.querySelectorAll('#log .ln img.th').length"))
+    a.click("#log img.th"); a.wait_for_timeout(200)
+    print("picture enlarged:", a.is_visible("#big"), "|", a.text_content("#bigcap"), "| size:", a.evaluate("[document.getElementById('bigimg').naturalWidth, document.getElementById('bigimg').naturalHeight]"))
+    a.keyboard.press("Escape"); print("Esc closes:", not a.is_visible("#big"))
     print("mics:", a.evaluate("[...document.querySelectorAll('#mic option')].map(o=>o.textContent)"))
     rows=a.evaluate("[...document.querySelectorAll('#log .ln[data-i]')].map(r=>r.querySelector('.t').textContent+' '+r.querySelector('.o').textContent+' '+r.querySelector('.x span').textContent+(r.querySelector('button.play')?' ▶':''))")
     print("lines:", len(rows)); [print("  ", r) for r in rows[:6]]
@@ -76,7 +89,10 @@ with sync_playwright() as p:
     s1=t.evaluate("processTimerApiMessage({cmd:'snapshot'}).startedAt")
     print("moved to line 2: start +%.1f s | line now:" % ((s1-s0)/1000), a.text_content("#log .ln[data-i='1'] .o"))
     a.click("#listen"); a.wait_for_timeout(500)
-    print("stopped:", a.text_content("#listenstate"), "| level:", a.evaluate("document.getElementById('level').style.width"))
+    print("stopped:", a.text_content("#listenstate"), "| level:", a.evaluate("document.getElementById('level').style.width"), "| camera off:", not a.evaluate("!!document.getElementById('camview').srcObject"))
+    a.wait_for_timeout(5500)
+    n=len(a.evaluate("window.__assistFrames()")["kept"]); a.reload(); a.wait_for_timeout(2500)
+    print("after a reload: pictures back:", a.evaluate("document.querySelectorAll('#log img.th').length"), "of", n)
     a.screenshot(path=OUT+"/assist_audio.png")
     b.close()
 print("errors:", errs)

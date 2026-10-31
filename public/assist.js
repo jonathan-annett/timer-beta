@@ -253,98 +253,189 @@
   // lines: {at (this computer's ms), text, item (the run sheet item then, or '')}; one interim
   // (still being heard) at most, shown greyed at the end.
 
-  // The transcript is a loop, like the recording: lines go after 15 minutes (KEEP_MS). It lives in
-  // memory; IndexedDB is only there to survive a reload, so changes go to it in one write every few
-  // seconds (and when the page is hidden or closed), not one per line. Frames will share the
-  // database and the bursts.
-  const DB_NAME = 'assist', FLUSH_MS = 5000, KEEP_MS = 15 * 60000;
+  // The transcript is a loop, like the recording: lines and frames go after 15 minutes (KEEP_MS).
+  // It lives in memory; IndexedDB is only there to survive a reload, so changes go to it in one
+  // write every few seconds (and when the page is hidden or closed), not one at a time.
+  const DB_NAME = 'assist', FLUSH_MS = 5000, KEEP_MS = 15 * 60000, GAP_MS = 2000;
+  const STORES = ['lines', 'frames'];
   const Store = (() => {
-    let db = null, pending = new Map(), gone = new Set(), clearAll = false, timer = null;
+    let db = null, timer = null, clearAll = false;
+    const pending = {}, gone = {};
+    const reset = () => STORES.forEach(n => { pending[n] = new Map(); gone[n] = new Set(); });
+    reset();
     const open = () => new Promise((resolve, reject) => {
-      const rq = indexedDB.open(DB_NAME, 1);
-      rq.onupgradeneeded = () => { if (!rq.result.objectStoreNames.contains('lines')) rq.result.createObjectStore('lines', { keyPath: 'id' }); };
+      const rq = indexedDB.open(DB_NAME, 2);
+      rq.onupgradeneeded = () => STORES.forEach(n => { if (!rq.result.objectStoreNames.contains(n)) rq.result.createObjectStore(n, { keyPath: 'id' }); });
       rq.onsuccess = () => resolve(rq.result);
       rq.onerror = () => reject(rq.error);
     });
+    const dirty = () => clearAll || STORES.some(n => pending[n].size || gone[n].size);
     function flush() {
       clearTimeout(timer); timer = null;
-      if (!db || (!pending.size && !gone.size && !clearAll)) return;
-      const tx = db.transaction('lines', 'readwrite'), os = tx.objectStore('lines');
-      if (clearAll) os.clear();
-      gone.forEach(id => os.delete(id));
-      pending.forEach(l => os.put(l));
-      clearAll = false; gone = new Set(); pending = new Map();
+      if (!db || !dirty()) return;
+      const tx = db.transaction(STORES, 'readwrite');
+      STORES.forEach(n => {
+        const os = tx.objectStore(n);
+        if (clearAll) os.clear();
+        gone[n].forEach(id => os.delete(id));
+        pending[n].forEach(r => os.put(r));
+      });
+      clearAll = false; reset();
     }
     const soon = () => { if (!timer) timer = setTimeout(flush, FLUSH_MS); };
-    // A write started as the page goes (a reload) doesn't finish: what's not written yet goes to
-    // localStorage at once instead (assist_unsaved, small: a few seconds' lines), read back by load()
+    // A write started as the page goes (a reload) doesn't finish: the lines not written yet go to
+    // localStorage at once instead (assist_unsaved, small: a few seconds' worth), read back by
+    // load(). Frames that late are let go (pictures are too big for localStorage).
     window.addEventListener('pagehide', () => {
-      if (pending.size || gone.size || clearAll) store.set('assist_unsaved', JSON.stringify({ put: [...pending.values()], gone: [...gone], clear: clearAll }));
+      if (pending.lines.size || gone.lines.size || clearAll) store.set('assist_unsaved', JSON.stringify({ put: [...pending.lines.values()], gone: [...gone.lines], clear: clearAll }));
     });
     document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
+    const all = n => new Promise(resolve => { const rq = db.transaction(n).objectStore(n).getAll(); rq.onsuccess = () => resolve(rq.result || []); rq.onerror = () => resolve([]); });
     return {
       async load() {
-        try { db = await open(); } catch (_) { return []; }   // private window etc.: memory only
-        const all = await new Promise(resolve => { const rq = db.transaction('lines').objectStore('lines').getAll(); rq.onsuccess = () => resolve(rq.result || []); rq.onerror = () => resolve([]); });
+        try { db = await open(); } catch (_) { return { lines: [], frames: [] }; }   // private window etc.: memory only
+        let lines = await all('lines');
+        const frames = await all('frames');
         try {                                // an older station kept it in localStorage
           const old = JSON.parse(store.get('assist_lines') || '[]');
-          if (Array.isArray(old) && old.length) old.forEach(l => { if (l && Number.isFinite(l.at)) { l.id = newId(); all.push(l); pending.set(l.id, l); } });
+          if (Array.isArray(old) && old.length) old.forEach(l => { if (l && Number.isFinite(l.at)) { l.id = newId(); lines.push(l); pending.lines.set(l.id, l); } });
           store.del('assist_lines');
         } catch (_) { /* nothing to move */ }
-        let lines = all;
         try {                                // the last few seconds before a reload
           const u = JSON.parse(store.get('assist_unsaved') || 'null');
           if (u) {
-            if (u.clear) { lines = []; clearAll = true; }
+            if (u.clear) { lines = []; frames.length = 0; clearAll = true; }
             const drop = new Set(u.gone || []);
             lines = lines.filter(l => !drop.has(l.id));
-            drop.forEach(id => gone.add(id));
-            (u.put || []).forEach(l => { if (l && Number.isFinite(l.at)) { lines = lines.filter(x => x.id !== l.id); lines.push(l); pending.set(l.id, l); } });
+            drop.forEach(id => gone.lines.add(id));
+            (u.put || []).forEach(l => { if (l && Number.isFinite(l.at)) { lines = lines.filter(x => x.id !== l.id); lines.push(l); pending.lines.set(l.id, l); } });
           }
           store.del('assist_unsaved');
         } catch (_) { /* none */ }
         flush();
-        return lines.filter(x => x && Number.isFinite(x.at) && typeof x.text === 'string');
+        return { lines: lines.filter(x => x && Number.isFinite(x.at) && typeof x.text === 'string'),
+          frames: frames.filter(f => f && Number.isFinite(f.at) && f.blob instanceof Blob) };
       },
-      put(l) { pending.set(l.id, l); gone.delete(l.id); soon(); },
-      drop(l) { pending.delete(l.id); gone.add(l.id); soon(); },
-      clear() { pending = new Map(); gone = new Set(); clearAll = true; flush(); },
+      put(n, r) { pending[n].set(r.id, r); gone[n].delete(r.id); soon(); },
+      drop(n, r) { pending[n].delete(r.id); gone[n].add(r.id); soon(); },
+      clear() { reset(); clearAll = true; flush(); },
       flush,
     };
   })();
   let idSeq = 0;
   const newId = () => Date.now() * 1000 + (idSeq++ % 1000);
 
+  // lines: {id, at, to (its end, ms), text, item, gapFrom (when the words before it stopped, if
+  // that was over GAP_MS earlier while listening)}
   const lines = [];
   let interim = null, armed = null;    // armed: the line asked "started here?"
-  function hear(at, text) {
+  let listenSince = null;              // gaps count only while listening throughout
+  function hear(at, text, to) {
     text = String(text || '').trim();
     if (!text) return;
-    addLine({ id: newId(), at, text, item: String(state.rsNow || '') });
+    const l = { id: newId(), at, to: Math.max(at, to || at), text, item: String(state.rsNow || '') };
+    let prev = null;
+    for (const x of lines) if (x.at <= at) prev = x;
+    if (prev && listenSince != null && prev.to >= listenSince && at - prev.to > GAP_MS) {
+      l.gapFrom = prev.to;
+      video.want(prev.to); video.want(at);        // a picture at each end of the gap
+    }
+    addLine(l);
     renderLog(true);
   }
   function addLine(l) {
     let i = lines.length;                 // in time order (a phrase can come back after a later one)
     while (i > 0 && lines[i - 1].at > l.at) i--;
     lines.splice(i, 0, l);
-    Store.put(l);
+    Store.put('lines', l);
     prune();
+  }
+
+  // frames: {id, at, why (grid | gap), blob, url}: the ones kept (assist-video.js decides)
+  const frames = [];
+  function addFrame(f, save) {
+    if (!f.url) f.url = URL.createObjectURL(f.blob);
+    let i = frames.length;
+    while (i > 0 && frames[i - 1].at > f.at) i--;
+    frames.splice(i, 0, f);
+    if (save) Store.put('frames', { id: f.id, at: f.at, why: f.why, blob: f.blob });
   }
   function prune() {
     const cut = Date.now() - KEEP_MS;
     let n = 0;
-    while (lines.length && (lines.length > MAX_LINES || lines[0].at < cut)) { Store.drop(lines.shift()); n++; }
+    while (lines.length && (lines.length > MAX_LINES || lines[0].at < cut)) { Store.drop('lines', lines.shift()); n++; }
+    while (frames.length && frames[0].at < cut) { const f = frames.shift(); URL.revokeObjectURL(f.url); Store.drop('frames', f); n++; }
     return n;
   }
   setInterval(() => { if (prune()) renderLog(); }, 10000);
   Store.load().then(saved => {
     const now = lines.splice(0);          // heard while loading
-    saved.sort((a, b) => a.at - b.at).forEach(l => lines.push(l));
+    saved.lines.sort((a, b) => a.at - b.at).forEach(l => lines.push(l));
     now.forEach(addLine);
+    saved.frames.forEach(f => addFrame(f, false));
     prune();
     logSig = ''; renderLog('force');
   });
-  window.__assistHear = (text, agoMs) => hear(Date.now() - (agoMs || 0), text);   // tests (and other engines)
+
+  // ─── Pictures (assist-video.js) ───────────────────────────────────────────
+  // A camera on the stage (a wide shot: the lectern and the screen), a capture card (the vision
+  // mixer's programme: name captions, stings) or a shared screen (assist_cam: a device id, 'screen'
+  // or 'off'). It runs while listening. Frames are taken densely and thinned once the transcript
+  // has caught up: kept are one every 10 s and both ends of every gap in the words (a music sting
+  // with a name on screen is a gap: Whisper hears no words in it).
+  const CAM = 'assist_cam';
+  let cam = store.get(CAM) ?? 'off';     // '' is the default camera
+  const video = AssistVideo.create({
+    onKeep: f => { addFrame(f, true); renderLog(); },
+    onEnded: () => { camStatus('The picture stopped (the camera was unplugged, or the sharing ended).', 'warn'); $('camview').srcObject = null; $('camview').hidden = true; },
+  });
+  window.__assistFrames = () => ({ kept: frames.map(f => f.why), held: video.heldCount() });   // tests
+  function camStatus(text, kind) { $('camstate').textContent = text; $('camstate').className = 'hint ' + (kind || ''); }
+  async function startCam() {
+    if (cam === 'off') { video.stop(); $('camview').srcObject = null; $('camview').hidden = true; return camStatus(''); }
+    try {
+      const label = await video.start(cam === 'screen' ? 'screen' : cam);
+      $('camview').srcObject = video.stream; $('camview').hidden = false;
+      camStatus('Pictures from ' + (label || 'the camera') + ': one every 10 s, and both ends of every pause in the speech.', 'ok');
+      fillCams();
+    } catch (err) {
+      camStatus(err && err.name === 'NotAllowedError' ? 'The camera (or sharing) was blocked or cancelled.' : 'No picture: ' + ((err && err.message) || err), 'bad');
+    }
+  }
+  function stopCam() { video.stop(); $('camview').srcObject = null; $('camview').hidden = true; }
+  // Frames are let go once the transcript is past them (nothing before the oldest phrase still
+  // being heard or transcribed can turn out to be a gap's end); the one at the last line's end
+  // stays, as a gap may yet start there.
+  setInterval(() => {
+    if (!video.running) return;
+    const now = Date.now();
+    let horizon = now - (engine === 'whisper' ? 2500 : 5000);
+    const p = audio.pendingFrom(), o = asr && engine === 'whisper' ? asr.oldest() : null;
+    if (p != null) horizon = Math.min(horizon, p);
+    if (o != null) horizon = Math.min(horizon, o);
+    const last = lines[lines.length - 1];
+    video.settle(horizon, last ? last.to : null);
+  }, 1000);
+  async function fillCams() {
+    try {
+      const list = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput' && d.deviceId);
+      const sel = $('cam');
+      sel.innerHTML = '<option value="off">None</option><option value="">Default camera</option>' +
+        list.map(d => `<option value="${esc(d.deviceId)}">${esc(d.label || 'Camera')}</option>`).join('') +
+        (navigator.mediaDevices.getDisplayMedia ? '<option value="screen">A screen or window (share it)</option>' : '');
+      sel.value = [...sel.options].some(o => o.value === cam) ? cam : 'off';
+    } catch (_) { /* no devices */ }
+  }
+  $('cam').addEventListener('change', () => {
+    cam = $('cam').value;
+    store.set(CAM, cam);
+    if (listening) startCam(); else if (cam === 'off') stopCam();
+  });
+  fillCams();
+
+  window.__assistHear = (text, agoMs, durMs) => hear(Date.now() - (agoMs || 0), text, Date.now() - (agoMs || 0) + (durMs || 0));   // tests (and other engines)
+  $('big').addEventListener('click', () => { $('big').hidden = true; });
+  document.addEventListener('keydown', ev => { if (ev.key === 'Escape') $('big').hidden = true; });
 
   // Two ways to transcribe (assist_engine): Whisper on this computer, fed from the rolling
   // recording (assist-audio.js; exact times, nothing leaves the computer, a model to fetch once), or
@@ -368,24 +459,27 @@
 
   async function startListening() {
     listening = true;
+    listenSince = Date.now();
     renderListen();
+    if (cam !== 'off') await startCam();   // first: sharing a screen needs the click, still fresh
     try {
       await audio.start($('mic').value || undefined);
       fillMics();
     } catch (err) {
-      listening = false; renderListen();
+      listening = false; listenSince = null; stopCam(); renderListen();
       return asrStatus(err && err.name === 'NotAllowedError' ? 'The microphone was blocked. Allow it for this page (the icon in the address bar), then Start listening again.' : 'No microphone: ' + ((err && err.message) || err), 'bad');
     }
     if (engine === 'whisper') {
       if (!asr) {
-        asr = AssistASR.create({ model, onStatus: asrStatus, onResult: r => { r.chunks.forEach(c => hear(c.at, c.text)); asrBacklog(); } });
+        asr = AssistASR.create({ model, onStatus: asrStatus, onResult: r => { r.chunks.forEach(c => hear(c.at, c.text, c.to)); asrBacklog(); } });
         asr.load();
       } else asrBacklog();
     } else startBrowserSpeech();
   }
   function stopListening() {
-    listening = false;
+    listening = false; listenSince = null;
     audio.stop();
+    stopCam();
     $('level').style.width = '0';
     if (rec) try { rec.stop(); } catch (_) { /* not started */ }
     asrStatus(asr && asr.backlog() ? 'Stopped: the phrases already heard are still being transcribed.' : '');
@@ -402,7 +496,7 @@
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         const r = ev.results[i], text = r[0].transcript;
         if (!heard[i]) heard[i] = Date.now() - LEAD_MS;            // when this phrase began, near enough
-        if (r.isFinal) { hear(heard[i], text); interim = null; }
+        if (r.isFinal) { hear(heard[i], text, Date.now() - LEAD_MS); interim = null; }
         else interim = { at: heard[i], text: text.trim() };
       }
       renderInterim();
@@ -442,7 +536,7 @@
     model = $('model').value;
     store.set(MODEL, model);
     if (asr) { asr.stop(); asr = null; }
-    if (listening && engine === 'whisper') { asr = AssistASR.create({ model, onStatus: asrStatus, onResult: r => { r.chunks.forEach(c => hear(c.at, c.text)); asrBacklog(); } }); asr.load(); }
+    if (listening && engine === 'whisper') { asr = AssistASR.create({ model, onStatus: asrStatus, onResult: r => { r.chunks.forEach(c => hear(c.at, c.text, c.to)); asrBacklog(); } }); asr.load(); }
   });
   function renderEngine() {
     $('engine').value = engine;
@@ -464,7 +558,7 @@
   $('clear').addEventListener('click', () => {
     if (Date.now() - clearArmed > 3000) { clearArmed = Date.now(); $('clear').textContent = 'Sure? Click again'; setTimeout(() => { $('clear').textContent = 'Clear'; }, 3000); return; }
     clearArmed = 0; $('clear').textContent = 'Clear';
-    lines.length = 0; armed = null; Store.clear(); renderLog();
+    lines.length = 0; frames.splice(0).forEach(f => URL.revokeObjectURL(f.url)); armed = null; Store.clear(); renderLog();
   });
   $('save').addEventListener('click', () => {
     const rows = lines.map(l => ({ at: l.at, s: `${clockOf(l.at)}\t${l.item ? '[' + l.item + '] ' : ''}${l.text}` }))
@@ -492,6 +586,8 @@
       renderLog();
       return;
     }
+    const th = ev.target.closest('img.th');
+    if (th) { $('bigimg').src = th.src; $('bigcap').textContent = clockOf(Number(th.dataset.at)) + (startLocal != null ? ' · ' + mmss(Number(th.dataset.at) - startLocal) + ' from the start' : ''); $('big').hidden = false; return; }
     const row = ev.target.closest('.ln[data-i]');
     if (!row || row.classList.contains('far') || ev.target.closest('.mk')) return;
     const l = lines[Number(row.dataset.i)];
@@ -582,7 +678,10 @@
     const box = $('log');
     const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
     const mks = markers();
-    const h = audio.held(), sig = [lines.length, lines.length && lines[0].at, startLocal, allowed, moveWhole(), armed && armed.at, h && Math.floor(h.from / 10000), JSON.stringify(mks)].join('|');
+    const last = lines[lines.length - 1];
+    const tail = listening && last && Date.now() - last.to > GAP_MS ? last.to : null;   // a pause going on now
+    const h = audio.held(), sig = [lines.length, lines.length && lines[0].at, startLocal, allowed, moveWhole(), armed && armed.at, h && Math.floor(h.from / 10000), JSON.stringify(mks),
+      frames.length, frames.length && frames[0].id + '/' + frames[frames.length - 1].id, tail != null && Math.floor((Date.now() - tail) / 10000)].join('|');
     if (sig !== logSig && !dragging) {
       logSig = sig;
       const out = [];
@@ -594,16 +693,36 @@
         if (j >= 0 && k.at - lines[j].at < 20000) { if (!on.has(j)) on.set(j, []); on.get(j).push(k); } else alone.push(k);
       });
       const aloneRow = k => `<div class="mkrow"><span class="t">${clockOf(k.at)}</span><span></span><span>${chip(k)}</span></div>`;
+      // Each picture shows with the row its time falls in: a pause (from its start) or a line
+      const starts = [];
+      lines.forEach((l, i) => { if (l.gapFrom != null) starts.push({ at: l.gapFrom, key: 'g' + i }); starts.push({ at: l.at, key: 'l' + i }); });
+      if (tail != null) starts.push({ at: tail, key: 'tail' });
+      starts.sort((a, b) => a.at - b.at);
+      const pics = new Map();
+      frames.forEach(f => {
+        let key = 'before';
+        for (const st of starts) { if (st.at <= f.at + 250) key = st.key; else break; }
+        const li = key[0] === 'l' ? Number(key.slice(1)) : -1;     // a pause's closing picture can land just after the words start
+        if (li >= 0 && f.why === 'gap' && lines[li].gapFrom != null && f.at - lines[li].at < 1500) key = 'g' + li;
+        if (!pics.has(key)) pics.set(key, []);
+        pics.get(key).push(f);
+      });
+      const strip = key => (pics.has(key) ? `<span class="thumbs">${pics.get(key).map(f => `<img class="th${f.why === 'gap' ? ' edge' : ''}" src="${f.url}" data-at="${f.at}" alt="" title="${clockOf(f.at)}${f.why === 'gap' ? ' (an end of the pause)' : ''}">`).join('')}</span>` : '');
+      const span = ms => { const x = Math.round(ms / 1000); return x < 60 ? x + ' s' : Math.floor(x / 60) + ':' + two(x % 60); };
+      const gapRow = (from, to, key) => `<div class="gap"><span class="t">${clockOf(from)}</span><span class="o"></span><span class="gx"><span class="gl">${span(to - from)} without speech${key === 'tail' ? ' so far' : ''}</span>${strip(key)}</span></div>`;
+      if (pics.has('before')) out.push(`<div class="gap"><span class="t">${clockOf(pics.get('before')[0].at)}</span><span class="o"></span><span class="gx"><span class="gl">Before the transcript</span>${strip('before')}</span></div>`);
       lines.forEach((l, i) => {
         while (alone.length && alone[0].at < l.at) out.push(aloneRow(alone.shift()));
+        if (l.gapFrom != null) out.push(gapRow(l.gapFrom, l.at, 'g' + i));
         const off = startLocal == null ? null : l.at - startLocal;
         const far = off == null || Math.abs(off) > REACH_MS || allowed !== 'yes';
         const cls = off == null ? '' : Math.abs(off) < 1000 ? 'zero' : off > 0 ? 'late' : 'early';
-        out.push(`<div class="ln${far ? ' far' : ''}${armed === l ? ' armed' : ''}" data-i="${i}"><span class="t">${clockOf(l.at)}</span><span class="o ${cls}">${off == null || Math.abs(off) > REACH_MS ? '' : Math.abs(off) < 1000 ? 'start' : mmss(off)}</span><span class="x"><span>${esc(l.text)}${(on.get(i) || []).map(chip).join('')}</span>${held(l.at) ? '<button class="play" data-act="play" title="Hear it">▶</button>' : ''}</span>` +
+        out.push(`<div class="ln${far ? ' far' : ''}${armed === l ? ' armed' : ''}" data-i="${i}"><span class="t">${clockOf(l.at)}</span><span class="o ${cls}">${off == null || Math.abs(off) > REACH_MS ? '' : Math.abs(off) < 1000 ? 'start' : mmss(off)}</span><span class="x"><span>${esc(l.text)}${(on.get(i) || []).map(chip).join('')}${strip('l' + i)}</span>${held(l.at) ? '<button class="play" data-act="play" title="Hear it">▶</button>' : ''}</span>` +
           (armed === l ? `<div class="ask">Started here? Move the start ${mmss(off).slice(1)} ${off > 0 ? 'later' : 'earlier'}${moveWhole() ? ' (and the end with it)' : ' (the end stays)'}.
             <button data-act="move" class="primary">Move it</button><button data-act="cancel">Cancel</button></div>` : '') + '</div>');
       });
       alone.forEach(k => out.push(aloneRow(k)));
+      if (tail != null) out.push(gapRow(tail, Date.now(), 'tail'));
       box.innerHTML = out.join('') + '<div id="interim"></div>';
     }
     renderInterim();

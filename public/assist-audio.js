@@ -11,6 +11,7 @@
  *     read(from, to)       a copy of samples [from, to), or null if they're no longer held
  *     play(ms, durMs)      play what was heard from ms, for durMs (whatever of it is still held)
  *     held()               {from, to} in ms: what the buffer holds now
+ *     pendingFrom()        the start (ms) of a phrase still being heard, or null
  *
  * Times: the buffer counts samples, which run on the sound card's clock; each one's time of day is
  * worked out from base + sample / 16 kHz, where base is the lowest (Date.now() − samples so far)
@@ -21,13 +22,14 @@
  * follows the quietest frames) cuts the stream into phrases: from 300 ms before the voice starts to
  * 700 ms of quiet, and at most 20 s (Whisper hears up to 30 s at a time). Each goes to onSegment.
  *
- *   AssistASR.create({model, onStatus(text, kind), onResult({seg, chunks:[{at, text}]})})
+ *   AssistASR.create({model, onStatus(text, kind), onResult({seg, chunks:[{at, to, text}]})})
  *     load()               fetches the model (cached by the browser after the first time) in a worker
  *     add(seg)             transcribes a phrase (queued; one at a time)
  *     backlog()            phrases waiting
  *     device               'webgpu' or 'wasm' (the processor) once loaded
+ *     oldest()             the start (ms) of the oldest phrase not transcribed yet, or null
  * The worker is assist-asr.js (transformers.js, Whisper). Each chunk's time is the phrase's start
- * plus Whisper's own timestamp within it.
+ * plus Whisper's own timestamp within it; its end likewise (or the phrase's end, when Whisper gives none).
  * MIT Licensed
  */
 
@@ -136,6 +138,7 @@ registerProcessor('assist-tap', AssistTap);`;
       wallOf: s => (base == null ? null : base + (s / SR) * 1000),
       sampleOf: ms => (base == null ? null : Math.round(((ms - base) / 1000) * SR)),
       read,
+      pendingFrom: () => (seg && base != null ? base + (seg.from / SR) * 1000 : null),
       held: () => (base == null ? null : { from: base + (Math.max(0, total - cap) / SR) * 1000, to: base + (total / SR) * 1000 }),
       play(ms, durMs) {
         if (base == null) return false;
@@ -172,7 +175,8 @@ var AssistASR = (function () {
 
   function create(opts) {
     let worker = null, ready = false, busy = false, queue = [], current = null, files = {};
-    const api = { device: null, ready: () => ready, backlog: () => queue.length + (busy ? 1 : 0) };
+    const api = { device: null, ready: () => ready, backlog: () => queue.length + (busy ? 1 : 0),
+      oldest: () => (current ? current.at : queue.length ? queue[0].at : null) };
 
     async function pickDevice() {
       try { if (navigator.gpu && await navigator.gpu.requestAdapter()) return 'webgpu'; } catch (_) { /* none */ }
@@ -202,8 +206,9 @@ var AssistASR = (function () {
           const seg = current;
           busy = false; current = null;
           if (seg && !m.error) {
+            const ts = (c, k) => (c.timestamp && Number.isFinite(c.timestamp[k]) ? Math.max(0, c.timestamp[k]) * 1000 : null);
             const chunks = (m.chunks && m.chunks.length ? m.chunks : [{ text: m.text, timestamp: [0, null] }])
-              .map(c => ({ at: seg.at + Math.max(0, (c.timestamp && Number.isFinite(c.timestamp[0]) ? c.timestamp[0] : 0)) * 1000, text: String(c.text || '').trim() }))
+              .map(c => ({ at: seg.at + (ts(c, 0) || 0), to: seg.at + Math.min(ts(c, 1) ?? seg.dur, seg.dur), text: String(c.text || '').trim() }))
               .filter(c => c.text && !JUNK.test(c.text));
             if (chunks.length) opts.onResult({ seg, chunks });
           }
@@ -217,6 +222,7 @@ var AssistASR = (function () {
     // seg: {at (ms of its first sample), audio}
     api.add = function (seg) {
       if (!seg || !seg.audio) return;
+      seg.dur = (seg.audio.length / 16000) * 1000;
       queue.push(seg);
       if (queue.length > 40) queue.shift();      // far behind (a slow computer): drop the oldest
       pump();

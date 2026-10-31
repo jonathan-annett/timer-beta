@@ -90,6 +90,20 @@
     .mkrow .t { color: var(--dim); font-variant-numeric: tabular-nums; }
     .mkrow .mk { margin-left: 0; }
     #log.dragging .ln:not(.far) { cursor: copy; }
+    /* Pictures: pauses in the speech (both ends, and one every 10 s), and a strip beside the lines */
+    #camview { width: 96px; height: 54px; background: #000; border-radius: 4px; object-fit: contain; }
+    #camstate.ok { color: var(--ok); } #camstate.warn { color: var(--warn); } #camstate.bad { color: var(--bad); }
+    .gap { display: grid; grid-template-columns: 5.6em 4.8em 1fr; gap: 10px; padding: 6px 10px; border-bottom: 1px solid #1b1b1b; background: #101010; }
+    .gap .t { color: var(--dim); font-variant-numeric: tabular-nums; }
+    .gap .gx { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .gap .gl { color: var(--dim); font-style: italic; font-size: 13px; }
+    .thumbs { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: middle; }
+    img.th { height: 54px; border-radius: 3px; border: 1px solid #333; cursor: zoom-in; }
+    img.th.edge { border-color: #2a6a9a; }
+    #big { position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.85); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+    #big figure { margin: 0; text-align: center; }
+    #big img { max-width: 92vw; max-height: 82vh; border-radius: 6px; }
+    #big figcaption { color: var(--text); margin-top: 8px; font-variant-numeric: tabular-nums; }
     .ln.over { background: #10243a; box-shadow: inset 0 2px 0 var(--accent); }
   </style>
 </head>
@@ -152,18 +166,25 @@
           </select></label>
           <label id="modelbox">Model <select id="model"></select></label>
         </div>
+        <div class="row">
+          <label>Pictures <select id="cam"><option value="off">None</option></select></label>
+          <video id="camview" muted playsinline autoplay hidden></video>
+          <span id="camstate" class="hint"></span>
+        </div>
         <p class="hint" id="srnote"></p>
         <p class="hint" id="asrstate"></p>
         <div id="log"></div>
       </div>
 
+      <div id="big" hidden><figure><img id="bigimg" alt=""><figcaption id="bigcap"></figcaption></figure></div>
       <p class="hint">Paired with timer room <b id="room"></b>. <button id="unpair">Unpair this computer</button></p>
     </section>
   </main>
   <script src="remote-peer.js?v=a4dfabd5"></script>
   <script src="notices.js?v=7f9aa52c"></script>
   <script src="remote-clock.js?v=4358371f"></script>
-  <script src="assist-audio.js?v=34d402c7"></script>
-  <script src="assist.js?v=6b26d69e"></script>
+  <script src="assist-video.js?v=c09d34e1"></script>
+  <script src="assist-audio.js?v=37231984"></script>
+  <script src="assist.js?v=e51fdfe0"></script>
 </body>
 </html>
