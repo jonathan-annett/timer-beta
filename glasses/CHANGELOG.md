@@ -2,6 +2,9 @@
 
 One entry per shipped version (`npm run ship -- "what changed"` writes it).
 
+## 0.1.18
+- Presenter chooses what shows beside the countdown (messages by default); operator Quiet on/off; Minimal view sits in the corner (Next corner moves it); presenters see Timer offline only after 60 s down
+
 ## 0.1.17
 - Operator Minimal view sits in the corner (Next corner moves it); presenters see Timer offline only after 60 s down
 
