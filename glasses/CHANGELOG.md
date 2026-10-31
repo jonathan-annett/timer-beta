@@ -2,6 +2,9 @@
 
 One entry per shipped version (`npm run ship -- "what changed"` writes it).
 
+## 0.1.17
+- Operator Minimal view sits in the corner (Next corner moves it); presenters see Timer offline only after 60 s down
+
 ## 0.1.16
 - Dev copy keeps its own pairing and settings (the Even app's storage is shared between plugins)
 
