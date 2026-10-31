@@ -965,11 +965,14 @@
         for (const r of rows) {
           const d = document.createElement('div');
           d.className = 'rl' + (r.s ? ' ' + r.s : '') + (r.e ? ' end' : '');
-          const t = document.createElement('span'); t.className = 't' + (r.x ? (r.xe ? ' early' : ' late') : ''); t.textContent = r.x || r.p || '';
-          if (r.x) t.title = 'Planned ' + r.p;          // the estimated time, now the show is under way
+          // Started rows (the live one and those done) show when they actually started, as the editor does;
+          // the rows to come, the estimate once the show is under way
+          const a = (r.s === 'now' || r.s === 'done') && r.a, off = a ? (r.p && a !== r.p) : !!r.x;
+          const t = document.createElement('span'); t.className = 't' + (off ? ((a ? a < r.p : r.xe) ? ' early' : ' late') : ''); t.textContent = a || r.x || r.p || '';
+          if (off) t.title = 'Planned ' + r.p;
           const n = document.createElement('span'); n.className = 'n'; n.textContent = r.n || '';
           const x = document.createElement('span'); x.className = 'd';
-          x.textContent = r.s === 'done' && r.a ? 'started ' + r.a : (r.e ? 'finish' : (r.d || ''));
+          x.textContent = r.e ? 'finish' : (r.d || '');
           d.append(t, n, x);
           box.appendChild(d);
         }
