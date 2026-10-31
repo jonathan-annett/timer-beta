@@ -64,10 +64,11 @@ with sync_playwright() as p:
     print("lines:", len(rows)); [print("  ", r) for r in rows[:6]]
     # Lines are timed by the recording: a phrase starts 0.3 s before the voice, plus the chunk's 0.2 s.
     # The file loops every 13.96 s, so the same phrase a loop later is 13.96 s on
-    ats=a.evaluate("JSON.parse(localStorage.assist_lines||'[]').map(l=>l.at)")
+    a.wait_for_timeout(5500)   # the transcript goes to IndexedDB in bursts
+    ats=a.evaluate("new Promise(r=>{const q=indexedDB.open('assist');q.onsuccess=()=>{const g=q.result.transaction('lines').objectStore('lines').getAll();g.onsuccess=()=>r(g.result.map(l=>l.at).sort((x,y)=>x-y))}})")
     loops=[round((ats[i+3]-ats[i])/1000,2) for i in range(len(ats)-3)]
     print("same phrase one loop later (s):", loops[:4], "| file length 13.96")
-    print("hear the start shown:", a.is_visible("#hearstart"))
+    print("hear the start shown:", a.is_visible("#hearstart"), "|", a.text_content("#started"))
     a.click("#hearstart"); a.wait_for_timeout(300)
     print("play a line:", a.evaluate("(()=>{const b=document.querySelector('#log button.play'); b.click(); return !!b})()"), "| status after:", a.text_content("#asrstate")[:60])
     s0=t.evaluate("processTimerApiMessage({cmd:'snapshot'}).startedAt")

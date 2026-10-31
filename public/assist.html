@@ -81,13 +81,22 @@
     .ln.interim .x { color: var(--dim); font-style: italic; }
     .ln.armed { background: #10243a; }
     .ask { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 4px 0 2px; }
-    .divider { padding: 8px 10px; background: #121a12; color: #9cf59c; font-size: 13px; border-bottom: 1px solid #1b1b1b; }
+    /* What the timer knows happened: the run sheet's actual starts ([15:45 Mr Smith +16:40]); the live one drags */
+    .mk { display: inline-block; margin-left: 8px; padding: 0 8px; border: 1px solid #3a5a3a; border-radius: 10px; background: #142014; color: #9cf59c; font-size: 13px; white-space: nowrap; }
+    .mk.late { border-color: #6a3a3a; background: #241414; color: var(--late); }
+    .mk.early { border-color: #3a6a3a; color: var(--early); }
+    .mk.drag { cursor: grab; border-style: dashed; box-shadow: 0 0 0 1px #2a6a9a; }
+    .mkrow { display: grid; grid-template-columns: 5.6em 4.8em 1fr; gap: 10px; padding: 4px 10px; border-bottom: 1px solid #1b1b1b; }
+    .mkrow .t { color: var(--dim); font-variant-numeric: tabular-nums; }
+    .mkrow .mk { margin-left: 0; }
+    #log.dragging .ln:not(.far) { cursor: copy; }
+    .ln.over { background: #10243a; box-shadow: inset 0 2px 0 var(--accent); }
   </style>
 </head>
 <body>
   <main>
     <h1>Assist station</h1>
-    <p class="sub">Listens to the room and keeps a time-stamped transcript. Click the line where the speaker actually began, and the timer’s start moves to match.</p>
+    <p class="sub">Listens to the room and keeps a time-stamped transcript. Click the line where the speaker actually began (or drag the ⏱ start marker onto it), and the timer’s start moves to match.</p>
 
     <section id="enter" class="card center" hidden>
       <p>On the timer, open <b>share</b> and click <b>Pair a computer</b>. Type the 6-digit code it shows:</p>
@@ -122,6 +131,7 @@
             <button data-m="start" title="Only the start: the elapsed time is put right and the end stays where it is">only the start</button>
           </span>
         </div>
+        <p id="modewhy" class="hint"></p>
       </div>
 
       <div class="card">
@@ -154,6 +164,6 @@
   <script src="notices.js?v=7f9aa52c"></script>
   <script src="remote-clock.js?v=4358371f"></script>
   <script src="assist-audio.js?v=34d402c7"></script>
-  <script src="assist.js?v=9d1c094d"></script>
+  <script src="assist.js?v=6b26d69e"></script>
 </body>
 </html>

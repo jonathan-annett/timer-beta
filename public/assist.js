@@ -17,9 +17,18 @@
  * timings, so a phrase is stamped when its first words come in, less LEAD_MS). Both feed
  * hear(at, text). The recording runs either way, so lines and the timer's start can be played back.
  *
+ * Run sheet mode: the timer decides how a move moves it ({t:'assist-rs', shift}: the next item's
+ * auto start keeps the end, otherwise the whole timer and the later starts move) and the switch
+ * here is off; it also sends the show's actual starts (log), marked in the transcript where they
+ * fell ([15:45 Mr Smith +16:40]). The live item's marker (or "Timer start" outside run sheet
+ * mode) can be dragged onto the line where the speaker really began.
+ *
  * localStorage: assist_saved_link, assist_server, assist_token_<room>, assist_mode (whole | start),
- *   assist_lines (the transcript, JSON [{at, text, item}], so a reload keeps it; Clear empties it),
- *   assist_engine (whisper | browser), assist_model (tiny.en | base.en | small.en), assist_mic (device id)
+ *   assist_engine, assist_model, assist_mic (below). The transcript is the last 15 minutes, held in
+ *   memory and copied to IndexedDB (database assist, store lines {id, at, text, item}) in bursts,
+ *   only so a reload keeps it (Store below; assist_unsaved holds the last unwritten seconds over a
+ *   reload); an older localStorage assist_lines is moved there once.
+ *   assist_engine: whisper | browser; assist_model: tiny.en | base.en | small.en; assist_mic: device id
  * MIT Licensed
  */
 
@@ -97,6 +106,8 @@
   const clock = RemoteClock.create(v => { Object.assign(state, v); renderTimer(); });
   let allowed = 'no';                   // no | asked | yes | refused | stopped (the timer's answer)
   let startLocal = null;                // the timer's start, on this computer's clock
+  let offset = null;                    // the timer's clock − this one's (ms)
+  let rsShift = null, rsLog = [];       // run sheet mode: {w, why} and [{n, p, a, e}] (the timer's clock)
 
   function start() {
     $('paired').hidden = false;
@@ -187,7 +198,14 @@
       allowed = m.state;
       renderAll();
     } else if (m.t === 'assist-start' && Number.isFinite(m.at) && Number.isFinite(m.now)) {
-      startLocal = m.at - (m.now - Date.now());
+      offset = m.now - Date.now();
+      startLocal = m.at - offset;
+      renderAll();
+    } else if (m.t === 'assist-rs' && Number.isFinite(m.now)) {
+      offset = m.now - Date.now();
+      const json = v => { try { return v ? JSON.parse(v) : null; } catch (_) { return null; } };
+      rsShift = json(m.shift);
+      rsLog = (Array.isArray(json(m.log)) ? json(m.log) : []).filter(x => x && Number.isFinite(x.a));
       renderAll();
     } else if (m.t === 'shift-result') {
       if (m.error) { moved('The timer didn’t take that (' + m.error + ').', 'bad'); return; }
@@ -207,9 +225,10 @@
 
   let mode = store.get(MODE) === 'start' ? 'start' : 'whole';
   let lastMove = null;
+  const moveWhole = () => (rsShift ? !!rsShift.w : mode === 'whole');   // in run sheet mode the timer decides
   $('mode').addEventListener('click', ev => {
     const b = ev.target.closest('button[data-m]');
-    if (!b) return;
+    if (!b || rsShift) return;
     mode = b.dataset.m; store.set(MODE, mode); renderAll();
   });
   $('ask').addEventListener('click', () => { if (peer) peer.send({ t: 'assist', on: true }); });
@@ -234,19 +253,97 @@
   // lines: {at (this computer's ms), text, item (the run sheet item then, or '')}; one interim
   // (still being heard) at most, shown greyed at the end.
 
-  const LINES = 'assist_lines';
-  const lines = (() => { try { const l = JSON.parse(store.get(LINES) || '[]'); return Array.isArray(l) ? l.filter(x => x && Number.isFinite(x.at) && typeof x.text === 'string') : []; } catch (_) { return []; } })();
+  // The transcript is a loop, like the recording: lines go after 15 minutes (KEEP_MS). It lives in
+  // memory; IndexedDB is only there to survive a reload, so changes go to it in one write every few
+  // seconds (and when the page is hidden or closed), not one per line. Frames will share the
+  // database and the bursts.
+  const DB_NAME = 'assist', FLUSH_MS = 5000, KEEP_MS = 15 * 60000;
+  const Store = (() => {
+    let db = null, pending = new Map(), gone = new Set(), clearAll = false, timer = null;
+    const open = () => new Promise((resolve, reject) => {
+      const rq = indexedDB.open(DB_NAME, 1);
+      rq.onupgradeneeded = () => { if (!rq.result.objectStoreNames.contains('lines')) rq.result.createObjectStore('lines', { keyPath: 'id' }); };
+      rq.onsuccess = () => resolve(rq.result);
+      rq.onerror = () => reject(rq.error);
+    });
+    function flush() {
+      clearTimeout(timer); timer = null;
+      if (!db || (!pending.size && !gone.size && !clearAll)) return;
+      const tx = db.transaction('lines', 'readwrite'), os = tx.objectStore('lines');
+      if (clearAll) os.clear();
+      gone.forEach(id => os.delete(id));
+      pending.forEach(l => os.put(l));
+      clearAll = false; gone = new Set(); pending = new Map();
+    }
+    const soon = () => { if (!timer) timer = setTimeout(flush, FLUSH_MS); };
+    // A write started as the page goes (a reload) doesn't finish: what's not written yet goes to
+    // localStorage at once instead (assist_unsaved, small: a few seconds' lines), read back by load()
+    window.addEventListener('pagehide', () => {
+      if (pending.size || gone.size || clearAll) store.set('assist_unsaved', JSON.stringify({ put: [...pending.values()], gone: [...gone], clear: clearAll }));
+    });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
+    return {
+      async load() {
+        try { db = await open(); } catch (_) { return []; }   // private window etc.: memory only
+        const all = await new Promise(resolve => { const rq = db.transaction('lines').objectStore('lines').getAll(); rq.onsuccess = () => resolve(rq.result || []); rq.onerror = () => resolve([]); });
+        try {                                // an older station kept it in localStorage
+          const old = JSON.parse(store.get('assist_lines') || '[]');
+          if (Array.isArray(old) && old.length) old.forEach(l => { if (l && Number.isFinite(l.at)) { l.id = newId(); all.push(l); pending.set(l.id, l); } });
+          store.del('assist_lines');
+        } catch (_) { /* nothing to move */ }
+        let lines = all;
+        try {                                // the last few seconds before a reload
+          const u = JSON.parse(store.get('assist_unsaved') || 'null');
+          if (u) {
+            if (u.clear) { lines = []; clearAll = true; }
+            const drop = new Set(u.gone || []);
+            lines = lines.filter(l => !drop.has(l.id));
+            drop.forEach(id => gone.add(id));
+            (u.put || []).forEach(l => { if (l && Number.isFinite(l.at)) { lines = lines.filter(x => x.id !== l.id); lines.push(l); pending.set(l.id, l); } });
+          }
+          store.del('assist_unsaved');
+        } catch (_) { /* none */ }
+        flush();
+        return lines.filter(x => x && Number.isFinite(x.at) && typeof x.text === 'string');
+      },
+      put(l) { pending.set(l.id, l); gone.delete(l.id); soon(); },
+      drop(l) { pending.delete(l.id); gone.add(l.id); soon(); },
+      clear() { pending = new Map(); gone = new Set(); clearAll = true; flush(); },
+      flush,
+    };
+  })();
+  let idSeq = 0;
+  const newId = () => Date.now() * 1000 + (idSeq++ % 1000);
+
+  const lines = [];
   let interim = null, armed = null;    // armed: the line asked "started here?"
-  let saveTimer = null;
-  const saveLines = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => store.set(LINES, JSON.stringify(lines)), 500); };
   function hear(at, text) {
     text = String(text || '').trim();
     if (!text) return;
-    lines.push({ at, text, item: String(state.rsNow || '') });
-    if (lines.length > MAX_LINES) lines.splice(0, lines.length - MAX_LINES);
-    saveLines();
+    addLine({ id: newId(), at, text, item: String(state.rsNow || '') });
     renderLog(true);
   }
+  function addLine(l) {
+    let i = lines.length;                 // in time order (a phrase can come back after a later one)
+    while (i > 0 && lines[i - 1].at > l.at) i--;
+    lines.splice(i, 0, l);
+    Store.put(l);
+    prune();
+  }
+  function prune() {
+    const cut = Date.now() - KEEP_MS;
+    let n = 0;
+    while (lines.length && (lines.length > MAX_LINES || lines[0].at < cut)) { Store.drop(lines.shift()); n++; }
+    return n;
+  }
+  setInterval(() => { if (prune()) renderLog(); }, 10000);
+  Store.load().then(saved => {
+    const now = lines.splice(0);          // heard while loading
+    saved.sort((a, b) => a.at - b.at).forEach(l => lines.push(l));
+    now.forEach(addLine);
+    prune();
+    logSig = ''; renderLog('force');
+  });
   window.__assistHear = (text, agoMs) => hear(Date.now() - (agoMs || 0), text);   // tests (and other engines)
 
   // Two ways to transcribe (assist_engine): Whisper on this computer, fed from the rolling
@@ -367,10 +464,12 @@
   $('clear').addEventListener('click', () => {
     if (Date.now() - clearArmed > 3000) { clearArmed = Date.now(); $('clear').textContent = 'Sure? Click again'; setTimeout(() => { $('clear').textContent = 'Clear'; }, 3000); return; }
     clearArmed = 0; $('clear').textContent = 'Clear';
-    lines.length = 0; armed = null; store.del(LINES); renderLog();
+    lines.length = 0; armed = null; Store.clear(); renderLog();
   });
   $('save').addEventListener('click', () => {
-    const text = lines.map(l => `${clockOf(l.at)}\t${l.item ? '[' + l.item + '] ' : ''}${l.text}`).join('\n') + '\n';
+    const rows = lines.map(l => ({ at: l.at, s: `${clockOf(l.at)}\t${l.item ? '[' + l.item + '] ' : ''}${l.text}` }))
+      .concat(markers().map(k => ({ at: k.at, s: `${clockOf(k.at)}\t[${k.label} started]` })));
+    const text = rows.sort((a, b) => a.at - b.at).map(r => r.s).join('\n') + '\n';
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
     a.download = 'transcript ' + new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '.') + '.txt';
@@ -389,18 +488,63 @@
     if (act) {
       const l = armed;
       armed = null;
-      if (act.dataset.act === 'move' && l && startLocal != null) shift(l.at - startLocal, mode === 'whole');
+      if (act.dataset.act === 'move' && l && startLocal != null) shift(l.at - startLocal, moveWhole());
       renderLog();
       return;
     }
     const row = ev.target.closest('.ln[data-i]');
-    if (!row || row.classList.contains('far')) return;
+    if (!row || row.classList.contains('far') || ev.target.closest('.mk')) return;
     const l = lines[Number(row.dataset.i)];
     armed = armed === l ? null : l;
     renderLog();
   });
 
+  // The live marker dragged onto a line: the start moves there (no question: the drag is the
+  // decision; Undo here and on the timer). Redrawing waits while a drag is on.
+  let dragging = false;
+  const dropRow = ev => { const r = ev.target.closest && ev.target.closest('.ln[data-i]'); return r && !r.classList.contains('far') ? r : null; };
+  const clearOver = () => $('log').querySelectorAll('.ln.over').forEach(r => r.classList.remove('over'));
+  $('log').addEventListener('dragstart', ev => {
+    if (!ev.target.closest || !ev.target.closest('.mk.drag')) return;
+    dragging = true; armed = null;
+    ev.dataTransfer.setData('text/plain', 'timer start');
+    ev.dataTransfer.effectAllowed = 'move';
+    $('log').classList.add('dragging');
+  });
+  $('log').addEventListener('dragover', ev => {
+    const row = dragging && dropRow(ev);
+    if (!row) return;
+    ev.preventDefault(); ev.dataTransfer.dropEffect = 'move';
+    if (!row.classList.contains('over')) { clearOver(); row.classList.add('over'); }
+  });
+  $('log').addEventListener('drop', ev => {
+    const row = dragging && dropRow(ev);
+    if (!row) return;
+    ev.preventDefault();
+    const l = lines[Number(row.dataset.i)];
+    if (l && startLocal != null) shift(l.at - startLocal, moveWhole());
+  });
+  $('log').addEventListener('dragend', () => { dragging = false; clearOver(); $('log').classList.remove('dragging'); logSig = ''; renderLog(); });
+
   // ─── Drawing ─────────────────────────────────────────────────────────────
+
+  // What the timer knows happened, on this computer's clock: the run sheet's actual starts (the
+  // last one is live while it's the timer's start: draggable), or outside run sheet mode the timer's start
+  const hm = ms => { const d = new Date(ms); return two(d.getHours()) + ':' + two(d.getMinutes()); };
+  function markers() {
+    if (offset == null) return [];
+    const out = rsLog.map(x => {
+      const late = x.p != null ? x.a - x.p : null;
+      return { at: x.a - offset, label: [x.p != null ? hm(x.p) : '', x.e ? (x.n || 'Finish') : x.n, late == null ? '' : mmss(late)].filter(Boolean).join(' '),
+        cls: late == null || Math.abs(late) < 30000 ? '' : late > 0 ? ' late' : ' early', fin: !!x.e };
+    });
+    const last = out[out.length - 1];
+    if (last && !last.fin && startLocal != null && Math.abs(last.at - startLocal) < 1500) last.live = true;
+    if (!rsLog.length && startLocal != null) out.push({ at: startLocal, label: 'Timer start', cls: '', live: true });
+    return out.filter(k => k.live || k.at >= Date.now() - KEEP_MS);
+  }
+  const chip = k => `<span class="mk${k.cls}${k.live && allowed === 'yes' ? ' drag" draggable="true" title="Drag onto the line where the speaker really began' : '" title="'}">⏱ ${esc(k.label)}</span>`;
+
 
   function renderListen() {
     $('listen').textContent = listening ? 'Stop listening' : 'Start listening';
@@ -428,7 +572,8 @@
       stopped: 'The timer’s operator stopped this station moving starts.',
     }[allowed] || 'Seeing the timer. To move its start from here, the timer’s operator has to allow it.';
     $('ask').hidden = allowed === 'yes' || allowed === 'asked';
-    $('mode').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
+    $('mode').querySelectorAll('button').forEach(b => { b.classList.toggle('on', b.dataset.m === (moveWhole() ? 'whole' : 'start')); b.disabled = !!rsShift; });
+    $('modewhy').textContent = rsShift ? 'Set by the run sheet: ' + rsShift.why : '';
     renderLog();
   }
 
@@ -436,20 +581,29 @@
   function renderLog(follow) {
     const box = $('log');
     const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-    const h = audio.held(), sig = [lines.length, lines.length && lines[0].at, startLocal, allowed, mode, armed && armed.at, h && Math.floor(h.from / 10000)].join('|');
-    if (sig !== logSig) {
+    const mks = markers();
+    const h = audio.held(), sig = [lines.length, lines.length && lines[0].at, startLocal, allowed, moveWhole(), armed && armed.at, h && Math.floor(h.from / 10000), JSON.stringify(mks)].join('|');
+    if (sig !== logSig && !dragging) {
       logSig = sig;
       const out = [];
-      let item = null;
+      // Each marker goes at the end of the line being spoken when it happened (within 20 s), else on its own row
+      const on = new Map(), alone = [];
+      mks.forEach(k => {
+        let j = -1;
+        for (let i = 0; i < lines.length && lines[i].at <= k.at + 250; i++) j = i;
+        if (j >= 0 && k.at - lines[j].at < 20000) { if (!on.has(j)) on.set(j, []); on.get(j).push(k); } else alone.push(k);
+      });
+      const aloneRow = k => `<div class="mkrow"><span class="t">${clockOf(k.at)}</span><span></span><span>${chip(k)}</span></div>`;
       lines.forEach((l, i) => {
-        if (l.item !== item) { item = l.item; if (item) out.push(`<div class="divider">${esc(item)}</div>`); }
+        while (alone.length && alone[0].at < l.at) out.push(aloneRow(alone.shift()));
         const off = startLocal == null ? null : l.at - startLocal;
         const far = off == null || Math.abs(off) > REACH_MS || allowed !== 'yes';
         const cls = off == null ? '' : Math.abs(off) < 1000 ? 'zero' : off > 0 ? 'late' : 'early';
-        out.push(`<div class="ln${far ? ' far' : ''}${armed === l ? ' armed' : ''}" data-i="${i}"><span class="t">${clockOf(l.at)}</span><span class="o ${cls}">${off == null || Math.abs(off) > REACH_MS ? '' : Math.abs(off) < 1000 ? 'start' : mmss(off)}</span><span class="x"><span>${esc(l.text)}</span>${held(l.at) ? '<button class="play" data-act="play" title="Hear it">▶</button>' : ''}</span>` +
-          (armed === l ? `<div class="ask">Started here? Move the start ${mmss(off).slice(1)} ${off > 0 ? 'later' : 'earlier'}${mode === 'whole' ? ' (and the end with it)' : ' (the end stays)'}.
+        out.push(`<div class="ln${far ? ' far' : ''}${armed === l ? ' armed' : ''}" data-i="${i}"><span class="t">${clockOf(l.at)}</span><span class="o ${cls}">${off == null || Math.abs(off) > REACH_MS ? '' : Math.abs(off) < 1000 ? 'start' : mmss(off)}</span><span class="x"><span>${esc(l.text)}${(on.get(i) || []).map(chip).join('')}</span>${held(l.at) ? '<button class="play" data-act="play" title="Hear it">▶</button>' : ''}</span>` +
+          (armed === l ? `<div class="ask">Started here? Move the start ${mmss(off).slice(1)} ${off > 0 ? 'later' : 'earlier'}${moveWhole() ? ' (and the end with it)' : ' (the end stays)'}.
             <button data-act="move" class="primary">Move it</button><button data-act="cancel">Cancel</button></div>` : '') + '</div>');
       });
+      alone.forEach(k => out.push(aloneRow(k)));
       box.innerHTML = out.join('') + '<div id="interim"></div>';
     }
     renderInterim();

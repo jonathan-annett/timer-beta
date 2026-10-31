@@ -313,7 +313,7 @@
       e.clock = m.clock === 1;                   // counts the countdown itself (remote-clock.js)
       pushTo(e, true);
       if (e.client === 'g2') sendGlassesRole(e);
-      else if (e.client === 'assist') { e.peer.send({ t: 'assist', state: e.assist || 'no' }); e.startSent = undefined; sendAssistStart(e); }
+      else if (e.client === 'assist') { e.peer.send({ t: 'assist', state: e.assist || 'no' }); e.startSent = e.rsSent = undefined; sendAssistStart(e); }
       else if (e.role === 'control' || e.role === 'admin') e.peer.send({ t: 'rs-edit', state: e.edit || 'no' });
       panelConnected();
     } else if (e.client === 'assist') {
@@ -426,11 +426,20 @@
   // time with the timer's clock beside it ({t:'assist-start', at, now}), so it can place its own
   // recordings against the timer's start whatever either computer's clock says. Every move shows
   // a notice on the timer with Undo.
+  // In run sheet mode it's also sent {t:'assist-rs', shift, log, now}: how a move moves the timer
+  // (bus rs_shift; the station's own switch is off then) and the show's actual starts (rs_log), to
+  // mark them in its transcript.
   function sendAssistStart(e) {
+    const now = typeof timeProvider !== 'undefined' ? timeProvider.now() : Date.now();
+    const rs = [rawVars.rs_shift || '', rawVars.rs_log || ''];
+    if (e.rsSent !== rs.join('\n')) {
+      e.rsSent = rs.join('\n');
+      e.peer.send({ t: 'assist-rs', shift: rs[0], log: rs[1], now });
+    }
     const at = rawVars.started_ms;
     if (typeof at !== 'number' || e.startSent === at) return;
     e.startSent = at;
-    e.peer.send({ t: 'assist-start', at, now: typeof timeProvider !== 'undefined' ? timeProvider.now() : Date.now() });
+    e.peer.send({ t: 'assist-start', at, now });
   }
   function assistMessage(e, m) {
     if (m.t === 'assist') {
@@ -443,8 +452,8 @@
       if (e.assist !== 'yes') { e.peer.send({ t: 'assist', state: e.assist || 'no' }); return; }
       const ms = num(m.msecs, -HOUR, HOUR);
       if (ms === null || !Math.round(ms) || typeof processTimerApiMessage !== 'function') return e.peer.send({ t: 'shift-result', req, error: 'bad' });
-      const whole = m.whole !== false;
-      processTimerApiMessage({ cmd: 'shiftstart', msecs: Math.round(ms), whole });
+      const r = processTimerApiMessage({ cmd: 'shiftstart', msecs: Math.round(ms), whole: m.whole !== false });
+      const whole = !(r && r.whole === false);       // the run sheet may have decided
       e.peer.send({ t: 'shift-result', req, msecs: Math.round(ms), whole });
       shiftNotice(deviceLabel(e), Math.round(ms), whole);
     }

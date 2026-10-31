@@ -707,20 +707,22 @@ custom_message.addEventListener('focus', function(){
 	  const typed = getEl("ep_typed"), clock = getEl("ep_clock"), words = getEl("ep_words");
 	  if (!typed) return;
 	  typed.textContent = enterHoursText !== "" ? enterHoursText + ":" + enterTimeText : enterTimeText;
-	  getEl("ep_unit").textContent = enterHoursText !== "" ? (enterTimeText === "" ? "hours :" : "h : min") : "min";
+	  getEl("ep_unit").textContent = enterHoursText !== "" ? (enterTimeText === "" ? "hours :" : enterTimeText.includes("..") ? "h : min . . s" : "h : min") : enterTimeText.includes("..") ? "min . . s" : "min";
 	  clock.textContent = secToStr(sec);
 	  words.textContent = durationWords(sec);
   }
 
-  function updateEnteredTimeText () {
-		 renderEntryPad((Number(enterHoursText) * 3600) + (Number(enterTimeText) * 60));
-		 if (enterHoursText === "") {
-			dispNextMins.textContent = secToStr(Number(enterTimeText) * 60);
-		 } else {
-			dispNextMins.textContent = secToStr((Number(enterHoursText) * 3600) + (Number(enterTimeText) * 60)); 
-		 } 
+  // The typed time in seconds: hours before ":", then minutes (1.5 = a minute and a half); a second
+  // "." straight after the first separates minutes from seconds (1..30, 1:20..25)
+  function enteredSec() {
+	  const mm = enterTimeText.split("..");
+	  return Number(enterHoursText) * 3600 + Number(mm[0]) * 60 + (mm.length > 1 ? Number(mm[1]) : 0);
   }
 
+  function updateEnteredTimeText () {
+		 renderEntryPad(enteredSec());
+		 dispNextMins.textContent = secToStr(enteredSec());
+  }
 
  // Custom styles (Ctrl+S) are stored as only the rules that differ from timer.css and
  // applied in a second <style> after it, so later changes to timer.css still show up.
@@ -1578,7 +1580,8 @@ function onDocKeyDown(ev){
 			case "'":  return onKey_UndoPause (ev);
 				
 			case ".":
-				 if ( (enterTimeText !== "") && (enterTimeText.indexOf(".") <0 ) ) {
+				 // a decimal point, or a second one straight after it: minutes .. seconds
+				 if ( (enterTimeText !== "") && (enterTimeText.indexOf(".") <0 || /^\d+\.$/.test(enterTimeText)) ) {
 					 
 					 enterTimeText = enterTimeText + ev.key;
 					 setHtmlClass("editing");
@@ -1881,7 +1884,7 @@ function isSingleScreenMode() {
 
 	function saveEditedTime(){
 		if (  (enterTimeText !== "" ) ) {
-			setDefaultDuration  ( ((Number(enterHoursText) * 3600) + (Number(enterTimeText) * 60) ) * 1000);
+			setDefaultDuration  ( enteredSec() * 1000);
 
 			if (timerAPI) {
 				timerAPI.send( {setVariableValues:{default:dispNextMins.textContent}});

@@ -115,17 +115,24 @@ function processTimerApiMessage(msg) {
         // whole (the default): the end moves too, so they still get their full time; whole false:
         // only the start, so elapsed is put right and the end stays. From the assist station
         // (remote-control.js); the run sheet records the moved start as the item's actual start.
+        // In run sheet mode the sheet decides whole (runsheet.shiftPolicy); the reply says which.
+        // A moved end is eased, not jumped: see below.
         case "shiftstart": {
             const ms = Math.round(Number(msg.msecs));
             if (!Number.isFinite(ms) || !ms) break;
             const was = startedAt;
+            // in run sheet mode the sheet decides (runsheet.shiftPolicy: the next item's auto start)
+            const pol = window.runsheet && window.runsheet.shiftPolicy ? window.runsheet.shiftPolicy(was) : null;
+            const whole = pol ? pol.whole : msg.whole !== false;
             bumpStart(ms);
-            if (msg.whole !== false) bumpEnd(ms, ms);
+            // The presenter never sees the seconds jump: under 30 s the countdown eases to the new end
+            // (as ↑/↓ do); from 30 s the minutes snap at once (the nearest whole minute) and the rest eases
+            if (whole) bumpEnd(ms, Math.abs(ms) < 30000 ? 0 : Math.round(ms / 60000) * 60000);
             durationDisp.textContent = secToStr((seekEndsAt - startedAt) / 1000);
             lastTimeText = "";
             displayUpdate();
-            if (window.runsheet && window.runsheet.startShifted) window.runsheet.startShifted(was, ms);
-            return { startedAt, seekEndsAt };
+            if (window.runsheet && window.runsheet.startShifted) window.runsheet.startShifted(was, ms, whole);
+            return { startedAt, seekEndsAt, whole };
         }
 
         case "nudge": {
