@@ -1317,10 +1317,18 @@ function  onKey_Shift_ArrowUp(ev) {
 	 displayUpdate();
 }
 
+// ← / → shift the whole timer by a second; Ctrl or Shift: a minute (Shift because macOS keeps
+// Ctrl+← / → for switching desktops, so the page never sees them there)
+function arrowStep(ev) {
+	const minutes = controlling || !!(ev && ev.shiftKey);
+	return { start: minutes ? 60000 : 1000, seek: minutes ? 60000 : 1000, end: minutes ? 60000 : 0 };
+}
+
 function onKey_ArrowLeft(ev) {
 
-	bumpStart(0-nudgeFactor);
-	bumpEnd(0-seekEndDelta,0-endDelta);
+	const step = arrowStep(ev);
+	bumpStart(0-step.start);
+	bumpEnd(0-step.seek,0-step.end);
 	
 	durationDisp.textContent = secToStr((seekEndsAt-startedAt) / 1000);
 	displayUpdate();
@@ -1331,8 +1339,9 @@ function onKey_ArrowRight(ev) {
 
 
 
-	bumpStart(nudgeFactor); 
-	bumpEnd(seekEndDelta,endDelta);
+	const step = arrowStep(ev);
+	bumpStart(step.start); 
+	bumpEnd(step.seek,step.end);
 	
 	durationDisp.textContent = secToStr((seekEndsAt-startedAt) / 1000);
 	displayUpdate();

@@ -56,7 +56,7 @@ At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. O
 | **Ctrl+↑ / Ctrl+↓** | Add / remove 1 minute (applied immediately) |
 | **↑ / ↓** | Add / remove 1 second. The timer runs fast or slow until it reaches the new time; **Ctrl+Enter** or the **catch up** button jumps straight there |
 | **Shift+↑ / Shift+↓** | Move the start time earlier / later (changes elapsed time, not the end) |
-| **← / →** | Shift the whole timer (start and end) by 1 second; with **Ctrl**, 1 minute |
+| **← / →** | Shift the whole timer (start and end) by 1 second; with **Ctrl** or **Shift**, 1 minute (on a Mac use **Shift**: macOS keeps Ctrl+← / → for switching desktops) |
 | **"** or numpad **/** | Pause / resume |
 | **'** or **Tab** | Undo pauses (restore the original end time) |
 
