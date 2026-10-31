@@ -55,6 +55,16 @@
     #started { color: var(--dim); font-variant-numeric: tabular-nums; }
     #moved { min-height: 1.4em; font-size: 14px; }
     #moved button { padding: 2px 10px; margin-left: 8px; }
+    #hearstart { padding: 4px 10px; font-size: 13px; }
+    select { font: inherit; font-size: 14px; color: var(--text); background: #1a1a1a; border: 1px solid #444; border-radius: 5px; padding: 4px 6px; }
+    label { color: var(--dim); font-size: 14px; }
+    #levelbox { display: inline-block; width: 80px; height: 8px; background: #222; border-radius: 4px; overflow: hidden; vertical-align: middle; }
+    #level { display: block; height: 100%; width: 0; background: var(--ok); transition: width .1s; }
+    #asrstate.ok { color: var(--ok); } #asrstate.warn { color: var(--warn); } #asrstate.bad { color: var(--bad); }
+    .ln .x { display: flex; gap: 8px; align-items: baseline; }
+    .ln .x span { flex: 1; }
+    .ln button.play { padding: 0 8px; font-size: 12px; line-height: 1.6; opacity: .6; }
+    .ln:hover button.play { opacity: 1; }
     #allow { margin-top: 8px; }
 
     /* Transcript */
@@ -98,7 +108,7 @@
         <div class="row" style="margin-top:0"><span id="status">Connecting…</span></div>
         <div id="now">
           <div id="item"></div><div id="remain">–:––</div>
-          <div id="started"></div><div></div>
+          <div id="started"></div><div><button id="hearstart" hidden title="Play what the microphone heard around the timer’s start">▶ Hear the start</button></div>
         </div>
         <div id="moved"></div>
         <div id="allow" class="row">
@@ -118,12 +128,22 @@
         <div class="row" style="margin-top:0">
           <h2 style="margin:0">Transcript</h2>
           <span id="listenstate">Not listening</span>
+          <span id="levelbox" title="Microphone level"><span id="level"></span></span>
           <span style="flex:1"></span>
           <button id="listen" class="primary">Start listening</button>
           <button id="save">Save transcript</button>
           <button id="clear">Clear</button>
         </div>
-        <p class="hint" id="srnote">Uses this browser’s speech recognition (Chrome or Edge; the audio goes to the browser maker’s service to be transcribed). Times are when each phrase was first heard, so allow a second or so. The coloured column is how long after the timer’s start each line was heard.</p>
+        <div class="row">
+          <label>Microphone <select id="mic"><option value="">Default</option></select></label>
+          <label>Transcribe <select id="engine">
+            <option value="whisper">on this computer (Whisper)</option>
+            <option value="browser">with the browser’s speech service</option>
+          </select></label>
+          <label id="modelbox">Model <select id="model"></select></label>
+        </div>
+        <p class="hint" id="srnote"></p>
+        <p class="hint" id="asrstate"></p>
         <div id="log"></div>
       </div>
 
@@ -133,6 +153,7 @@
   <script src="remote-peer.js?v=a4dfabd5"></script>
   <script src="notices.js?v=7f9aa52c"></script>
   <script src="remote-clock.js?v=4358371f"></script>
-  <script src="assist.js?v=06c20668"></script>
+  <script src="assist-audio.js?v=34d402c7"></script>
+  <script src="assist.js?v=9d1c094d"></script>
 </body>
 </html>

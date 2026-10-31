@@ -103,7 +103,7 @@
     state.log.push(entry);
     entry.planned = plannedStartMs(i);            // after push: an unanchored show is pinned to its first entry
     const ms = it.eff * 1000;
-    api({ cmd: 'default', msecs: ms });
+    itemDefault(ms);
     api({ cmd: 'start', msecs: ms });
     noteTimerStart();
     // The item's name is the item layer of the message; a new item also drops the operator's message
@@ -249,7 +249,7 @@
     const first = nextIndex(-1);
     if (first < 0) return;
     const it = norm.items[first], ms = it.eff * 1000;
-    api({ cmd: 'default', msecs: ms });
+    itemDefault(ms);
     api({ cmd: 'start', msecs: ms });
     // paused a moment after the start: paused at exactly N.000 s the display reads N+1 (as dropPlayer's rewind)
     setTimeout(() => { const s = api({ cmd: 'snapshot' }); if (state.standby && s && s.pausedAt == null) api({ cmd: 'pause' }); }, 60);
@@ -433,9 +433,29 @@
     commit();
   }
 
+  // Items set the timer's default (their length). The operator's own default is kept in
+  // state.ownDefault the first time, and put back when run sheet mode goes off.
+  function itemDefault(ms) {
+    if (state.ownDefault == null) { const s = api({ cmd: 'snapshot' }); if (s && s.defaultDuration > 0) state.ownDefault = s.defaultDuration; }
+    api({ cmd: 'default', msecs: ms });
+  }
+
+  // Turning run sheet mode off leaves the timer as a plain timer: the item's name goes (the
+  // operator's own message stays), any run sheet video stops, the operator's own default comes
+  // back, and it's paused at the start of that countdown, ready for Space.
   function setActive(on) {
+    const was = isActive();
     state.active = !!on;
-    if (!state.active && state.standby) { state.standby = false; api({ cmd: 'standby', on: false }); }   // left paused, as a plain pause
+    if (!state.active && state.standby) { state.standby = false; api({ cmd: 'standby', on: false }); }
+    if (was && !state.active) {
+      stopRunsheetVideo();
+      api({ cmd: 'itemmessage', text: '' });
+      if (state.ownDefault > 0) api({ cmd: 'default', msecs: state.ownDefault });
+      state.ownDefault = null;
+      api({ cmd: 'start' });
+      // paused a moment after the start: paused at exactly N.000 s the display reads N+1 (as enterStandby)
+      setTimeout(() => { const s = api({ cmd: 'snapshot' }); if (!isActive() && s && s.pausedAt == null) api({ cmd: 'pause' }); }, 60);
+    }
     commit();
   }
 

@@ -270,11 +270,13 @@ A second computer that listens to the room and keeps a time-stamped transcript, 
 1. On the other computer, open `assist.html` next to the timer (e.g. `alpha.timed-show.com/assist.html`) in Chrome or Edge.
 2. Pair it like an overlay: **share** → **Pair a computer** on the timer, type the 6-digit code on the station, then type the station's 3-digit number into the timer's share panel.
 3. On the station, click **Ask to move start times**, and **Allow** it in the timer's share panel. (Until then it only watches. **Stop moving starts** in the device list takes it back.)
-4. Click **Start listening** (allow the microphone). Each phrase appears with the time it was heard and how long after the timer's start that was. When the speaker gets going, click the line where they began, then **Move it**.
+4. Choose the **Microphone** (a feed from the sound desk is best) and click **Start listening** (allow the microphone). Each phrase appears with the time it was said and how long after the timer's start that was. When the speaker gets going, click the line where they began, then **Move it**. **▶** on a line plays it back, and **▶ Hear the start** plays the moment the timer started, so you can check by ear.
 
 **A move shifts the whole timer** by default: start and end together, so the speaker still gets their full time. Choose **only the start** to correct the elapsed time and leave the end where it is. Every move shows on the timer as *Start moved 0:42 later by …* with **Undo** (the station has its own Undo too), and the run sheet records the moved start as the item's actual start. Lines more than 15 minutes from the start can't move it.
 
-The transcript stays on the station (it's kept there across reloads until you **Clear** it; **Save transcript** downloads it as text); the timer is only told how far to move the start. Transcription is the browser's own speech recognition, so the audio goes to the browser maker's service, and times are when each phrase was first heard: allow a second or so.
+The transcript stays on the station (it's kept there across reloads until you **Clear** it; **Save transcript** downloads it as text); the timer is only told how far to move the start. While listening, the station keeps the last 15 minutes of sound for playing back.
+
+**Transcribing:** by default it's done **on this computer** by Whisper, a speech model that runs in the browser: nothing you record leaves the station, and each line's time is exactly where it is in the recording. It's quickest with a graphics chip (Chrome or Edge use it through WebGPU; without one it uses the processor, slower: choose the **tiny** model). The model is downloaded the first time (**base**, the default, is about 200 MB with a graphics chip; **tiny** 120 MB, **small** 590 MB) and kept by the browser after that, so do it before the show, on a good connection. The other choice, **with the browser's speech service**, needs no download but sends the audio to Google or Microsoft, and its times are when the words came back (allow a second or so).
 
 ### Even Realities G2 glasses (beta)
 

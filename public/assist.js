@@ -11,16 +11,19 @@
  * beside it ({t:'assist-start', at, now}), so the start on this clock is at − (now − arrival): the
  * two clocks needn't agree (the trip takes milliseconds on a LAN).
  *
- * Transcription is the browser's own speech recognition (Web Speech API; Chrome and Edge). It gives
- * no word timings, so a phrase is stamped when its first words come in, less LEAD_MS. It's behind
- * hear(at, text) so another engine can feed the same log later.
+ * Transcription: Whisper on this computer (assist-audio.js records the room into a 15-minute
+ * rolling buffer, cuts it into phrases and transcribes them in a worker, assist-asr.js; times are
+ * where each phrase is in the recording), or the browser's speech service (Web Speech API: no word
+ * timings, so a phrase is stamped when its first words come in, less LEAD_MS). Both feed
+ * hear(at, text). The recording runs either way, so lines and the timer's start can be played back.
  *
  * localStorage: assist_saved_link, assist_server, assist_token_<room>, assist_mode (whole | start),
- *   assist_lines (the transcript, JSON [{at, text, item}], so a reload keeps it; Clear empties it)
+ *   assist_lines (the transcript, JSON [{at, text, item}], so a reload keeps it; Clear empties it),
+ *   assist_engine (whisper | browser), assist_model (tiny.en | base.en | small.en), assist_mic (device id)
  * MIT Licensed
  */
 
-/* global RemotePeer, RemoteClock, TimerNotices */
+/* global RemotePeer, RemoteClock, TimerNotices, AssistAudio, AssistASR */
 
 (function () {
   'use strict';
@@ -32,7 +35,7 @@
     set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* private mode */ } },
     del: k => { try { localStorage.removeItem(k); } catch (_) { /* private mode */ } },
   };
-  const SAVED_LINK = 'assist_saved_link', SERVER = 'assist_server', MODE = 'assist_mode';
+  const SAVED_LINK = 'assist_saved_link', SERVER = 'assist_server', MODE = 'assist_mode', ENGINE = 'assist_engine', MODEL = 'assist_model', MIC = 'assist_mic';
   const parse = frag => Object.fromEntries(new URLSearchParams(frag));
   const defaultServer = () => new URLSearchParams(location.search).get('remote') || store.get(SERVER) || RemotePeer.defaultServer();
   const tokenKey = room => 'assist_token_' + room;
@@ -246,13 +249,55 @@
   }
   window.__assistHear = (text, agoMs) => hear(Date.now() - (agoMs || 0), text);   // tests (and other engines)
 
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null, listening = false, heard = {};
-  function startListening() {
-    if (!SR) { $('srnote').textContent = 'This browser has no speech recognition. Use Chrome or Edge.'; $('srnote').className = 'bad'; return; }
+  // Two ways to transcribe (assist_engine): Whisper on this computer, fed from the rolling
+  // recording (assist-audio.js; exact times, nothing leaves the computer, a model to fetch once), or
+  // the browser's speech service (Chrome / Edge send the audio to Google / Microsoft; a phrase is
+  // stamped when its first words come back, less LEAD_MS). The recording runs with either, so any
+  // line (and the timer's start) can be played back while it's still held (15 minutes).
+  const SRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let engine = store.get(ENGINE) === 'browser' && SRec ? 'browser' : 'whisper';
+  let model = AssistASR.MODELS[store.get(MODEL)] ? store.get(MODEL) : 'base.en';
+  let listening = false, rec = null, heard = {}, asr = null;
+  const audio = AssistAudio.create({
+    minutes: 15,
+    onLevel: rms => { $('level').style.width = Math.min(100, Math.round(Math.sqrt(rms) * 220)) + '%'; },
+    onSegment: seg => { if (asr && engine === 'whisper') { asr.add({ at: audio.wallOf(seg.from), audio: seg.audio }); asrBacklog(); } },
+  });
+  function asrStatus(text, kind) { $('asrstate').textContent = text; $('asrstate').className = 'hint ' + (kind || ''); }
+  function asrBacklog() {
+    const n = asr ? asr.backlog() : 0;
+    if (asr && asr.ready()) asrStatus(`Transcribing on this computer (Whisper ${model}, ${asr.device === 'webgpu' ? 'graphics chip' : 'processor: slower'})` + (n > 2 ? ` · ${n} phrases waiting: try a smaller model` : ''), n > 2 ? 'warn' : 'ok');
+  }
+
+  async function startListening() {
     listening = true;
+    renderListen();
+    try {
+      await audio.start($('mic').value || undefined);
+      fillMics();
+    } catch (err) {
+      listening = false; renderListen();
+      return asrStatus(err && err.name === 'NotAllowedError' ? 'The microphone was blocked. Allow it for this page (the icon in the address bar), then Start listening again.' : 'No microphone: ' + ((err && err.message) || err), 'bad');
+    }
+    if (engine === 'whisper') {
+      if (!asr) {
+        asr = AssistASR.create({ model, onStatus: asrStatus, onResult: r => { r.chunks.forEach(c => hear(c.at, c.text)); asrBacklog(); } });
+        asr.load();
+      } else asrBacklog();
+    } else startBrowserSpeech();
+  }
+  function stopListening() {
+    listening = false;
+    audio.stop();
+    $('level').style.width = '0';
+    if (rec) try { rec.stop(); } catch (_) { /* not started */ }
+    asrStatus(asr && asr.backlog() ? 'Stopped: the phrases already heard are still being transcribed.' : '');
+    renderListen();
+  }
+
+  function startBrowserSpeech() {
     heard = {};
-    rec = new SR();
+    rec = new SRec();
     rec.continuous = true;
     rec.interimResults = true;
     rec.lang = navigator.language || 'en-US';
@@ -266,26 +311,57 @@
       renderInterim();
     };
     rec.onerror = ev => {
-      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
-        listening = false;
-        $('srnote').textContent = 'The microphone was blocked. Allow it for this page (the icon in the address bar), then Start listening again.';
-        $('srnote').className = 'bad';
-      }
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') { stopListening(); asrStatus('The browser’s speech service was blocked.', 'bad'); }
     };
     // It stops by itself now and then (silence, a network hiccup): carry on while listening
     rec.onend = () => {
       interim = null; renderInterim(); heard = {};
-      if (listening) setTimeout(() => { if (listening) try { rec.start(); } catch (_) { /* already started */ } }, 250);
-      renderListen();
+      if (listening && engine === 'browser') setTimeout(() => { if (listening && engine === 'browser') try { rec.start(); } catch (_) { /* already started */ } }, 250);
     };
     try { rec.start(); } catch (_) { /* already started */ }
-    renderListen();
+    asrStatus('Transcribing with the browser’s speech service', 'ok');
   }
-  function stopListening() {
-    listening = false;
+
+  async function fillMics() {
+    try {
+      const list = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default');
+      const sel = $('mic'), want = store.get(MIC) || '';
+      sel.innerHTML = '<option value="">Default</option>' + list.map(d => `<option value="${esc(d.deviceId)}">${esc(d.label || 'Microphone')}</option>`).join('');
+      sel.value = list.some(d => d.deviceId === want) ? want : '';
+    } catch (_) { /* no devices */ }
+  }
+  $('mic').addEventListener('change', () => {
+    store.set(MIC, $('mic').value);
+    if (listening) { stopListening(); startListening(); }
+  });
+  $('engine').addEventListener('change', () => {
+    engine = $('engine').value;
+    store.set(ENGINE, engine);
     if (rec) try { rec.stop(); } catch (_) { /* not started */ }
-    renderListen();
+    if (listening) { stopListening(); startListening(); }
+    renderEngine();
+  });
+  $('model').addEventListener('change', () => {
+    model = $('model').value;
+    store.set(MODEL, model);
+    if (asr) { asr.stop(); asr = null; }
+    if (listening && engine === 'whisper') { asr = AssistASR.create({ model, onStatus: asrStatus, onResult: r => { r.chunks.forEach(c => hear(c.at, c.text)); asrBacklog(); } }); asr.load(); }
+  });
+  function renderEngine() {
+    $('engine').value = engine;
+    $('engine').querySelector('[value=browser]').disabled = !SRec;
+    $('model').innerHTML = Object.entries(AssistASR.MODELS).map(([k, m]) => `<option value="${k}">${k.replace('.en', '')} (English, ${'gpu' in navigator ? m.gpu : m.cpu})</option>`).join('');
+    $('model').value = model;
+    $('modelbox').hidden = engine !== 'whisper';
+    $('srnote').textContent = engine === 'whisper'
+      ? 'Whisper runs in this browser, best on a computer with a graphics chip (Chrome or Edge). The model is fetched once, then kept. Nothing you record leaves this computer, and each line’s time is where it is in the recording.'
+      : 'The browser sends the audio to its maker’s service (Google or Microsoft) to be transcribed; lines are timed when their words come back, so allow a second or so.';
   }
+  // The last 15 minutes can be played back: ▶ on a line, or the timer's start
+  function playAt(ms, durMs) { if (!audio.play(ms, durMs)) asrStatus('That’s no longer in the recording (it holds the last 15 minutes while listening).', 'warn'); }
+  $('hearstart').addEventListener('click', () => { if (startLocal != null) playAt(startLocal - 3000, 10000); });
+  setInterval(() => { $('hearstart').hidden = !held(startLocal); if (listening && engine === 'whisper') asrBacklog(); }, 1000);
+  const held = ms => { const h = audio.held(); return !!h && ms != null && ms >= h.from && ms <= h.to; };
   $('listen').addEventListener('click', () => (listening ? stopListening() : startListening()));
   let clearArmed = 0;                  // two clicks within 3 s
   $('clear').addEventListener('click', () => {
@@ -305,6 +381,11 @@
   // A line clicked asks first ("Started here? Move the start 0:42 later"), then sends the move
   $('log').addEventListener('click', ev => {
     const act = ev.target.closest('button[data-act]');
+    if (act && act.dataset.act === 'play') {
+      const i = Number(act.closest('.ln').dataset.i), l = lines[i], nx = lines[i + 1];
+      playAt(l.at - 300, Math.min(12000, Math.max(3000, nx ? nx.at - l.at + 300 : 6000)));
+      return;
+    }
     if (act) {
       const l = armed;
       armed = null;
@@ -355,7 +436,7 @@
   function renderLog(follow) {
     const box = $('log');
     const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-    const sig = [lines.length, lines.length && lines[0].at, startLocal, allowed, mode, armed && armed.at].join('|');
+    const h = audio.held(), sig = [lines.length, lines.length && lines[0].at, startLocal, allowed, mode, armed && armed.at, h && Math.floor(h.from / 10000)].join('|');
     if (sig !== logSig) {
       logSig = sig;
       const out = [];
@@ -365,7 +446,7 @@
         const off = startLocal == null ? null : l.at - startLocal;
         const far = off == null || Math.abs(off) > REACH_MS || allowed !== 'yes';
         const cls = off == null ? '' : Math.abs(off) < 1000 ? 'zero' : off > 0 ? 'late' : 'early';
-        out.push(`<div class="ln${far ? ' far' : ''}${armed === l ? ' armed' : ''}" data-i="${i}"><span class="t">${clockOf(l.at)}</span><span class="o ${cls}">${off == null || Math.abs(off) > REACH_MS ? '' : Math.abs(off) < 1000 ? 'start' : mmss(off)}</span><span class="x">${esc(l.text)}</span>` +
+        out.push(`<div class="ln${far ? ' far' : ''}${armed === l ? ' armed' : ''}" data-i="${i}"><span class="t">${clockOf(l.at)}</span><span class="o ${cls}">${off == null || Math.abs(off) > REACH_MS ? '' : Math.abs(off) < 1000 ? 'start' : mmss(off)}</span><span class="x"><span>${esc(l.text)}</span>${held(l.at) ? '<button class="play" data-act="play" title="Hear it">▶</button>' : ''}</span>` +
           (armed === l ? `<div class="ask">Started here? Move the start ${mmss(off).slice(1)} ${off > 0 ? 'later' : 'earlier'}${mode === 'whole' ? ' (and the end with it)' : ' (the end stays)'}.
             <button data-act="move" class="primary">Move it</button><button data-act="cancel">Cancel</button></div>` : '') + '</div>');
       });
@@ -383,6 +464,7 @@
 
   // Last, once everything above exists (a saved link connects straight away)
   renderListen();
+  renderEngine();
   if (link.r && link.v) start();
   else showEnter();
 })();
