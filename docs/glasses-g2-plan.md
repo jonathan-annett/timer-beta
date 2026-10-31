@@ -47,6 +47,9 @@ Decisions since this plan was written (they override the sections below):
   the page (the boxes move): a user action, never in a hurry. A presenter's glasses don't show
   *Timer offline* for the first 60 s of a drop (`downSince`, `DOWN_GRACE`; counted from launch until
   the first connect): the countdown runs on from the last anchor. An operator's show it at once.
+- **Phone page controls (0.1.19):** `#controls`, built from `menuFor(role)` (so it always matches the
+  glasses' menu) plus a presenter's *Hide / show countdown*; lit for Minimal, Quiet, Auto start,
+  hidden; Reset show needs a second press within 3 s. *Taps for Next* has **Off** (`ts_taps` 0).
 - **Next, once Operator is proven on the glasses:** more operator commands, e.g. the phone remote's run
   sheet view and controls (Back / Pause / Next, nudges) on the plugin's phone page, so the operator
   needs only the Even app. (The owner finds typing the 6-digit code fine; the QR photo is a nice-to-have.)

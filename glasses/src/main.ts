@@ -25,7 +25,7 @@
  *   ts_wants   presenter | operator: the role asked for when pairing
  *   ts_corner  tl | tr | bl | br
  *   ts_minimal '1': the operator's layout as just the countdown and message, in the corner (ts_corner)
- *   ts_taps    3 | 4 | 5: the taps an operator needs for Next (more makes an accident less likely)
+ *   ts_taps    3 | 4 | 5: the taps an operator needs for Next (more makes an accident less likely); 0: taps never fire Next
  *   ts_see     a presenter's own choice of what shows beside the countdown, JSON {custom, item, notices}
  *              (default: the operator's messages only; the countdown's brightness already says last
  *              minute and time up)
@@ -90,7 +90,7 @@ let minimal = false                   // an operator's layout as just the countd
 // isn't told about a short drop: their countdown runs on from the last anchor for DOWN_GRACE first
 let downSince = performance.now()
 const DOWN_GRACE = 60000
-let tapsNeeded = 3                    // an operator's taps for Next (3–5, set on the phone page)
+let tapsNeeded = 3                    // an operator's taps for Next (3–5, set on the phone page; 0 = never by taps)
 // What a presenter sees beside the countdown (set on the phone page)
 interface See { custom: boolean; item: boolean; notices: boolean }
 const SEE_DEFAULT: See = { custom: true, item: false, notices: false }
@@ -203,7 +203,7 @@ function menuFor(r: Mode): MenuItem[] {
 function onMenu(id: number): void {
   if (id === MENU.corner) { setCorner(CORNERS[(CORNERS.indexOf(corner) + 1) % CORNERS.length]); return }   // an operator's: for Minimal view
   if (role !== 'operator') return
-  if (id === MENU.minimal) { minimal = !minimal; store.set('ts_minimal', minimal ? '1' : ''); render(); return }
+  if (id === MENU.minimal) { toggleMinimal(); return }
   if (status !== 'online' || !link) return
   if (id === MENU.next) { link.command('runsheetnext'); showFlash('Next...') }
   else if (id === MENU.back) { link.command('runsheetprev'); showFlash('Back...') }
@@ -231,7 +231,7 @@ function onTap(n: number): void {
   clearTimeout(holdTimer)
   taps += n
   clearTimeout(tapTimer)
-  if (role === 'operator' && taps >= tapsNeeded && !fired && status === 'online') {
+  if (role === 'operator' && tapsNeeded > 0 && taps >= tapsNeeded && !fired && status === 'online') {
     fired = true
     link?.command('runsheetnext')
     showFlash('Next...')
@@ -240,11 +240,15 @@ function onTap(n: number): void {
   tapTimer = window.setTimeout(() => {
     taps = 0
     if (role === 'operator') { fired = false; return }
-    if (status !== 'online') return
-    hidden = !hidden
-    if (hidden) showFlash('Countdown hidden - tap to show')
-    render()
+    toggleHidden()
   }, 600)
+}
+// A presenter's countdown hidden or shown (a tap on the glasses, or the phone page's button)
+function toggleHidden(): void {
+  if (status !== 'online') return
+  hidden = !hidden
+  if (hidden) showFlash('Countdown hidden - tap to show')
+  render()
 }
 // A hold of 2 s (an operator's) toggles Minimal view, as soon as the 2 s are up, finger still down.
 // (Tap, then tap and hold, is Even's menu; a plain hold is ours.) Let go sooner and nothing happens.
@@ -254,14 +258,48 @@ let holdTimer = 0, lastTapAt = 0
 function onHold(down: boolean): void {
   clearTimeout(holdTimer)
   if (!down || role !== 'operator' || Date.now() - lastTapAt < 800) return
-  holdTimer = window.setTimeout(() => { minimal = !minimal; store.set('ts_minimal', minimal ? '1' : ''); render() }, 2000)
+  holdTimer = window.setTimeout(toggleMinimal, 2000)
 }
+function toggleMinimal(): void { minimal = !minimal; store.set('ts_minimal', minimal ? '1' : ''); render() }
 function showFlash(text: string): void { flash = text; flashUntil = Date.now() + 1000 }
 
 // ─── The phone page ──────────────────────────────────────────────────────────
 
+// The glasses' menu (and a presenter's tap) as buttons here, built from menuFor so the two never
+// differ. Lit while on: Minimal view, Quiet, Auto start, a hidden countdown. Reset show needs a
+// second press within 3 s (a phone is easier to press by accident than the glasses' menu).
+const HIDE = -1
+let controlsSig = '', resetArmed = 0
+function controls(): void {
+  const box = $('controls')
+  const items: MenuItem[] = role === 'operator' ? menuFor(role) : [{ itemID: HIDE, itemName: 'Hide / show countdown' }, ...menuFor(role)]
+  const sig = role + items.map(i => i.itemID).join()
+  if (sig !== controlsSig) {
+    controlsSig = sig
+    box.replaceChildren(...items.map(i => {
+      const b = document.createElement('button')
+      b.dataset.id = String(i.itemID)
+      b.textContent = i.itemName.replace(/ on \/ off| \(.*\)$/g, '')
+      b.addEventListener('click', () => {
+        if (i.itemID === HIDE) return toggleHidden()
+        if (i.itemID === MENU.reset && Date.now() - resetArmed > 3000) { resetArmed = Date.now(); b.textContent = 'Press again to reset'; setTimeout(() => { b.textContent = 'Reset show' }, 3000); return }
+        if (i.itemID === MENU.reset) { resetArmed = 0; b.textContent = 'Reset show' }
+        onMenu(i.itemID)
+      })
+      return b
+    }))
+  }
+  const online = status === 'online'
+  const lit: Record<number, boolean> = { [HIDE]: hidden, [MENU.minimal]: minimal, [MENU.quiet]: !!state.quiet, [MENU.auto]: String(state.rsAuto || '').startsWith('on') }
+  box.querySelectorAll<HTMLButtonElement>('button').forEach(b => {
+    const id = Number(b.dataset.id)
+    b.classList.toggle('on', !!lit[id])
+    b.disabled = !online && id !== MENU.minimal && id !== MENU.corner
+  })
+}
+
 function statusText(): string {
-  if (status === 'online') return role === 'operator' ? `Connected as the operator’s glasses: the message and times are on your glasses, and ${tapsNeeded} quick taps fire Next.`
+  if (status === 'online') return role === 'operator' ? `Connected as the operator’s glasses: the message and times are on your glasses, and ${tapsNeeded ? tapsNeeded + ' quick taps fire Next' : 'taps don’t fire Next (use the menu or the buttons here)'}.`
     : 'Connected. The countdown is on your glasses' + (hidden ? ' (hidden: tap to show).' : '.')
   return ({
     connecting: 'Connecting to the timer…',
@@ -286,6 +324,7 @@ function render(): void {
   document.querySelectorAll<HTMLButtonElement>('#taps button').forEach(b => b.classList.toggle('on', Number(b.dataset.n) === tapsNeeded))
   $('seebox').hidden = role === 'operator'
   document.querySelectorAll<HTMLButtonElement>('#see button').forEach(b => b.classList.toggle('on', !!see[b.dataset.s as keyof See]))
+  controls()
   const view = glassesView()
   glasses?.setMenu(menuFor(role))
   glasses?.show(view)
@@ -497,7 +536,7 @@ async function boot(): Promise<void> {
   role = store.get('ts_role') === 'operator' ? 'operator' : 'presenter'
   wants = store.get('ts_wants') === 'operator' ? 'operator' : 'presenter'
   minimal = store.get('ts_minimal') === '1'
-  tapsNeeded = [3, 4, 5].includes(Number(store.get('ts_taps'))) ? Number(store.get('ts_taps')) : 3
+  tapsNeeded = [0, 3, 4, 5].includes(Number(store.get('ts_taps'))) && store.get('ts_taps') !== '' ? Number(store.get('ts_taps')) : 3
   try { const v = JSON.parse(store.get('ts_see') || '{}'); see = { custom: v.custom ?? SEE_DEFAULT.custom, item: !!v.item, notices: !!v.notices } } catch { see = { ...SEE_DEFAULT } }
   status = paired ? 'connecting' : 'unpaired'
   if ((CORNERS as string[]).includes(store.get('ts_corner'))) corner = store.get('ts_corner') as Corner
