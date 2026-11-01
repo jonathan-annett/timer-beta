@@ -89,6 +89,9 @@ with sync_playwright() as p:
     s1=t.evaluate("processTimerApiMessage({cmd:'snapshot'}).startedAt")
     print("moved to line 2: start +%.1f s | line now:" % ((s1-s0)/1000), a.text_content("#log .ln[data-i='1'] .o"))
     a.click("#listen"); a.wait_for_timeout(500)
+    a.click("#ledger summary"); a.wait_for_timeout(1200)
+    led=a.text_content("#ledgertxt")
+    print("audio accounting:"); [print("   ", l) for l in led.split("\n")[3:16]]
     print("stopped:", a.text_content("#listenstate"), "| level:", a.evaluate("document.getElementById('level').style.width"), "| camera off:", not a.evaluate("!!document.getElementById('camview').srcObject"))
     a.wait_for_timeout(5500)
     n=len(a.evaluate("window.__assistFrames()")["kept"]); a.reload(); a.wait_for_timeout(2500)

@@ -449,8 +449,26 @@
   const audio = AssistAudio.create({
     minutes: 15,
     onLevel: rms => { $('level').style.width = Math.min(100, Math.round(Math.sqrt(rms) * 220)) + '%'; },
-    onSegment: seg => { if (asr && engine === 'whisper') { asr.add({ at: audio.wallOf(seg.from), audio: seg.audio }); asrBacklog(); } },
+    onSegment: seg => {
+      if (asr && engine === 'whisper') { asr.add({ at: audio.wallOf(seg.from), audio: seg.audio, why: seg.why }); asrBacklog(); }
+      else if (engine === 'whisper') {
+        AssistLedger.t.ignoredN++; AssistLedger.t.ignoredS += seg.audio.length / AssistAudio.SR;
+        AssistLedger.note('not sent', `a ${(seg.audio.length / AssistAudio.SR).toFixed(1)} s phrase: no transcriber running`);
+      }
+    },
   });
+
+  // Audio accounting (AssistLedger in assist-audio.js): where every bit of the recording went
+  const ledgerText = () => `Assist station audio accounting, ${new Date().toString()}\n` +
+    `Engine ${engine}${engine === 'whisper' ? ` (Whisper ${model}${asr ? ', ' + (asr.device || 'loading') : ''}, ${asr ? asr.backlog() : 0} waiting)` : ''}\n\n` + AssistLedger.report();
+  setInterval(() => { if ($('ledger').open) $('ledgertxt').textContent = ledgerText(); }, 1000);
+  $('ledger').addEventListener('toggle', () => { if ($('ledger').open) $('ledgertxt').textContent = ledgerText(); });
+  $('ledgercopy').addEventListener('click', async ev => {
+    ev.preventDefault();             // it sits in the summary: don't open or close the box
+    try { await navigator.clipboard.writeText(ledgerText()); $('ledgercopy').textContent = 'Copied'; } catch (_) { $('ledgercopy').textContent = 'Couldn’t copy'; }
+    setTimeout(() => { $('ledgercopy').textContent = 'Copy'; }, 1500);
+  });
+  window.__assistLedger = ledgerText;
   function asrStatus(text, kind) { $('asrstate').textContent = text; $('asrstate').className = 'hint ' + (kind || ''); }
   function asrBacklog() {
     const n = asr ? asr.backlog() : 0;

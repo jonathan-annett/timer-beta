@@ -60,6 +60,7 @@
     label { color: var(--dim); font-size: 14px; }
     #levelbox { display: inline-block; width: 80px; height: 8px; background: #222; border-radius: 4px; overflow: hidden; vertical-align: middle; }
     #level { display: block; height: 100%; width: 0; background: var(--ok); transition: width .1s; }
+    #ledgertxt { font-size: 11px; max-height: 40vh; overflow: auto; white-space: pre-wrap; background: rgba(127,127,127,.08); padding: 8px; border-radius: 5px; }
     #asrstate.ok { color: var(--ok); } #asrstate.warn { color: var(--warn); } #asrstate.bad { color: var(--bad); }
     .ln .x { display: flex; gap: 8px; align-items: baseline; }
     .ln .x span { flex: 1; }
@@ -173,6 +174,7 @@
         </div>
         <p class="hint" id="srnote"></p>
         <p class="hint" id="asrstate"></p>
+        <details id="ledger"><summary class="hint">Audio accounting (where every bit of the recording went) <button id="ledgercopy">Copy</button></summary><pre id="ledgertxt"></pre></details>
         <div id="log"></div>
       </div>
 
@@ -184,7 +186,7 @@
   <script src="notices.js?v=7f9aa52c"></script>
   <script src="remote-clock.js?v=4358371f"></script>
   <script src="assist-video.js?v=c09d34e1"></script>
-  <script src="assist-audio.js?v=37231984"></script>
-  <script src="assist.js?v=e51fdfe0"></script>
+  <script src="assist-audio.js?v=b2cbfc92"></script>
+  <script src="assist.js?v=afff3b5b"></script>
 </body>
 </html>
