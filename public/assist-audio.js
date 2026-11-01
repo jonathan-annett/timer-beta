@@ -19,8 +19,11 @@
  * where it is in the recording, not when a service got round to sending its words back.
  *
  * Phrases: a simple voice detector (30 ms frames; speech is well above the noise floor, which
- * follows the quietest frames) cuts the stream into phrases: from 300 ms before the voice starts to
- * 700 ms of quiet, and at most 20 s (Whisper hears up to 30 s at a time). Each goes to onSegment.
+ * follows the quietest frames) finds bursts of voice: from 300 ms before the voice starts to 700 ms
+ * of quiet. Bursts less than JOIN (2 s) apart are joined until the phrase is TARGET (6 s) long, and
+ * at most 20 s (Whisper hears up to 30 s at a time); a pause over 2 s ends one. Each goes to
+ * onSegment. Whisper needs the context: a distant speaker in an echoey room comes out as 1 s scraps,
+ * and on those it mostly said nothing (a real show, Nov 2026: 22 of 36 phrases).
  *
  *   AssistASR.create({model, onStatus(text, kind), onResult({seg, chunks:[{at, to, text}]})})
  *     load()               fetches the model (cached by the browser after the first time) in a worker
@@ -30,6 +33,9 @@
  *     oldest()             the start (ms) of the oldest phrase not transcribed yet, or null
  * The worker is assist-asr.js (transformers.js, Whisper). Each chunk's time is the phrase's start
  * plus Whisper's own timestamp within it; its end likewise (or the phrase's end, when Whisper gives none).
+ * A phrase that comes back with no words is asked again without timestamps (one line, the phrase's
+ * own times): with them Whisper said nothing on noisy or short audio it transcribed fine without
+ * (tested Nov 2026: base.en, a sentence under room noise and the same cut into 1 s scraps).
  *
  *   AssistLedger         where every bit of audio went (the station's *Audio accounting*, and the
  *                        console as [assist] lines): heard vs the sound card's clock (gaps), speech
@@ -49,7 +55,7 @@ var AssistLedger = (function () {
   function reset() {
     Object.assign(t, {
       heardS: 0, clockS: 0, clockS0: 0, missS: 0, lateN: 0, lateMaxMs: 0, fillS: 0,
-      speechS: 0, shortN: 0, shortS: 0, nearS: 0, cutN: 0, flushN: 0, unreadN: 0, unreadS: 0, ignoredN: 0, ignoredS: 0,
+      speechS: 0, plainN: 0, shortN: 0, shortS: 0, nearS: 0, cutN: 0, flushN: 0, unreadN: 0, unreadS: 0, ignoredN: 0, ignoredS: 0,
     });
     phrases = []; events = [];
   }
@@ -68,7 +74,7 @@ var AssistLedger = (function () {
   }
   function fate(p, f, text, detail) {
     if (!p) return;
-    p.fate = f; p.text = text || ''; p.lat = Date.now() - p.sent - p.dur;
+    p.fate = f; p.text = text || ''; p.lat = Date.now() - p.sent;              // sent when the phrase ended: the wait for its words
     const head = `phrase ${p.n} ${clock(p.at)} (${(p.dur / 1000).toFixed(1)} s${p.why ? ', ' + p.why : ''})`;
     if (f === 'words') console.log(`[assist] ${head} → "${p.text}"${detail ? ' ' + detail : ''}`);
     else note(f, `${head}${text ? ' → "' + text + '"' : ''}${detail ? ' ' + detail : ''}`);
@@ -89,9 +95,10 @@ var AssistLedger = (function () {
       `  quiet frames just under the speech level: ${s(t.nearS)}` + (t.nearS > 5 ? ' (speech may be too quiet for the detector)' : ''),
       `  phrases cut at 20 s: ${t.cutN} · sent on Stop: ${t.flushN} · gone from the buffer: ${t.unreadN} (${s(t.unreadS)}) · not sent (no transcriber): ${t.ignoredN} (${s(t.ignoredS)})`,
       `Phrases ${phrases.length}: words ${f('words')} · no words ${f('empty')} · noise words only ${f('junk')} · errors ${f('error')} · dropped ${f('dropped')} · waiting ${f('waiting')}`,
+      `  asked again without timestamps (no words with them): ${t.plainN}`,
       '',
-      'Last phrases:',
-      ...phrases.slice(-40).reverse().map(p => `  ${String(p.n).padStart(4)} ${clock(p.at)} ${(p.dur / 1000).toFixed(1).padStart(4)} s  ${p.fate.padEnd(7)}${p.lat != null ? ` +${(p.lat / 1000).toFixed(1)} s` : ''}  ${p.text}`),
+      'Last phrases (level: average / peak, dBFS):',
+      ...phrases.slice(-40).reverse().map(p => `  ${String(p.n).padStart(4)} ${clock(p.at)} ${(p.dur / 1000).toFixed(1).padStart(4)} s ${p.rms != null ? `${String(p.rms).padStart(3)}/${String(p.peak).padStart(3)} dB` : ''}  ${p.fate.padEnd(7)}${p.lat != null ? ` +${(p.lat / 1000).toFixed(1)} s` : ''}  ${p.text}`),
       '',
       'Events:',
       ...events.slice(-40).reverse().map(e => `  ${clock(e.at)} ${e.kind}: ${e.text}`),
@@ -135,8 +142,9 @@ registerProcessor('assist-tap', AssistTap);`;
     let ctx = null, stream = null, node = null, src = null;
 
     // Voice detection
-    const FRAME = 480, PRE = SR * 0.3, HANG = SR * 0.7, MAXLEN = SR * 20, MINLEN = SR * 0.4;
+    const FRAME = 480, PRE = SR * 0.3, HANG = SR * 0.7, MAXLEN = SR * 20, MINLEN = SR * 0.4, JOIN = SR * 2, TARGET = SR * 6;
     let floor = 0.01, frameAcc = 0, frameN = 0, seg = null, lastVoice = 0;
+    let held = null;                     // {from, to}: bursts joined so far, not sent yet
     const L = AssistLedger.t;
     let lastArrive = 0, ctx0 = 0, coveredTo = 0;   // accounting: see AssistLedger
 
@@ -170,14 +178,26 @@ registerProcessor('assist-tap', AssistTap);`;
       if (!seg && voice) seg = { from: Math.max(0, at - FRAME - PRE, total - cap) };
       if (seg && (at - lastVoice > HANG || at - seg.from > MAXLEN)) {
         const cut = at - seg.from > MAXLEN;
-        if (cut) L.cutN++;
-        endSeg(cut ? at : Math.min(at, lastVoice + SR * 0.3), cut ? 'cut at 20 s' : '');
+        burst(seg.from, cut ? at : Math.min(at, lastVoice + SR * 0.3), cut);
         seg = voice ? { from: at } : null;
       }
+      if (held && !seg && at - held.to > JOIN) flushHeld('');        // a real pause: send what's held
+    }
+    // A burst of voice ends: joined to the one before if that's under JOIN ago, sent once long enough
+    function burst(from, to, cut) {
+      if (held && from - held.to <= JOIN && to - held.from <= MAXLEN) held.to = to;
+      else { flushHeld(''); held = { from, to }; }
+      if (cut) { L.cutN++; flushHeld('cut at 20 s'); } else if (held.to - held.from >= TARGET) flushHeld('');
+    }
+    function flushHeld(why) {
+      if (!held) return;
+      const h = held;
+      held = null;
+      endSeg(h.from, h.to, why);
     }
     // A phrase ends: sent on (onSegment), or counted as too short; every sample is accounted for
-    function endSeg(to, why) {
-      const from = seg.from, len = to - from;
+    function endSeg(from, to, why) {
+      const len = to - from;
       if (len <= 0) return;
       const fresh = Math.max(0, to - Math.max(from, coveredTo)) / SR;   // the pre-roll can overlap the last phrase
       coveredTo = Math.max(coveredTo, to);
@@ -238,21 +258,21 @@ registerProcessor('assist-tap', AssistTap);`;
         // the phrase being heard goes on rather than being lost
         if (seg) {
           const to = Math.min(total, lastVoice + SR * 0.3);
-          if (to - seg.from >= MINLEN) L.flushN++;
-          endSeg(to > seg.from ? to : total, 'on Stop');
+          burst(seg.from, to > seg.from ? to : total, false);
         }
+        if (held) { if (held.to - held.from >= MINLEN) L.flushN++; flushHeld('on Stop'); }
         if (ctx) L.clockS = L.clockS0 + (ctx.currentTime - ctx0);
         if (ctx) AssistLedger.note('stop', `stopped; heard ${L.heardS.toFixed(1)} s of ${L.clockS.toFixed(1)} s`);
         if (node) node.port.onmessage = null;
         if (stream) stream.getTracks().forEach(t => t.stop());
         if (ctx) ctx.close();
-        ctx = stream = node = src = null; seg = null;
+        ctx = stream = node = src = null; seg = held = null;
       },
       get running() { return !!ctx; },
       wallOf: s => (base == null ? null : base + (s / SR) * 1000),
       sampleOf: ms => (base == null ? null : Math.round(((ms - base) / 1000) * SR)),
       read,
-      pendingFrom: () => (seg && base != null ? base + (seg.from / SR) * 1000 : null),
+      pendingFrom: () => ((held || seg) && base != null ? base + ((held || seg).from / SR) * 1000 : null),
       held: () => (base == null ? null : { from: base + (Math.max(0, total - cap) / SR) * 1000, to: base + (total / SR) * 1000 }),
       play(ms, durMs) {
         if (base == null) return false;
@@ -319,6 +339,11 @@ var AssistASR = (function () {
         } else if (m.t === 'result') {
           const seg = current;
           busy = false; current = null;
+          const retry = () => {          // no words with timestamps: again without them, next in line
+            seg.plain = true; AssistLedger.t.plainN++;
+            console.log(`[assist] phrase ${seg.led.n}: no words with timestamps, asking again without`);
+            queue.unshift(seg);
+          };
           if (seg && m.error) AssistLedger.fate(seg.led, 'error', '', m.error);
           else if (seg) {
             const ts = (c, k) => (c.timestamp && Number.isFinite(c.timestamp[k]) ? Math.max(0, c.timestamp[k]) * 1000 : null);
@@ -329,10 +354,12 @@ var AssistASR = (function () {
             if (chunks.length) {
               // Whisper sometimes stops early: say when its words end well before the phrase does
               const end = Math.max(...raw.map(c => c.to)) - seg.at, tail = seg.dur - end;
-              AssistLedger.fate(seg.led, 'words', chunks.map(c => c.text).join(' '), tail > 2000 ? `(no words for its last ${(tail / 1000).toFixed(1)} s)` : '');
-              if (tail > 2000) AssistLedger.note('tail', `phrase ${seg.led.n}: Whisper's words end ${(tail / 1000).toFixed(1)} s before the phrase does`);
+              AssistLedger.fate(seg.led, 'words', chunks.map(c => c.text).join(' '), (seg.plain ? '(without timestamps) ' : '') + (tail > 2000 ? `(no words for its last ${(tail / 1000).toFixed(1)} s)` : ''));
+              seg.audio = null;
+              if (tail > 2000 && !seg.plain) AssistLedger.note('tail', `phrase ${seg.led.n}: Whisper's words end ${(tail / 1000).toFixed(1)} s before the phrase does`);
               opts.onResult({ seg, chunks });
-            } else AssistLedger.fate(seg.led, said ? 'junk' : 'empty', said);
+            } else if (!said && !seg.plain) retry();
+            else { AssistLedger.fate(seg.led, said ? 'junk' : 'empty', said, seg.plain ? '(with and without timestamps)' : ''); seg.audio = null; }
           }
           pump();
         }
@@ -351,6 +378,10 @@ var AssistASR = (function () {
       if (!seg || !seg.audio) return;
       seg.dur = (seg.audio.length / 16000) * 1000;
       seg.led = AssistLedger.phrase(seg.at, seg.dur, seg.why);
+      let sq = 0, pk = 0;
+      for (const v of seg.audio) { sq += v * v; pk = Math.max(pk, Math.abs(v)); }
+      const db = x => Math.round(20 * Math.log10(Math.max(x, 1e-6)));
+      seg.led.rms = db(Math.sqrt(sq / seg.audio.length)); seg.led.peak = db(pk);    // dBFS
       queue.push(seg);
       if (!ready) console.log(`[assist] phrase ${seg.led.n} waits: the speech model is still loading`);
       if (queue.length > 40) {                   // far behind (a slow computer): drop the oldest
@@ -362,9 +393,8 @@ var AssistASR = (function () {
     function pump() {
       if (!ready || busy || !queue.length) return;
       current = queue.shift(); busy = true;
-      const audio = current.audio;
-      current.audio = null;
-      worker.postMessage({ t: 'run', audio }, [audio.buffer]);
+      const audio = current.audio.slice();     // a copy: kept in case it's asked again without timestamps
+      worker.postMessage({ t: 'run', audio, ts: !current.plain }, [audio.buffer]);
     }
     api.stop = () => {
       for (const q of current ? [current, ...queue] : queue) AssistLedger.fate(q.led, 'dropped', '', '(the transcriber was stopped: the model changed)');

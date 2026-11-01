@@ -5,7 +5,7 @@
  * The library comes from jsDelivr (pinned) and the model from Hugging Face; the browser keeps both
  * after the first time. The audio never leaves this computer.
  *
- *   in:  {t:'load', model, device}       {t:'run', audio: Float32Array (16 kHz mono)}
+ *   in:  {t:'load', model, device}       {t:'run', audio: Float32Array (16 kHz mono), ts (false: no timestamps)}
  *   out: {t:'progress', p} {t:'ready'} {t:'error', error}   {t:'result', text, chunks:[{text, timestamp:[s, e]}]}
  * MIT Licensed
  */
@@ -32,7 +32,7 @@ self.onmessage = async ev => {
     }
   } else if (m.t === 'run') {
     try {
-      const out = await asr(m.audio, { return_timestamps: true });
+      const out = await asr(m.audio, m.ts === false ? {} : { return_timestamps: true });
       self.postMessage({ t: 'result', text: out.text, chunks: (out.chunks || []).map(c => ({ text: c.text, timestamp: c.timestamp })) });
     } catch (err) {
       self.postMessage({ t: 'result', error: String((err && err.message) || err) });

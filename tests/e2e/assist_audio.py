@@ -18,12 +18,16 @@ SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing 
 import os, mimetypes, json
 from playwright.sync_api import sync_playwright
 WAV=os.path.join(HERE, "media", "speech.wav")
-# The stand-in transcriber: "ready" at once, then for each phrase its length and one chunk at 0.2 s
-STUB=b'''let n = 0;
+# The stand-in transcriber: "ready" at once, then for each phrase its length and one chunk at 0.2 s;
+# every second phrase gets no words with timestamps (as real Whisper did on noisy or short audio),
+# so the station asks again without them and gets one plain answer
+STUB=b'''let n = 0, k = 0;
 self.onmessage = ev => {
   const m = ev.data || {};
   if (m.t === 'load') { self.postMessage({ t: 'progress', p: { status: 'progress', file: 'x', loaded: 5, total: 10 } }); setTimeout(() => self.postMessage({ t: 'ready' }), 300); }
-  else if (m.t === 'run') self.postMessage({ t: 'result', text: 'x', chunks: [{ text: 'Phrase ' + (++n) + ' of ' + (m.audio.length / 16000).toFixed(1) + ' s', timestamp: [0.2, 1] }] });
+  else if (m.t === 'run' && m.ts !== false && ++k % 2 === 0) self.postMessage({ t: 'result', text: '', chunks: [] });
+  else if (m.t === 'run') self.postMessage({ t: 'result', text: 'x', chunks: m.ts === false ? [] : [{ text: 'Phrase ' + (++n) + ' of ' + (m.audio.length / 16000).toFixed(1) + ' s', timestamp: [0.2, 1] }],
+    ...(m.ts === false ? { text: 'Phrase ' + (++n) + ' of ' + (m.audio.length / 16000).toFixed(1) + ' s, asked again' } : {}) });
 };'''
 ROOT=PUBLIC; OUT=OUTDIR; BASE="https://timer.sophtwhere.com/beta/"
 def h(route, req):
@@ -77,10 +81,6 @@ with sync_playwright() as p:
     print("lines:", len(rows)); [print("  ", r) for r in rows[:6]]
     # Lines are timed by the recording: a phrase starts 0.3 s before the voice, plus the chunk's 0.2 s.
     # The file loops every 13.96 s, so the same phrase a loop later is 13.96 s on
-    a.wait_for_timeout(5500)   # the transcript goes to IndexedDB in bursts
-    ats=a.evaluate("new Promise(r=>{const q=indexedDB.open('assist');q.onsuccess=()=>{const g=q.result.transaction('lines').objectStore('lines').getAll();g.onsuccess=()=>r(g.result.map(l=>l.at).sort((x,y)=>x-y))}})")
-    loops=[round((ats[i+3]-ats[i])/1000,2) for i in range(len(ats)-3)]
-    print("same phrase one loop later (s):", loops[:4], "| file length 13.96")
     print("hear the start shown:", a.is_visible("#hearstart"), "|", a.text_content("#started"))
     a.click("#hearstart"); a.wait_for_timeout(300)
     print("play a line:", a.evaluate("(()=>{const b=document.querySelector('#log button.play'); b.click(); return !!b})()"), "| status after:", a.text_content("#asrstate")[:60])
@@ -93,7 +93,10 @@ with sync_playwright() as p:
     led=a.text_content("#ledgertxt")
     print("audio accounting:"); [print("   ", l) for l in led.split("\n")[3:16]]
     print("stopped:", a.text_content("#listenstate"), "| level:", a.evaluate("document.getElementById('level').style.width"), "| camera off:", not a.evaluate("!!document.getElementById('camview').srcObject"))
-    a.wait_for_timeout(5500)
+    a.wait_for_timeout(5500)   # the transcript goes to IndexedDB in bursts
+    ats=a.evaluate("new Promise(r=>{const q=indexedDB.open('assist');q.onsuccess=()=>{const g=q.result.transaction('lines').objectStore('lines').getAll();g.onsuccess=()=>r(g.result.map(l=>l.at).sort((x,y)=>x-y))}})")
+    loops=[round((ats[i+2]-ats[i])/1000,2) for i in range(len(ats)-2)]   # two phrases a loop: the first two sentences are joined (under 2 s apart)
+    print("same phrase one loop later (s):", loops[:4], "| file length 13.96")
     n=len(a.evaluate("window.__assistFrames()")["kept"]); a.reload(); a.wait_for_timeout(2500)
     print("after a reload: pictures back:", a.evaluate("document.querySelectorAll('#log img.th').length"), "of", n)
     a.screenshot(path=OUT+"/assist_audio.png")
