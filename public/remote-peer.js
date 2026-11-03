@@ -226,13 +226,14 @@ var RemotePeer = (function () {
     });
   }
 
-  // The pairing server for pages from `host` (default: this page's). The VPS (sophtwhere.com, and
+  // The pairing server for pages from `host` (default: this page's). The VPS (timer.sophtwhere.com, and
   // the local preview on port 8444) runs it on its own port, 8443; elsewhere (Cloudflare) it's on
   // the site itself, at /ws.
   function defaultServer(host) {
     host = host || location.host;
     const name = host.replace(/:\d+$/, '');
-    if (/(^|\.)sophtwhere\.com$/.test(name) || host === 'localhost:8444') return `wss://${name}:8443/`;
+    // Only the VPS copy (timer.sophtwhere.com/beta) has it on :8443; other sophtwhere.com sites (timer-beta) are the Worker
+    if (name === 'timer.sophtwhere.com' || host === 'localhost:8444') return `wss://${name}:8443/`;
     return `${location.protocol === 'http:' && !host.includes('.') ? 'ws' : 'wss'}://${host}/ws`;
   }
   // The address to open: the server plus ?room= (or ?code=), which the Cloudflare server routes by.

@@ -77,7 +77,8 @@ if (-not $Server -and $hashAt -ge 0) {
     # As the timer's pages work it out: the VPS (sophtwhere.com) runs the server on port 8443, a Cloudflare site at /ws
     try {
         $u = [Uri]$Link.Trim()
-        if ($u.Host -match '(^|\.)sophtwhere\.com$') { $Server = 'wss://' + $u.Host + ':8443/' } else { $Server = 'wss://' + $u.Authority + '/ws' }
+        # (only the VPS copy, timer.sophtwhere.com; timer-beta.sophtwhere.com is the Worker)
+        if ($u.Host -eq 'timer.sophtwhere.com') { $Server = 'wss://' + $u.Host + ':8443/' } else { $Server = 'wss://' + $u.Authority + '/ws' }
     } catch { $Server = $null }
 }
 if (-not $Room -or -not $Key -or -not $Server) {
