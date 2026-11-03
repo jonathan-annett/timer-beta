@@ -1,6 +1,6 @@
 # CLAUDE.md — Presentation Timer Project Context
 
-This file brings an agent up to speed on the history, current architecture, and conventions of this project. Read it fully before making any changes. The latest session's state of play (recent work, the user's decisions, what's being tested, open offers) is in the private hosting repo `timed-show-cloud` (cloned beside this one as `../timed-show-cloud`): read its `CLAUDE.md` and `docs/HANDOVER.md` if it's there.
+This file brings an agent up to speed on the history, current architecture, and conventions of this project. Read it fully before making any changes. The latest session's state of play (recent work, the user's decisions, what's being tested, open offers) is in the private hosting repo (GitHub `jonathan-annett/timer-beta-private`, cloned beside this one as `../timed-show-cloud`): read its `CLAUDE.md` and `docs/HANDOVER.md` if it's there.
 
 **This repo is public (open source).** The hosted service (timed-show.com, alpha and beta: the Cloudflare Worker, supporters/payments, sign-in, operations notes) lives in that private repo. Never add any of that here.
 
