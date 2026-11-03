@@ -39,7 +39,7 @@ arrive) and its `scripts/ship.mjs` and `scripts/sim.mjs` are used here. Read its
 before changing the glasses page.
 
 ```sh
-npm install
+npm ci
 npm run dev                        # Vite on the LAN; the phone page also works in a browser (no glasses)
 npm run build                      # type-check + dist/index.html (one self-contained file)
 SIM_HASH='#demo=br' npm run sim:start   # Even's simulator; #demo[=tl|tr|bl|br] fakes a running countdown

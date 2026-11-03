@@ -27,7 +27,8 @@ Branches: `alpha` = development, `main` = released.
 
 ## How to run it
 - **Install** (fresh Linux): Node 24 (`.nvmrc`), Python 3.10+ with venv, openssl. Then
-  `npm install` and `npm run test:setup` (a venv in `tests/e2e/.venv` with Playwright and its Chromium;
+  `npm ci` and `npm run test:setup` (`tests/e2e/setup.sh`: a venv in `tests/e2e/.venv` with Playwright and its Chromium,
+  then `npm ci && npm run build` in the Companion module and `glasses/`; `npm ci`, never `npm install`, so lockfiles aren't rewritten;
   on a bare server Chromium's system libraries may also be needed: `sudo .venv/bin/python -m playwright install-deps chromium`).
 - **Run locally:** `node tools/serve-local.mjs` serves `public/` at https://localhost:8444/ (self-signed
   cert from `tests/e2e/server.sh`), and `tests/e2e/server.sh` runs the pairing server on wss://localhost:8443/.
@@ -36,8 +37,8 @@ Branches: `alpha` = development, `main` = released.
   20 minutes (not timed precisely). Prints `ok` / `FAIL` per script, logs in `$E2E_OUT` (default `/tmp/timer-e2e`). Green = every
   line `ok`. The scripts print what they saw rather than asserting everything: read a test's log when its
   feature changed. Known flaky: `assist_audio` (timing-sensitive in a full run; passes alone).
-  Companion module: `cd companion/companion-module-sophtwhere-presentationtimer && npm install && npm test`.
-  `glasses_pair.py` needs `glasses/dist` (`cd glasses && npm install && npm run build`).
+  Companion module: `cd companion/companion-module-sophtwhere-presentationtimer && npm ci && npm test`.
+  `glasses_pair.py` needs `glasses/dist` and `companion_link.py` the module's `dist/` (both built by `npm run test:setup`).
 
 ## How it deploys
 `public/` (+ `README.md`) is a static site for any HTTPS host. The hosted copies are built and deployed

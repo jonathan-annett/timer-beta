@@ -12,11 +12,14 @@ and Playwright are pre-installed (don't `playwright install`).
 ## Setup
 
 ```sh
-npm install                       # ws, for the pairing server and the stand-ins
+npm ci                            # ws, for the pairing server and the stand-ins
+npm run test:setup                # tests/e2e/setup.sh: the venv below, then npm ci && npm run build
+                                  # in the Companion module and glasses/ (companion_link, glasses_pair)
 tests/e2e/server.sh &             # local pairing server on wss://localhost:8443/ (self-signed cert, made once)
-# Companion test only:
-(cd companion/companion-module-sophtwhere-presentationtimer && npm install && npm run build)
 ```
+
+Setup always uses `npm ci`, never `npm install`, so the committed lockfiles are installed as they are
+and never rewritten (npm versions differ between machines).
 
 Tests marked *server* need `server.sh` running. To run them against the Cloudflare Worker instead, start it (in the private `timed-show-cloud` repo: `./build.sh && npx wrangler dev --local-protocol https --var ORIGINS:https://timer.sophtwhere.com`) and run `E2E_SERVER=wss://localhost:8787/ws ./run_all.sh` (the scripts read `E2E_SERVER`; `run_all.sh` then doesn't start `server.sh`). In the cloud workspace a background command
 is stopped after 2 hours at most; restart it if a test can't connect.
@@ -24,7 +27,7 @@ is stopped after 2 hours at most; restart it if a test can't connect.
 `./run_all.sh` runs them all (or `./run_all.sh runsheet_*` for some), starting the pairing
 server for the run if none is listening, and prints `ok` / `FAIL` per script (FAIL = page errors
 or a crash; logs in `$E2E_OUT`). It also warns if the `?v=` stamps from `tools/stamp-versions.mjs`
-are out of date. On a Mac (Homebrew Python won't install packages system-wide), use a venv here, which `run_all.sh` picks up by itself: `python3 -m venv tests/e2e/.venv && tests/e2e/.venv/bin/pip install playwright && tests/e2e/.venv/bin/python -m playwright install chromium`. Run a single script with `tests/e2e/.venv/bin/python tests/e2e/<name>.py`.
+are out of date. `npm run test:setup` puts Playwright in a venv here (`tests/e2e/.venv`; Homebrew Python on a Mac won't install packages system-wide), which `run_all.sh` picks up by itself. Run a single script with `tests/e2e/.venv/bin/python tests/e2e/<name>.py`.
 
 The same certificate and pairing server also back the local preview, `node tools/serve-local.mjs`
 (https://localhost:8444/, no caching).

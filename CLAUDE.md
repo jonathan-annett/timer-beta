@@ -35,7 +35,7 @@ timer_build/
 ├── remote-server.js       Pairing server for share (phones, displays, Companion): wss, port 8443, standalone
 ├── deploy/                systemd unit + certbot hook for remote-server.js
 ├── docs/                  powerpoint.md (PowerPoint machines: setup + protocol), glasses-g2-plan.md (Even Realities G2 app, not started)
-├── tests/e2e/             Playwright end-to-end scripts, local pairing server (server.sh), run_all.sh (see its README)
+├── tests/e2e/             Playwright end-to-end scripts, local pairing server (server.sh), run_all.sh, setup.sh (`npm run test:setup`; see its README)
 ├── tools/serve-local.mjs  Local HTTPS preview of public/ at https://localhost:8444/ (no caching; same cert as the tests)
 ├── tools/stamp-versions.mjs  Cache busting: stamps ?v=<content hash> on the HTML pages' script/style links (run before each commit)
 ├── companion/             Bitfocus Companion module (TypeScript, its own npm project; see "Bitfocus Companion" below)
@@ -387,7 +387,7 @@ Opened by the **share** button (`#btnshare`; the panel element is still `#phone-
 
 ## Bitfocus Companion
 
-`companion/companion-module-sophtwhere-presentationtimer/` is a Companion connection module (`@companion-module/base` 2.0, ESM, TypeScript, Node 22; `npm install && npm run build`, `npm test`, `npm run package` → `.tgz`). It is the one part of the repo with a build step, by necessity; it's an independent npm project, nothing in `public/` depends on it. Companion loads it from a *developer modules path* pointing at `companion/` (each module in its own folder with `companion/manifest.json`, entrypoint `../dist/main.js`), or from the packaged `.tgz`.
+`companion/companion-module-sophtwhere-presentationtimer/` is a Companion connection module (`@companion-module/base` 2.0, ESM, TypeScript, Node 22; `npm ci && npm run build`, `npm test`, `npm run package` → `.tgz`). It is the one part of the repo with a build step, by necessity; it's an independent npm project, nothing in `public/` depends on it. Companion loads it from a *developer modules path* pointing at `companion/` (each module in its own folder with `companion/manifest.json`, entrypoint `../dist/main.js`), or from the packaged `.tgz`.
 
 **Timer side (`remote-control.js`):** a peer joining with the companion key has role `companion`. In `onPhoneMessage`, after `hello`, `{t:'api', req, msg}` from a companion peer goes to `apiFromCompanion()`: `msg` must be an object with a string `cmd` not in `API_DENY` (`redirect`), and is passed to `processTimerApiMessage` whole; the reply is `{t:'api-result', req, result}` or `{…, error: 'bad'|'refused'|'no-timer'|'failed', detail}`. Companion peers also get the `control` handling (`ALLOWED` map, deck, keys) and the raw bus: `installBus` records every primitive `setVariableValues` value in `rawVars`, and `pushVars(e, full)` sends `{t:'vars', full, v}` diffs per peer (`e.varsSent`, reset by `hello`) from `pushTo`. They are not admins (no `share`). `MIN_PROTOCOL.companion = 4`: an older server would reject the key as `not-found`. The PIN flow applies unchanged (the pending row says *Companion wants to connect*; the module shows its PIN in its status and log and keeps the token in its config).
 

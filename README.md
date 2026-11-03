@@ -250,7 +250,7 @@ The QR code contains a secret key: anyone with the link can control the timer, s
 1. In the timer, click **share** and choose **Companion**. Copy the link shown.
 2. In Companion, add a **Presentation Timer** connection and paste the link into its settings.
 
-It connects within a second or two. The first time, Companion's status shows a 3-digit number to type into the share panel (the proximity check); it's remembered afterwards. The module's own help (in Companion) lists the actions, variables, feedbacks and presets. It isn't in Companion's module store yet: build it from `companion/companion-module-sophtwhere-presentationtimer` (`npm install && npm run build`) and point Companion's **Developer modules path** at the `companion/` folder, or `npm run package` for a `.tgz` to import. It is written for Companion 5.1 and should work from 4.3 on.
+It connects within a second or two. The first time, Companion's status shows a 3-digit number to type into the share panel (the proximity check); it's remembered afterwards. The module's own help (in Companion) lists the actions, variables, feedbacks and presets. It isn't in Companion's module store yet: build it from `companion/companion-module-sophtwhere-presentationtimer` (`npm ci && npm run build`) and point Companion's **Developer modules path** at the `companion/` folder, or `npm run package` for a `.tgz` to import. It is written for Companion 5.1 and should work from 4.3 on.
 
 ### Countdown overlay on another computer
 

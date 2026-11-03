@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node remote-server.js",
     "test": "sh tests/e2e/run_all.sh",
-    "test:setup": "python3 -m venv tests/e2e/.venv && tests/e2e/.venv/bin/pip install playwright && tests/e2e/.venv/bin/python -m playwright install chromium"
+    "test:setup": "sh tests/e2e/setup.sh"
   },
   "dependencies": {
     "ws": "^8.16.0"
