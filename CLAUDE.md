@@ -40,7 +40,8 @@ timer_build/
 ├── tools/stamp-versions.mjs  Cache busting: stamps ?v=<content hash> on the HTML pages' script/style links (run before each commit)
 ├── companion/             Bitfocus Companion module (TypeScript, its own npm project; see "Bitfocus Companion" below)
 ├── glasses/               Even Realities G2 app (Even Hub; TypeScript + Vite, its own npm project): the countdown on the glasses, see its README and docs/glasses-g2-plan.md
-├── package.json           Dependency: ws (for remote-server.js)
+├── package.json           Dependency: ws (for remote-server.js); npm test = tests/e2e/run_all.sh, npm run test:setup = Playwright venv
+├── HANDOVER.md            Handover for the architect (public part; the full one is in the private repo)
 └── public/                Served as static files
     ├── timer.html          Controller page
     ├── timer.js            Core timer logic (large — ~1980 lines)
