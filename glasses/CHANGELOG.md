@@ -2,6 +2,9 @@
 
 One entry per shipped version (`npm run ship -- "what changed"` writes it).
 
+## 0.1.21
+- Pairing code on the glasses is for a solo presenter: always pairs as the presenter's countdown
+
 ## 0.1.20
 - Pair from one phone: Show a pairing code on my glasses, typed in the timer's share panel (Glasses); no number to type back
 
