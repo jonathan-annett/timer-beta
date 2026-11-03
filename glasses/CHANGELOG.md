@@ -2,6 +2,9 @@
 
 One entry per shipped version (`npm run ship -- "what changed"` writes it).
 
+## 0.1.20
+- Pair from one phone: Show a pairing code on my glasses, typed in the timer's share panel (Glasses); no number to type back
+
 ## 0.1.19
 - Phone page: every glasses menu action as a button; Taps for Next can be Off
 
