@@ -14,7 +14,8 @@ Decisions since this plan was written (they override the sections below):
   (the timer's page froze or reconnected while the Even app was in front, so its code changed or went
   unanswered; then the proximity number needed the browser again). The owner's idea: the glasses show a
   code of their own on the HUD (*Show a pairing code on my glasses* on the phone page; never on the
-  phone page), typed in the share panel's **Glasses** box, which also sets Presenter / Operator. No
+  phone page), typed in the share panel's **Glasses** box: always as a presenter's (the owner: on one phone
+  it's a solo presenter; shows with an operator use the share code and its role choice). No
   proximity number (only the wearer can read the code). The link comes sealed for the glasses' key and
   waits on the server until the Even app is back. Pairing server protocol 7 (*Device codes* in CLAUDE.md).
   The share panel's Glasses box is alpha-only (`TimerFeatures.glasses`). Still open for one-phone use:

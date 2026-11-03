@@ -219,10 +219,11 @@
   // one, as by the code route; an Operator gets control by {t:'role'} as usual) sealed for it (give).
   // Typing the code proves the operator can see the glasses, so the link carries an approval token
   // (t=) and there's no proximity number: one person with only a phone can pair their own glasses,
-  // which a back-and-forth between two apps on one phone kept breaking. The server holds the sealed
-  // link until the glasses (perhaps in the background) collect it.
+  // which a back-and-forth between two apps on one phone kept breaking. That's a presenter on their
+  // own, so it's always as a presenter's (the device list's Make operator still works afterwards).
+  // The server holds the sealed link until the glasses (perhaps in the background) collect it.
   const GLASSES = !!(window.TimerFeatures && TimerFeatures.glasses);
-  const gl = { code: '', role: 'presenter', token: '', note: '', bad: false };
+  const gl = { code: '', token: '', note: '', bad: false };
   const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
   // ECDH (P-256) with a key made for this one message, then AES-GCM: "<our public key>.<iv>.<ciphertext>"
@@ -236,11 +237,11 @@
     return [b64u(await S.exportKey('raw', ours.publicKey)), b64u(iv), b64u(ct)].join('.');
   }
   function glassesNote(text, bad) { gl.note = text; gl.bad = !!bad; renderPanel(); }
-  function takeGlasses(code, role) {
+  function takeGlasses(code) {
     code = String(code || '').replace(/\D/g, '');
     if (code.length !== 6) { glassesNote('Type the 6 digits on the glasses.', true); return; }
     if (!hosted || serverProtocol < MIN_PROTOCOL.offer) { glassesNote('The pairing server is out of date (it needs protocol 7).', true); return; }
-    gl.code = code; gl.role = role === 'operator' ? 'operator' : 'presenter'; gl.token = '';
+    gl.code = code; gl.token = '';
     sendServer({ type: 'take', code });
     glassesNote('Checking the code…');
   }
@@ -249,7 +250,7 @@
     const token = randomString(24, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789');
     const now = Date.now();
     gl.token = token;
-    saveApproved(approvedList().concat({ t: token, name: cleanName(m.name) || 'Even G2 glasses', role: 'view', added: now, seen: now, g2: gl.role }));
+    saveApproved(approvedList().concat({ t: token, name: cleanName(m.name) || 'Even G2 glasses', role: 'view', added: now, seen: now, g2: 'presenter' }));
     const frag = shareFragment('countdown') + '&t=' + token;
     let msg;
     try { msg = m.pub ? { type: 'give', code: m.code, sealed: await seal(m.pub, frag) } : { type: 'give', code: m.code, frag }; }
@@ -259,8 +260,7 @@
   function glassesGiven(m) {
     if (!m || m.code !== gl.code) return;
     gl.code = '';
-    const as = gl.role === 'operator' ? 'the operator’s' : 'a presenter’s';
-    glassesNote(m.delivered ? `Glasses paired as ${as}. They’re connecting…` : `Glasses paired as ${as}. They’ll connect when the Even app is open again.`);
+    glassesNote(m.delivered ? 'Glasses paired. They’re connecting…' : 'Glasses paired. They’ll connect when the Even app is open again.');
   }
   const TAKE_ERRORS = { 'bad-code': 'That code didn’t work. Check the glasses and type it again.', 'too-many': 'Too many wrong codes. Wait a minute, then try again.',
     gone: 'The glasses’ code ran out. Pair again on the glasses.' };
@@ -1131,10 +1131,8 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       <div class="pp-code" hidden></div>
       ${TOUCH ? '<div class="pp-row pp-qrrow"><button class="pp-qrswitch"></button></div>' : ''}
       <div class="pp-pending"></div>
-      ${GLASSES ? `<div class="pp-gl" style="display:none"><b>Glasses</b> showing a pairing code? Type it here:
-        <span class="pp-askrow"><input class="pp-glcode" inputmode="numeric" pattern="[0-9]*" maxlength="7" autocomplete="off" placeholder="######"><button class="pp-glgo">Pair glasses</button></span>
-        <span class="pp-g2">Show as: <label><input type="radio" name="pp-glrole" value="presenter" checked> Presenter</label>
-        <label><input type="radio" name="pp-glrole" value="operator"> Operator</label></span><div class="pp-glnote"></div></div>` : ''}
+      ${GLASSES ? `<div class="pp-gl" style="display:none"><b>Your glasses</b> showing a pairing code? Type it here for the countdown on them:
+        <span class="pp-askrow"><input class="pp-glcode" inputmode="numeric" pattern="[0-9]*" maxlength="7" autocomplete="off" placeholder="######"><button class="pp-glgo">Pair glasses</button></span><div class="pp-glnote"></div></div>` : ''}
       <div class="pp-row"><button class="pp-pair" title="Show a 6-digit code to type on another computer on this network (no QR code or link needed)">Pair a computer</button></div>
       <div class="pp-row"><button class="pp-copy">Copy link</button><button class="pp-renew" title="Disconnect all phones and make a new code">New code</button><button class="pp-toggle"></button></div>
       <div class="pp-peers"></div>
@@ -1160,7 +1158,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       else if (b.dataset.act === 'ok') approvePeer(e, row.querySelector('input').value.trim(), row.querySelector('input[type=radio]:checked')?.value);
       else rejectPeer(e);
     });
-    const glGo = () => takeGlasses(el.querySelector('.pp-glcode').value, el.querySelector('input[name=pp-glrole]:checked')?.value);
+    const glGo = () => takeGlasses(el.querySelector('.pp-glcode').value);
     el.querySelector('.pp-glgo')?.addEventListener('click', glGo);
     el.querySelector('.pp-glcode')?.addEventListener('keydown', ev => { if (ev.key === 'Enter') glGo(); });
     el.querySelector('.pp-pending').addEventListener('keydown', ev => {

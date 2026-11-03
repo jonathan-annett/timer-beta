@@ -9,7 +9,8 @@ SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing 
 # phone page), the timer's share panel takes it in its Glasses box, and the glasses get their link
 # sealed for their key, with an approval token: no proximity number. The glasses' page is closed
 # while the timer takes the code (the Even app in the background) and collects the link when it's
-# back. A wrong code is refused on the timer; Operator chosen there makes them the operator's.
+# back. A wrong code is refused on the timer. Always as a presenter's (a solo presenter's route), even
+# when the glasses' page asked for the operator's; the device list can make them the operator's later.
 import os, mimetypes, sys
 from playwright.sync_api import sync_playwright
 if not os.path.isfile(os.path.join(GLASSES, "index.html")):
@@ -44,6 +45,7 @@ with sync_playwright() as p:
         g.goto(G2+"index.html"); g.wait_for_timeout(4500)   # no Even bridge here: the page waits 4 s for it
         return g
     g=glasses_page()
+    g.check("input[name=wants][value=operator]")     # asks for the operator's: a device code still pairs a presenter's
     print("before: glasses", g.evaluate("window.__g2view()"))
     g.click("#offer")
     def hud_code():
@@ -63,10 +65,9 @@ with sync_playwright() as p:
     print("reopened: same code:", hud_code() == code)
     g.close()
 
-    # the timer: a wrong code, then the right one, as the operator's
+    # the timer: a wrong code, then the right one
     t.fill("#phone-panel .pp-glcode", "000000" if code != "000000" else "111111"); t.click("#phone-panel .pp-glgo"); t.wait_for_timeout(1200)
     print("timer, wrong code:", t.text_content("#phone-panel .pp-glnote"))
-    t.check("#phone-panel input[name=pp-glrole][value=operator]")
     t.fill("#phone-panel .pp-glcode", code); t.press("#phone-panel .pp-glcode", "Enter"); t.wait_for_timeout(1500)
     print("timer, right code:", t.text_content("#phone-panel .pp-glnote"))
     print("approved entry:", t.evaluate("JSON.parse(localStorage.remote_approved).map(x=>x.name+':'+x.role+':'+x.g2)"))
@@ -89,7 +90,6 @@ with sync_playwright() as p:
     print("cancelled: glasses", g.evaluate("window.__g2view()"), "| offer kept:", bool(g.evaluate("localStorage.ts_offer")))
     g.click("#offer"); code=hud_code()
     if t.evaluate("document.getElementById('phone-panel').hidden"): t.click("#btnshare"); t.wait_for_timeout(300)   # (it closed when the glasses connected)
-    t.check("#phone-panel input[name=pp-glrole][value=presenter]")
     t.fill("#phone-panel .pp-glcode", code[:3]+" "+code[3:]); t.click("#phone-panel .pp-glgo"); t.wait_for_timeout(3000)
     print("open glasses: timer:", t.text_content("#phone-panel .pp-glnote"), "| glasses:", g.text_content("#status")[:50], "| role:", g.text_content("#rolename"), "| number box:", g.is_visible("#pinbox"))
     b.close()

@@ -440,7 +440,7 @@ async function startOffer(): Promise<void> {
   }
   if (offer || paired) return
   offerCode = ''; offerTaken = false
-  offer = new OfferLink(keep, wants, {
+  offer = new OfferLink(keep, 'presenter', {      // a presenter on their own: always a presenter's
     code: c => { offerCode = c; offerTaken = false; render() },
     taken: () => { offerTaken = true; render() },
     done: (p, token) => pairedWith(p, token),
