@@ -44,7 +44,7 @@ export interface ParsedLink {
  * defaultServer): the VPS (sophtwhere.com) runs it on port 8443, a Cloudflare site at /ws. */
 export function serverFor(host: string): string {
 	const name = host.replace(/:\d+$/, '')
-	if (/(^|\.)sophtwhere\.com$/.test(name) || host === 'localhost:8444') return `wss://${name}:8443/`
+	if (name === 'timer.sophtwhere.com' || host === 'localhost:8444') return `wss://${name}:8443/`   // only the VPS copy; timer-beta.sophtwhere.com is the Worker
 	return `wss://${host}/ws`
 }
 
