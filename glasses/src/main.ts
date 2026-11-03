@@ -21,6 +21,7 @@
  *   ts_link    {server, room, key, view}: the paired timer (the view-only link the code gave)
  *   ts_ctl     the control link, while the timer has made these glasses its operator's
  *   ts_token   the proximity check's token for that room
+ *   ts_offer   while the glasses show a code of their own (the timer on this phone): {secret, priv, pub, until}
  *   ts_role    presenter | operator: as the timer last said
  *   ts_wants   presenter | operator: the role asked for when pairing
  *   ts_corner  tl | tr | bl | br
@@ -35,7 +36,7 @@
  * the countdown in quiet mode; an operator sees everything, the item's name dimmer than a message.
  */
 import { waitForEvenAppBridge, OsEventTypeList, type EvenAppBridge } from '@evenrealities/even_hub_sdk'
-import { claim, CLAIM_ERRORS, TimerLink, type Paired, type Status, type Mode } from './link'
+import { claim, CLAIM_ERRORS, TimerLink, OfferLink, newOffer, OFFER_ERRORS, type OfferKeep, type Paired, type Status, type Mode } from './link'
 import { Clock, secToStr, type ClockValues } from './clock'
 import { Glasses, CORNERS, MENU, type Corner, type Layout, type MenuItem } from './glasses'
 import { scan, readCode, codeFromPhoto } from './scan'
@@ -47,7 +48,7 @@ const $ = (id: string) => document.getElementById(id) as HTMLElement
 
 // ─── Saved settings ──────────────────────────────────────────────────────────
 
-const KEYS = ['ts_link', 'ts_ctl', 'ts_token', 'ts_role', 'ts_wants', 'ts_corner', 'ts_minimal', 'ts_taps', 'ts_see']
+const KEYS = ['ts_link', 'ts_ctl', 'ts_token', 'ts_role', 'ts_wants', 'ts_corner', 'ts_minimal', 'ts_taps', 'ts_see', 'ts_offer']
 const cache: Record<string, string> = {}
 let storeBridge: EvenAppBridge | null = null
 const store = {
@@ -80,6 +81,8 @@ let status: Status | 'unpaired' = 'unpaired'
 let role: Mode = 'presenter'
 let wants: Mode = 'presenter'
 let pin = ''
+let offer: OfferLink | null = null    // our own code on the glasses, waiting for the timer (the timer on this phone)
+let offerCode = '', offerTaken = false
 const clock = new Clock()
 const state: Record<string, unknown> = {}
 let glasses: Glasses | null = null
@@ -117,6 +120,8 @@ function glassesView(): Layout {
   const p = cornerPlace()
   const info = (text: string, bright = 2) => ({ text, bright, ...p, lines: 2, width: 300, bottom: p.v === 'b' })
   if (!DEMO) {
+    // Our own code: only the wearer sees it, so the timer that types it needn't ask for a number back
+    if (status === 'unpaired' && offer) return { info: { ...info(offerTaken ? 'Pairing...' : offerCode ? 'Pairing code ' + offerCode.slice(0, 3) + ' ' + offerCode.slice(3) + ' - type it in the timer\'s share panel' : 'Getting a pairing code...', 4) } }
     if (status === 'unpaired' || status === 'refused') return { info: info('Timer not connected - open the Even app to pair') }
     if (status === 'pin') return { info: info('Pairing - finish on your phone') }
     const grace = role !== 'operator' && downSince > 0 && performance.now() - downSince < DOWN_GRACE
@@ -314,6 +319,9 @@ function render(): void {
   $('paired').hidden = !isPaired
   $('pinbox').hidden = status !== 'pin'
   $('pinnum').textContent = pin
+  $('offer').hidden = !!offer
+  $('offerbox').hidden = !offer
+  $('offertext').textContent = offerTaken ? 'The timer has the code: pairing…' : offerCode ? 'A pairing code is on your glasses. On the timer, open share (on a phone: ⋯ → Let a friend control this timer) and type it under Glasses.' : 'Getting a code…'
   $('status').textContent = statusText()
   $('status').className = status === 'online' ? 'ok' : ''
   $('rolename').textContent = role === 'operator' ? 'Operator' : 'Presenter'
@@ -409,12 +417,42 @@ function unpair(why = ''): void {
   render()
 }
 
-// Paired by the code or the QR code: start from the view-only link (the timer gives control, if at all)
-function pairedWith(p: Paired): void {
+// Paired by the code or the QR code: start from the view-only link (the timer gives control, if at all).
+// A link from our own code comes with its approval token.
+function pairedWith(p: Paired, token = ''): void {
+  endOffer()
   paired = p; control = null; role = 'presenter'
-  store.set('ts_link', JSON.stringify(p)); store.set('ts_ctl', ''); store.set('ts_token', ''); store.set('ts_role', '')
+  store.set('ts_link', JSON.stringify(p)); store.set('ts_ctl', ''); store.set('ts_token', token); store.set('ts_role', '')
   connect()
   render()
+}
+
+// Our own code on the glasses, for a timer on this phone (the same code again after the Even app was in
+// the background: the secret and key are kept in ts_offer until it runs out)
+async function startOffer(): Promise<void> {
+  if (offer || paired) return
+  say('')
+  let keep: OfferKeep | null = null
+  try { const k = JSON.parse(store.get('ts_offer') || 'null'); if (k && k.secret && k.priv && k.pub && k.until > Date.now() + 15000) keep = k } catch { /* a new one */ }
+  if (!keep) {
+    try { keep = await newOffer() } catch { say('This phone can’t make a pairing code (no Web Crypto). Type the timer’s code instead.', 'bad'); return }
+    store.set('ts_offer', JSON.stringify(keep))
+  }
+  if (offer || paired) return
+  offerCode = ''; offerTaken = false
+  offer = new OfferLink(keep, wants, {
+    code: c => { offerCode = c; offerTaken = false; render() },
+    taken: () => { offerTaken = true; render() },
+    done: (p, token) => pairedWith(p, token),
+    fail: reason => { endOffer(); say(OFFER_ERRORS[reason] || 'Pairing failed (' + reason + ').', 'bad'); render() },
+  })
+  offer.start()
+  render()
+}
+function endOffer(): void {
+  offer?.stop(true); offer = null
+  offerCode = ''; offerTaken = false
+  store.set('ts_offer', '')
 }
 
 // The QR code (the share panel's Countdown one), read with the phone's camera
@@ -479,6 +517,8 @@ function setCorner(c: Corner): void { corner = c; store.set('ts_corner', c); ren
 function setup(): void {
   $('code').addEventListener('input', onCode)
   $('scan').addEventListener('click', startScan)
+  $('offer').addEventListener('click', () => { void startOffer() })
+  $('offercancel').addEventListener('click', () => { endOffer(); render() })
   $('scanstop').addEventListener('click', stopScan)
   document.querySelectorAll<HTMLButtonElement>('#corners button').forEach(b => b.addEventListener('click', () => setCorner(b.dataset.c as Corner)))
   document.querySelectorAll<HTMLButtonElement>('#taps button').forEach(b => b.addEventListener('click', () => { tapsNeeded = Number(b.dataset.n); store.set('ts_taps', String(tapsNeeded)); render() }))
@@ -501,7 +541,7 @@ function setup(): void {
   if (paired) connect()
   // The countdown ticks here; the glasses get a change only when some text or brightness changes
   setInterval(() => { const v = glassesView(); glasses?.show(v); mirror(v) }, 250)
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) link?.wake() })
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { link?.wake(); offer?.wake() } })
 }
 
 // ─── The Even app ────────────────────────────────────────────────────────────
@@ -519,7 +559,7 @@ function attach(bridge: EvenAppBridge): void {
     const txt = ev.textEvent as { eventType?: number } | undefined
     const type = sys ? sys.eventType : txt ? txt.eventType : null
     if (type !== OsEventTypeList.LONG_PRESS_EVENT && type !== OsEventTypeList.LONG_PRESS_RELEASE_EVENT) clearTimeout(holdTimer)
-    if (type === OsEventTypeList.FOREGROUND_ENTER_EVENT) { link?.wake(); glasses?.show(glassesView(), true); return }
+    if (type === OsEventTypeList.FOREGROUND_ENTER_EVENT) { link?.wake(); offer?.wake(); glasses?.show(glassesView(), true); return }
     if (type === OsEventTypeList.LONG_PRESS_EVENT) { onHold(true); return }
     if (type === OsEventTypeList.LONG_PRESS_RELEASE_EVENT) { onHold(false); return }
     if (type === OsEventTypeList.DOUBLE_CLICK_EVENT) onTap(2)
@@ -543,6 +583,7 @@ async function boot(): Promise<void> {
   for (const p of location.hash.startsWith('#demo=') ? location.hash.slice(6).split(',') : []) if ((CORNERS as string[]).includes(p)) corner = p as Corner
   setup()
   if (bridge) attach(bridge); else $('nobridge').hidden = false
+  if (!paired && store.get('ts_offer')) void startOffer()      // still showing our code when the app was closed
 }
 boot()
 // For tests: what the glasses would show (box name -> text, the countdown with @brightness), and taps
@@ -554,4 +595,5 @@ w.__g2tap = onTap
 ;(window as unknown as { __g2down: (ago: number) => void }).__g2down = ago => { if (downSince) downSince = performance.now() - ago }   // tests: pretend the drop began ago ms back
 ;(window as unknown as { __g2where: () => Record<string, string> }).__g2where = () => Object.fromEntries(Object.entries(glassesView()).filter(([, b]) => b && b.text).map(([k, b]) => [k, b!.h + b!.v]))   // where each box sits
 ;(window as unknown as { __g2scanned: (t: string) => void }).__g2scanned = scanned   // a QR code's text, as the camera would read it
+;(window as unknown as { __g2offer: () => Promise<void> }).__g2offer = startOffer   // tests: the "Show a pairing code" button
 ;(window as unknown as { __g2photo: (b: string) => Promise<string> }).__g2photo = b => codeFromPhoto(b)   // a photo's QR code

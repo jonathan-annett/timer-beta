@@ -5,6 +5,9 @@
  *
  *   pairing:  ?code=  {type:'claim', code, client:'g2', mode}  -> claim-wait, then granted {frag} | error {reason}
  *             (client and mode tell the timer what's asking; servers that don't know them ignore them)
+ *   our code: ?offer=<secret>  {type:'offer', secret, pub, client:'g2', mode, name}  -> offer-code {code, ms},
+ *             offer-taken, then granted {sealed} | error {reason}; {type:'cancel'} gives up (protocol 7, the other way round: the glasses
+ *             show a code, typed on the timer, which sends our link sealed for pub, with an approval token t=)
  *   room:     ?room=  join {room, key} -> joined {id, hostOnline, role}; host-online / host-offline
  *   timer -> us (down {msg: {k:'data', d}}):  {t:'state', full, s}, {t:'pin-required'}, {t:'pin-ok', token},
  *             {t:'pin-rejected'}, {t:'revoked'}
@@ -27,6 +30,12 @@ export interface Paired { server: string; room: string; key: string; view: boole
 
 const withQuery = (server: string, k: string, v: string): string => {
   try { const u = new URL(server); u.searchParams.set(k, v); return u.href } catch { return server }
+}
+
+/** The approval token a link brings with it (t=: the timer let us in when it sent it) */
+export function fragToken(frag: string): string {
+  const t = new URLSearchParams(frag.replace(/^#/, '')).get('t') || ''
+  return /^[\w-]{1,64}$/.test(t) ? t : ''
 }
 
 /** The link the timer granted (the part of a remote.html link after '#'): its room and key */
@@ -68,6 +77,117 @@ export function claim(code: string, mode: Mode, cb: { wait?: () => void; done: (
     } else if (m.type === 'error') fail(String(m.reason || 'failed'))
   }
   ws.onclose = () => fail('unreachable')
+}
+
+// ─── Our own code (protocol 7) ───────────────────────────────────────────────
+// For one person with only a phone: the timer's browser and the Even app can't both be in front, so
+// typing the timer's code here, then its number there, kept failing. Instead the glasses show a code
+// (only the wearer can read it) and the timer's share panel takes it. The secret and our key are
+// kept (ts_offer) so the same code survives the Even app going to the background and coming back.
+
+export interface OfferKeep { secret: string; priv: JsonWebKey; pub: string; until: number }
+
+const b64u = (buf: ArrayBuffer): string => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+const unb64u = (s: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0))
+const CURVE = { name: 'ECDH', namedCurve: 'P-256' }
+
+/** A new secret and key pair for an offer (valid for 10 minutes, as the server keeps it) */
+export async function newOffer(): Promise<OfferKeep> {
+  const S = crypto.subtle
+  const pair = await S.generateKey(CURVE, true, ['deriveKey']) as CryptoKeyPair
+  return {
+    secret: b64u(crypto.getRandomValues(new Uint8Array(24)).buffer),
+    priv: await S.exportKey('jwk', pair.privateKey),
+    pub: b64u(await S.exportKey('raw', pair.publicKey)),
+    until: Date.now() + 10 * 60 * 1000,
+  }
+}
+
+/** Opens the timer's sealed link: "<its public key>.<iv>.<ciphertext>" (ECDH P-256, AES-GCM) */
+async function unseal(keep: OfferKeep, sealed: string): Promise<string> {
+  const [e, iv, ct] = sealed.split('.')
+  const S = crypto.subtle
+  const priv = await S.importKey('jwk', keep.priv, CURVE, false, ['deriveKey'])
+  const theirs = await S.importKey('raw', unb64u(e), CURVE, false, [])
+  const key = await S.deriveKey({ name: 'ECDH', public: theirs }, priv, { name: 'AES-GCM', length: 256 }, false, ['decrypt'])
+  return new TextDecoder().decode(await S.decrypt({ name: 'AES-GCM', iv: unb64u(iv) }, key, unb64u(ct)))
+}
+
+export const OFFER_ERRORS: Record<string, string> = {
+  'expired': 'The code ran out (10 minutes). Start again for a new one.',
+  'too-many': 'Too many codes asked for from this network. Wait a few minutes.',
+  'bad-link': 'The timer sent a link these glasses can’t use.',
+  'old-server': 'The timer’s server can’t do this yet.',
+}
+
+export interface OfferEvents {
+  code: (code: string) => void
+  taken: () => void
+  done: (p: Paired, token: string) => void
+  fail: (reason: string) => void      // an OFFER_ERRORS key
+}
+
+/** Waits for the timer to take our code; reconnects (same secret, same code) until done, failed or stopped */
+export class OfferLink {
+  private ws: WebSocket | null = null
+  private stopped = false
+  private retryTimer = 0
+  private keepAlive = 0
+  private got = false
+
+  constructor(private keep: OfferKeep, private mode: Mode, private on: OfferEvents) {}
+
+  start(): void { this.stopped = false; this.connect() }
+  /** Stops waiting; cancel: the server forgets the code too (else it lasts its 10 minutes) */
+  stop(cancel = false): void {
+    if (cancel && this.ws?.readyState === WebSocket.OPEN) this.ws.send('{"type":"cancel"}')
+    this.stopped = true
+    clearTimeout(this.retryTimer); clearInterval(this.keepAlive)
+    const ws = this.ws; this.ws = null
+    try { ws?.close() } catch { /* gone */ }
+  }
+  /** Back in the foreground: reconnect now if the socket went */
+  wake(): void { if (!this.stopped && (!this.ws || this.ws.readyState !== WebSocket.OPEN)) { clearTimeout(this.retryTimer); this.connect() } }
+
+  private finish(fn: () => void): void { this.stop(); fn() }
+
+  private connect(): void {
+    if (this.stopped) return
+    if (Date.now() > this.keep.until) { this.finish(() => this.on.fail('expired')); return }
+    let ws: WebSocket
+    try { ws = new WebSocket(withQuery(SERVER, 'offer', this.keep.secret)) } catch { this.retry(); return }
+    this.ws = ws
+    this.got = false
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'offer', secret: this.keep.secret, pub: this.keep.pub, client: CLIENT, mode: this.mode, name: 'Even G2 glasses' }))
+      clearInterval(this.keepAlive)
+      this.keepAlive = window.setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('{"type":"ping"}') }, 25000)
+    }
+    ws.onmessage = ev => {
+      let m: { type?: string; code?: unknown; sealed?: unknown; reason?: unknown }
+      try { m = JSON.parse(String(ev.data)) } catch { return }
+      if (m.type === 'offer-code' && typeof m.code === 'string') { this.got = true; this.on.code(m.code) }
+      else if (m.type === 'offer-taken') { this.got = true; this.on.taken() }
+      else if (m.type === 'granted' && typeof m.sealed === 'string') {
+        const sealed = m.sealed
+        this.stopped = true
+        unseal(this.keep, sealed).then(frag => {
+          const p = parseFrag(frag)
+          this.finish(() => p ? this.on.done(p, fragToken(frag)) : this.on.fail('bad-link'))
+        }, () => this.finish(() => this.on.fail('bad-link')))
+      } else if (m.type === 'error') {
+        const reason = String(m.reason || '')
+        if (reason === 'expired' || reason === 'too-many') this.finish(() => this.on.fail(reason))
+        else if (reason === 'bad-request' && !this.got) this.finish(() => this.on.fail('old-server'))   // a server before protocol 7
+      }
+    }
+    ws.onclose = () => { if (this.ws === ws) { this.ws = null; clearInterval(this.keepAlive); this.retry() } }
+  }
+  private retry(): void {
+    if (this.stopped) return
+    clearTimeout(this.retryTimer)
+    this.retryTimer = window.setTimeout(() => this.connect(), 3000)
+  }
 }
 
 export type Status =

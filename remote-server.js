@@ -15,7 +15,11 @@
  *   - pairs a computer by a 6-digit code instead of a link (protocol 6): while the timer asks
  *     for it, the server shows it a code that changes every 30 s; a computer that types it gets
  *     a link from the timer, passed on once (any network: the timer's proximity check then
- *     guards the new device; 'kick' drops one that fails it).
+ *     guards the new device; 'kick' drops one that fails it), and
+ *   - the other way round (protocol 7): a device with no keyboard of its own but a screen only its
+ *     wearer can read (Even G2 glasses) asks for a code of its own and shows it; the timer types it
+ *     and sends that device its link, sealed with a public key the device sent (so the server,
+ *     which holds it until the device collects it, can't read it).
  * It never looks inside the messages it forwards.
  *
  * Usage:
@@ -55,7 +59,7 @@ const ORIGINS = (arg('origin') || process.env.ALLOWED_ORIGINS || '').split(',').
 
 // Bumped when the protocol gains features; sent to timers in 'hosted' so they can tell an
 // out-of-date server (1 = control only; 2 = adds view-only keys and roles; 3 = adds admin keys).
-const PROTOCOL = 6;   // 2: view-only keys, 3: admin keys, 4: companion keys, 5: PowerPoint keys, 6: pairing codes
+const PROTOCOL = 7;   // 2: view-only keys, 3: admin keys, 4: companion keys, 5: PowerPoint keys, 6: pairing codes, 7: device codes (offers)
 const MAX_MESSAGE_BYTES = 16 * 1024;     // signalling + state messages are tiny
 const MAX_MSGS_PER_SEC = 40;             // per socket; extra messages are dropped
 const MAX_PHONES_PER_ROOM = 16;          // controllers + view-only displays
@@ -66,6 +70,10 @@ const CODE_GRACE_MS = 10 * 1000;         // ...and the one before still works th
 const CLAIM_WAIT_MS = 20 * 1000;         // how long a claimed code waits for the timer's answer
 const MAX_CODE_FAILS = 5;                // wrong codes per address per minute
 const MAX_FRAG = 2048;                   // a granted link
+const OFFER_MS = 10 * 60 * 1000;         // a device's own code (an offer) lasts this long, waiting to be typed and collected
+const TAKE_MS = 60 * 1000;               // a timer that typed it has this long to send the link
+const MAX_SEALED = 4096;                 // a sealed link
+const MAX_OFFERS_PER_NET = 5;
 
 if (!INSECURE && (!CERT || !KEY)) {
   console.error('Need --cert and --key (TLS certificate and private key), or --insecure for local testing.');
@@ -130,7 +138,7 @@ function netOf(addr) {
 function newCode() {
   for (;;) {
     const c = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
-    if (!codes.has(c)) return c;
+    if (!codes.has(c) && !offerCodes.has(c)) return c;
   }
 }
 function issueCode(roomId) {
@@ -154,6 +162,85 @@ function codeFailed(net) {
   else f.n++;
 }
 const tooManyFails = net => { const f = codeFails.get(net); return !!f && Date.now() - f.since <= 60000 && f.n >= MAX_CODE_FAILS; };
+const validCode = c => typeof c === 'string' && /^\d{6}$/.test(c);
+
+// ─── Device codes (protocol 7) ────────────────────────────────────────────────
+// The other way round from pairing codes, for a device whose screen only its wearer can read (Even
+// G2 glasses), so typing the code it shows proves the timer's operator is the wearer (no proximity
+// check: the link comes with a token). The device opens a socket and sends {type:'offer', secret,
+// pub?, client, mode, name}; it gets {type:'offer-code', code, ms} (the same code again when it
+// reconnects with the same secret, as a phone app in the background has to). The timer sends
+// {type:'take', code} and gets {type:'took', code, pub, client, mode, name} (or take-error
+// {code, reason}); the device is told {type:'offer-taken'}. Then the timer sends {type:'give', code,
+// sealed} (its link encrypted for pub; or frag, a plain one, for a device without pub) and gets
+// {type:'given', code, delivered}. The device gets {type:'granted', sealed|frag} now or when it next
+// connects, within OFFER_MS; then the offer is gone (or when the device sends {type:'cancel'}).
+// Wrong codes count against the timer's address.
+
+const offers = new Map();         // hash of the secret -> { code, pub, client, mode, name, net, until, ws, takenBy, takenUntil, sealed, frag, timer }
+const offerCodes = new Map();     // code -> hash of the secret
+const clean = (v, re, max) => typeof v === 'string' && v.length <= max && re.test(v) ? v : '';
+
+function dropOffer(id) {
+  const o = offers.get(id);
+  if (!o) return;
+  clearTimeout(o.timer);
+  if (offerCodes.get(o.code) === id) offerCodes.delete(o.code);
+  offers.delete(id);
+}
+function deliver(id) {
+  const o = offers.get(id);
+  if (!o || !o.ws || !(o.sealed || o.frag)) return false;
+  send(o.ws, o.sealed ? { type: 'granted', sealed: o.sealed } : { type: 'granted', frag: o.frag });
+  const ws = o.ws;
+  dropOffer(id);
+  ws.close();
+  return true;
+}
+function offerJoin(ws, m) {
+  if (!clean(m.secret, /^[\w-]{22,64}$/, 64)) { send(ws, { type: 'error', reason: 'bad-request' }); ws.close(); return null; }
+  const id = hash('offer:' + m.secret), now = Date.now();
+  let o = offers.get(id);
+  if (!o) {
+    let n = 0;
+    for (const x of offers.values()) if (x.net === ws.net) n++;
+    // (not for 'local': this machine or a server on the venue's network)
+    if (n >= MAX_OFFERS_PER_NET && ws.net !== 'local') { send(ws, { type: 'error', reason: 'too-many' }); ws.close(); return null; }
+    o = { code: newCode(), pub: clean(m.pub, /^[\w-]+$/, 200), client: clean(m.client, /^[\w-]+$/, 16), mode: m.mode === 'operator' ? 'operator' : 'presenter',
+      name: typeof m.name === 'string' ? m.name.replace(/[\u0000-\u001f]/g, '').slice(0, 40) : '', net: ws.net, until: now + OFFER_MS, ws: null };
+    o.timer = setTimeout(() => { const x = offers.get(id); if (x && x.ws) { send(x.ws, { type: 'error', reason: 'expired' }); x.ws.close(); } dropOffer(id); }, OFFER_MS);
+    offers.set(id, o);
+    offerCodes.set(o.code, id);
+  }
+  if (o.ws && o.ws !== ws) o.ws.close();          // the same device again (a new socket): this one wins
+  o.ws = ws;
+  if (!deliver(id)) send(ws, o.takenBy && o.takenUntil >= now ? { type: 'offer-taken' } : { type: 'offer-code', code: o.code, ms: o.until - now });
+  return id;
+}
+// The timer typed a device's code
+function take(ws, roomId, m) {
+  const now = Date.now(), code = validCode(m.code) ? m.code : '';
+  if (tooManyFails(ws.net)) return send(ws, { type: 'take-error', code, reason: 'too-many' });
+  const id = code ? offerCodes.get(code) : null, o = id ? offers.get(id) : null;
+  if (!o || o.until < now || (o.takenBy && o.takenBy !== roomId && o.takenUntil >= now)) {
+    codeFailed(ws.net);
+    return send(ws, { type: 'take-error', code, reason: 'bad-code' });
+  }
+  o.takenBy = roomId; o.takenUntil = now + TAKE_MS;
+  send(o.ws, { type: 'offer-taken' });
+  send(ws, { type: 'took', code, pub: o.pub, client: o.client, mode: o.mode, name: o.name });
+}
+function give(ws, roomId, m) {
+  const now = Date.now(), code = validCode(m.code) ? m.code : '';
+  const id = code ? offerCodes.get(code) : null, o = id ? offers.get(id) : null;
+  // Sealed for a device that sent a key; plain only for one that didn't
+  const sealed = o && o.pub && typeof m.sealed === 'string' && m.sealed.length <= MAX_SEALED ? m.sealed : '';
+  const frag = o && !o.pub && typeof m.frag === 'string' && m.frag.length <= MAX_FRAG ? m.frag : '';
+  if (!o || o.takenBy !== roomId || o.takenUntil < now || !(sealed || frag)) return send(ws, { type: 'take-error', code, reason: 'gone' });
+  o.sealed = sealed; o.frag = frag;
+  offerCodes.delete(code);                        // used: nobody else can take it now
+  send(ws, { type: 'given', code, delivered: deliver(id) });
+}
 
 // ─── Server ───────────────────────────────────────────────────────────────────
 
@@ -164,7 +251,7 @@ const server = INSECURE
 server.on('request', (req, res) => {
   // Plain HTTPS requests: a health check, and a page so you can accept a self-signed cert
   res.writeHead(200, { 'content-type': 'text/plain' });
-  res.end(`timer remote server ok, protocol ${PROTOCOL} (view-only, admin, companion and PowerPoint links, pairing codes) (${rooms.size} rooms)\n`);
+  res.end(`timer remote server ok, protocol ${PROTOCOL} (view-only, admin, companion and PowerPoint links, pairing codes, device codes) (${rooms.size} rooms)\n`);
 });
 
 const wss = new WebSocketServer({
@@ -189,7 +276,7 @@ wss.on('connection', (ws, req) => {
   // Must be handled: an oversized or malformed frame emits 'error', and an unhandled
   // 'error' would crash the whole server. ws closes the socket itself afterwards.
   ws.on('error', err => console.warn('[remote] socket error:', err.code || err.message));
-  let role = null, roomId = null, phoneId = null, claimId = null;
+  let role = null, roomId = null, phoneId = null, claimId = null, offerId = null;
   let windowStart = Date.now(), count = 0;
 
   ws.on('message', raw => {
@@ -214,6 +301,17 @@ wss.on('connection', (ws, req) => {
       send(ws, { type: 'claim-wait' });
       send(room.host, { type: 'claim', id: claimId });
       setTimeout(() => { if (claims.has(claimId)) { send(ws, { type: 'error', reason: 'no-answer' }); ws.close(); } }, CLAIM_WAIT_MS);
+      return;
+    }
+
+    if (!role && m.type === 'offer') {                // a device asks for a code of its own (protocol 7)
+      offerId = offerJoin(ws, m);
+      if (offerId) role = 'offer';
+      return;
+    }
+    if (role === 'offer') {
+      const o = offers.get(offerId);
+      if (m.type === 'cancel' && o && o.ws === ws) { dropOffer(offerId); ws.close(); }
       return;
     }
 
@@ -284,6 +382,10 @@ wss.on('connection', (ws, req) => {
       if (m.type === 'grant' && typeof m.frag === 'string' && m.frag.length <= MAX_FRAG) send(cl.ws, { type: 'granted', frag: m.frag });
       else send(cl.ws, { type: 'error', reason: 'refused' });
       cl.ws.close();
+    } else if (role === 'host' && m.type === 'take') {
+      take(ws, roomId, m);
+    } else if (role === 'host' && m.type === 'give') {
+      give(ws, roomId, m);
     } else if (role === 'host' && m.type === 'kick') {   // the timer drops a device (failed its proximity check)
       const p = room.phones.get(m.id);
       if (p) { room.phones.delete(m.id); send(p.ws, { type: 'error', reason: 'rejected' }); p.ws.close(); send(room.host, { type: 'peer-leave', id: m.id }); }
@@ -294,6 +396,7 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     if (claimId) claims.delete(claimId);
+    if (offerId) { const o = offers.get(offerId); if (o && o.ws === ws) o.ws = null; }   // kept for the device to come back to
     const room = rooms.get(roomId);
     if (!room) return;
     if (role === 'host' && room.host === ws) {

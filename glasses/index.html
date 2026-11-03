@@ -37,7 +37,7 @@
     #mirror { position: relative; aspect-ratio: 2 / 1; background: #000; border: 1px solid #1d3a1d; border-radius: 10px; margin: 4px 0 12px;
       container-type: inline-size; overflow: hidden; color: #5fff5f; font-family: "Helvetica Neue", Arial, sans-serif; }
     #mirror > div { position: absolute; font-size: 4cqw; line-height: 1.3; white-space: pre-wrap; font-variant-numeric: tabular-nums; }
-    #scan, #scanstop { font: inherit; font-size: 15px; color: #9fd8ff; background: #0e2a3a; border: 1px solid #2a5a7a; border-radius: 8px; padding: 9px 14px; }
+    #scan, #scanstop, #offer, #offercancel { font: inherit; font-size: 15px; color: #9fd8ff; background: #0e2a3a; border: 1px solid #2a5a7a; border-radius: 8px; padding: 9px 14px; }
     #scanbox { text-align: center; margin-top: 12px; } #scanbox p { margin: 8px 0; }
     #video { width: 100%; max-height: 50vh; border-radius: 10px; background: #111; object-fit: cover; }
     #scanstop { color: #ccc; background: #1a1a1a; border-color: #333; }
@@ -77,6 +77,15 @@
       <div id="msg"></div>
       <p style="text-align:center;margin:12px 0 0"><button id="scan">Or photograph the timer’s QR code</button></p>
       <div id="scanbox" hidden><video id="video" muted playsinline></video><p>Point at the share panel’s <b>Countdown</b> QR code.</p><button id="scanstop">Cancel</button></div>
+      <div id="offerwrap">
+        <p style="margin:12px 0 0"><b>Timer on this phone?</b> Your glasses show a code instead: type it in the timer’s share panel, under <b>Glasses</b>.</p>
+        <p style="text-align:center;margin:8px 0 0"><button id="offer">Show a pairing code on my glasses</button></p>
+        <div id="offerbox" hidden>
+          <p id="offertext"></p>
+          <p class="note">The code is on your glasses only, so typing it proves the timer is yours: no number to type back. It lasts 10 minutes; you can leave this app meanwhile.</p>
+          <p style="text-align:center;margin:8px 0 0"><button id="offercancel">Cancel</button></p>
+        </div>
+      </div>
       <p class="note">The timer’s operator decides which these glasses are when letting them in; your choice is passed on as a request.</p>
     </section>
 

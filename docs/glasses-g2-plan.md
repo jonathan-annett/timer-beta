@@ -9,6 +9,17 @@ timer, showed an expired countdown counting up). The Even app serves plugins fro
 Worker since 30 Oct; `remote-server.js` doesn't yet).
 
 Decisions since this plan was written (they override the sections below):
+- **Pairing from one phone (3 Nov 2026; built on alpha, not yet on the glasses):** with the timer in the
+  phone's browser and the glasses' app in the Even app on the same phone, the code route kept failing
+  (the timer's page froze or reconnected while the Even app was in front, so its code changed or went
+  unanswered; then the proximity number needed the browser again). The owner's idea: the glasses show a
+  code of their own on the HUD (*Show a pairing code on my glasses* on the phone page; never on the
+  phone page), typed in the share panel's **Glasses** box, which also sets Presenter / Operator. No
+  proximity number (only the wearer can read the code). The link comes sealed for the glasses' key and
+  waits on the server until the Even app is back. Pairing server protocol 7 (*Device codes* in CLAUDE.md).
+  The share panel's Glasses box is alpha-only (`TimerFeatures.glasses`). Still open for one-phone use:
+  the timer runs only while its browser is in front (sharing now keeps the screen on); whether the Even
+  app keeps the glasses' socket in the background is untested.
 - **Pairing = the friend-code route** (`RemotePeer.claim`'s protocol), not a new claim/give
   exchange: the app claims the timer's 6-digit code with extra fields `client:'g2', mode`
   (`presenter` | `controller`), which servers ignore for now. The proximity check's 3-digit number

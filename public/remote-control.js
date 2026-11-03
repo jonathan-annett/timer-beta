@@ -75,7 +75,7 @@
   };
   const PPTX = !!(window.TimerFeatures && TimerFeatures.pptx);   // PowerPoint computers: an alpha-only trial (features.js)
   const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet'].concat(PPTX ? ['pptx'] : []);   // what an admin phone can set another computer up as
-  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4, pptx: 5, overlay: 2, code: 6 };   // pairing server needed for each link (code: pairing by code)
+  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4, pptx: 5, overlay: 2, code: 6, offer: 7 };   // pairing server needed for each link (code: pairing by code)
   // 'editor' is the control link with m=runsheet: a computer opening it starts in the run sheet editor
   const linkFields = (p, mode) => mode === 'control' ? { r: p.room, k: p.key }
     : mode === 'editor' ? { r: p.room, k: p.key, m: 'runsheet' }
@@ -140,6 +140,9 @@
           break;
         case 'pair-code': pair.code = m.code; pair.ms = m.ms || 30000; pair.at = Date.now(); renderPanel(); break;
         case 'claim': grantClaim(m.id); break;
+        case 'took': glassesTook(m); break;
+        case 'given': glassesGiven(m); break;
+        case 'take-error': glassesTakeError(m); break;
         case 'peer-join': addPeer(m.id, m.role); break;
         case 'peer-leave': removePeer(m.id); break;
         case 'from': { const p = peers.get(m.id); if (p) p.peer.receive(m.msg); break; }
@@ -209,6 +212,72 @@
     if (RemotePeer.defaultServer().endsWith('/ws')) return location.host + '/control';
     const u = new URL('control.html', location.href); u.search = ''; u.hash = ''; return u.toString();
   };
+
+  // ─── A device's own code (pairing server protocol 7): Even G2 glasses ─────
+  // The glasses show a 6-digit code that only their wearer can read; typed in the share panel's
+  // Glasses box (take), the server gives us their public key and we send their link (the view-only
+  // one, as by the code route; an Operator gets control by {t:'role'} as usual) sealed for it (give).
+  // Typing the code proves the operator can see the glasses, so the link carries an approval token
+  // (t=) and there's no proximity number: one person with only a phone can pair their own glasses,
+  // which a back-and-forth between two apps on one phone kept breaking. The server holds the sealed
+  // link until the glasses (perhaps in the background) collect it.
+  const GLASSES = !!(window.TimerFeatures && TimerFeatures.glasses);
+  const gl = { code: '', role: 'presenter', token: '', note: '', bad: false };
+  const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+  // ECDH (P-256) with a key made for this one message, then AES-GCM: "<our public key>.<iv>.<ciphertext>"
+  async function seal(pub, text) {
+    const S = crypto.subtle, curve = { name: 'ECDH', namedCurve: 'P-256' };
+    const theirs = await S.importKey('raw', unb64u(pub), curve, false, []);
+    const ours = await S.generateKey(curve, true, ['deriveKey']);
+    const key = await S.deriveKey({ name: 'ECDH', public: theirs }, ours.privateKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await S.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(text));
+    return [b64u(await S.exportKey('raw', ours.publicKey)), b64u(iv), b64u(ct)].join('.');
+  }
+  function glassesNote(text, bad) { gl.note = text; gl.bad = !!bad; renderPanel(); }
+  function takeGlasses(code, role) {
+    code = String(code || '').replace(/\D/g, '');
+    if (code.length !== 6) { glassesNote('Type the 6 digits on the glasses.', true); return; }
+    if (!hosted || serverProtocol < MIN_PROTOCOL.offer) { glassesNote('The pairing server is out of date (it needs protocol 7).', true); return; }
+    gl.code = code; gl.role = role === 'operator' ? 'operator' : 'presenter'; gl.token = '';
+    sendServer({ type: 'take', code });
+    glassesNote('Checking the code…');
+  }
+  async function glassesTook(m) {
+    if (!m || m.code !== gl.code) return;
+    const token = randomString(24, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789');
+    const now = Date.now();
+    gl.token = token;
+    saveApproved(approvedList().concat({ t: token, name: cleanName(m.name) || 'Even G2 glasses', role: 'view', added: now, seen: now, g2: gl.role }));
+    const frag = shareFragment('countdown') + '&t=' + token;
+    let msg;
+    try { msg = m.pub ? { type: 'give', code: m.code, sealed: await seal(m.pub, frag) } : { type: 'give', code: m.code, frag }; }
+    catch (_) { glassesNote('This browser couldn’t seal the link for the glasses.', true); return; }
+    sendServer(msg);
+  }
+  function glassesGiven(m) {
+    if (!m || m.code !== gl.code) return;
+    gl.code = '';
+    const as = gl.role === 'operator' ? 'the operator’s' : 'a presenter’s';
+    glassesNote(m.delivered ? `Glasses paired as ${as}. They’re connecting…` : `Glasses paired as ${as}. They’ll connect when the Even app is open again.`);
+  }
+  const TAKE_ERRORS = { 'bad-code': 'That code didn’t work. Check the glasses and type it again.', 'too-many': 'Too many wrong codes. Wait a minute, then try again.',
+    gone: 'The glasses’ code ran out. Pair again on the glasses.' };
+  function glassesTakeError(m) {
+    if (!m || (m.code && m.code !== gl.code)) return;
+    if (gl.token) saveApproved(approvedList().filter(x => x.t !== gl.token));   // never used
+    gl.code = ''; gl.token = '';
+    glassesNote(TAKE_ERRORS[m.reason] || 'The glasses couldn’t be paired (' + String(m.reason || 'error') + ').', true);
+  }
+  function renderGlasses(el) {
+    const box = el.querySelector('.pp-gl');
+    if (!box) return;
+    box.style.display = GLASSES && enabled && hosted && serverProtocol >= MIN_PROTOCOL.offer ? '' : 'none';
+    const note = box.querySelector('.pp-glnote');
+    note.textContent = gl.note;
+    note.classList.toggle('pp-warn', gl.bad);
+  }
 
   function relayTo(id) {
     return msg => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'to', id, msg })); };
@@ -962,6 +1031,13 @@
 #phone-panel .pp-askrow input { width: 5em; flex: none; font: 18px "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; text-align: center;
   background: #111; color: #fff; border: 1px solid #665200; border-radius: 4px; padding: 4px; }
 #phone-panel .pp-askrow button { flex: 1; }
+#phone-panel .pp-gl { border: 1px solid #444; border-radius: 6px; padding: 8px; margin: 6px 0; font-size: 13px; color: #ccc; }
+#phone-panel .pp-gl .pp-askrow input { width: 6.5em; }
+#phone-panel .pp-glnote { margin-top: 6px; color: #9bd; }
+#phone-panel .pp-glnote.pp-warn { color: #f88; }
+#phone-panel .pp-glnote:empty { display: none; }
+#phone-panel.pp-touch .pp-gl { font-size: 15px; }
+#phone-panel.pp-touch .pp-gl .pp-askrow input { width: 6.5em; }
 #phone-panel.pp-touch .pp-code .pp-digits { font-size: 48px; }
 #phone-panel.pp-touch .pp-code .pp-codehint { font-size: 14px; }
 #phone-panel.pp-touch .pp-pin { font-size: 14px; margin: 8px 0 4px; }
@@ -1055,6 +1131,10 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       <div class="pp-code" hidden></div>
       ${TOUCH ? '<div class="pp-row pp-qrrow"><button class="pp-qrswitch"></button></div>' : ''}
       <div class="pp-pending"></div>
+      ${GLASSES ? `<div class="pp-gl" style="display:none"><b>Glasses</b> showing a pairing code? Type it here:
+        <span class="pp-askrow"><input class="pp-glcode" inputmode="numeric" pattern="[0-9]*" maxlength="7" autocomplete="off" placeholder="######"><button class="pp-glgo">Pair glasses</button></span>
+        <span class="pp-g2">Show as: <label><input type="radio" name="pp-glrole" value="presenter" checked> Presenter</label>
+        <label><input type="radio" name="pp-glrole" value="operator"> Operator</label></span><div class="pp-glnote"></div></div>` : ''}
       <div class="pp-row"><button class="pp-pair" title="Show a 6-digit code to type on another computer on this network (no QR code or link needed)">Pair a computer</button></div>
       <div class="pp-row"><button class="pp-copy">Copy link</button><button class="pp-renew" title="Disconnect all phones and make a new code">New code</button><button class="pp-toggle"></button></div>
       <div class="pp-peers"></div>
@@ -1080,6 +1160,9 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       else if (b.dataset.act === 'ok') approvePeer(e, row.querySelector('input').value.trim(), row.querySelector('input[type=radio]:checked')?.value);
       else rejectPeer(e);
     });
+    const glGo = () => takeGlasses(el.querySelector('.pp-glcode').value, el.querySelector('input[name=pp-glrole]:checked')?.value);
+    el.querySelector('.pp-glgo')?.addEventListener('click', glGo);
+    el.querySelector('.pp-glcode')?.addEventListener('keydown', ev => { if (ev.key === 'Enter') glGo(); });
     el.querySelector('.pp-pending').addEventListener('keydown', ev => {
       if (ev.key !== 'Enter' || ev.target.tagName !== 'INPUT' || ev.target.type === 'radio') return;
       const row = ev.target.closest('[data-id]');
@@ -1208,6 +1291,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     el.querySelector('.pp-qr').hidden = paste;
     if (enabled && !paste) drawQR(phoneLink());
     renderPairing(el);
+    renderGlasses(el);
     const pend = el.querySelector('.pp-pending');
     const rows = pending();
     // Rebuilt only when the requests change (a rebuild loses focus and the caret mid-typing). A new
@@ -1425,15 +1509,32 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
 
   // ─── On / off ────────────────────────────────────────────────────────────
 
+  // On a phone or tablet, sharing keeps the screen on: a locked screen (or the browser in the
+  // background) freezes the page, and its devices, glasses most of all on one phone, lose the timer.
+  // A wake lock goes when the page is hidden, so it's asked for again when it's back.
+  let wakeLock = null;
+  async function keepAwake() {
+    if (!TOUCH || !enabled || wakeLock || document.hidden || !('wakeLock' in navigator)) return;
+    try { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.onrelease = () => { wakeLock = null; }; }
+    catch (_) { /* not allowed right now (no user gesture yet, low battery) */ }
+    if (wakeLock && !enabled) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  }
+  if (TOUCH) {
+    document.addEventListener('visibilitychange', keepAwake);
+    document.addEventListener('pointerdown', keepAwake, true);   // Safari wants a user gesture for the first one
+  }
+
   function enable() {
     enabled = true;
     localStorage.setItem(ENABLED_KEY, '1');
     if (typeof processTimerApiMessage === 'function') processTimerApiMessage({ cmd: 'opened' });   // fill `state`
     connect();
     renderPanel();
+    keepAwake();
   }
   function disable() {
     enabled = false;
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     localStorage.removeItem(ENABLED_KEY);
     clearTimeout(retryTimer);
     if (ws) { const s = ws; ws = null; s.close(); }
