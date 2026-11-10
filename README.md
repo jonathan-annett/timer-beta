@@ -83,7 +83,13 @@ At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. O
 
 ### Clock accuracy
 
-On first load the timer checks the time against an internet time service, so two computers stay in sync even if one clock is off. **Shift+T** re-checks; **Shift+L** ignores it and uses this computer's clock.
+The **clock** badge under the button bar says what the timer's clock is running on: **internet** (green, checked against a time server when the page opened), **local** (yellow, this computer's own clock) or **manual** (blue, corrected by you). Click it to choose, and click it again to close the panel.
+
+- **Internet** can only be picked when a time server answers. If none does, the timer runs on local and the badge turns yellow. **Sync now** tries again and goes back to internet if it works (**Shift+T** does the same).
+- **Local** uses this computer's clock with no correction (**Shift+L**).
+- **Manual** is for when you know this computer's clock is wrong: type the right time and press **Set time**, or add or take off a minute, 15 seconds or a second. The panel shows the correction and the corrected time.
+
+Changing the clock doesn't disturb a running countdown: only the times of day move. A run sheet's planned times are clock times, so an automatic start that the corrected clock has just passed will fire.
 
 ---
 

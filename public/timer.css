@@ -1505,7 +1505,7 @@ html.runsheet .btn-presets::after {
 /* In run sheet mode the controller's copy of the message moves to the top right,
    so long item names don't collide with the dashboard (presenter view unchanged). */
 html.runsheet:not(.reduced) #custom_message {
-  top: calc(var(--buttons-bottom, 104px) + 12px);
+  top: calc(var(--buttons-bottom, 104px) + 36px);   /* below the clock badge (clock-panel.js) */
   left: 50vw;
   right: 12px;
   width: auto;

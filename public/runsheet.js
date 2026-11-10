@@ -137,6 +137,24 @@
     commit();
   }
 
+  // The clock was corrected (inettime.js; timer.js moves the countdown): what happened stays what
+  // happened, so the log and Back's snapshots move with it. Planned clock times don't, except an
+  // unanchored sheet's, which are counted from the first actual start.
+  document.addEventListener('clock-moved', ev => {
+    const ms = ev.detail;
+    if (state.timerStart != null) state.timerStart += ms;
+    for (const e of state.log) {
+      e.actual += ms;
+      if (e.orig != null) e.orig += ms;
+      if (e.planned != null && !norm.anchored) e.planned += ms;
+    }
+    for (const h of state.history) {
+      if (!h.timer) continue;
+      for (const k of ['startedAt', 'endsAt', 'seekEndsAt', 'pausedAt']) if (Number.isFinite(h.timer[k])) h.timer[k] += ms;
+    }
+    commit();
+  });
+
   // The timer's start was moved by ms (the shiftstart command: the assist station's "started
   // here"). If it's this item's countdown, the log's actual start moves with it (orig keeps the
   // first, as for a restart) and syncFromTimer keeps following it.

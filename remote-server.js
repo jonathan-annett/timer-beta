@@ -289,6 +289,11 @@ wss.on('connection', (ws, req) => {
     try { m = JSON.parse(raw); } catch (_) { return; }
     if (!m || typeof m !== 'object') return;
 
+    if (m.type === 'time') {                          // the timer's clock sync; no room or key needed
+      send(ws, { type: 'time', c: Number.isFinite(m.c) ? m.c : null, s: Date.now() });
+      return;
+    }
+
     if (!role && m.type === 'claim') {                // a computer typed a pairing code
       if (tooManyFails(ws.net)) { send(ws, { type: 'error', reason: 'too-many' }); return ws.close(); }
       const c = typeof m.code === 'string' && /^\d{6}$/.test(m.code) ? codes.get(m.code) : null;

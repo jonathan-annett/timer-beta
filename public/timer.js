@@ -238,7 +238,8 @@ custom_message.addEventListener('focus', function(){
   
   doc.addEventListener("contextmenu",function(e){ e.preventDefault();});
   addEventListener('storage',onLocalStorage);
-  
+  doc.addEventListener("clock-moved",onClockMoved);
+
 		   // Only key-macro buttons; others (deck, share) have their own click handlers
 		   [].forEach.call(document.querySelectorAll('div.buttons div.btn[data-keys]'),function(el){
 			  el.addEventListener('pointerdown',keyMacroClick);
@@ -995,6 +996,38 @@ custom_message.addEventListener('focus', function(){
 		  }});
 	  }
 	  displayUpdate();
+  }
+
+  // The clock was corrected (inettime.js): everything held on it moves too, so the countdown carries
+  // on exactly as it was and only the times of day change.
+  function onClockMoved(ev) {
+	  const delta = ev.detail;
+	  startedAt  += delta;
+	  endsAt     += delta;
+	  seekEndsAt += delta;
+	  writeNumber("startedAt", startedAt);
+	  writeNumber("endsAt", endsAt);
+	  writeNumber("seekEndsAt", seekEndsAt);
+	  if (pausedAt !== undefined) {
+		  pausedAt += delta;
+		  writeNumber("pausedAt", pausedAt);
+	  }
+	  // The tabs' heartbeats are on this clock too: without this a jump makes them look dead
+	  Object.keys(localStorage).filter(function(k){ return k.startsWith("tab_") || k.startsWith("controller_tab_"); }).forEach(function(k){
+		  writeNumber(k, Number(localStorage.getItem(k)) + delta);
+	  });
+	  lastHeartbeat = 0;
+	  lastUpdateTick = 0;
+
+	  startedDisp.textContent = local24HourTime(timeProvider.date(startedAt));
+	  endsDisp.textContent    = local24HourTime(timeProvider.date(seekEndsAt));
+	  if (timerAPI) {
+		  timerAPI.send({ setVariableValues: {
+			  startedAt: startedDisp.textContent,
+			  started_ms: startedAt,
+			  endsAt: endsDisp.textContent,
+		  }});
+	  }
   }
 
   function setPresenterMode() {
