@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Playout</title>
+  <style>
+    :root { --bg: #0b0b0b; --panel: #151515; --line: #2a2a2a; --text: #ddd; --dim: #888; --accent: #4aa8ff; --ok: #7fdc7f; --warn: #ffcc33; --bad: #ff8080; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font: 15px/1.45 "Helvetica Neue", Arial, sans-serif; }
+    [hidden] { display: none !important; }
+    main { max-width: 980px; margin: 0 auto; padding: 24px 16px 40px; }
+    h1 { font-size: 20px; margin: 0 0 4px; color: #fff; }
+    .sub { color: var(--dim); margin: 0 0 20px; }
+    button { font: inherit; color: var(--text); background: #222; border: 1px solid #444; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+    button:hover { background: #2c2c2c; }
+    button.primary { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
+    button.small { padding: 2px 8px; font-size: 13px; }
+    button:disabled { opacity: .4; cursor: default; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+
+    /* Pairing by code (as the overlay) */
+    #code { font: bold 44px/1.1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .3em; text-align: center; width: 100%; max-width: 360px;
+      background: #000; color: #fff; border: 2px solid #333; border-radius: 10px; padding: 10px 0 10px .3em; font-variant-numeric: tabular-nums; }
+    #code:focus { outline: none; border-color: var(--accent); }
+    .center { text-align: center; }
+    #codemsg { min-height: 1.5em; margin-top: 10px; }
+    .bad { color: var(--bad); } .ok { color: var(--ok); } .warn { color: var(--warn); }
+    details { margin-top: 14px; color: var(--dim); font-size: 13px; }
+    details input { width: 100%; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 6px; font: 13px monospace; }
+    #pinwait .pin { font: bold 26px "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; color: #fff; }
+
+    /* Paired */
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    #status { font-size: 13px; color: var(--dim); }
+    #status.ok { color: var(--ok); } #status.warn { color: var(--warn); }
+    #now { font-size: 13px; color: var(--dim); }
+    #now b { color: #fff; font-variant-numeric: tabular-nums; }
+    label.check { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+    body.manual #follow-note { color: var(--warn); }
+    .hint { color: var(--dim); font-size: 13px; }
+
+    /* The run sheet and each item's cues */
+    #items { list-style: none; margin: 0; padding: 0; }
+    #items > li { border-top: 1px solid var(--line); padding: 8px 4px; }
+    #items > li.now { background: #10243a; border-radius: 6px; }
+    #items > li.done .iname { color: var(--dim); }
+    .ihead { display: flex; gap: 10px; align-items: baseline; }
+    .iname { font-weight: bold; color: #fff; flex: 1; }
+    .idur { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+    .itag { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+    .cues { list-style: none; margin: 6px 0 0; padding: 0 0 0 14px; }
+    .cues li { display: flex; gap: 8px; align-items: center; font-size: 14px; padding: 2px 0; }
+    .cues .when { color: var(--dim); min-width: 11em; }
+    .cues .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cues li.fired .when::after { content: " · played"; color: var(--ok); }
+    .cues li.playing .fname { color: var(--ok); }
+    form.addcue { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 0 14px; font-size: 14px; }
+    form.addcue select, form.addcue input[type=text] { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 3px 6px; }
+    form.addcue input[type=text] { width: 5.5em; }
+
+    /* Output: video cues play here (full screen it, or capture this window into the vision mixer) */
+    #stage { position: relative; background: #000; aspect-ratio: 16 / 9; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    #stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    #stage:fullscreen { border: 0; border-radius: 0; }
+    #stage .idle { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #333; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Playout</h1>
+    <p class="sub">Plays your own audio and video as the timer's run sheet moves on: at an item's start, when its time is up, or at a time into it. Everything plays on this computer; the timer only starts the items.</p>
+
+    <section id="enter" class="card center" hidden>
+      <p>On the timer, open <b>share</b> and click <b>Pair a computer</b>. Type the 6-digit code it shows:</p>
+      <input id="code" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="······" aria-label="Pairing code">
+      <div id="codemsg"></div>
+      <details><summary>Pairing server</summary>
+        <input id="server" spellcheck="false" aria-label="Pairing server address">
+      </details>
+    </section>
+
+    <section id="paired" hidden>
+      <div id="pinwait" class="card center" hidden>
+        <p id="pinmsg">The timer asks who this is. Tell the person at the timer this number (or read it to them over the phone). One wrong try disconnects this computer.</p>
+        <div class="pin" id="pincode"></div>
+      </div>
+      <div class="card">
+        <div class="row"><span id="status">Connecting…</span><span id="now"></span></div>
+        <div class="row" style="margin-top:10px">
+          <label class="check"><input type="checkbox" id="follow" checked> Follow the timer</label>
+          <span id="follow-note" class="hint">Cues play by themselves as the run sheet moves on. Off: they only play when you press ▶.</span>
+          <button id="stopall" class="small">■ Stop all</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between"><b>Run sheet</b><span class="hint" id="rshint"></span></div>
+        <ul id="items"></ul>
+      </div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>Output</b><button id="full" class="small">Full screen (F)</button></div>
+        <div id="stage"><div class="idle">Video cues play here</div><video id="vid" playsinline></video></div>
+      </div>
+      <p class="hint">Paired with timer room <b id="room"></b>. <button id="unpair" class="small">Unpair this computer</button></p>
+    </section>
+  </main>
+  <script src="features.js?v=6f288f00"></script>
+  <script src="remote-peer.js?v=fd06de67"></script>
+  <script src="video-store.js?v=069f77d9"></script>
+  <script src="playout.js?v=46e798e6"></script>
+</body>
+</html>

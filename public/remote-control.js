@@ -223,7 +223,9 @@
   // own, so it's always as a presenter's (the device list's Make operator still works afterwards).
   // The server holds the sealed link until the glasses (perhaps in the background) collect it.
   const GLASSES = !!(window.TimerFeatures && TimerFeatures.glasses);
-  const ASSIST = !!(window.TimerFeatures && TimerFeatures.assist);   // the assist station: an alpha-only trial (features.js)
+  const ASSIST = !!(window.TimerFeatures && TimerFeatures.assist);
+  const STINGS = !!(window.TimerFeatures && TimerFeatures.stings);   // walk-up stings: an alpha-only trial (features.js)
+  const PLAYOUT = !!(window.TimerFeatures && TimerFeatures.playout); // playout computers (playout.html): an alpha-only trial   // the assist station: an alpha-only trial (features.js)
   const gl = { code: '', token: '', note: '', bad: false };
   const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
@@ -343,6 +345,7 @@
     // Even G2 glasses (the glasses/ app) say so in their hello, with the role they'd like. The
     // operator decides (approvePeer, setGlassesRole); the glasses' wish is only shown.
     if (m.t === 'hello' && m.client === 'g2') { e.client = 'g2'; e.wants = m.mode === 'operator' ? 'operator' : 'presenter'; }
+    if (m.t === 'hello' && m.client === 'playout' && PLAYOUT) e.client = 'playout';   // a playout computer (playout.html): a view-only device that gets the run sheet
     if (m.t === 'hello' && m.client === 'assist' && ASSIST) e.client = 'assist';   // the assist station (assist.html); without the trial, a plain view-only device
     if (!e.approved) {
       const known = m.t === 'hello' && typeof m.token === 'string' ? approvedEntry(m.token) : null;
@@ -384,6 +387,7 @@
       pushTo(e, true);
       if (e.client === 'g2') sendGlassesRole(e);
       else if (e.client === 'assist') { e.peer.send({ t: 'assist', state: e.assist || 'no' }); e.startSent = e.rsSent = undefined; sendAssistStart(e); }
+      else if (e.client === 'playout') { e.poSent = undefined; playoutWatch(); playoutPush(e); }
       else if (e.role === 'control' || e.role === 'admin') e.peer.send({ t: 'rs-edit', state: e.edit || 'no' });
       panelConnected();
     } else if (e.client === 'assist') {
@@ -629,6 +633,39 @@
     e.rsSent = raw;
     RemotePeer.sendBig(e.peer, out);
   }
+  // ─── Playout computers (playout.html; a trial: TimerFeatures.playout) ───────
+  // View-only devices that say client:'playout'. Besides the countdown (like any device) they get the
+  // run sheet with its ids, {t:'playout', items:[{id, n, d | e}], cur, run, at, on, fin, now} (run =
+  // the log's length: Next adds one, Back takes one off; at = the live item's actual start; now = this
+  // clock as it's sent, so they can tell how long ago that was). Sent when it changes: at once for
+  // Next and Back (the run sheet's bus variables), and on a slow poll for edits. What they do with it
+  // (play stings, videos, graphics) the timer neither knows nor controls.
+  let poTimer = null, poQueued = false;
+  function playoutData() {
+    const sheet = parseOr(localStorage.getItem('runsheet'), { items: [] });
+    const st = parseOr(localStorage.getItem('runsheet_state'), {});
+    const norm = window.RunsheetCore ? RunsheetCore.normalise(sheet) : { items: [] };
+    const items = norm.items.filter(it => !it.hidden).map(it => it.isEnd
+      ? { id: it.id, n: String(it.name || '').slice(0, 120), e: 1 }
+      : { id: it.id, n: String(it.name || '').slice(0, 120), d: it.eff });
+    const log = Array.isArray(st.log) ? st.log : [], last = log[log.length - 1];
+    const cur = st.active && !st.finished && typeof st.currentId === 'string' ? st.currentId : null;
+    return { items, cur, run: log.length, at: cur && last && last.id === cur ? last.actual : null, on: !!st.active, fin: !!st.finished };
+  }
+  function playoutPush(e) {
+    if (!e.approved || !e.peer) return;
+    const d = playoutData(), text = JSON.stringify(d);
+    if (text === e.poSent) return;
+    e.poSent = text;
+    RemotePeer.sendBig(e.peer, Object.assign({ t: 'playout', now: typeof timeProvider !== 'undefined' ? timeProvider.now() : Date.now() }, d));
+  }
+  const playoutPeers = () => [...peers.values()].filter(p => p.client === 'playout');
+  function playoutAll() { poQueued = false; playoutPeers().forEach(playoutPush); }
+  function playoutWatch() {
+    if (poTimer) return;
+    poTimer = setInterval(() => { if (playoutPeers().length) playoutAll(); else { clearInterval(poTimer); poTimer = null; } }, 1000);
+  }
+
   function rsSubscribe(e, on) {
     e.rsSub = on;
     if (!on) return;
@@ -646,6 +683,7 @@
     const known = new Map((current.items || []).filter(it => it && it.video && it.video.key).map(it => [it.video.key, it.video]));
     const knownDecks = new Map((current.items || []).filter(it => it && it.deck && it.deck.key).map(it => [it.deck.key, it.deck]));
     const knownHolds = new Map((current.items || []).filter(it => it && it.holding && it.holding.key).map(it => [it.holding.key, it.holding]));
+    const knownStings = new Map((current.items || []).filter(it => it && it.sting && (it.sting.key || it.sting.url)).map(it => [it.sting.key || it.sting.url, it.sting]));
     const ids = new Set();
     const items = [];
     const secs = (v, max) => (v == null ? null : num(v, 0, max));
@@ -663,6 +701,11 @@
       }
       if (it.deck && typeof it.deck === 'object' && knownDecks.has(it.deck.key)) out.deck = knownDecks.get(it.deck.key);   // likewise slides
       if (it.holding && typeof it.holding === 'object' && knownHolds.has(it.holding.key)) out.holding = knownHolds.get(it.holding.key);
+      // A walk-up sting: one already on the sheet (a file can't be made up), or a new link or stock sting (https only)
+      const st = STINGS && !out.video && it.sting && typeof it.sting === 'object' ? it.sting : null;
+      if (st && knownStings.has(st.key || st.url)) out.sting = knownStings.get(st.key || st.url);
+      else if (st && (st.src === 'link' || st.src === 'stock') && typeof st.url === 'string' && st.url.length <= 2048 && /^https:\/\//.test(st.url))
+        out.sting = { src: st.src, media: st.media === 'video' ? 'video' : 'audio', name: typeof st.name === 'string' ? st.name.slice(0, 200) : 'sting', url: st.url, duration: secs(st.duration, 3600) };
       items.push(out);
     }
     return { title: typeof s.title === 'string' ? s.title.slice(0, 200) : '', perItem: num(s.perItem, 1, 600) || 20, items };
@@ -674,12 +717,13 @@
     if (window.runsheet && window.runsheet.sheetChanged) window.runsheet.sheetChanged();
     // Videos no longer on the sheet (or in Recent videos) are removed from this browser
     const keep = new Set(sheet.items.filter(it => it.video).map(it => it.video.key));
-    sheet.items.forEach(it => { if (it.deck) keep.add(it.deck.key); if (it.holding) keep.add(it.holding.key); });
+    sheet.items.forEach(it => { if (it.deck) keep.add(it.deck.key); if (it.holding) keep.add(it.holding.key); if (it.sting && it.sting.key) keep.add(it.sting.key); });
     parseOr(localStorage.getItem('video_history'), []).forEach(h => { if (h && h.key) keep.add(h.key); });
     (before.items || []).forEach(it => {
       if (it && it.video && !keep.has(it.video.key) && window.videoStore) window.videoStore.remove(it.video.key).catch(() => {});
       if (it && it.deck && !keep.has(it.deck.key) && window.videoStore) window.videoStore.remove(it.deck.key).catch(() => {});
       if (it && it.holding && !keep.has(it.holding.key) && window.videoStore) window.videoStore.remove(it.holding.key).catch(() => {});
+      if (it && it.sting && it.sting.key && !keep.has(it.sting.key) && window.videoStore) window.videoStore.remove(it.sting.key).catch(() => {});
     });
     return text;
   }
@@ -763,10 +807,12 @@
     const norm = window.RunsheetCore ? RunsheetCore.normalise(sheet) : null;
     const row = norm && norm.items.find(it => it.id === m.id);
     const size = num(m.size, 1, MAX_VIDEO);
-    const kind = m.kind === 'deck' || m.kind === 'holding' ? m.kind : 'video';
-    if (kind !== 'video' && !PPTX) return fail('bad');
+    const kind = m.kind === 'deck' || m.kind === 'holding' || m.kind === 'sting' ? m.kind : 'video';
+    if ((kind === 'deck' || kind === 'holding') && !PPTX) return fail('bad');
+    if (kind === 'sting' && !STINGS) return fail('bad');
     const typeOk = kind === 'deck' ? typeof m.name === 'string' && /\.(pptx|ppsx|pptm|ppsm|ppt|pps|potx)$/i.test(m.name)
                  : kind === 'holding' ? typeof m.name === 'string' && /\.(png|jpe?g|bmp)$/i.test(m.name)
+                 : kind === 'sting' ? typeof m.type === 'string' && /^(audio|video)\//.test(m.type)
                  : typeof m.type === 'string' && /^video\//.test(m.type);
     if (!row || row.isEnd || size === null || !typeOk || !window.videoStore) return fail('bad');
     try {
@@ -803,7 +849,7 @@
   async function uploadFinish(e, u) {
     e.upload = null;
     const blob = new Blob(u.blobs.concat(u.chunks.length ? [new Blob(u.chunks)] : []), { type: u.type });
-    const key = (u.kind === 'deck' ? 'rsdeck:' : u.kind === 'holding' ? 'rsimg:' : 'rsvideo:') + u.id + ':' + Date.now();
+    const key = (u.kind === 'deck' ? 'rsdeck:' : u.kind === 'holding' ? 'rsimg:' : u.kind === 'sting' ? 'rssting:' : 'rsvideo:') + u.id + ':' + Date.now();
     try {
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
       await window.videoStore.put(key, blob);
@@ -818,6 +864,15 @@
       e.peer.send({ t: 'vup-done', up: u.up, key });
       return;
     }
+    if (u.kind === 'sting') {                                // a walk-up sting: the item keeps its own time
+      if (it.video) { window.videoStore.remove(key).catch(() => {}); e.peer.send({ t: 'vup-error', up: u.up, reason: 'bad' }); return; }
+      it.sting = { src: 'file', media: /^video\//.test(u.type) ? 'video' : 'audio', name: u.name.replace(/\.[A-Za-z0-9]{1,5}$/, ''), size: u.size, duration: u.duration ? Math.round(u.duration) : null, key };
+      if (!it.name) it.name = it.sting.name;
+      writeSheet(sheet);                                      // removes the item's old sting file too
+      e.peer.send({ t: 'vup-done', up: u.up, key });
+      return;
+    }
+    delete it.sting;                                          // a video or a walk-up sting, not both (writeSheet removes its file)
     const secs = u.duration ? Math.max(1, Math.floor(u.duration + 0.25)) : null;
     it.video = { key, name: u.name, size: u.size, duration: secs };
     if (!it.videoIdle) it.videoIdle = 'show';
@@ -921,6 +976,7 @@
           if (state[MAP[k][0]] !== val) { state[MAP[k][0]] = val; changed = true; }
         }
         if ((changed || deckPhones()) && peers.size) schedulePush();   // deck keys follow more variables
+        if (poTimer && !poQueued && Object.keys(v).some(k => k.startsWith('rs_'))) { poQueued = true; Promise.resolve().then(playoutAll); }   // Next, Back: playout computers hear at once
       },
     };
     if (window.StreamDeck) window.StreamDeck.onChange(() => { if (deckPhones()) schedulePush(); });

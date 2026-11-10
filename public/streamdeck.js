@@ -96,6 +96,7 @@
     video_play:       { label: '▶ Play\nvideo',   group: 'Video', cmd: () => _sendCmd({ cmd: 'videoplay' }) },
     video_stop:       { label: '■ Stop\nvideo',   group: 'Video', cmd: () => _sendCmd({ cmd: 'videostop' }) },
     video_rewind:     { label: '⟲ Rewind\nvideo', group: 'Video', cmd: () => _sendCmd({ cmd: 'videorewind' }) },
+    sting_fade:       { label: 'Fade\nsting',   group: 'Video', toggleState: 'sting_playing', cmd: () => _sendCmd({ cmd: 'stingfade' }) },   // lit while a walk-up sting plays
     pptx_close:       { label: '✕ Close\nslides', group: 'Video', pptx: true, cmd: () => _sendCmd({ cmd: 'pptxclose' }) },   // PowerPoint computers: holding slide shows
     empty:            { label: '',          group: 'Other',     cmd: null },
   };
@@ -132,6 +133,7 @@
     expired: false, impending: false, adjusting_up: false, adjusting_down: false,
     pausing: false, showbar: false, showtimenow: false, showmessages: false, quiet: false, preset_arm: false,
     video_cued: false, video_playing: false,    // from the bus's video_status
+    sting_playing: false,                       // a walk-up sting is playing (sting-player.js)
   };
 
   // Remaining time, from the timer's `remain` text ("M:SS" or "H:MM:SS"; counts up overtime

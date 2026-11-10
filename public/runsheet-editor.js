@@ -528,8 +528,19 @@
       td.innerHTML = `<span class="vbusy">${REMOTE ? `sending video… ${sending.get(item.id) || 0}%` : 'copying video…'}</span>`;
       return;
     }
+    if (item.sting && STINGS) {
+      const st = item.sting;
+      td.innerHTML = `<span class="vicon">${st.media === 'video' ? '🎞' : '🎵'}</span> <span class="vdur"></span>` +
+        (st.key ? '' : ' <span class="sweb" title="Not kept in the timer’s browser (yet): it plays from its link, so it needs the internet">⚠</span>') +
+        `<button class="vdel" data-act="sdel" tabindex="-1" title="Remove the walk-up sting">✕</button>`;
+      td.title = 'Walk-up sting: ' + st.name + (st.src === 'stock' ? ' (stock)' : st.src === 'link' ? '\n' + st.url : '') + '\nPlays as the item starts; the item keeps its own time.';
+      td.querySelector('.vdur').textContent = st.duration ? C.formatDuration(st.duration) : '';
+      return;
+    }
     if (!item.video) {
-      td.innerHTML = `<button class="vadd" data-act="vadd" tabindex="-1" title="Play a video for this item (or drop a video file on the row)">+ video</button>`;
+      td.innerHTML = `<button class="vadd" data-act="vadd" tabindex="-1" title="Play a video for this item: the item runs as long as the video (or drop a video file on the row)">+ video</button>` +
+        (STINGS ? `<button class="vadd sadd" data-act="sadd" tabindex="-1" title="A walk-up sting: music or a video that plays as the item starts, while the item keeps its own time (or drop an audio file on the row)">+ sting</button>` : '');
+      td.title = '';
       return;
     }
     const v = item.video;
@@ -573,6 +584,7 @@
       const it = sheet.items.find(x => x.id === id);          // the sheet may have been reloaded meanwhile
       if (!it) { window.videoStore.remove(key); return; }
       if (it.video) window.videoStore.remove(it.video.key).catch(() => {});
+      if (it.sting) { if (it.sting.key) window.videoStore.remove(it.sting.key).catch(() => {}); delete it.sting; }   // a video or a sting, not both
       const secs = duration ? Math.max(1, Math.floor(duration + 0.25)) : null;
       it.video = { key, name: noExt(file.name), size: file.size, duration: secs };
       if (!it.videoIdle) it.videoIdle = 'show';
@@ -611,6 +623,117 @@
     delete item.video; delete item.videoIdle;
     saveSheet();
   }
+
+  // ─── Walk-up stings (a trial: TimerFeatures.stings) ─────────────────────────
+  // Music or a video that plays as the item starts (sting-player.js, on the timer's computer); the
+  // item keeps its own time, unlike a video. item.sting {src: 'file'|'link'|'stock', media:
+  // 'audio'|'video', name, duration, key?, url?, size?}: a file is kept in the browser like videos
+  // ('rssting:'); a link or stock sting is copied there by the timer (runsheet.js keepStings).
+  const STINGS = !!(window.TimerFeatures && TimerFeatures.stings);
+  const isMedia = f => !!f && /^(audio|video)\//.test(f.type || '');
+  const mediaOf = name => /\.(mp4|m4v|webm|mov|ogv)(\?|#|$)/i.test(name || '') ? 'video' : 'audio';
+  let stockList = null;
+  function stockStings() {
+    if (!stockList) stockList = fetch('stock-stings.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : { stings: [] }).then(j => {
+      const base = new URL('stock-stings.json', location.href);
+      return (Array.isArray(j && j.stings) ? j.stings : []).map(x => {
+        try {
+          const url = new URL(String(x.url || ''), base).href;
+          return /^https:/.test(url) && x.name ? { name: String(x.name).slice(0, 200), url, media: x.media === 'video' ? 'video' : x.media === 'audio' ? 'audio' : mediaOf(url), duration: Number.isFinite(x.duration) ? Math.round(x.duration) : null } : null;
+        } catch (_) { return null; }
+      }).filter(Boolean);
+    }).catch(() => []);
+    return stockList;
+  }
+  function probeUrl(url, media) {
+    return new Promise(resolve => {
+      const el = document.createElement(media === 'video' ? 'video' : 'audio');
+      el.preload = 'metadata';
+      el.onloadedmetadata = () => resolve(isFinite(el.duration) ? Math.round(el.duration) : null);
+      el.onerror = () => resolve(null);
+      el.src = url;
+      setTimeout(() => resolve(null), 8000);
+    });
+  }
+  function setSting(id, sting) {
+    const it = sheet.items.find(x => x.id === id);
+    if (!it) return;
+    if (!REMOTE && it.sting && it.sting.key && it.sting.key !== sting.key && window.videoStore) window.videoStore.remove(it.sting.key).catch(() => {});
+    it.sting = sting;
+    if (!it.name) it.name = sting.name;
+    saveSheet();
+  }
+  async function stingDialog(id) {
+    if (!canEdit) return refused();
+    const stock = await stockStings();
+    const html = '<b>Walk-up sting</b><p class="sting-note">Plays as this item starts, on the timer’s computer. The item keeps its own time.</p>' +
+      (stock.length ? '<label class="sting-field">Stock sting <select id="sting-stock">' +
+        stock.map((x, i) => `<option value="${i}">${esc(x.name)}${x.duration ? ' · ' + C.formatDuration(x.duration) : ''}${x.media === 'video' ? ' (video)' : ''}</option>`).join('') + '</select></label>' : '') +
+      '<label class="sting-field">A link <input id="sting-url" type="url" placeholder="https://…/walk-up.mp3" spellcheck="false"></label>';
+    const answer = ask(html, [
+      ...(stock.length ? [{ label: 'Use the stock sting', value: 'stock', kind: 'primary' }] : []),
+      { label: 'Use the link', value: 'link' }, { label: 'Choose a file…', value: 'file' }, { label: 'Cancel', value: null, cancel: true }]);
+    const sel = document.getElementById('sting-stock'), urlIn = document.getElementById('sting-url');   // (read before the dialog goes)
+    let typed = '';
+    if (urlIn) urlIn.addEventListener('input', () => { typed = urlIn.value.trim(); });
+    let chosen = 0;
+    if (sel) sel.addEventListener('change', () => { chosen = Number(sel.value) || 0; });
+    const v = await answer;
+    if (v === 'file') { pickFor = id; stingPicker.click(); return; }
+    if (v === 'stock' && stock[chosen]) { const x = stock[chosen]; setSting(id, { src: 'stock', media: x.media, name: x.name, url: x.url, duration: x.duration }); return; }
+    if (v === 'link') {
+      let url;
+      try { url = new URL(typed); } catch (_) { url = null; }
+      if (!url || url.protocol !== 'https:') { alert('Type a link starting with https:// to an audio or video file.'); return; }
+      const media = mediaOf(url.pathname);
+      const name = noExt(decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || url.hostname)).slice(0, 200);
+      setSting(id, { src: 'link', media, name, url: url.href, duration: await probeUrl(url.href, media) });
+    }
+  }
+  async function attachSting(id, file) {
+    const item = sheet.items.find(it => it.id === id);
+    if (!item || !file) return;
+    if (!isMedia(file)) { alert('That isn’t an audio or video file.'); return; }
+    if (!canEdit) return refused();
+    if (item.video) { alert('This item has a video. Remove it first: an item has a video or a walk-up sting, not both.'); return; }
+    const media = file.type.startsWith('video/') ? 'video' : 'audio';
+    if (REMOTE) {
+      if (!link.online) { alert('Not connected to the timer right now.'); return; }
+      if (!link.lan) { alert('A sting file can only be sent to the timer over a direct link on the same network (the badge at the top shows ⚡ LAN direct). A stock sting or a link works from anywhere.'); return; }
+      if (busy.size) { alert('Wait for the file being sent to finish first.'); return; }
+      busy.add(id); sending.set(id, 0); renderAll();
+      const duration = await probeDuration(file);
+      toParent({ t: 'rs-video', kind: 'sting', id, file, name: noExt(file.name), duration });
+      return;
+    }
+    if (!window.videoStore) { alert('Stings can’t be stored in this browser.'); return; }
+    busy.add(id); renderAll();
+    try {
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+      const duration = await probeDuration(file);
+      const key = 'rssting:' + id + ':' + Date.now();
+      await window.videoStore.put(key, file);
+      if (!sheet.items.find(x => x.id === id)) { window.videoStore.remove(key); return; }
+      setSting(id, { src: 'file', media, name: noExt(file.name).slice(0, 200), size: file.size, duration: duration ? Math.round(duration) : null, key });
+    } catch (err) {
+      alert('Couldn’t store the sting in this browser: ' + (err && err.message || err));
+    } finally {
+      busy.delete(id);
+      renderAll();
+    }
+  }
+  function removeSting(id) {
+    const item = sheet.items.find(it => it.id === id);
+    if (!item || !item.sting) return;
+    if (!confirm(`Remove the walk-up sting "${item.sting.name}" from this item?`)) return;
+    if (!REMOTE && item.sting.key && window.videoStore) window.videoStore.remove(item.sting.key).catch(() => {});
+    delete item.sting;
+    saveSheet();
+  }
+  const stingPicker = document.createElement('input');
+  stingPicker.type = 'file'; stingPicker.accept = 'audio/*,video/*'; stingPicker.hidden = true;
+  document.body.appendChild(stingPicker);
+  stingPicker.addEventListener('change', () => { const f = stingPicker.files[0]; stingPicker.value = ''; if (f && pickFor) attachSting(pickFor, f); });
 
   // ─── Slides (PowerPoint decks and holding slides) ──────────────────────────
   // A deck on an item opens on the PowerPoint computers when Next reaches it; a holding slide (an
@@ -700,11 +823,11 @@
   function cleanUpVideos() {
     if (REMOTE || !window.videoStore) return;
     const used = new Set(sheet.items.filter(it => it.video).map(it => it.video.key));
-    sheet.items.forEach(it => { if (it.deck) used.add(it.deck.key); if (it.holding) used.add(it.holding.key); });
+    sheet.items.forEach(it => { if (it.deck) used.add(it.deck.key); if (it.holding) used.add(it.holding.key); if (it.sting && it.sting.key) used.add(it.sting.key); });
     // Videos in the timer's Recent videos list stay until they drop off it (video-library.js)
     try { (JSON.parse(localStorage.getItem('video_history') || '[]') || []).forEach(e => { if (e && e.key) used.add(e.key); }); } catch (_) { /* ignore */ }
     window.videoStore.keys().then(keys => keys.forEach(k => {
-      if (/^rs(video|deck|img):/.test(String(k)) && !used.has(k)) window.videoStore.remove(k).catch(() => {});
+      if (/^rs(video|deck|img|sting):/.test(String(k)) && !used.has(k)) window.videoStore.remove(k).catch(() => {});
     })).catch(() => {});
   }
 
@@ -730,10 +853,12 @@
     tbodyEl.querySelectorAll('tr.vdrop').forEach(r => r.classList.remove('vdrop'));
     if (!tr || tr.classList.contains('endrow') || tr.classList.contains('locked')) return;
     const list = Array.from(e.dataTransfer.files || []);
-    const f = list.find(x => x.type.startsWith('video/')) || (PPTX && (list.find(isDeck) || list.find(isHolding)));
+    const f = list.find(x => x.type.startsWith('video/')) || (STINGS && list.find(x => x.type.startsWith('audio/'))) || (PPTX && (list.find(isDeck) || list.find(isHolding)));
     if (!f) return;
     e.preventDefault();
-    if (f.type.startsWith('video/')) attachVideo(tr.dataset.id, f); else attachDeck(tr.dataset.id, f);
+    if (f.type.startsWith('video/')) attachVideo(tr.dataset.id, f);
+    else if (f.type.startsWith('audio/')) attachSting(tr.dataset.id, f);   // music: a walk-up sting
+    else attachDeck(tr.dataset.id, f);
   });
   // Before-play setting
   tbodyEl.addEventListener('change', e => {
@@ -1156,6 +1281,12 @@
         break;
       case 'vdel':
         removeVideo(id);
+        break;
+      case 'sadd':
+        stingDialog(id);
+        break;
+      case 'sdel':
+        removeSting(id);
         break;
       case 'dadd':
         pickFor = id; deckPicker.click();

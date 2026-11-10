@@ -26,6 +26,7 @@
   if (typeof RunsheetCore === 'undefined') return;
 
   const C = RunsheetCore;
+  const STINGS = !!(window.TimerFeatures && TimerFeatures.stings);   // walk-up stings: an alpha-only trial (features.js, sting-player.js)
   const SHEET_KEY = 'runsheet', STATE_KEY = 'runsheet_state', CMD_KEY = 'runsheet_cmd', LIVE_KEY = 'runsheet_live';
   const ON_TIME_SEC = 30;        // within this many seconds counts as "on time"
   const MAX_HISTORY = 200;
@@ -111,8 +112,11 @@
     api({ cmd: 'itemmessage', text: it.name });
     api({ cmd: 'custommessage', text: '' });
     api({ cmd: 'quiet', on: false });
-    if (it.video) playItemVideo(it);              // the player restarts the timer at the video's length
+    // A walk-up sting plays on into the items after it (an introduction over it, then the speaker's
+    // countdown) until another sting or a video item starts (the owner's call), or the operator fades it
+    if (it.video) { stopStings(); playItemVideo(it); }   // the player restarts the timer at the video's length
     else stopRunsheetVideo();                     // moving on from a video item stops its video
+    if (STINGS && it.sting && !it.video) playSting(it);   // a walk-up sting: plays over the start, the item keeps its time (it stops the last one)
     // Slides: every PowerPoint machine sets the item's holding slide as its wallpaper and opens its
     // deck. An item without a deck leaves the last one on screen.
     if ((it.deck || it.holding) && window.pptxHub) window.pptxHub.start(it);
@@ -220,9 +224,11 @@
   function back() {
     if (!isActive()) return false;
     if (debounced()) return false;
+    const undone = state.currentId;
     const h = state.history.pop();
     if (!h) { flash('Nothing to go back to'); return false; }
     stopRunsheetVideo();                          // undoing a video item stops it (it's then cued again)
+    stopStings(undone);                           // and its walk-up sting stops at once (one from an earlier item plays on)
     if (h.timer) api({ cmd: 'restore', state: h.timer });
     if (h.timer && h.timer.standby && h.index < 0) { state.standby = true; sendStandby(); }   // back to before the show: standing by again
     state.index = h.index; state.currentId = h.currentId; state.finished = h.finished;
@@ -487,6 +493,7 @@
     if (!state.active && state.standby) { state.standby = false; api({ cmd: 'standby', on: false }); }
     if (was && !state.active) {
       stopRunsheetVideo();
+      stopStings();
       api({ cmd: 'itemmessage', text: '' });
       if (state.ownDefault > 0) api({ cmd: 'default', msecs: state.ownDefault });
       state.ownDefault = null;
@@ -498,6 +505,7 @@
   }
 
   function commit() {
+    keepStings();
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
     render();
     preloadNext();
@@ -547,19 +555,64 @@
   function stopRunsheetVideo() {
     const p = vp();
     const st = p && p.state();
-    if (st && st.playing && st.playing.tag) p.stop({ quiet: true });
+    if (st && st.playing && st.playing.tag && !st.playing.sting) p.stop({ quiet: true });   // (a sting plays on: stopStings)
+  }
+
+  // ─── Walk-up stings (sting-player.js) ──────────────────────────────────────
+  function playSting(it) {
+    const sp = window.stingPlayer;
+    if (!sp) return;
+    sp.play(it).then(r => {
+      if (r === 'no-player') flash(`"${it.name}" has a video sting: click "video" to open the player window`);
+      else if (r === 'missing') flash(`The walk-up sting for "${it.name}" isn't stored in this browser. Add it again in the run sheet editor.`);
+    });
+  }
+  function stopStings(itemId) { if (STINGS && window.stingPlayer) window.stingPlayer.stop(itemId); }   // itemId: only that item's
+
+  // Link and stock stings are copied into this browser, so the show doesn't need the internet.
+  // Their server has to allow it (CORS); if it doesn't, the sting plays from its link while online.
+  const stingFetches = new Set();
+  function keepStings() {
+    if (!STINGS || !window.videoStore) return;
+    for (const it of sheet.items) {
+      const s = it.sting;
+      if (!s || s.key || !s.url || stingFetches.has(s.url)) continue;
+      const url = s.url;
+      stingFetches.add(url);
+      fetch(url, { mode: 'cors' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); }).then(async blob => {
+        const key = 'rssting:' + it.id + ':' + Date.now();
+        await window.videoStore.put(key, blob);
+        sheet = readJSON(SHEET_KEY, sheet);                // the editor may have saved meanwhile
+        const now = sheet.items.find(x => x.id === it.id);
+        if (!now || !now.sting || now.sting.url !== url || now.sting.key) { window.videoStore.remove(key).catch(() => {}); return; }
+        now.sting.key = key;
+        if (!now.sting.size) now.sting.size = blob.size;
+        writeSheet();
+        stingFetches.delete(url);                          // (kept: if a later save loses the key, it's fetched again)
+        commit();
+      }).catch(err => console.warn('Walk-up sting not kept in this browser (it plays from its link):', url, err));
+    }
   }
 
   // Cue the next item's video, or drop a run sheet video that's cued but no longer next.
   // Never replaces a dropped (ad hoc) video that's waiting to play.
   let preloadFor = null;
   function preloadNext() {
+    const nj = !isActive() || state.finished ? -1 : nextIndex(state.index);
+    const nit = nj >= 0 ? norm.items[nj] : null;
+    const sting = STINGS && nit && nit.sting && !nit.video ? nit.sting : null;
+    if (sting && sting.media !== 'video' && window.stingPlayer) window.stingPlayer.preload(nit);
     const p = vp();
     if (!p || !p.isOpen() || !isActive() || pendingPlay) return;
-    const nj = state.finished ? -1 : nextIndex(state.index);
-    const it = nj >= 0 ? norm.items[nj] : null;
+    const it = nit;
     const st = p.state();
     if (st.cued && !st.cued.tag) return;                        // a dropped video is cued
+    if (sting && sting.media === 'video') {                    // the next item's video sting, cued in the player
+      if ((st.cued && st.cued.tag === 'sting:' + it.id) || preloadFor === it.id) return;
+      preloadFor = it.id;
+      window.stingPlayer.preload(it).finally(() => { preloadFor = null; });
+      return;
+    }
     if (!it || !it.video) {
       if (st.cued && st.cued.tag && st.cued.tag !== state.currentId) p.unloadCued();
       preloadFor = null;
