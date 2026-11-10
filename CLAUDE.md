@@ -90,7 +90,7 @@ timer_build/
     ├── assist-asr.js       Its transcriber: a module worker running Whisper (transformers.js 3.8.1 from jsDelivr, models from Hugging Face; WebGPU, else WebAssembly)
     ├── dropPlayer.js       Video player window + window.videoPlayer API (two slots: playing + cued); drop to load
     ├── sting-player.js     Walk-up stings on run sheet items (window.stingPlayer; an alpha-only trial)
-    ├── stock-stings.json   The stock stings the editor offers (+ sting): {stings: [{name, url, media, duration}]}
+    ├── stock-stings.json   The stock stings the editor offers (+ sting): {stings: [{name, url, media, duration}]}; the hosted site serves its own list instead (kept with the files in its storage)
     ├── video-store.js      window.videoStore: run sheet video files kept in IndexedDB (timer + editor)
     ├── video-library.js    Video panel (the video button): player window, browse, Recent videos (window.videoLibrary)
     ├── elementcolors.js    CSS custom property colour helpers
