@@ -267,15 +267,16 @@ var StingClip = (function () {
 
   // ─── The clip editor ──────────────────────────────────────────────────────
   const CSS = `
-.sc-wrap { position: fixed; inset: 0; z-index: 2147482000; background: rgba(0,0,0,.65); display: flex; align-items: center; justify-content: center; }
-.sc-box { width: min(60rem, 94vw); background: #151515; border: 1px solid #333; border-radius: 0.6rem; padding: 1rem 1.2rem; color: #ddd;
+.sc-wrap { position: fixed; inset: 0; z-index: 2147482000; background: rgba(0,0,0,.65); display: flex; overflow: auto; }
+/* centred, but never taller than the window (a docked run sheet editor is short): it scrolls inside, the buttons stay at its foot */
+.sc-box { margin: auto; max-height: calc(100vh - 1rem); overflow-y: auto; width: min(60rem, 94vw); box-sizing: border-box; background: #151515; border: 1px solid #333; border-radius: 0.6rem; padding: 1rem 1.2rem; color: #ddd;
   font: 0.95rem/1.4 "Helvetica Neue", Arial, sans-serif; box-shadow: 0 0.6rem 2rem rgba(0,0,0,.6); }
 .sc-head { display: flex; align-items: baseline; gap: 0.6rem; margin-bottom: 0.6rem; }
 .sc-head b { color: #fff; font-size: 1.05rem; }
 .sc-head .sc-src { color: #888; font-size: 0.85rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-box canvas { display: block; width: 100%; background: #0a0a0a; border: 1px solid #2a2a2a; border-radius: 0.3rem; cursor: crosshair; }
-.sc-over { height: 4.2rem; margin-bottom: 0.4rem; }
-.sc-zoom { height: 8rem; }
+.sc-over { height: min(4.2rem, 9vh); margin-bottom: 0.4rem; }
+.sc-zoom { height: min(8rem, 17vh); }
 .sc-zcap { display: flex; gap: 0.6rem; align-items: center; color: #888; font-size: 0.8rem; margin: 0.1rem 0 0.2rem; min-height: 1.5rem; }
 .sc-box .sc-zcap button { padding: 0.05rem 0.5rem; font-size: 0.8rem; }
 .sc-box canvas.sc-grab { cursor: ew-resize; }
@@ -300,7 +301,9 @@ var StingClip = (function () {
 .sc-box button:hover { background: #2c2c2c; }
 .sc-box button:disabled { opacity: .45; cursor: default; }
 .sc-box button.sc-primary { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
-.sc-btns { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 0.8rem; }
+.sc-btns { display: flex; gap: 0.6rem; justify-content: flex-end; margin: 0.8rem -1.2rem -1rem; padding: 0.6rem 1.2rem 1rem;
+  position: sticky; bottom: -1rem; background: #151515; border-top: 1px solid #262626; }
+@media (max-height: 640px) { .sc-hint { display: none; } .sc-box { padding-top: 0.6rem; } .sc-row { margin: 0.3rem 0; } }
 .sc-btns .sc-grow { flex: 1; }
 .sc-msg { color: #e0b030; min-height: 1.2em; }
 .sc-box [hidden] { display: none !important; }`;

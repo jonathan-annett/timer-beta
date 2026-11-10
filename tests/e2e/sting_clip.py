@@ -294,13 +294,19 @@ with sync_playwright() as p:
     check("… its file is in the library's store", e.evaluate("(async () => !!(await videoStore.get('lib:my-track.wav:%d')))()" % os.path.getsize(mytrack)))
 
     # levels: the clip's loudness, a trim, the timer playing it down to the level; the line-up tone; levelling the show
+    # (in a short window, as a docked run sheet editor is: the editor fits and its buttons stay on screen)
+    e.set_viewport_size({"width": 1280, "height": 480})
     e.click(row("e") + " button[data-act=strim]"); e.wait_for_timeout(1500)
+    bx, sv = e.locator(".sc-box").bounding_box(), e.locator(".sc-save").bounding_box()
+    check("a short window: the clip editor fits, Save on screen", bx["y"] >= 0 and bx["y"] + bx["height"] <= 480 + 1 and sv["y"] >= 0 and sv["y"] + sv["height"] <= 480 + 1, (bx, sv))
+    e.screenshot(path=OUTDIR + "/clip_short.png")
     l = e.evaluate("document.querySelector('.sc-wrap').__lufs()")
     check("the clip editor measures the clip's loudness (a -12 dBFS tone: about -12 LUFS)", l is not None and -13.5 < l < -11, l)
     e.wait_for_timeout(400)
     check("… and says it plays down at the house level", "LUFS" in e.inner_text(".sc-loud") and "-23.0" in e.inner_text(".sc-loud"), e.inner_text(".sc-loud"))
     e.fill(".sc-ms[data-k=trimdb]", "-6"); e.press(".sc-ms[data-k=trimdb]", "Tab"); e.click(".sc-save"); e.wait_for_timeout(600)
     if e.locator(".ask").count(): e.click(".ask button:has-text('Just this item')"); e.wait_for_timeout(400)
+    e.set_viewport_size({"width": 1280, "height": 800})
     s = sheet()["e"]
     check("… Save keeps its loudness and the trim on the sting", s and abs(s.get("lufs", 0) - l) < 0.15 and abs(s.get("volume", 0) - 0.5012) < 0.001, s)
     t.evaluate("window.stingPlayer.play(JSON.parse(localStorage.runsheet).items.find(x => x.id === 'e'))"); t.wait_for_timeout(600)
