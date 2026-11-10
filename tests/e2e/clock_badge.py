@@ -104,7 +104,9 @@ with sync_playwright() as p:
     # A specific time: an hour and a half ahead of this computer
     target = t.evaluate("(d => [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2,'0')).join(':'))(new Date(Date.now() + 5400000))")
     t.fill("#clock-panel .cp-set input", target)
-    t.click("#clock-panel .cp-apply")
+    box = t.locator("#clock-panel .cp-apply").bounding_box()   # a person's press: the button is held down for a moment
+    t.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    t.mouse.down(); t.wait_for_timeout(500); t.mouse.up()
     check("manual: set time", abs(offset() - 5400000) < 1500, offset())
     check("manual: correction shown", corr()[:6] in ("+1:30:", "+1:29:"), corr())
     t.wait_for_timeout(300)

@@ -80,7 +80,7 @@ html.reduced #clock-badge, html.reduced #clock-panel { display: none; }`;
   badge.addEventListener('click', () => { badge.blur(); toggle(); });
   document.body.appendChild(badge);
 
-  let panel = null, ticker = null;
+  let panel = null, ticker = null, typed = false;   // typed: the time box holds what the operator typed, not the clock
   const $ = sel => panel.querySelector(sel);
 
   function panelEl() {
@@ -106,6 +106,7 @@ html.reduced #clock-badge, html.reduced #clock-panel { display: none; }`;
         <div class="cp-steps">${STEPS.map(([ms, name]) => `<button class="cp-btn" data-ms="${ms}">${name}</button>`).join('')}</div>
       </div>`;
     document.body.appendChild(panel);
+    $('.cp-set input').addEventListener('input', () => { typed = true; });
     panel.addEventListener('change', e => { if (e.target.name === 'clock-mode') timeProvider.setMode(e.target.value); });
     panel.addEventListener('click', e => {
       if (e.target.closest('button, input[type=radio]')) e.target.blur();   // the timer's keys keep working
@@ -135,6 +136,7 @@ html.reduced #clock-badge, html.reduced #clock-panel { display: none; }`;
     let offset = target.getTime() - Date.now();
     if (offset > DAY / 2) offset -= DAY;
     if (offset < -DAY / 2) offset += DAY;
+    typed = false;
     timeProvider.setManual(offset);
   }
 
@@ -175,12 +177,13 @@ html.reduced #clock-badge, html.reduced #clock-panel { display: none; }`;
     $('.cp-corr').textContent = correction(timeProvider.error);
     $('.cp-now').textContent = clock(now);
     const input = $('.cp-set input');
-    if (document.activeElement !== input) input.value = clock(now);
+    if (document.activeElement !== input && !typed) input.value = clock(now);
   }
 
   function close() {
     if (!panel || panel.hidden) return;
     panel.hidden = true;
+    typed = false;
     clearInterval(ticker);
     if (panel.contains(document.activeElement)) document.activeElement.blur();
   }
