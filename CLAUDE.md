@@ -74,7 +74,7 @@ timer_build/
     ├── control.js          Its logic
     ├── jsQR.js             QR decoder for the phone's Admin scanner (third-party, Apache-2.0; jsQR-LICENSE.txt)
     ├── qrcode.min.js       QR code generator (qrcodejs 1.0.0, third-party, MIT; qrcode-LICENSE.txt), loaded on demand by the share panel and the phone
-    ├── features.js         Trial features (TimerFeatures): PowerPoint computers, the share panel's Glasses box and the assist station, on for alpha.* and localhost only
+    ├── features.js         Trial features (TimerFeatures): PowerPoint computers and the assist station on for alpha.* and localhost only; the share panel's Glasses box there and on beta (the glasses' server)
     ├── fsapi.js            Fullscreen API abstraction (cross-browser)
     ├── inettime.js         The clock (timeProvider): internet / local / manual offset, synced by the pairing server's `time` message, else public time servers
     ├── clock-panel.js      The controller's clock badge and its panel

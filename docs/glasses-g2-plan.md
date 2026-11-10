@@ -18,7 +18,7 @@ Decisions since this plan was written (they override the sections below):
   it's a solo presenter; shows with an operator use the share code and its role choice). No
   proximity number (only the wearer can read the code). The link comes sealed for the glasses' key and
   waits on the server until the Even app is back. Pairing server protocol 7 (*Device codes* in CLAUDE.md).
-  The share panel's Glasses box is alpha-only (`TimerFeatures.glasses`). Still open for one-phone use:
+  The share panel's Glasses box (`TimerFeatures.glasses`) is on for alpha, localhost and beta (since 10 Nov 2026, with the real app's 0.1.22; the glasses' codes live on beta's server). Still open for one-phone use:
   the timer runs only while its browser is in front (sharing now keeps the screen on); whether the Even
   app keeps the glasses' socket in the background is untested.
 - **Pairing = the friend-code route** (`RemotePeer.claim`'s protocol), not a new claim/give
