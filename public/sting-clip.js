@@ -150,7 +150,7 @@ var StingClip = (function () {
           <button class="sc-play">▶ Play the part</button><button class="sc-first" title="Its first 2 seconds, with the fade in">▶ First 2 s</button><button class="sc-last" title="The 2 seconds before the fade out begins, then the fade (or just the last 2 seconds)">▶ Last 2 s</button><button class="sc-lead" title="From 2 seconds before the start: hear the lead-in">▶ From 2 s before</button><button class="sc-stop">■</button>
           <label>Name <input class="sc-name" spellcheck="false"></label>
         </div>
-        <div class="sc-row sc-hide" hidden><label><input type="checkbox" class="sc-hideorig"> Hide “<span class="sc-orig"></span>” from + sting: use this clip instead</label></div>
+        <div class="sc-row sc-hide" hidden><label><input type="checkbox" class="sc-hideorig"> Hide the whole “<span class="sc-orig"></span>” from + sting (its clips are offered instead)</label></div>
         <div class="sc-msg"></div>
         <div class="sc-btns"><button class="sc-whole">Whole track</button><span class="sc-grow"></span><button class="sc-cancel">Cancel</button><button class="sc-save sc-primary">Save</button></div>
       </div>`;

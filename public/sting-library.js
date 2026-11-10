@@ -111,14 +111,17 @@ var StingLibrary = (function () {
       const part = r ? (r.start != null || r.end != null ? t2(r.start || 0) + '–' + (r.end != null ? t2(r.end) : 'end') : 'whole track') + (r.fadeIn ? ' · in ' + r.fadeIn + ' ms' : '') + (r.fadeOut ? ' · out ' + r.fadeOut + ' ms' : '') : 'whole track';
       return `<li data-i="${i}"><button class="small" data-a="play" title="Hear it">${playingId === 'm' + i ? '■' : '▶'}</button>` +
         `<span class="name" title="${esc(e.name)}">${esc(e.name)}</span>` +
-        `<span class="meta">${esc(e.stock ? 'stock: ' + e.stock : e.file ? e.file : 'link')} · ${esc(part)} · ${esc(len(e))}${e.hideOriginal ? ' · replaces it in + sting' : ''}</span>` +
+        `<span class="meta">${esc(e.stock ? 'stock: ' + e.stock : e.file ? e.file : 'link')} · ${esc(part)} · ${esc(len(e))}${e.hideOriginal ? ' · hides the whole track in + sting' : ''}</span>` +
         (missing(e) ? '<span class="need" title="Imported: the file isn’t on this computer yet">⚠ needs the file</span>' : '') +
         `<button class="small" data-a="edit" title="Change the part">✂</button><button class="small" data-a="del" title="Remove">✕</button></li>`;
     }).join('') || '<li class="empty">No clips yet. Make one from a stock sting below, or from a file of your own.</li>';
     $('find').hidden = !mine.some(missing);
     const hid = L.hidden(stock, mine);
+    // A song can give several clips (a different middle is a sting too): how many it has, the site's and mine
+    const nClips = s => StingClip.region(s) ? mine.filter(e => e.stock === s.name).length
+      : stock.filter(c => c !== s && StingClip.region(c) && c.url === s.url).length + mine.filter(e => e.stock === s.name).length;
     $('stock').innerHTML = stock.map((s, i) => `<li data-s="${i}"${hid.has(i) ? ' class="hid"' : ''}><button class="small" data-a="play">${playingId === 's' + i ? '■' : '▶'}</button>` +
-      `<span class="name">${esc(s.name)}</span><span class="meta">${esc(len(s))}${StingClip.region(s) ? ' · a clip' : ''}${hid.has(i) ? ' · hidden from + sting (a clip replaces it)' : ''}</span>` +
+      `<span class="name">${esc(s.name)}</span><span class="meta">${esc(len(s))}${StingClip.region(s) ? ' · a clip' : ''}${nClips(s) ? ' · ' + nClips(s) + (nClips(s) === 1 ? ' clip' : ' clips') : ''}${hid.has(i) ? ' · original hidden from + sting' : ''}</span>` +
       `<button class="small" data-a="clip" title="Make a clip of it">✂</button></li>`).join('') || '<li class="empty">This site has no stock stings.</li>';
   }
 

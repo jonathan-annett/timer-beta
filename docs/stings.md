@@ -39,7 +39,7 @@ A guest brings a song and wants five seconds of it. Click **✂** on an item's s
 ] }
 ```
 
-A clip of a stock sting can **hide the original** (ticked by default when you make one): while the clip exists, **+ sting** offers the clip and not the whole track, so nobody picks the original by mistake. Delete the clip (or untick it) and the original is offered again. In the file it's `"hideOriginal": true`; the site's own clips can carry it too, for a better edit of a song with an odd start or end.
+A clip of a stock sting can **hide the original** (ticked by default when you make one): while the clip exists, **+ sting** offers the clip and not the whole track, so nobody picks the original by mistake. A song can give several clips (a different middle can be just as good a sting); the original stays hidden while any of them has the box ticked, and the library shows how many clips each stock sting has. Delete those clips (or untick them) and the original is offered again. In the file it's `"hideOriginal": true`; the site's own clips can carry it too, for a better edit of a song with an odd start or end.
 
 `stock` points at a stock sting by name; `file` at a track by its file name and size (browsers can't read file paths). **Import** on another computer brings the clips; any that need a file show **⚠ needs the file**, and **Find files…** asks for the folder they're in, once.
 
