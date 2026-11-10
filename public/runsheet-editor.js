@@ -636,9 +636,16 @@
   const mediaOf = name => /\.(mp4|m4v|webm|mov|ogv)(\?|#|$)/i.test(name || '') ? 'video' : 'audio';
   let stockList = null;
   // A clip's fields (sting-clip.js): only the ones it has
-  const CLIP_KEYS = ['start', 'end', 'fadeIn', 'fadeOut', 'loop'];
-  const clipFields = x => { const r = StingClip.region(x), o = {}; if (r) for (const k of CLIP_KEYS) if (r[k] != null && r[k] !== 0) o[k] = r[k]; return o; };
-  const stingIdOf = x => x.url + '#' + JSON.stringify(clipFields(x));   // the same track, cut the same way
+  // and its level (lufs: its loudness as it plays; volume: a trim, < 1), which travel with it
+  const CLIP_KEYS = ['start', 'end', 'fadeIn', 'fadeOut', 'loop', 'lufs', 'volume'];
+  const partFields = x => { const r = StingClip.region(x), o = {}; if (r) for (const k of CLIP_KEYS) if (r[k] != null && r[k] !== 0) o[k] = r[k]; return o; };
+  const clipFields = x => {
+    const o = partFields(x);
+    if (Number.isFinite(x.lufs)) o.lufs = x.lufs;
+    if (Number.isFinite(x.volume) && x.volume > 0 && x.volume < 1) o.volume = x.volume;
+    return o;
+  };
+  const stingIdOf = x => x.url + '#' + JSON.stringify(partFields(x));   // the same track, cut the same way (its level aside)
   function stockStings() {
     if (!stockList) stockList = fetch('stock-stings.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : { stings: [] }).then(j => {
       const base = new URL('stock-stings.json', location.href);
@@ -972,6 +979,99 @@
     });
   }
   window.__stingPreview = () => !!preview;   // (tests)
+
+  // ─── Sting levels (Options; sting-clip.js levelling) ──────────────────────
+  // Stings play turned down (never up) to a level: the house level (−23 LUFS unless changed here), or
+  // this show's, which Level this show… finds: every sting on the sheet measured as it plays (stored on
+  // it as lufs), and the quietest one's loudness, so it plays as it is and the rest come down to it.
+  // ▶ Line-up tone: 1 kHz at that level from the timer, for the mixer. On the timer's computer only
+  // (it needs the files; the levels are its own), except the tone, which a remote editor can play too.
+  let toneOn = false;
+  function renderLevels() {
+    if (!STINGS) return;
+    const sh = StingClip.showLevel();
+    if (!REMOTE) {
+      if (document.activeElement !== $('opt-house')) $('opt-house').value = StingClip.houseLevel();
+      $('lvl-show').textContent = sh ? `This show: ${sh.lufs.toFixed(1)} LUFS, the quietest of ${sh.n} sting${sh.n === 1 ? '' : 's'} (levelled ${clockOf(sh.at)}). Stings play down to it.`
+        : `Stings play down to the house level. Level this show to use the quietest sting’s level instead, for more signal.`;
+      $('lvl-house').hidden = !sh;
+    }
+    $('lvl-tone').textContent = toneOn ? '■ Stop the tone' : '▶ Line-up tone';
+  }
+  function toggleTone(on) { toneOn = on == null ? !toneOn : on; send('tone', { on: toneOn }); renderLevels(); }
+  async function stingSource(s) {
+    if (s.key && window.videoStore) { try { const b = await window.videoStore.get(s.key); if (b) return b; } catch (_) { /* not here */ } }
+    return s.url || null;
+  }
+  async function levelShow() {
+    const items = sheet.items.filter(it => !it.hidden && it.sting);
+    if (!items.length) { await ask('There are no walk-up stings on this run sheet to level.', [{ label: 'OK', value: true, kind: 'primary' }]); return; }
+    const wrap = document.createElement('div');
+    wrap.className = 'ask lvl-dlg';
+    wrap.innerHTML = '<div class="ask-box" role="dialog" aria-modal="true"><div class="ask-text"><b>Levelling this show’s stings</b></div>' +
+      '<table class="lvl-table"><tbody>' + items.map(it => `<tr data-id="${esc(it.id)}"><td>${esc(it.name || '')}</td><td>${esc(it.sting.name)}</td><td class="lvl-r">waiting</td></tr>`).join('') + '</tbody></table>' +
+      '<p class="lvl-sum"></p><div class="ask-btns"><button class="lvl-tone2" disabled>▶ Line-up tone</button><button class="primary lvl-close">Close</button></div></div>';
+    document.body.appendChild(wrap);
+    let open = true;
+    const close = () => { open = false; document.removeEventListener('keydown', onKey, true); wrap.remove(); };
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } else if (e.key === 'PageDown' || e.key === 'PageUp') e.stopPropagation(); }
+    document.addEventListener('keydown', onKey, true);
+    wrap.querySelector('.lvl-close').addEventListener('click', close);
+    const cell = id => wrap.querySelector(`tr[data-id="${id}"] .lvl-r`);
+    const found = {};
+    for (const it of items) {
+      if (!open) return;
+      const s = it.sting, c = cell(it.id);
+      c.textContent = 'measuring…';
+      if (s.duration > StingClip.LIMITS.source) { c.textContent = 'too long to measure'; continue; }
+      try {
+        const src = await stingSource(s);
+        if (!src) { c.textContent = 'its file isn’t here'; continue; }
+        const l = StingClip.loudness(StingClip.render(await StingClip.decode(src), s));
+        found[it.id] = l;
+        c.textContent = l == null ? 'silent' : l.toFixed(1) + ' LUFS';
+      } catch (_) { c.textContent = 'couldn’t be read'; }
+    }
+    if (!open) return;
+    // Keep each measurement on its sting (the timer levels with it)
+    let changed = false;
+    for (const [id, l] of Object.entries(found)) {
+      const it = sheet.items.find(x => x.id === id);
+      if (it && it.sting && l != null && it.sting.lufs !== l) { it.sting.lufs = l; changed = true; }
+    }
+    if (changed) saveSheet();
+    const vals = Object.values(found).filter(l => l != null);
+    const sum = wrap.querySelector('.lvl-sum');
+    if (!vals.length) { sum.textContent = 'Nothing could be measured.'; return; }
+    const low = Math.max(StingClip.LEVEL.min, Math.min(StingClip.LEVEL.max, Math.min(...vals)));
+    try { localStorage.setItem(StingClip.SHOW_KEY, JSON.stringify({ lufs: low, n: vals.length, at: Date.now(), title: sheet.title || '' })); } catch (_) { /* private mode */ }
+    for (const [id, l] of Object.entries(found)) if (l != null) {   // the change it plays at: down to the level, and its trim
+      const it = sheet.items.find(x => x.id === id), d = Math.min(0, low - l) + 20 * Math.log10(StingClip.trim(it && it.sting));
+      cell(id).textContent = l.toFixed(1) + ' LUFS · ' + (d < -0.05 ? d.toFixed(1) + ' dB' : 'as it is');
+    }
+    sum.innerHTML = `This show’s level: <b>${low.toFixed(1)} LUFS</b>, the quietest sting’s. It plays as it is; the others are turned down to match. Play the line-up tone and set the mixer’s input so it reads your nominal level: every sting then lands there.`;
+    const tb = wrap.querySelector('.lvl-tone2');
+    tb.disabled = false;
+    const label = () => { tb.textContent = toneOn ? '■ Stop the tone' : '▶ Line-up tone'; };
+    tb.addEventListener('click', () => { toggleTone(); label(); });
+    label();
+    renderLevels();
+  }
+  if (STINGS) {
+    if (REMOTE) $('lvl-local').hidden = true;
+    else {
+      $('opt-house').addEventListener('change', e => {
+        const v = Math.round(Number(e.target.value));
+        try { if (v >= StingClip.LEVEL.min && v <= StingClip.LEVEL.max) localStorage.setItem(StingClip.TARGET_KEY, String(v)); else localStorage.removeItem(StingClip.TARGET_KEY); } catch (_) { /* private mode */ }
+        renderLevels();
+      });
+      $('lvl-scan').addEventListener('click', levelShow);
+      $('lvl-house').addEventListener('click', () => { try { localStorage.removeItem(StingClip.SHOW_KEY); } catch (_) { /* private mode */ } renderLevels(); });
+      window.addEventListener('storage', e => { if (e.key === StingClip.SHOW_KEY || e.key === StingClip.TARGET_KEY) renderLevels(); });
+    }
+    $('lvl-tone').addEventListener('click', () => toggleTone());
+    renderLevels();
+  } else $('lvl-box').hidden = true;
   async function attachSting(id, file, extra) {   // extra: {name, clip, lib} (a library clip)
     const item = sheet.items.find(it => it.id === id);
     if (!item || !file) return;

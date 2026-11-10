@@ -20,7 +20,7 @@ var StingLibrary = (function () {
   const read = () => { try { const j = JSON.parse(localStorage.getItem(KEY) || '{}'); return Array.isArray(j.stings) ? j.stings : []; } catch (_) { return []; } };
   const write = list => { try { localStorage.setItem(KEY, JSON.stringify({ stings: list })); } catch (_) { /* private mode */ } };
   const fileKey = e => 'lib:' + e.file + ':' + (e.size || 0);
-  const CLIP = ['start', 'end', 'fadeIn', 'fadeOut', 'loop'];
+  const CLIP = ['start', 'end', 'fadeIn', 'fadeOut', 'loop', 'lufs', 'volume'];
 
   // One entry, tidied (import, save): only the fields of the format
   function clean(x) {
@@ -33,6 +33,8 @@ var StingLibrary = (function () {
     e.media = x.media === 'video' ? 'video' : 'audio';
     if (Number.isFinite(x.duration)) e.duration = Math.round(x.duration * 100) / 100;
     for (const k of CLIP) if (Number.isFinite(x[k]) && x[k] > 0) e[k] = x[k];
+    if (Number.isFinite(x.lufs) && x.lufs >= -70 && x.lufs <= 0) e.lufs = x.lufs; else delete e.lufs;   // its loudness as it plays (negative)
+    if (!(e.volume < 1)) delete e.volume;                                                        // a trim: only below 1
     const lp = window.StingClip && StingClip.cleanLoop(x.loop);   // a loop: part of it repeated (sting-clip.js)
     if (lp) e.loop = lp;
     if (x.hideOriginal === true && (e.stock || e.url)) e.hideOriginal = true;
@@ -154,7 +156,7 @@ StingLibrary.mount = function (root, opts) {
     const mine = L.read();
     $('.sl-mine').innerHTML = mine.map((e, i) => {
       const r = StingClip.region(e);
-      const part = r ? (r.start != null || r.end != null ? t2(r.start || 0) + '–' + (r.end != null ? t2(r.end) : 'end') : 'whole track') + (r.fadeIn ? ' · in ' + r.fadeIn + ' ms' : '') + (r.fadeOut ? ' · out ' + r.fadeOut + ' ms' : '') + (r.loop ? ' · loop ×' + r.loop.plays + (r.loop.at != null ? ' moved' : '') : '') : 'whole track';
+      const part = (r ? (r.start != null || r.end != null ? t2(r.start || 0) + '–' + (r.end != null ? t2(r.end) : 'end') : 'whole track') + (r.fadeIn ? ' · in ' + r.fadeIn + ' ms' : '') + (r.fadeOut ? ' · out ' + r.fadeOut + ' ms' : '') + (r.loop ? ' · loop ×' + r.loop.plays + (r.loop.at != null ? ' moved' : '') : '') : 'whole track') + (Number.isFinite(e.lufs) ? ' · ' + e.lufs.toFixed(1) + ' LUFS' : '');
       return `<li data-i="${i}"><button class="small" data-a="play" title="Hear it">${playingId === 'm' + i ? '■' : '▶'}</button>` +
         `<span class="name" title="${esc(e.name)}">${esc(e.name)}</span>` +
         `<span class="meta">${esc(e.stock ? 'stock: ' + e.stock : e.file ? e.file : 'link')} · ${esc(part)} · ${esc(len(e))}${e.hideOriginal ? ' · hides the whole track in + sting' : ''}</span>` +

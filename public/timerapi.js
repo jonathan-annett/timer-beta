@@ -113,6 +113,8 @@ function processTimerApiMessage(msg) {
             if (window.videoPlayer) window.videoPlayer.finish(ms);
             break;
         }
+        // The line-up tone ({on}: true/false, missing = toggle; {lufs}: else the level stings play at)
+        case "tone":        { if (window.stingPlayer && window.stingPlayer.tone) return window.stingPlayer.tone(typeof msg.on === "boolean" ? msg.on : null, Number.isFinite(msg.lufs) ? Math.max(-40, Math.min(-6, msg.lufs)) : undefined); break; }
         // PowerPoint computers (pptx-hub.js): close every slide show, so the holding slide shows
         case "pptxclose":   { if (window.pptxHub) window.pptxHub.close(); break; }
 

@@ -187,9 +187,14 @@
     .panel label.inline { display: flex; align-items: center; gap: 0.571rem; color: var(--dim); }
     .panel label.inline input { width: 5rem; border-color: var(--line2); }
     .panel label.check { display: flex; align-items: center; gap: 0.571rem; }
+    .panel label.check input { width: auto; flex: none; margin: 0; }
     #imp-msg { font-size: 0.857rem; margin-top: 0.571rem; color: var(--dim); white-space: pre-line; }
     #imp-msg.ok { color: var(--now-text); } #imp-msg.warn { color: var(--warn); }
     .sep { border: 0; border-top: 1px solid var(--line); margin: 1rem 0 0.429rem; }
+    .lvl-table { border-collapse: collapse; margin: 0.6rem 0; font-size: 0.857rem; }
+    .lvl-table td { padding: 0.2rem 0.6rem 0.2rem 0; border-bottom: 1px solid var(--line); }
+    .lvl-table td.lvl-r { color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .lvl-sum { max-width: 34rem; }
 
     #log-table td { padding: 0.286rem 0.429rem; border-bottom: 1px solid var(--line); font-size: 0.857rem; white-space: nowrap; }
     #log-table td.item { white-space: normal; color: var(--text); }
@@ -369,6 +374,17 @@
           <div class="panel">
             <label class="check"><input type="checkbox" id="opt-restart-confirm"> Restart needs a second click</label>
             <p class="hint">Click Restart again within 2 seconds to restart, so a stray click can't reset a talk. Kept on this computer only.</p>
+            <div id="lvl-box">
+              <hr class="sep">
+              <b>Sting levels</b>
+              <div id="lvl-local">
+                <div class="row"><label class="inline">House level <input type="number" id="opt-house" min="-40" max="-6" step="1"> LUFS</label></div>
+                <p class="hint" id="lvl-show"></p>
+                <div class="row"><button id="lvl-scan" title="Measure every sting on this run sheet as it plays, and use the quietest one's level for this show">Level this show…</button><button id="lvl-house" hidden>Use the house level</button></div>
+              </div>
+              <div class="row"><button id="lvl-tone" title="1 kHz from the timer at the level stings play at: set the mixer's input to your nominal level">▶ Line-up tone</button></div>
+              <p class="hint">Stings are only ever turned down, so the mixer may need a little more gain than for a full-level track: the tone shows how much.</p>
+            </div>
           </div>
         </details>
       </aside>
@@ -377,10 +393,10 @@
 
   <script src="markdown-lite.js?v=938fee93"></script>
   <script src="help-overlay.js?v=8a5dbd9d"></script>
-  <script src="sting-library.js?v=7477cc43"></script>
-  <script src="sting-clip.js?v=e52f3d58"></script>
+  <script src="sting-library.js?v=40db3e21"></script>
+  <script src="sting-clip.js?v=5b53a56f"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="runsheet-core.js?v=a0f5cc65"></script>
-  <script src="runsheet-editor.js?v=018b2123"></script>
+  <script src="runsheet-editor.js?v=a8953c2e"></script>
 </body>
 </html>

@@ -14,7 +14,7 @@
  * the videoplay / videostop / videorewind commands):
  *   open()      open the player window (needs a click or key press)
  *   isOpen()
- *   load(url, {name, idle, controls, message, revoke, tag, onEnd, history, sting})   cue a video
+ *   load(url, {name, idle, controls, message, revoke, tag, onEnd, history, sting, region, volume})   cue a video
  *   loadFile(file, handle)  cue a file the operator dropped or browsed for (handle: a
  *               FileSystemFileHandle or a promise of one, kept so the history can reopen it)
  *   play()      play the cued video; the timer counts down its length
@@ -203,6 +203,7 @@
       history: opts.history || null,
       sting: !!opts.sting,
       region: opts.sting && opts.region ? opts.region : null,   // a sting's clip: {start, end, fadeIn, fadeOut} (sting-clip.js)
+      volume: opts.sting && opts.volume > 0 && opts.volume <= 1 ? opts.volume : 1,   // a sting's level (sting-clip.js gainFor)
     };
     el.pause();
     el.src = url;
@@ -231,13 +232,13 @@
     if (s.sting) {                          // a walk-up sting: the item already set the timer and the message
       const r = s.region || {};
       if (r.start && Math.abs(s.el.currentTime - r.start) > 0.25) s.el.currentTime = r.start;
-      s.el.volume = r.fadeIn ? 0 : 1;
+      s.el.volume = r.fadeIn ? 0 : s.volume;
       const p = s.el.play();
       // A clip: fade in, and fade out at its end (on the player window's own timers: it's on show)
       if (r.fadeIn || r.end != null) {
         const t = win.setInterval(() => {
           if (playing !== s) { win.clearInterval(t); return; }
-          if (r.fadeIn && s.el.volume < 1) s.el.volume = Math.min(1, s.el.volume + 50 / r.fadeIn);
+          if (r.fadeIn && s.el.volume < s.volume) s.el.volume = Math.min(s.volume, s.el.volume + s.volume * 50 / r.fadeIn);
           if (r.end != null && s.el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { win.clearInterval(t); fadeOut(r.fadeOut || 30); }
         }, 50);
       }

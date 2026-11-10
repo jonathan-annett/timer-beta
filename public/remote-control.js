@@ -709,8 +709,9 @@
       else if (st && (st.src === 'link' || st.src === 'stock') && typeof st.url === 'string' && st.url.length <= 2048 && /^https:\/\//.test(st.url))
         out.sting = { src: st.src, media: st.media === 'video' ? 'video' : 'audio', name: typeof st.name === 'string' ? st.name.slice(0, 200) : 'sting', url: st.url, duration: secs(st.duration, 36000) };
       if (out.sting) {                          // a clip (sting-clip.js): the part to play, as sent
-        for (const k of ['start', 'end', 'fadeIn', 'fadeOut', 'loop']) delete out.sting[k];
-        const r = { start: secs(st.start, 36000), end: secs(st.end, 36000), fadeIn: num(st.fadeIn, 0, 60000), fadeOut: num(st.fadeOut, 0, 60000), loop: stingLoop(st.loop, out.sting.media) };
+        for (const k of ['start', 'end', 'fadeIn', 'fadeOut', 'loop', 'lufs', 'volume']) delete out.sting[k];
+        const r = { start: secs(st.start, 36000), end: secs(st.end, 36000), fadeIn: num(st.fadeIn, 0, 60000), fadeOut: num(st.fadeOut, 0, 60000), loop: stingLoop(st.loop, out.sting.media),
+          lufs: num(st.lufs, -70, 0), volume: num(st.volume, 0.0001, 0.9999) };   // its level (sting-clip.js)
         for (const k of Object.keys(r)) if (r[k] != null && r[k] !== 0) out.sting[k] = r[k];
         if (typeof st.lib === 'string' && st.lib) out.sting.lib = st.lib.slice(0, 200); else delete out.sting.lib;   // the sender's library clip it came from
       }
@@ -781,6 +782,7 @@
       case 'pptxclose': if (window.pptxHub) window.pptxHub.close(); break;
       case 'pause':  processTimerApiMessage({ cmd: 'pause' }); break;
       case 'restart': if (rs.restart) rs.restart(); break;
+      case 'tone':   processTimerApiMessage({ cmd: 'tone', on: typeof m.on === 'boolean' ? m.on : undefined }); break;   // the line-up tone
       // The item running now: a new duration, a new end (with the next item's start), its name on screen
       case 'curdur':
         if (rs.curDuration && typeof m.id === 'string' && ID_RE.test(m.id) && (m.duration === null || num(m.duration, 1, 86400) !== null))
@@ -835,7 +837,7 @@
       duration: num(m.duration, 0, 86400), got: 0, chunks: [], blobs: [], chunkBytes: 0,
       label: typeof m.label === 'string' ? m.label.slice(0, 200) : null,              // a sting from the sender's library: its name
       lib: typeof m.lib === 'string' ? m.lib.slice(0, 200) : null,                    // … and which library clip it came from
-      clip: m.clip && typeof m.clip === 'object' ? { start: num(m.clip.start, 0, 36000), end: num(m.clip.end, 0, 36000), fadeIn: num(m.clip.fadeIn, 0, 60000), fadeOut: num(m.clip.fadeOut, 0, 60000), loop: stingLoop(m.clip.loop, /^video\//.test(String(m.type || '')) ? 'video' : 'audio') } : null };
+      clip: m.clip && typeof m.clip === 'object' ? { start: num(m.clip.start, 0, 36000), end: num(m.clip.end, 0, 36000), fadeIn: num(m.clip.fadeIn, 0, 60000), fadeOut: num(m.clip.fadeOut, 0, 60000), loop: stingLoop(m.clip.loop, /^video\//.test(String(m.type || '')) ? 'video' : 'audio'), lufs: num(m.clip.lufs, -70, 0), volume: num(m.clip.volume, 0.0001, 0.9999) } : null };
     e.upload.step = Math.max(256 << 10, Math.ceil(size / 50));    // progress reports: about every 2 %
     e.upload.nextProg = e.upload.step;
     e.peer.send({ t: 'vup-ok', up });

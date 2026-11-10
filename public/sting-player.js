@@ -19,6 +19,7 @@
  *   fadeOut(ms)    the playing sting fades out (the operator's Fade out: 3 s)
  *   stop(itemId?)  stop at once (Back: only the undone item's; a video item, run sheet off: any)
  *   state()        {audio: {id, name} | null, video: {id, name} | null}
+ *   tone(on, lufs) the 1 kHz line-up tone at lufs (default: the level stings play at), on, off or toggled
  * A sting plays to its end (long tracks cover activity on stage) unless the operator fades it (the
  * sting bar on the operator's screen, the Stream Deck's Fade sting key: the stingfade command) or
  * another sting (or a video item) starts: an item without one leaves it playing, so an introduction
@@ -34,6 +35,9 @@
   const tagOf = item => 'sting:' + item.id;
   const clip = s => (window.StingClip ? StingClip.region(s) : null);
   const keyOf = s => (s.key || s.url) + '#' + JSON.stringify(clip(s) || {});   // the same sting, cut the same way
+  // Its level as it starts (sting-clip.js gainFor: its trim, and down to the show's level): worked out
+  // at play time, so a new show level applies at once
+  const gainOf = s => (window.StingClip && StingClip.gainFor ? StingClip.gainFor(s) : 1);
   let cur = null;                         // the audio sting playing: a voice (below)
   let ready = null;                       // the next one, loaded
   const fading = new Set();
@@ -76,15 +80,15 @@
   function bufferVoice(item, buf) {
     let p = null;
     const v = {
-      id: item.id, key: keyOf(item.sting), name: item.sting.name, onended: null,
-      async play() { p = StingClip.play(buf); p.ended.then(() => { p = null; if (v.onended) v.onended(); }); },
+      id: item.id, key: item.loop ? 'tone' : keyOf(item.sting), name: item.sting.name, onended: null,
+      async play() { p = StingClip.play(buf, { loop: !!item.loop }); p.gain.gain.value = item.loop ? 1 : gainOf(item.sting); p.ended.then(() => { p = null; if (v.onended) v.onended(); }); },
       fade(ms) { if (p) p.fade(ms); else if (v.onended) v.onended(); },
       stop() { if (p) p.stop(); },
       release() {},
       get volume() { return p ? p.gain.gain.value : 0; },
       get playing() { return !!p; },
       get time() { return p ? p.time() : 0; },
-      get duration() { return buf.duration; },
+      get duration() { return item.loop ? null : buf.duration; },
     };
     return v;
   }
@@ -99,11 +103,12 @@
     const v = {
       id: item.id, key: keyOf(item.sting), name: item.sting.name, onended: null,
       async play() {
+        const g = gainOf(item.sting);
         if (start && Math.abs(el.currentTime - start) > 0.25) el.currentTime = start;
-        el.volume = r.fadeIn ? 0 : 1;
+        el.volume = r.fadeIn ? 0 : g;
         el.onended = finish;
         await el.play();
-        if (r.fadeIn) stopRamp = rampEl(el, 1, r.fadeIn);
+        if (r.fadeIn) stopRamp = rampEl(el, g, r.fadeIn);
         if (r.end != null) stopEnd = tick(50, () => {            // the end of the part: fade out there
           if (el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { stopEnd(); stopEnd = null; v.fade(r.fadeOut || 30); }
         });
@@ -172,7 +177,7 @@
     if (!p || !p.isOpen()) return false;
     const src = await source(item.sting);
     if (!src) return false;
-    return p.load(src.url, { name: item.sting.name, idle: 'hide', controls: false, revoke: src.revoke, tag: tagOf(item), sting: true, region: clip(item.sting) });
+    return p.load(src.url, { name: item.sting.name, idle: 'hide', controls: false, revoke: src.revoke, tag: tagOf(item), sting: true, region: clip(item.sting), volume: gainOf(item.sting) });
   }
 
   async function playVideo(item) {
@@ -203,6 +208,22 @@
     const v = await loadAudio(item);
     if (ready) ready.release();
     ready = v;
+  }
+
+  // The line-up tone (the run sheet editor's Options, the tone command): 1 kHz at the level stings are
+  // brought down to (the show's, else the house level), until stopped; in the sting bar like a sting
+  function tone(on, lufs) {
+    const isTone = cur && cur.id === 'tone';
+    if (on === false || (on == null && isTone)) { if (isTone) stop('tone'); return false; }
+    if (!window.StingClip) return false;
+    const level = Number.isFinite(lufs) ? lufs : StingClip.target();
+    audioFade(FADE_MS);
+    const a = bufferVoice({ id: 'tone', loop: true, sting: { name: '1 kHz line-up tone · ' + level.toFixed(1) + ' LUFS' } }, StingClip.toneBuffer(level));
+    cur = a;
+    a.onended = () => { if (cur === a) cur = null; fading.delete(a); update(); };
+    a.play();
+    update();
+    return true;
   }
 
   function fadeOut(ms) {
@@ -272,5 +293,5 @@ html.reduced #sting-bar { display: none; }`;
   }
   setInterval(update, 500);
 
-  window.stingPlayer = { play, preload, fadeOut, stop, state };
+  window.stingPlayer = { play, preload, fadeOut, stop, state, tone };
 })();

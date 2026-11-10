@@ -29,8 +29,12 @@
  *   play(buf, {loop})  plays an AudioBuffer (loop: over and over until stopped) → {stop(), ended: Promise, time()}
  *   preview(src, s)    decode, render and play (the stock dialog's ▶) → {stop()}
  *   open({src, name, region, media, original, hideOriginal, saveLabel})  the clip editor: waveform (whole track + zoomed on the
- *                      selection), start/end handles, fades, a loop, play, Save as WAV → Promise<{name, start, end,
- *                      fadeIn, fadeOut, loop, hideOriginal} | null>; original (a stock sting's name) adds the
+ *                      selection), start/end handles, fades, a loop, loudness and trim, play (levelled), Save as WAV →
+ *                      Promise<{name, start, end, fadeIn, fadeOut, loop, lufs, volume, hideOriginal} | null>;
+ *   loudness(buf)      integrated loudness (LUFS, BS.1770) or null (silence)
+ *   gainFor(s, target) what a sting with {lufs, volume} plays at: down to the target, never up
+ *   target()           the show's level (Level this show…, localStorage SHOW_KEY) or the house level (TARGET_KEY, −23)
+ *   toneBuffer(lufs)   a second of 1 kHz reading lufs: the line-up tone original (a stock sting's name) adds the
  *                      choice to hide it from + sting while this clip exists (hideOriginal: a better edit)
  * MIT Licensed
  */
@@ -144,6 +148,77 @@ var StingClip = (function () {
     return out;
   }
 
+  // ─── Loudness (ITU-R BS.1770-4 / EBU R128) and levelling ──────────────────
+  // A clip (or whole track) carries lufs: its integrated loudness as it plays (part, loop and fades),
+  // measured when it's saved or when the show is levelled, and volume: a trim by ear (0–1, default 1).
+  // It plays at volume × the gain that brings it down to the target, never up: the show's level (the
+  // quietest sting on the run sheet, from Level this show…) if there is one, else the house level
+  // (default −23 LUFS). Turning down only, so no clipping, and streamed and video stings (whose
+  // element volume stops at 1) level the same way. The line-up tone is a 1 kHz sine at the target.
+  const LEVEL = { house: -23, min: -40, max: -6 };
+  const TARGET_KEY = 'sting_target', SHOW_KEY = 'sting_show_level';
+  function kWeighting(sr) {                      // BS.1770's two biquads, for any sample rate (as libebur128)
+    let f0 = 1681.974450955533, G = 3.999843853973347, Q = 0.7071752369554196;
+    let K = Math.tan(Math.PI * f0 / sr);
+    const Vh = Math.pow(10, G / 20), Vb = Math.pow(Vh, 0.4996667741545416), a0 = 1 + K / Q + K * K;
+    const pre = { b: [(Vh + Vb * K / Q + K * K) / a0, 2 * (K * K - Vh) / a0, (Vh - Vb * K / Q + K * K) / a0], a: [2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0] };
+    f0 = 38.13547087602444; Q = 0.5003270373238773; K = Math.tan(Math.PI * f0 / sr);
+    const d = 1 + K / Q + K * K;
+    const rlb = { b: [1, -2, 1], a: [2 * (K * K - 1) / d, (1 - K / Q + K * K) / d] };
+    return [pre, rlb];
+  }
+  // Integrated loudness in LUFS (gated: −70 absolute, −10 relative), or null for silence. Mono counts as
+  // dual mono (it plays on both speakers); under 400 ms, the whole of it as one block.
+  function loudness(buf) {
+    const sr = buf.sampleRate, n = buf.length, C = buf.numberOfChannels;
+    const W = C === 1 ? [2] : C === 6 ? [1, 1, 1, 0, 1.41, 1.41] : new Array(C).fill(1);
+    const hop = Math.max(1, Math.round(sr / 10)), segs = Math.ceil(n / hop), sq = new Float64Array(segs);
+    const [pre, rlb] = kWeighting(sr);
+    for (let c = 0; c < C; c++) {
+      if (!W[c]) continue;
+      const x = buf.getChannelData(c);
+      let x1 = 0, x2 = 0, y1 = 0, y2 = 0, z1 = 0, z2 = 0;   // the two biquads' states
+      for (let i = 0; i < n; i++) {
+        const v = x[i];
+        const y = pre.b[0] * v + pre.b[1] * x1 + pre.b[2] * x2 - pre.a[0] * y1 - pre.a[1] * y2;
+        x2 = x1; x1 = v;
+        const z = y - 2 * y1 + y2 - rlb.a[0] * z1 - rlb.a[1] * z2;
+        y2 = y1; y1 = y; z2 = z1; z1 = z;
+        sq[(i / hop) | 0] += W[c] * z * z;
+      }
+    }
+    const L = p => -0.691 + 10 * Math.log10(p);
+    const powers = [];
+    if (n < 4 * hop) { let t = 0; for (let i = 0; i < segs; i++) t += sq[i]; powers.push(t / n); }
+    else for (let j = 0; j + 4 <= Math.floor(n / hop); j++) powers.push((sq[j] + sq[j + 1] + sq[j + 2] + sq[j + 3]) / (4 * hop));
+    const loud = powers.filter(p => p > 0 && L(p) > -70);
+    if (!loud.length) return null;
+    const rel = L(loud.reduce((a, p) => a + p, 0) / loud.length) - 10;
+    const kept = loud.filter(p => L(p) > rel);
+    return Math.round(L(kept.reduce((a, p) => a + p, 0) / kept.length) * 10) / 10;
+  }
+  const readLs = k => { try { return localStorage.getItem(k); } catch (_) { return null; } };
+  const inRange = v => typeof v === 'number' && isFinite(v) && v >= LEVEL.min && v <= LEVEL.max;
+  function houseLevel() { const v = Number(readLs(TARGET_KEY)); return readLs(TARGET_KEY) != null && inRange(v) ? v : LEVEL.house; }
+  function showLevel() { try { const j = JSON.parse(readLs(SHOW_KEY) || 'null'); return j && inRange(j.lufs) ? j : null; } catch (_) { return null; } }
+  function target() { const sh = showLevel(); return sh ? sh.lufs : houseLevel(); }
+  const trim = s => { const v = num(s && s.volume); return v != null && v > 0 && v <= 1 ? v : 1; };
+  // What a sting plays at: its trim, and down to the target when its loudness is known
+  function gainFor(s, tgt) {
+    const l = num(s && s.lufs), t = tgt === undefined ? target() : tgt;
+    return trim(s) * (l != null && t != null ? Math.min(1, Math.pow(10, (t - l) / 20)) : 1);
+  }
+  // The line-up tone: a second of 1 kHz (whole cycles, so it loops cleanly) in both channels, scaled by
+  // this meter so it reads exactly lufs
+  function toneBuffer(lufs) {
+    const sr = audio().sampleRate, b = audio().createBuffer(2, sr, sr), d = b.getChannelData(0);
+    for (let i = 0; i < sr; i++) d[i] = Math.sin(2 * Math.PI * 1000 * i / sr);
+    b.getChannelData(1).set(d);
+    const a = Math.pow(10, (lufs - loudness(b)) / 20);
+    for (let c = 0; c < 2; c++) { const x = b.getChannelData(c); for (let i = 0; i < sr; i++) x[i] *= a; }
+    return b;
+  }
+
   function wav(buf) {
     const ch = buf.numberOfChannels, n = buf.length, sr = buf.sampleRate, bytes = n * ch * 2;
     const v = new DataView(new ArrayBuffer(44 + bytes)), str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
@@ -220,6 +295,7 @@ var StingClip = (function () {
 .sc-lnote { color: #c9a27a; font-size: 0.85rem; min-height: 1.2em; padding-left: 0.85rem; }
 .sc-lnote .sc-lwarn { color: #e0b030; }
 .sc-len { color: #fff; font-variant-numeric: tabular-nums; }
+.sc-loud { color: #9fd8ff; font-variant-numeric: tabular-nums; }
 .sc-box button { font: inherit; color: #ddd; background: #222; border: 1px solid #444; border-radius: 0.35rem; padding: 0.35rem 0.8rem; cursor: pointer; }
 .sc-box button:hover { background: #2c2c2c; }
 .sc-box button:disabled { opacity: .45; cursor: default; }
@@ -268,6 +344,10 @@ var StingClip = (function () {
           <label>Fade in <input class="sc-ms" data-k="fadeIn" type="number" min="0" step="10" title="↑ ↓ or the arrows: 10 ms (Shift: 100 ms)"> ms</label>
           <label>Fade out <input class="sc-ms" data-k="fadeOut" type="number" min="0" step="10" title="↑ ↓ or the arrows: 10 ms (Shift: 100 ms)"> ms</label>
         </div>
+        <div class="sc-row sc-levelrow">
+          <span>Loudness <span class="sc-loud">…</span></span>
+          <label>Trim <input class="sc-ms" data-k="trimdb" type="number" max="0" step="0.5" title="Turn it down by ear, in dB (↑ ↓ 0.5 dB, Shift 3 dB). It's levelled to the show anyway"> dB</label>
+        </div>
         <div class="sc-row sc-looprow" hidden>
           <span class="sc-ltag">⟲ Loop</span>
           <label>From <input class="sc-t" data-k="lfrom" spellcheck="false" title="↑ ↓: 0.01 s (Shift: 0.1 s)"></label>
@@ -300,15 +380,18 @@ var StingClip = (function () {
       const r0 = region(opts.region) || {};
       const sel = { start: r0.start || 0, end: r0.end, fadeIn: r0.fadeIn || 0, fadeOut: r0.fadeOut || 0 };
       let loop = canLoop && r0.loop ? Object.assign({}, r0.loop) : null;
+      let trimDb = Math.round(20 * Math.log10(trim(opts.region)) * 10) / 10;   // the trim by ear, dB (≤ 0)
+      let lufs = null, lufsKey = '', lufsT = 0;      // the clip's loudness as it plays, for lufsKey
 
       const dur = () => (buf ? buf.duration : 0);
       const endOf = () => (sel.end != null ? sel.end : dur());
       const atOf = () => (loop.at != null ? loop.at : loop.to);
       const TIMES = ['start', 'end', 'lfrom', 'lto', 'at'], LOOPK = { lfrom: 1, lto: 1, at: 1, plays: 1 };
-      const get = k => k === 'start' ? sel.start : k === 'end' ? endOf() : k === 'lfrom' ? loop.from : k === 'lto' ? loop.to : k === 'at' ? atOf() : k === 'plays' ? loop.plays : sel[k];
+      const get = k => k === 'start' ? sel.start : k === 'end' ? endOf() : k === 'lfrom' ? loop.from : k === 'lto' ? loop.to : k === 'at' ? atOf() : k === 'plays' ? loop.plays : k === 'trimdb' ? trimDb : sel[k];
       function set(k, v) {
         if (k === 'start') sel.start = v; else if (k === 'end') sel.end = v;
         else if (k === 'lfrom') loop.from = v; else if (k === 'lto') loop.to = v; else if (k === 'at') loop.at = v; else if (k === 'plays') loop.plays = v;
+        else if (k === 'trimdb') trimDb = Math.round(Math.max(-40, Math.min(0, v)) * 10) / 10;
         else sel[k] = v;
       }
       const cur = () => { const c = { start: sel.start, end: endOf(), fadeIn: sel.fadeIn, fadeOut: sel.fadeOut }; if (loop) c.loop = cleanLoop(loop); return c; };
@@ -338,6 +421,9 @@ var StingClip = (function () {
         $('.sc-lback').disabled = !loop || loop.at == null;
         const c = cur(), len = length(c, dur()) || 0;
         $('.sc-len').textContent = len.toFixed(2) + ' s';
+        const key = JSON.stringify(c);
+        if (key !== lufsKey && !lufsT) lufsT = setTimeout(() => { lufsT = 0; measure(); fields(); }, 250);
+        showLoud();
         const note = $('.sc-lnote');
         if (!loop) { note.textContent = ''; return; }
         const chk = loopCheck(c, dur()), l = loop.to - loop.from;
@@ -350,6 +436,27 @@ var StingClip = (function () {
           note.appendChild(w);
         }
       }
+
+      // Loudness: measured on the clip as it plays (part, loop, fades), at most every 250 ms while it changes
+      function measure() {
+        const c = cur(), key = JSON.stringify(c);
+        if (!buf || key === lufsKey) return lufs;
+        lufsKey = key;
+        try { lufs = loudness(render(buf, c)); } catch (_) { lufs = null; }
+        return lufs;
+      }
+      const levelGain = () => gainFor({ lufs: measure(), volume: Math.pow(10, trimDb / 20) });
+      function showLoud() {
+        const el = $('.sc-loud');
+        if (!buf) { el.textContent = '…'; return; }
+        if (lufsKey !== JSON.stringify(cur())) return;                   // (being measured)
+        if (lufs == null) { el.textContent = 'silent'; return; }
+        const t = target(), sh = showLevel(), to = sh ? 'this show’s level' : 'the house level';
+        const at = Math.min(lufs, t) + trimDb, dB = at - lufs;
+        el.textContent = lufs.toFixed(1) + ' LUFS · ' + (lufs > t ? 'plays at ' + at.toFixed(1) + ' (' + dB.toFixed(1) + ' dB, down to ' + to + ', ' + t.toFixed(1) + ')'
+          : 'at or under ' + to + ' (' + t.toFixed(1) + '): plays ' + (trimDb ? 'at ' + at.toFixed(1) : 'as it is'));
+      }
+      wrap.__lufs = () => measure();                 // (tests)
 
       // Waveform: the loudest sample per column (channels mixed)
       function columnPeaks(from, to, cols) {
@@ -530,11 +637,11 @@ var StingClip = (function () {
           if (LOOPK[k] && !loop) return;
           if (k === 'at' && !i.value.trim()) delete loop.at;            // empty: in place
           else if (TIMES.includes(k)) { const t = parse(i.value); if (t == null) { msg('Type a time as m:ss.ss (e.g. 1:02.50) or seconds.'); fields(); return; } set(k, t); }
-          else set(k, Math.max(0, Number(i.value) || 0));
+          else set(k, k === 'trimdb' ? Number(i.value) || 0 : Math.max(0, Number(i.value) || 0));
           msg(''); redraw();
           if (k === 'lfrom' || k === 'lto') reloop(true);
         });
-        if (i.type === 'number') i.addEventListener('input', () => { if (LOOPK[k] && !loop) return; set(k, Math.max(0, Number(i.value) || 0)); clamp(); draw(); });
+        if (i.type === 'number') i.addEventListener('input', () => { if (LOOPK[k] && !loop) return; set(k, k === 'trimdb' ? Number(i.value) || 0 : Math.max(0, Number(i.value) || 0)); clamp(); draw(); });
       });
 
       function stopPlay() {
@@ -551,6 +658,7 @@ var StingClip = (function () {
         if (!buf || !loop) return;
         clamp();
         const v = voice = play(loopPass(buf, loop.from, loop.to), { loop: true });
+        v.gain.gain.value = levelGain();
         playSegs = [[loop.from, loop.to]]; playOff = 0;
         playing = { from: loop.from, to: loop.to, loop: true };
         previewing = true; $('.sc-lprev').textContent = '■ Stop preview';
@@ -580,6 +688,7 @@ var StingClip = (function () {
         playSegs = plan(piece, dur()).segs; playOff = w0;
         playing = { from: r2(sourceAt(w0, playSegs)), to: r2(sourceAt(w1, playSegs)) };
         const v = voice = play(out);
+        v.gain.gain.value = levelGain();             // as the show will hear it
         v.ended.then(() => { if (voice === v) { voice = null; draw(); } });
         const tick = () => { if (voice !== v) return; draw(); raf = requestAnimationFrame(tick); };
         tick();
@@ -633,6 +742,7 @@ var StingClip = (function () {
         finish({ name: $('.sc-name').value.trim().slice(0, 200) || opts.name || 'Sting',
           start: whole ? null : sel.start, end: whole ? null : endOf(), fadeIn: sel.fadeIn || null, fadeOut: sel.fadeOut || null,
           loop: c.loop || null, sourceLength: dur(),
+          lufs: measure(), volume: trimDb < 0 ? Math.round(Math.pow(10, trimDb / 20) * 10000) / 10000 : null,
           hideOriginal: opts.original ? $('.sc-hideorig').checked : undefined });
       }
       $('.sc-cancel').addEventListener('click', () => finish(null));
@@ -650,6 +760,7 @@ var StingClip = (function () {
           if (LOOPK[k] && !loop) return;
           if (TIMES.includes(k)) { set(k, get(k) + dir * (e.shiftKey ? 0.1 : 0.01)); active = k; }
           else if (k === 'plays') loop.plays += dir;
+          else if (k === 'trimdb') set(k, trimDb + dir * (e.shiftKey ? 3 : 0.5));
           else sel[k] = Math.max(0, (sel[k] || 0) + dir * (e.shiftKey ? 100 : 10));
           clamp(); e.target.value = k === 'at' && loop.at == null ? '' : TIMES.includes(k) ? fmt(get(k)) : String(get(k));
           if (TIMES.includes(k)) focusOn(k); else draw();
@@ -686,6 +797,7 @@ var StingClip = (function () {
     });
   }
 
-  return { region, cleanLoop, plan, length, loopCheck, LIMITS, decode, render, wav, play, preview, open };
+  return { region, cleanLoop, plan, length, loopCheck, LIMITS, decode, render, wav, play, preview, open,
+    loudness, toneBuffer, gainFor, trim, target, houseLevel, showLevel, LEVEL, TARGET_KEY, SHOW_KEY };
 })();
 if (typeof module !== 'undefined') module.exports = StingClip;

@@ -38,6 +38,19 @@ The timer builds the loop in memory when it loads the sting, so it has limits: t
 
 **Save as WAV** saves the edit as it sounds (part, loop and fades) as a WAV file in your downloads, up to 10 minutes. Use it for anything longer than a clip allows (a 6-minute version of a 30-second sting, say): add the file as the sting's file (**+ sting** → **Custom file**, or **+ From a file…** in the library).
 
+## Levels: every sting at the same loudness
+
+Stings come from everywhere, mastered at very different loudness. The timer evens them out by turning the louder ones **down** (never up, so nothing clips, and long tracks and video stings level the same way) to one level, measured the way broadcasters do (LUFS, EBU R128 / ITU-R BS.1770).
+
+- **The clip editor** shows each clip's loudness as it plays (part, loop and fades), measured again as you change it, and what it will play at. **Trim** turns it down further by ear (dB). Its play buttons play it at that level.
+- **The house level** (the run sheet editor's *Options* → *Sting levels*; −23 LUFS unless you change it) is what stings come down to, unless the show has its own.
+- **Level this show…** measures every sting on the run sheet and uses the quietest one's loudness as this show's level: it plays as it is and the others come down to it, so you keep as much signal as you can. Do it once before the show (and again if you add a quieter sting); **Use the house level** goes back.
+- **▶ Line-up tone** plays a 1 kHz tone from the timer, at the level the stings play at (the show's, or the house level), until you stop it (or press Esc, or Stop on the sting bar). Set the mixer's input so the tone reads your nominal level: every levelled sting then lands there. Stings are only turned down, so the mixer may need a little more gain than for a full-level track; the tone shows how much.
+
+A sting that hasn't been measured (added since the show was levelled, and not saved in the clip editor) plays at its own level: level the show again.
+
+In the library file a clip's level is `"lufs"` (its measured loudness) and `"volume"` (the trim, 0–1).
+
 ## The sting library
 
 The library (a panel in the run sheet editor, from **+ sting** → **Edited sting** → **Open the sting library…**; also a page of its own, `stings.html`) keeps clips on this computer: make them from the stock stings (**✂** on one) or from your own tracks (**+ From a file…**). They appear in the run sheet editor's **+ sting** under **My clips** (an open dialog picks up changes made in the library's tab); a clip of your own file brings the file with it. Trimming such a sting with **✂** in the run sheet asks whether to update the library clip too (its cut and its name), or just this item.

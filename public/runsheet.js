@@ -666,6 +666,7 @@
       case 'livename': liveName(c.id, c.name); break;
       case 'autostart': setAutostart(c.on); break;
       case 'dock': if (window.runsheetDock) window.runsheetDock.dock(); break;   // the editor window's ⇲ Dock
+      case 'tone': api({ cmd: 'tone', on: typeof c.on === 'boolean' ? c.on : undefined }); break;      // the editor's line-up tone
     }
   }
 
