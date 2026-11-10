@@ -1,0 +1,149 @@
+import os as _os  # paths: the repo's public/ folder; screenshots go to $E2E_OUT (default /tmp/timer-e2e)
+HERE = _os.path.dirname(_os.path.abspath(__file__))
+PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
+OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
+# Sting clips (sting-clip.js; a trial with the stings): the run sheet editor's ✂ opens a waveform
+# editor (the whole track and a close-up), typed or dragged start/end, fades, keys kept inside it;
+# the item's sting keeps its part and the timer plays just that, from memory. The sting library page
+# (stings.html, sting-library.js) makes clips of stock stings and of files, exports them as JSON
+# (stock by name, file by name and size) and imports them, asking for the files once; the editor's
+# + sting offers the library's clips, and a stock clip in use counts separately from its whole song.
+import io, json, math, mimetypes, os, struct, sys, wave
+from playwright.sync_api import sync_playwright
+BASE = "https://timer.sophtwhere.com/beta/"
+def tone(sec, hz=220):
+    b = io.BytesIO(); w = wave.open(b, "wb"); w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
+    w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * (hz + 40 * int(i / 16000)) * i / 16000))) for i in range(int(16000 * sec)))); w.close()
+    return b.getvalue()
+SONG = tone(8)
+STOCK = {"stings": [{"name": "Song", "url": "media/song.wav", "media": "audio", "duration": 8},
+                    {"name": "Song — hit", "url": "media/song.wav", "media": "audio", "duration": 8, "start": 5, "end": 6.5, "fadeOut": 200},
+                    {"name": "Tune", "url": "media/song.wav?t", "media": "audio", "duration": 8},
+                    {"name": "Tune — tidy", "url": "media/song.wav?t", "media": "audio", "duration": 8, "start": 0.5, "end": 7, "hideOriginal": True}]}
+SHEET = {"title": "Clips", "perItem": 20, "items": [
+    {"id": "a", "name": "Keynote", "start": None, "duration": 600},
+    {"id": "b", "name": "Panel", "start": None, "duration": 300},
+    {"id": "c", "name": "Awards", "start": None, "duration": 300},
+    {"id": "d", "name": "Close", "start": None, "duration": 300}]}
+def h(route, req):
+    u = req.url
+    if u.startswith(BASE + "media/song.wav"): return route.fulfill(status=200, body=SONG, headers={"content-type": "audio/wav"})
+    if u.startswith(BASE):
+        n = u[len(BASE):].split("?")[0].split("#")[0]
+        if n == "stock-stings.json": return route.fulfill(status=200, body=json.dumps(STOCK), headers={"content-type": "application/json"})
+        if n == "changelog.html": return route.fulfill(status=404, body=b"")
+        fp = os.path.join(PUBLIC, n)
+        if os.path.isfile(fp): return route.fulfill(status=200, body=open(fp, "rb").read(), headers={"content-type": mimetypes.guess_type(fp)[0] or "text/plain"})
+        return route.fulfill(status=404, body=b"")
+    return route.abort()
+errs = []
+def check(name, ok, got=None):
+    print(("ok   " if ok else "FAIL ") + name + ("" if ok else "  got: %r" % (got,)))
+    if not ok: errs.append(name)
+
+INIT = "window.TimerFeatures={stings:true};if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';localStorage.whatsnew_seen='2099-01-01';localStorage.runsheet=%s}" % json.dumps(json.dumps(SHEET))
+with sync_playwright() as p:
+    b = p.chromium.launch(args=["--no-proxy-server", "--autoplay-policy=no-user-gesture-required"])
+    folder = os.path.join(OUTDIR, "clip_tracks"); os.makedirs(folder, exist_ok=True)
+    mytrack = os.path.join(folder, "my-track.wav"); open(mytrack, "wb").write(tone(6, 330))
+
+    c = b.new_context(ignore_https_errors=True, viewport={"width": 1280, "height": 800}, accept_downloads=True)
+    c.add_init_script(INIT); c.route("**/*", h)
+    t = c.new_page(); t.on("pageerror", lambda e: errs.append("timer: " + str(e))); t.goto(BASE + "timer.html"); t.wait_for_timeout(1000)
+    e = c.new_page(); e.on("pageerror", lambda x: errs.append("editor: " + str(x))); e.goto(BASE + "runsheet.html"); e.wait_for_timeout(800)
+    sheet = lambda: t.evaluate("JSON.parse(localStorage.runsheet).items.reduce((m, it) => (m[it.id] = it.sting || null, m), {})")
+    row = lambda i: '#rs-table tr[data-id="%s"]' % i
+
+    # ✂ in the run sheet editor
+    e.click(row("a") + " button[data-act=sadd]"); e.wait_for_timeout(300)
+    e.select_option("#sting-stock", "0"); e.click(".ask button:has-text('Use the stock sting')"); e.wait_for_timeout(400)
+    e.click(row("a") + " button[data-act=strim]"); e.wait_for_timeout(1500)
+    ink = e.evaluate("(() => { const c = document.querySelector('.sc-over'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; })()")
+    check("the waveform is drawn", ink > 1000, ink)
+    e.fill(".sc-t[data-k=start]", "0:02.00"); e.press(".sc-t[data-k=start]", "Tab")
+    e.fill(".sc-t[data-k=end]", "3.5"); e.press(".sc-t[data-k=end]", "Tab")
+    e.fill(".sc-ms[data-k=fadeOut]", "200"); e.press(".sc-ms[data-k=fadeOut]", "Tab")
+    e.click(".sc-len"); e.keyboard.press("ArrowRight"); e.wait_for_timeout(100)
+    check("← → nudge the selected edge", e.input_value(".sc-t[data-k=end]") == "0:03.60", e.input_value(".sc-t[data-k=end]"))
+    before = t.evaluate("JSON.parse(localStorage.runsheet_state || '{}').index")
+    e.keyboard.press("Space"); e.wait_for_timeout(400)
+    check("Space plays the part, not Next", t.evaluate("JSON.parse(localStorage.runsheet_state || '{}').index") == before)
+    e.screenshot(path=OUTDIR + "/clip_editor.png")
+    e.click(".sc-save"); e.wait_for_timeout(500)
+    s = sheet()["a"]
+    check("the sting keeps its part", s and s.get("start") == 2 and s.get("end") == 3.6 and s.get("fadeOut") == 200, s)
+    check("the cell shows the part's length and a lit ✂", "2 s" in e.inner_text(row("a") + " td.vid") and e.locator(row("a") + " .vtrim.on").count() == 1)
+
+    t.evaluate("window.runsheet.next()"); t.wait_for_timeout(700)
+    st = t.evaluate("window.stingPlayer.state()")
+    check("the timer plays just the part, from memory", st["audio"] and abs(st["audio"]["duration"] - 1.6) < 0.05 and not st["audio"]["paused"], st)
+    t.wait_for_timeout(1500)
+    check("… and it ends there", t.evaluate("window.stingPlayer.state().audio") is None)
+
+    # a stock clip counts separately from its whole song
+    e.click(row("b") + " button[data-act=sadd]"); e.wait_for_timeout(300)
+    opts = e.evaluate("[...document.querySelectorAll('#sting-stock option')].map(o => o.textContent)")
+    check("a stock clip is offered with its own length", any(o.startswith("Song — hit · 2 s") for o in opts), opts)
+    check("the song in use doesn't mark its clip as in use", not any("hit" in o and "in use" in o for o in opts), opts)
+    check("a stock clip with hideOriginal: the whole track isn't offered, the clip is", not any(o.startswith("Tune ·") for o in opts) and any(o.startswith("Tune — tidy") for o in opts), opts)
+    e.select_option("#sting-stock", "1"); e.click(".ask button:has-text('Use the stock sting')"); e.wait_for_timeout(400)
+    s = sheet()["b"]
+    check("a stock clip keeps its part on the item", s and s.get("start") == 5 and s.get("end") == 6.5, s)
+
+    # the library page
+    lib = c.new_page(); lib.on("pageerror", lambda x: errs.append("library: " + str(x))); lib.goto(BASE + "stings.html"); lib.wait_for_timeout(800)
+    check("the library lists the stock stings (hidden ones too, marked)", lib.locator("#stock li[data-s]").count() == 4 and lib.evaluate("window.__stingLibrary.hidden()") == ["Tune"], lib.evaluate("window.__stingLibrary.hidden()"))
+    lib.click('#stock li[data-s="0"] button[data-a=clip]'); lib.wait_for_timeout(1200)
+    lib.fill(".sc-t[data-k=start]", "1"); lib.press(".sc-t[data-k=start]", "Tab")
+    lib.fill(".sc-t[data-k=end]", "2.5"); lib.press(".sc-t[data-k=end]", "Tab")
+    check("a clip of a stock sting offers to hide the original, ticked", lib.is_visible(".sc-hide") and lib.is_checked(".sc-hideorig") and "Song" in lib.inner_text(".sc-hide"))
+    lib.fill(".sc-name", "Keynote 1.5 s"); lib.click(".sc-save"); lib.wait_for_timeout(400)
+    with lib.expect_file_chooser() as fc: lib.click("#fromfile")
+    fc.value.set_files(mytrack); lib.wait_for_timeout(1200)
+    lib.fill(".sc-t[data-k=end]", "3"); lib.press(".sc-t[data-k=end]", "Tab")
+    lib.fill(".sc-ms[data-k=fadeIn]", "100"); lib.press(".sc-ms[data-k=fadeIn]", "Tab")
+    lib.fill(".sc-name", "Sarah's walk-on"); lib.click(".sc-save"); lib.wait_for_timeout(400)
+    mine = lib.evaluate("window.__stingLibrary.list()")
+    check("clips made from a stock sting and from a file", [(m["name"], m.get("stock"), m.get("file")) for m in mine] == [("Keynote 1.5 s", "Song", None), ("Sarah's walk-on", None, "my-track.wav")], mine)
+    lib.click('#mine li[data-i="1"] button[data-a=play]'); lib.wait_for_timeout(300)
+    check("▶ plays a clip", lib.evaluate("window.__stingLibrary.playing()") == "m1")
+    lib.click('#mine li[data-i="1"] button[data-a=play]')
+    with lib.expect_download() as dl: lib.click("#export")
+    exported = json.loads(open(dl.value.path()).read())
+    ex = exported["stings"]
+    check("export: stock by name, file by name and size, the parts", ex[0].get("stock") == "Song" and ex[0].get("hideOriginal") is True and "hideOriginal" not in ex[1] and ex[0].get("start") == 1 and ex[0].get("end") == 2.5 and ex[1].get("file") == "my-track.wav" and ex[1].get("size") == os.path.getsize(mytrack) and ex[1].get("fadeIn") == 100, ex)
+    lib.screenshot(path=OUTDIR + "/sting_library.png")
+
+    # the editor offers the library's clips
+    e.reload(); e.wait_for_timeout(800)
+    e.click(row("c") + " button[data-act=sadd]"); e.wait_for_timeout(500)
+    check("+ sting offers my clips", e.locator("#sting-mine option").count() == 2)
+    opts = e.evaluate("[...document.querySelectorAll('#sting-stock option')].map(o => o.textContent)")
+    check("my clip hides its original from the pick list", not any(o.startswith("Song ·") for o in opts) and any(o.startswith("Song — hit") for o in opts), opts)
+    e.select_option("#sting-mine", "1"); e.click(".ask button:has-text('Use my clip')"); e.wait_for_timeout(1200)
+    s = sheet()["c"]
+    check("a clip of my own file: the file goes with it, cut the same", s and s["src"] == "file" and s["name"] == "Sarah's walk-on" and s.get("end") == 3 and s.get("fadeIn") == 100 and s["key"], s)
+
+    # delete the clip: its original comes back
+    lib.on("dialog", lambda d: d.accept())
+    lib.click('#mine li[data-i="0"] button[data-a=del]'); lib.wait_for_timeout(300)
+    e.click(row("d") + " button[data-act=sadd]"); e.wait_for_timeout(500)
+    opts = e.evaluate("[...document.querySelectorAll('#sting-stock option')].map(o => o.textContent)")
+    check("the clip deleted: its original is offered again", any(o.startswith("Song ·") for o in opts), opts)
+    e.keyboard.press("Escape")
+
+    # import on another computer: the file is asked for once
+    c2 = b.new_context(ignore_https_errors=True); c2.add_init_script("window.TimerFeatures={stings:true}"); c2.route("**/*", h)
+    lib2 = c2.new_page(); lib2.on("pageerror", lambda x: errs.append("library2: " + str(x))); lib2.goto(BASE + "stings.html"); lib2.wait_for_timeout(600)
+    path = os.path.join(OUTDIR, "sting-library.json"); open(path, "w").write(json.dumps(exported))
+    with lib2.expect_file_chooser() as fc: lib2.click("#import")
+    fc.value.set_files(path); lib2.wait_for_timeout(800)
+    check("import: the clips arrive", len(lib2.evaluate("window.__stingLibrary.list()")) == 2)
+    check("import: a file clip needs its file", lib2.evaluate("window.__stingLibrary.missing()") == ["Sarah's walk-on"] and lib2.is_visible("#find"))
+    with lib2.expect_file_chooser() as fc: lib2.click("#find")
+    fc.value.set_files(folder); lib2.wait_for_timeout(800)
+    check("Find files…: matched by name and size", lib2.evaluate("window.__stingLibrary.missing()") == [], lib2.evaluate("window.__stingLibrary.missing()"))
+    b.close()
+
+print("errors:", errs)
+sys.exit(1 if errs else 0)

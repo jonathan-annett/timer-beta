@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sting library</title>
+  <style>
+    :root { --bg: #0b0b0b; --panel: #151515; --line: #2a2a2a; --text: #ddd; --dim: #888; --accent: #4aa8ff; --ok: #7fdc7f; --warn: #e0b030; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font: 15px/1.45 "Helvetica Neue", Arial, sans-serif; }
+    [hidden] { display: none !important; }
+    main { max-width: 900px; margin: 0 auto; padding: 24px 16px 40px; }
+    h1 { font-size: 20px; margin: 0 0 4px; color: #fff; }
+    h2 { font-size: 16px; margin: 0; color: #fff; }
+    .sub { color: var(--dim); margin: 0 0 20px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    .head { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+    .head h2 { flex: 1; }
+    button { font: inherit; font-size: 14px; color: var(--text); background: #222; border: 1px solid #444; border-radius: 6px; padding: 5px 11px; cursor: pointer; }
+    button:hover { background: #2c2c2c; }
+    button.small { padding: 2px 8px; font-size: 13px; }
+    button.primary { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li { display: flex; gap: 10px; align-items: center; padding: 6px 4px; border-top: 1px solid var(--line); }
+    li .name { color: #fff; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    li .meta { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    li .need { color: var(--warn); font-size: 13px; }
+    li.hid .name { color: var(--dim); }
+    .empty { color: var(--dim); padding: 6px 4px; }
+    .hint { color: var(--dim); font-size: 13px; }
+    #msg { min-height: 1.4em; color: var(--ok); margin-bottom: 8px; }
+    #msg.bad { color: var(--warn); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Sting library</h1>
+    <p class="sub">Clips of walk-up stings: the part of a track to play, with fades, without cutting the file. Make them from the stock stings or your own tracks; they appear in the run sheet editor's <b>+ sting</b> on this computer. Export the library to take it to another computer (or to give the site's owner your clips).</p>
+    <div id="msg"></div>
+
+    <section class="card">
+      <div class="head"><h2>My clips</h2>
+        <button id="fromfile">+ From a file…</button>
+        <button id="import">Import…</button>
+        <button id="export">Export</button>
+        <button id="find" hidden>Find files…</button>
+      </div>
+      <ul id="mine"></ul>
+    </section>
+
+    <section class="card">
+      <div class="head"><h2>Stock stings</h2><span class="hint">✂ makes a clip of one</span></div>
+      <ul id="stock"></ul>
+    </section>
+  </main>
+  <input type="file" id="pickfile" accept="audio/*,video/*" hidden>
+  <input type="file" id="pickjson" accept=".json,application/json" hidden>
+  <input type="file" id="pickdir" webkitdirectory multiple hidden>
+  <script src="features.js?v=6f288f00"></script>
+  <script src="video-store.js?v=069f77d9"></script>
+  <script src="sting-clip.js?v=64174fe7"></script>
+  <script src="sting-library.js?v=79800408"></script>
+</body>
+</html>

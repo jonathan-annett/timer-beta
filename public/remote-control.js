@@ -703,9 +703,14 @@
       if (it.holding && typeof it.holding === 'object' && knownHolds.has(it.holding.key)) out.holding = knownHolds.get(it.holding.key);
       // A walk-up sting: one already on the sheet (a file can't be made up), or a new link or stock sting (https only)
       const st = STINGS && !out.video && it.sting && typeof it.sting === 'object' ? it.sting : null;
-      if (st && knownStings.has(st.key || st.url)) out.sting = knownStings.get(st.key || st.url);
+      if (st && knownStings.has(st.key || st.url)) out.sting = Object.assign({}, knownStings.get(st.key || st.url), { name: typeof st.name === 'string' && st.name ? st.name.slice(0, 200) : knownStings.get(st.key || st.url).name });
       else if (st && (st.src === 'link' || st.src === 'stock') && typeof st.url === 'string' && st.url.length <= 2048 && /^https:\/\//.test(st.url))
-        out.sting = { src: st.src, media: st.media === 'video' ? 'video' : 'audio', name: typeof st.name === 'string' ? st.name.slice(0, 200) : 'sting', url: st.url, duration: secs(st.duration, 3600) };
+        out.sting = { src: st.src, media: st.media === 'video' ? 'video' : 'audio', name: typeof st.name === 'string' ? st.name.slice(0, 200) : 'sting', url: st.url, duration: secs(st.duration, 36000) };
+      if (out.sting) {                          // a clip (sting-clip.js): the part to play, as sent
+        for (const k of ['start', 'end', 'fadeIn', 'fadeOut']) delete out.sting[k];
+        const r = { start: secs(st.start, 36000), end: secs(st.end, 36000), fadeIn: num(st.fadeIn, 0, 60000), fadeOut: num(st.fadeOut, 0, 60000) };
+        for (const k of Object.keys(r)) if (r[k] != null && r[k] !== 0) out.sting[k] = r[k];
+      }
       items.push(out);
     }
     return { title: typeof s.title === 'string' ? s.title.slice(0, 200) : '', perItem: num(s.perItem, 1, 600) || 20, items };
@@ -824,7 +829,9 @@
     if (e.upload) return fail('busy');
     e.upload = { up, id: m.id, size, kind, type: String(m.type || '').slice(0, 100),
       name: typeof m.name === 'string' ? m.name.slice(0, 200) : 'video',
-      duration: num(m.duration, 0, 86400), got: 0, chunks: [], blobs: [], chunkBytes: 0 };
+      duration: num(m.duration, 0, 86400), got: 0, chunks: [], blobs: [], chunkBytes: 0,
+      label: typeof m.label === 'string' ? m.label.slice(0, 200) : null,              // a sting from the sender's library: its name
+      clip: m.clip && typeof m.clip === 'object' ? { start: num(m.clip.start, 0, 36000), end: num(m.clip.end, 0, 36000), fadeIn: num(m.clip.fadeIn, 0, 60000), fadeOut: num(m.clip.fadeOut, 0, 60000) } : null };
     e.upload.step = Math.max(256 << 10, Math.ceil(size / 50));    // progress reports: about every 2 %
     e.upload.nextProg = e.upload.step;
     e.peer.send({ t: 'vup-ok', up });
@@ -866,7 +873,8 @@
     }
     if (u.kind === 'sting') {                                // a walk-up sting: the item keeps its own time
       if (it.video) { window.videoStore.remove(key).catch(() => {}); e.peer.send({ t: 'vup-error', up: u.up, reason: 'bad' }); return; }
-      it.sting = { src: 'file', media: /^video\//.test(u.type) ? 'video' : 'audio', name: u.name.replace(/\.[A-Za-z0-9]{1,5}$/, ''), size: u.size, duration: u.duration ? Math.round(u.duration) : null, key };
+      it.sting = { src: 'file', media: /^video\//.test(u.type) ? 'video' : 'audio', name: u.label || u.name.replace(/\.[A-Za-z0-9]{1,5}$/, ''), size: u.size, duration: u.duration ? Math.round(u.duration) : null, key };
+      if (u.clip) for (const k of Object.keys(u.clip)) if (u.clip[k] != null && u.clip[k] !== 0) it.sting[k] = u.clip[k];   // a clip: just its part
       if (!it.name) it.name = it.sting.name;
       writeSheet(sheet);                                      // removes the item's old sting file too
       e.peer.send({ t: 'vup-done', up: u.up, key });

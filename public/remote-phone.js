@@ -847,7 +847,8 @@
       else if (r.t === 'vup-error') { u.failed = REASONS[r.reason] || `The ${what} wasn’t sent: the direct link was lost.`; end(u.failed); }
     };
     peer.send({ t: 'vup-start', up, kind, id: m.id, name: String(m.name || file.name || what).slice(0, 200),
-      size: file.size, type: file.type, duration: typeof m.duration === 'number' ? m.duration : null });
+      size: file.size, type: file.type, duration: typeof m.duration === 'number' ? m.duration : null,
+      label: typeof m.label === 'string' ? m.label.slice(0, 200) : undefined, clip: m.clip && typeof m.clip === 'object' ? m.clip : undefined });   // (a library clip: its name and part)
     new Promise((resolve, reject) => {
       u.waitOk = resolve;
       setTimeout(() => reject(new Error('The timer didn’t answer.')), 15000);

@@ -201,10 +201,12 @@
       onEnd: opts.onEnd === 'recue' ? 'recue' : 'unload',
       history: opts.history || null,
       sting: !!opts.sting,
+      region: opts.sting && opts.region ? opts.region : null,   // a sting's clip: {start, end, fadeIn, fadeOut} (sting-clip.js)
     };
     el.pause();
     el.src = url;
     el.currentTime = 0;
+    if (cued.region && cued.region.start) { const c = cued; whenReady(el, () => { if (c.el === el && cued === c) el.currentTime = c.region.start; }); }   // a clip: cued at its start
     arrange();
     notify();
     return true;
@@ -226,8 +228,18 @@
     s.rewound = false;
     arrange();
     if (s.sting) {                          // a walk-up sting: the item already set the timer and the message
-      s.el.volume = 1;
+      const r = s.region || {};
+      if (r.start && Math.abs(s.el.currentTime - r.start) > 0.25) s.el.currentTime = r.start;
+      s.el.volume = r.fadeIn ? 0 : 1;
       const p = s.el.play();
+      // A clip: fade in, and fade out at its end (on the player window's own timers: it's on show)
+      if (r.fadeIn || r.end != null) {
+        const t = win.setInterval(() => {
+          if (playing !== s) { win.clearInterval(t); return; }
+          if (r.fadeIn && s.el.volume < 1) s.el.volume = Math.min(1, s.el.volume + 50 / r.fadeIn);
+          if (r.end != null && s.el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { win.clearInterval(t); fadeOut(r.fadeOut || 30); }
+        }, 50);
+      }
       if (p && p.catch) p.catch(err => {
         if (err && err.name === 'NotAllowedError') toast('The browser stopped the sting playing with sound. Click once in the player window, then press Next again.');
       });
