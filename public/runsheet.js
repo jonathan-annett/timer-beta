@@ -665,6 +665,7 @@
       case 'curend': curEnd(c.id, Number(c.endClock), c.nextId || null); break;
       case 'livename': liveName(c.id, c.name); break;
       case 'autostart': setAutostart(c.on); break;
+      case 'dock': if (window.runsheetDock) window.runsheetDock.dock(); break;   // the editor window's ⇲ Dock
     }
   }
 
@@ -936,9 +937,15 @@
     if (e.key === 'PageDown') next(); else back();
   }, true);
 
-  function openEditor() {
+  // The editor: docked along the bottom of this screen (runsheet-dock.js; the default), or in its
+  // own window if that's what the operator chose last (the dock's ⧉; the window's ⇲ Dock comes back)
+  function openWindow() {
     const w = window.open('runsheet.html', 'runsheet_editor_window', 'width=1100,height=780');
     if (w) w.focus();
+    return w;
+  }
+  function openEditor() {
+    if (!(window.runsheetDock && window.runsheetDock.toggle())) openWindow();
     return false;
   }
 
@@ -953,7 +960,7 @@
 
   // sheetChanged(): the sheet in localStorage was rewritten by this window (the remote editor,
   // remote-control.js); the storage event that the editor window's writes give doesn't fire then.
-  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive, sheetChanged: onSheetChanged, flash, restart: restartCountdown,
+  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, openWindow, isActive, sheetChanged: onSheetChanged, flash, restart: restartCountdown,
     curDuration, curEnd, liveName, standbyStart, setAutostart, startShifted, shiftPolicy };
   // The dashboard's "Auto start at …" box; blurred after a click so Space goes back to the timer
   if ($('rs_auto')) $('rs_auto').addEventListener('change', e => { setAutostart(e.target.checked); e.target.blur(); });
@@ -973,7 +980,7 @@
 
   function init() {
     trackButtonBar();
-    // The run sheet button opens the editor; Shift+click turns run sheet mode on or off instead
+    // The run sheet button opens (or closes) the editor; Shift+click turns run sheet mode on or off instead
     // (timer.css lights the button while it's on: html.runsheet)
     document.getElementById('btnrunsheet')?.addEventListener('click', ev => { if (ev.shiftKey) { if (!state.active && !norm.items.length) flash("The run sheet is empty: open it (click, or E) to add items"); else setActive(!state.active); } else openEditor(); });
     // When the player window opens (or anything about it changes), cue the next video if needed

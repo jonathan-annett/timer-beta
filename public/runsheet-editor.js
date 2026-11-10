@@ -1766,6 +1766,17 @@
     renderEditBar();
     toParent({ t: 'rs-ready' });
   }
+  // In its own window, opened by the timer: ⇲ Dock puts it back along the bottom of the timer's
+  // screen (runsheet-dock.js), where it opens from then on
+  let opener = null;
+  try { opener = !REMOTE && window.parent === window && window.opener && !window.opener.closed && window.opener.runsheetDock ? window.opener : null; } catch (_) { /* another site */ }
+  if (opener) {
+    const b = document.createElement('button');
+    b.id = 'btn-dock'; b.textContent = '⇲ Dock';
+    b.title = 'Put the run sheet editor back along the bottom of the timer’s screen (it opens there from then on)';
+    b.addEventListener('click', () => { send('dock'); setTimeout(() => window.close(), 150); });
+    $('btn-help').before(b);
+  }
   renderAll();
   setInterval(renderLive, 2000);
   setInterval(() => { if (norm.items.length && provisional()) renderStatus(); }, 5000);   // times as if it started now
