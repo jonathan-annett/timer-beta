@@ -103,7 +103,9 @@ var StingClip = (function () {
 .sc-head .sc-src { color: #888; font-size: 0.85rem; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-box canvas { display: block; width: 100%; background: #0a0a0a; border: 1px solid #2a2a2a; border-radius: 0.3rem; cursor: crosshair; }
 .sc-over { height: 4.2rem; margin-bottom: 0.4rem; }
-.sc-zoom { height: 8rem; cursor: ew-resize; }
+.sc-zoom { height: 8rem; }
+.sc-box canvas.sc-grab { cursor: ew-resize; }
+.sc-row input.sc-ms::-webkit-inner-spin-button { opacity: 1; }
 .sc-hint { color: #777; font-size: 0.8rem; margin: 0.3rem 0 0.6rem; }
 .sc-row { display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center; margin: 0.5rem 0; }
 .sc-row label { color: #aaa; display: inline-flex; gap: 0.4rem; align-items: center; }
@@ -134,18 +136,18 @@ var StingClip = (function () {
       wrap.className = 'sc-wrap';
       wrap.innerHTML = `<div class="sc-box" role="dialog" aria-modal="true">
         <div class="sc-head"><b>Choose the part to play</b><span class="sc-src"></span></div>
-        <canvas class="sc-over" title="The whole track: drag across it to choose the part"></canvas>
+        <canvas class="sc-over" title="The whole track: drag across it to choose a part, or drag a start/end line"></canvas>
         <canvas class="sc-zoom" title="Close up: drag the start or end line"></canvas>
-        <div class="sc-hint">Drag across the whole track to choose a part, then fine-tune the edges below or by dragging them close up. ← → move the selected edge (Shift: 1 s, Alt: 0.01 s) · Space plays · Enter saves · Esc cancels</div>
+        <div class="sc-hint">Drag across the whole track to choose a part; drag a white line (the pointer becomes ↔) to move that edge. ← → move the selected edge (Shift: 1 s, Alt: 0.01 s); ↑ ↓ in a time or fade box step it · Space plays · Enter saves · Esc cancels</div>
         <div class="sc-row">
-          <label>Start <input class="sc-t" data-k="start" spellcheck="false"></label>
-          <label>End <input class="sc-t" data-k="end" spellcheck="false"></label>
+          <label>Start <input class="sc-t" data-k="start" spellcheck="false" title="↑ ↓: 0.01 s (Shift: 0.1 s)"></label>
+          <label>End <input class="sc-t" data-k="end" spellcheck="false" title="↑ ↓: 0.01 s (Shift: 0.1 s)"></label>
           <span>Plays for <span class="sc-len"></span></span>
-          <label>Fade in <input class="sc-ms" data-k="fadeIn" inputmode="numeric"> ms</label>
-          <label>Fade out <input class="sc-ms" data-k="fadeOut" inputmode="numeric"> ms</label>
+          <label>Fade in <input class="sc-ms" data-k="fadeIn" type="number" min="0" step="10" title="↑ ↓ or the arrows: 10 ms (Shift: 100 ms)"> ms</label>
+          <label>Fade out <input class="sc-ms" data-k="fadeOut" type="number" min="0" step="10" title="↑ ↓ or the arrows: 10 ms (Shift: 100 ms)"> ms</label>
         </div>
         <div class="sc-row">
-          <button class="sc-play">▶ Play the part</button><button class="sc-lead">▶ From 2 s before</button><button class="sc-stop">■</button>
+          <button class="sc-play">▶ Play the part</button><button class="sc-first" title="Its first 2 seconds, with the fade in">▶ First 2 s</button><button class="sc-last" title="The 2 seconds before the fade out begins, then the fade (or just the last 2 seconds)">▶ Last 2 s</button><button class="sc-lead" title="From 2 seconds before the start: hear the lead-in">▶ From 2 s before</button><button class="sc-stop">■</button>
           <label>Name <input class="sc-name" spellcheck="false"></label>
         </div>
         <div class="sc-row sc-hide" hidden><label><input type="checkbox" class="sc-hideorig"> Hide “<span class="sc-orig"></span>” from + sting: use this clip instead</label></div>
@@ -158,7 +160,7 @@ var StingClip = (function () {
       $('.sc-src').textContent = opts.name || '';
       $('.sc-name').value = opts.name || '';
       if (opts.original) { $('.sc-hide').hidden = false; $('.sc-orig').textContent = opts.original; $('.sc-hideorig').checked = opts.hideOriginal !== false; }
-      let buf = null, peaks = null, voice = null, playFrom = 0, playT0 = 0, active = 'start', raf = 0;
+      let buf = null, peaks = null, voice = null, playFrom = 0, playT0 = 0, active = 'start', raf = 0, hover = null;
       const r0 = region(opts.region) || {};
       const sel = { start: r0.start || 0, end: r0.end, fadeIn: r0.fadeIn || 0, fadeOut: r0.fadeOut || 0 };
 
@@ -212,7 +214,7 @@ var StingClip = (function () {
         g.moveTo(x(sel.start), H); g.lineTo(x(sel.start + sel.fadeIn / 1000), 2); g.lineTo(x(endOf() - sel.fadeOut / 1000), 2); g.lineTo(x(endOf()), H);
         g.stroke();
         g.fillStyle = '#fff';
-        for (const k of ['start', 'end']) { const t = k === 'start' ? sel.start : endOf(); g.fillRect(x(t) - devicePixelRatio, 0, (k === active ? 3 : 2) * devicePixelRatio, H); }
+        for (const k of ['start', 'end']) { const t = k === 'start' ? sel.start : endOf(), w = (k === hover ? 5 : k === active ? 3 : 2) * devicePixelRatio; g.fillRect(x(t) - w / 2, 0, w, H); }
         if (voice) { const t = playFrom + voice.time(); g.fillStyle = '#ffcc33'; g.fillRect(x(t), 0, 2 * devicePixelRatio, H); }
       }
       const zoomRange = () => { const len = endOf() - sel.start, pad = Math.max(0.5, len * 0.25); return [Math.max(0, sel.start - pad), Math.min(dur(), endOf() + pad)]; };
@@ -229,9 +231,33 @@ var StingClip = (function () {
 
       // Pointer: drag across the whole track = a new selection; close up, drag the nearer edge
       const timeAt = (cv, e, from, to) => { const r = cv.getBoundingClientRect(); return from + Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * (to - from); };
+      const GRAB = 7;                                // css px either side of a line
+      function nearEdge(cv, e, from, to) {
+        const r = cv.getBoundingClientRect(), px = t => r.left + (t - from) / (to - from) * r.width;
+        const ds = Math.abs(e.clientX - px(sel.start)), de = Math.abs(e.clientX - px(endOf()));
+        return Math.min(ds, de) > GRAB ? null : ds <= de ? 'start' : 'end';
+      }
+      function dragEdge(cv, e, k, range) {
+        active = k;
+        const move = ev => { const [a, b] = range(), t = timeAt(cv, ev, a, b); if (k === 'start') sel.start = t; else sel.end = t; redraw(); };
+        const up = () => { cv.removeEventListener('pointermove', move); cv.removeEventListener('pointerup', up); };
+        cv.addEventListener('pointermove', move); cv.addEventListener('pointerup', up);
+        draw();
+      }
+      for (const [cv, range] of [[over, () => [0, dur()]], [zoom, zoomRange]]) {
+        cv.addEventListener('pointermove', e => {
+          if (!buf || e.buttons) return;
+          const [a, b] = range(), h = nearEdge(cv, e, a, b);
+          cv.classList.toggle('sc-grab', !!h);
+          if (h !== hover) { hover = h; draw(); }
+        });
+        cv.addEventListener('pointerleave', () => { cv.classList.remove('sc-grab'); if (hover) { hover = null; draw(); } });
+      }
       over.addEventListener('pointerdown', e => {
         if (!buf) return;
         over.setPointerCapture(e.pointerId);
+        const k = nearEdge(over, e, 0, dur());
+        if (k) return dragEdge(over, e, k, () => [0, dur()]);
         const t0 = timeAt(over, e, 0, dur());
         const move = ev => { const t = timeAt(over, ev, 0, dur()); sel.start = Math.min(t0, t); sel.end = Math.max(t0, t, Math.min(t0, t) + 0.05); active = t < t0 ? 'start' : 'end'; redraw(); };
         const up = () => { over.removeEventListener('pointermove', move); over.removeEventListener('pointerup', up); };
@@ -241,6 +267,8 @@ var StingClip = (function () {
         if (!buf) return;
         zoom.setPointerCapture(e.pointerId);
         const [a, b] = zoomRange(), t = timeAt(zoom, e, a, b);
+        const k = nearEdge(zoom, e, a, b);
+        if (k) return dragEdge(zoom, e, k, () => [a, b]);   // (the view holds still while dragging)
         active = Math.abs(t - sel.start) <= Math.abs(t - endOf()) ? 'start' : 'end';
         const move = ev => { const tt = timeAt(zoom, ev, a, b); if (active === 'start') sel.start = tt; else sel.end = tt; redraw(); };
         move(e);
@@ -255,22 +283,31 @@ var StingClip = (function () {
           else sel[k] = Math.max(0, Number(i.value) || 0);
           msg(''); redraw();
         });
+        if (i.type === 'number') i.addEventListener('input', () => { sel[i.dataset.k] = Math.max(0, Number(i.value) || 0); clamp(); draw(); });
       });
 
       function stopPlay() { if (voice) { voice.stop(); voice = null; } cancelAnimationFrame(raf); draw(); }
-      function playPart(lead) {
+      function playPart(how) {
         stopPlay();
         if (!buf) return;
-        playFrom = lead ? Math.max(0, sel.start - 2) : sel.start;
-        const piece = lead ? render(buf, { start: playFrom, end: endOf(), fadeIn: 0, fadeOut: sel.fadeOut })
-          : render(buf, sel);
-        const v = voice = play(piece);
+        const end = endOf(), outAt = Math.max(sel.start, end - sel.fadeOut / 1000);
+        const piece = how === 'lead' ? { start: Math.max(0, sel.start - 2), end, fadeIn: 0, fadeOut: sel.fadeOut }
+          : how === 'first' ? { start: sel.start, end: Math.min(end, sel.start + 2), fadeIn: sel.fadeIn, fadeOut: 0 }
+          : how === 'last' ? { start: Math.max(sel.start, outAt - 2), end, fadeIn: 0, fadeOut: sel.fadeOut }   // 2 s before the fade out begins, then the fade
+          : sel;
+        playFrom = piece.start;
+        playing = { from: piece.start, to: piece.end };
+        const v = voice = play(render(buf, piece));
         v.ended.then(() => { if (voice === v) { voice = null; draw(); } });
         const tick = () => { if (voice !== v) return; draw(); raf = requestAnimationFrame(tick); };
         tick();
       }
-      $('.sc-play').addEventListener('click', () => playPart(false));
-      $('.sc-lead').addEventListener('click', () => playPart(true));
+      let playing = null;                            // (tests: what's playing, from–to)
+      wrap.__playing = () => (voice ? playing : null);
+      $('.sc-play').addEventListener('click', () => playPart());
+      $('.sc-first').addEventListener('click', () => playPart('first'));
+      $('.sc-last').addEventListener('click', () => playPart('last'));
+      $('.sc-lead').addEventListener('click', () => playPart('lead'));
       $('.sc-stop').addEventListener('click', stopPlay);
       $('.sc-whole').addEventListener('click', () => { sel.start = 0; sel.end = null; sel.fadeIn = sel.fadeOut = 0; redraw(); });
 
@@ -298,8 +335,16 @@ var StingClip = (function () {
         e.stopImmediatePropagation();
         if (e.key === 'Escape') { e.preventDefault(); finish(null); return; }
         if (e.key === 'Enter') { if (typing) e.target.dispatchEvent(new Event('change')); e.preventDefault(); save(); return; }
+        if (typing && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.target.dataset.k) {
+          e.preventDefault();
+          const k = e.target.dataset.k, dir = e.key === 'ArrowUp' ? 1 : -1;
+          if (k === 'start' || k === 'end') { const t = (k === 'start' ? sel.start : endOf()) + dir * (e.shiftKey ? 0.1 : 0.01); if (k === 'start') sel.start = t; else sel.end = t; active = k; }
+          else sel[k] = Math.max(0, (sel[k] || 0) + dir * (e.shiftKey ? 100 : 10));
+          clamp(); e.target.value = k === 'start' ? fmt(sel.start) : k === 'end' ? fmt(endOf()) : String(sel[k]); draw();
+          return;
+        }
         if (typing) return;
-        if (e.key === ' ') { e.preventDefault(); if (voice) stopPlay(); else playPart(false); return; }
+        if (e.key === ' ') { e.preventDefault(); if (voice) stopPlay(); else playPart(); return; }
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
           e.preventDefault();
           const step = (e.shiftKey ? 1 : e.altKey ? 0.01 : 0.1) * (e.key === 'ArrowLeft' ? -1 : 1);
