@@ -57,7 +57,10 @@ with sync_playwright() as p:
     # ✂ in the run sheet editor
     e.click(row("a") + " button[data-act=sadd]"); e.wait_for_timeout(300)
     e.select_option("#sting-stock", "0"); e.click(".sting-use"); e.wait_for_timeout(400)
-    e.click(row("a") + " button[data-act=strim]"); e.wait_for_timeout(1500)
+    e.click(row("a") + " button[data-act=strim]")
+    INK = "(() => { const c = document.querySelector('.sc-over'); if (!c || !c.width) return 0; const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; })()"
+    try: e.wait_for_function(INK + " > 1000", timeout=6000)   # decoding the track takes a moment
+    except Exception: pass
     ink = e.evaluate("(() => { const c = document.querySelector('.sc-over'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; })()")
     check("the waveform is drawn", ink > 1000, ink)
     # first / last 2 s (the last: 2 s before the fade out begins, then the fade)
@@ -69,6 +72,13 @@ with sync_playwright() as p:
     check("▶ First 2 s", playing() == {"from": 2, "to": 4}, playing())
     e.click(".sc-last"); e.wait_for_timeout(150)
     check("▶ Last 2 s starts 2 s before the fade out", playing() == {"from": 4.5, "to": 7}, playing())
+    zoom = lambda: [round(x, 2) for x in e.evaluate("document.querySelector('.sc-wrap').__zoom()")]
+    e.click(".sc-first"); e.wait_for_timeout(100)
+    check("First 2 s: the close-up shows the start 1 s in, 6 s across", zoom() == [1, 7], zoom())
+    e.click(".sc-last"); e.wait_for_timeout(100)
+    check("Last 2 s: the end 1 s from the right, 6 s across", zoom() == [2, 8], zoom())
+    e.click(".sc-zall"); e.wait_for_timeout(100)
+    check("Show the whole part: back to all of it", zoom()[0] < 2 and zoom()[1] >= 7, zoom())
     e.click(".sc-stop")
     # the pointer over a line becomes ↔
     box = e.locator(".sc-zoom").bounding_box()
