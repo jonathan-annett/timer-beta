@@ -14,6 +14,10 @@ def h(route, req):
         return route.fulfill(status=404, body=b"")
     return route.abort()
 errs=[]
+def check(name, ok, got=None):
+    print(("ok   " if ok else "FAIL ") + name + ("" if ok else "  got: %r" % (got,)))
+    if not ok: errs.append(name)
+qr_shown=lambda: pg.evaluate("(() => { const q = document.querySelector('#phone-panel .pp-qr'); return !!q && q.offsetParent !== null && getComputedStyle(q).display !== 'none'; })()")
 with sync_playwright() as p:
     b=p.chromium.launch(args=["--no-proxy-server","--disable-features=LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets"])
     c=b.new_context(ignore_https_errors=True, viewport={"width":1280,"height":800})
@@ -22,7 +26,10 @@ with sync_playwright() as p:
     pg.on("console", lambda m: errs.append("console "+m.type+": "+m.text) if m.type=="error" else None)
     pg.goto(BASE+"timer.html?remote="+SERVER); pg.wait_for_timeout(1000)
     pg.click("#btnshare"); pg.wait_for_timeout(1500)
+    check("(the control link shows a QR code)", qr_shown())
     pg.click("#phone-panel .pp-modes button[data-mode=companion]"); pg.wait_for_timeout(300)
+    check("Companion: a link to copy, no QR code", not qr_shown())
+    check("… and a link to download the module", pg.get_attribute("#phone-panel .pp-modehint a", "href") == "https://github.com/jonathan-annett/companion-module-sophtwhere-presentationtimer/releases")
     print("button before:", pg.text_content("#btnshare").strip(), "| panel title:", pg.text_content("#phone-panel .pp-head b"), "| old share panel present:", pg.locator("#share-panel").count())
     print("hint:", pg.inner_text("#phone-panel .pp-modehint"))
     link=pg.text_content("#phone-panel .pp-link"); print("link:", link)
@@ -37,6 +44,10 @@ with sync_playwright() as p:
     proc.wait()
     print("timer display:", pg.text_content("#clock_main"), "| msg:", pg.text_content("#custom_message"), "| paused:", pg.evaluate("document.documentElement.classList.contains('paused')"))
     print("button with companion:", pg.text_content("#btnshare").strip())
+    if pg.is_visible("#phone-panel"): check("paired: still no QR code in Companion mode", not qr_shown())
+    pg.click("#btnshare"); pg.wait_for_timeout(300)
+    if not pg.is_visible("#phone-panel"): pg.click("#btnshare"); pg.wait_for_timeout(500)
+    check("reopened after pairing: still no QR code in Companion mode", pg.is_visible("#phone-panel") and not qr_shown())
     print("peers:", pg.text_content("#phone-panel .pp-peers"))
     # a wrong number disconnects it, and it doesn't reconnect by itself
     if not pg.is_visible("#phone-panel"): pg.click("#btnshare"); pg.wait_for_timeout(500)

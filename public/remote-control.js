@@ -69,7 +69,7 @@
     countdown: { label: 'Countdown', hint: '<b>View only</b>: a countdown display. Can’t control the timer.' },
     runsheet:  { label: 'Run sheet', hint: '<b>View only</b>: run sheet status, e.g. for a green room. Can’t control the timer.' },
     admin:     { label: 'Admin',     hint: '<b>Admin</b>: can control the timer, use every view, and set up other computers as remotes or displays. Keep this one to yourself.' },
-    companion: { label: 'Companion', hint: '<b>Bitfocus Companion</b> (or other automation): paste this link into the Companion connection’s settings. It gets every timer command and all the timer’s variables. It can’t set up other devices.' },
+    companion: { label: 'Companion', hint: '<b>Bitfocus Companion</b> (or other automation): paste this link into the Companion connection’s settings. It gets every timer command and all the timer’s variables. It can’t set up other devices. No Presentation Timer connection in Companion yet? <a href="https://github.com/jonathan-annett/companion-module-sophtwhere-presentationtimer/releases" target="_blank" rel="noopener">Download the module</a> (the .tgz), then in Companion: Modules → Import module package.' },
   };
   const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet'];   // what an admin phone can set another computer up as
   const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4, overlay: 2, code: 6, offer: 7 };   // pairing server needed for each link (code: pairing by code)
@@ -1044,6 +1044,8 @@
 #phone-panel .pp-status[data-kind="ok"] { color: #7fdc7f; }
 #phone-panel .pp-status[data-kind="error"] { color: #ff8080; }
 #phone-panel .pp-qr { display: flex; justify-content: center; min-height: 40px; color: #888; cursor: zoom-in; }
+#phone-panel .pp-qr[hidden] { display: none; }
+#phone-panel .pp-modehint a { color: #4aa8ff; }
 #phone-panel .pp-qr canvas { display: block; border-radius: 4px;
   /* shrink (keeping it square) when the window is too short for the whole panel */
   width: auto !important; height: auto !important; max-width: 100%;
@@ -1402,7 +1404,7 @@
     if (intro) intro.textContent = touchCode ? 'Your friend types this code on their phone. Choose what their phone becomes:' : 'They scan this code with their phone. Choose what their phone becomes:';
     const codeUp = pair.on || touchCode;                 // a code (or "Getting a code…") in the QR code's place
     box.hidden = !enabled || !(codeUp || pair.note);
-    el.querySelector('.pp-qr').style.display = enabled && !codeUp ? '' : 'none';
+    el.querySelector('.pp-qr').style.display = enabled && !codeUp && !PASTE_MODES.includes(linkMode()) ? '' : 'none';   // (a link to copy: no QR code)
     el.querySelector('.pp-link').style.display = codeUp ? 'none' : '';
     const desktopCode = pair.on && pair.kind !== 'phone';  // the overlay code isn't one of the links; the phone code gives the chosen one
     el.querySelector('.pp-modes').style.display = enabled && !desktopCode ? '' : 'none';
