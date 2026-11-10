@@ -4,19 +4,33 @@
  * play, with fades, without cutting the file. A sting (or a library entry) may carry
  *   start, end    seconds into the source (end missing = to its end)
  *   fadeIn, fadeOut   milliseconds
+ *   loop          {from, to, plays, at?}: a region (s into the source, anywhere in it) that plays
+ *                 `plays` times where it is (plays − 1 copies straight after it), to make a short
+ *                 sting longer; moved (at: s into the source), `plays` copies go in at `at` and the
+ *                 region itself stays where it was (heard once, if it's inside the part). Built when
+ *                 the clip is loaded into memory, so it has limits (LIMITS): the last play starts
+ *                 within the first 90 s (it may end up to a loop later), the clip is 3 minutes at
+ *                 most and the track 10 minutes. Anything longer: Save as WAV, a file of its own.
  * Shared by the timer (sting-player.js plays clips from memory), the run sheet editor (Trim…) and
  * the sting library page (stings.html).
  *
  * window.StingClip:
- *   region(s)          {start, end, fadeIn, fadeOut} if s is a clip, else null
+ *   region(s)          {start, end, fadeIn, fadeOut, loop?} if s is a clip, else null
+ *   cleanLoop(l)       a valid loop {from, to, plays, at?} or null
+ *   plan(s, dur)       {segs: [[from, to] …] (pieces of the source in playing order), loop: {inAt,
+ *                      copies, len} | null, outside?} or null (the length isn't known)
  *   length(s, dur)     how long it plays (seconds), given the source's length if known
+ *   loopCheck(s, dur)  {ok, why}: whether the timer can build it in memory (why: what's wrong, or a
+ *                      note such as a loop outside the part)
+ *   LIMITS             {loopMin, plays, lead, memory, download, source} (s, plays)
  *   decode(src)        a URL or Blob → AudioBuffer (the whole source)
- *   render(buf, s)     the clip as its own AudioBuffer, fades included
+ *   render(buf, s)     the clip as its own AudioBuffer, loop and fades included
+ *   wav(buf)           an AudioBuffer → a 16-bit WAV Blob
  *   play(buf)          plays an AudioBuffer → {stop(), ended: Promise, time()}
  *   preview(src, s)    decode, render and play (the stock dialog's ▶) → {stop()}
  *   open({src, name, region, media, original, hideOriginal})  the clip editor: waveform (whole track + zoomed on the
- *                      selection), start/end handles, fades, play → Promise<{name, start, end,
- *                      fadeIn, fadeOut, hideOriginal} | null>; original (a stock sting's name) adds the
+ *                      selection), start/end handles, fades, a loop, play, Save as WAV → Promise<{name, start, end,
+ *                      fadeIn, fadeOut, loop, hideOriginal} | null>; original (a stock sting's name) adds the
  *                      choice to hide it from + sting while this clip exists (hideOriginal: a better edit)
  * MIT Licensed
  */
@@ -26,17 +40,62 @@ var StingClip = (function () {
   let ctx = null;
   const audio = () => ctx || (ctx = new (window.AudioContext || window.webkitAudioContext)());
   const num = v => (typeof v === 'number' && isFinite(v) ? v : null);
+  const r2 = t => Math.round(t * 100) / 100;
+  const clock = t => { t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 
+  // A loop is built in memory as the clip loads: these keep it from taking gigabytes
+  const LIMITS = {
+    loopMin: 0.1,     // s: the shortest region that loops
+    plays: 99,
+    lead: 90,         // s: the last play starts by then (it may end up to a loop later)
+    memory: 180,      // s: the whole clip, with a loop (sting-player.js plays clips up to this from memory)
+    download: 600,    // s: Save as WAV
+    source: 600,      // s: a track longer than this isn't decoded whole by the timer, so can't loop
+  };
+  const SEAM = 0.01;  // s: the crossfade where a copy joins (no click)
+
+  function cleanLoop(l) {
+    if (!l || typeof l !== 'object') return null;
+    const from = num(l.from), to = num(l.to), plays = num(l.plays), at = num(l.at);
+    if (from == null || to == null || from < 0 || to - from < LIMITS.loopMin - 1e-6 || to > 86400) return null;
+    if (plays == null || plays !== Math.round(plays) || plays < 2 || plays > LIMITS.plays) return null;
+    const o = { from, to, plays };
+    if (at != null && at >= 0 && at <= 86400) o.at = at;
+    return o;
+  }
   function region(s) {
     if (!s) return null;
-    const r = { start: num(s.start), end: num(s.end), fadeIn: num(s.fadeIn) || 0, fadeOut: num(s.fadeOut) || 0 };
-    return r.start != null || r.end != null || r.fadeIn || r.fadeOut ? r : null;
+    const r = { start: num(s.start), end: num(s.end), fadeIn: num(s.fadeIn) || 0, fadeOut: num(s.fadeOut) || 0 }, lp = cleanLoop(s.loop);
+    if (lp) r.loop = lp;
+    return r.start != null || r.end != null || r.fadeIn || r.fadeOut || lp ? r : null;
+  }
+  function plan(s, dur) {
+    const r = region(s), a = (r && r.start) || 0, b = r && r.end != null ? r.end : dur;
+    if (b == null) return null;
+    const lp = r && r.loop;
+    if (!lp) return { segs: [[a, b]], loop: null };
+    const moved = lp.at != null, at = moved ? lp.at : lp.to, copies = moved ? lp.plays : lp.plays - 1;
+    if (at < a - 1e-6 || at > b + 1e-6) return { segs: [[a, b]], loop: null, outside: true };
+    const segs = [];
+    if (at > a) segs.push([a, at]);
+    for (let i = 0; i < copies; i++) segs.push([lp.from, lp.to]);
+    if (b > at) segs.push([at, b]);
+    return { segs, loop: { inAt: Math.max(0, at - a), copies, len: lp.to - lp.from } };
   }
   function length(s, dur) {
-    const r = region(s);
-    if (!r) return dur != null ? dur : null;
-    const end = r.end != null ? r.end : dur;
-    return end != null ? Math.max(0, end - (r.start || 0)) : null;
+    if (!region(s)) return dur != null ? dur : null;
+    const p = plan(s, dur);
+    return p ? p.segs.reduce((t, g) => t + Math.max(0, g[1] - g[0]), 0) : null;
+  }
+  function loopCheck(s, dur) {
+    const p = plan(s, dur);
+    if (!p || (!p.loop && !p.outside)) return { ok: true, why: '' };
+    if (p.outside) return { ok: true, why: 'The loop goes in outside the part, so it isn’t heard: drag its ⟲ tab into the part, or Put back.' };
+    const last = p.loop.inAt + (p.loop.copies - 1) * p.loop.len, len = length(s, dur);
+    if (dur > LIMITS.source) return { ok: false, why: 'This track is over ' + clock(LIMITS.source) + ', too long for the timer to loop.' };
+    if (last > LIMITS.lead + 1e-6) return { ok: false, why: 'Too long to keep as a clip: the last play would start at ' + clock(last) + ' (by ' + clock(LIMITS.lead) + ' at most).' };
+    if (len > LIMITS.memory + 1e-6) return { ok: false, why: 'Too long to keep as a clip: ' + clock(len) + ' (' + clock(LIMITS.memory) + ' at most with a loop).' };
+    return { ok: true, why: '' };
   }
 
   async function decode(src) {
@@ -45,18 +104,43 @@ var StingClip = (function () {
   }
 
   function render(buf, s) {
-    const r = region(s) || { start: 0, end: null, fadeIn: 0, fadeOut: 0 };
-    const sr = buf.sampleRate, a = Math.max(0, Math.min(buf.length, Math.round((r.start || 0) * sr)));
-    const b = Math.max(a + 1, Math.min(buf.length, r.end != null ? Math.round(r.end * sr) : buf.length));
-    const out = audio().createBuffer(buf.numberOfChannels, b - a, sr);
-    const fi = Math.min(b - a, Math.round(r.fadeIn / 1000 * sr)), fo = Math.min(b - a, Math.round(r.fadeOut / 1000 * sr));
+    const r = region(s) || { fadeIn: 0, fadeOut: 0 }, sr = buf.sampleRate, n = buf.length;
+    let segs = plan(s, buf.duration).segs.map(g => {
+      const a = Math.max(0, Math.min(n, Math.round(g[0] * sr)));
+      return [a, Math.max(a, Math.min(n, Math.round(g[1] * sr)))];
+    }).filter(g => g[1] > g[0]);
+    if (!segs.length) { const a = Math.max(0, Math.min(n - 1, Math.round((r.start || 0) * sr))); segs = [[a, a + 1]]; }
+    const total = segs.reduce((t, g) => t + g[1] - g[0], 0), xf = Math.round(SEAM * sr);
+    const out = audio().createBuffer(buf.numberOfChannels, total, sr);
+    const fi = Math.min(total, Math.round(r.fadeIn / 1000 * sr)), fo = Math.min(total, Math.round(r.fadeOut / 1000 * sr));
     for (let c = 0; c < buf.numberOfChannels; c++) {
-      const from = buf.getChannelData(c).subarray(a, b), to = out.getChannelData(c);
-      to.set(from);
+      const src = buf.getChannelData(c), to = out.getChannelData(c);
+      let o = 0;
+      segs.forEach((g, i) => {
+        to.set(src.subarray(g[0], g[1]), o);
+        const prev = i ? segs[i - 1][1] : g[0];
+        if (prev !== g[0]) {                         // a join: cross from what followed the last piece into this one
+          const m = Math.min(xf, g[1] - g[0]);
+          for (let j = 0; j < m; j++) { const w = j / m; to[o + j] = to[o + j] * w + (src[prev + j] || 0) * (1 - w); }
+        }
+        o += g[1] - g[0];
+      });
       for (let i = 0; i < fi; i++) to[i] *= i / fi;
       for (let i = 0; i < fo; i++) to[to.length - 1 - i] *= i / fo;
     }
     return out;
+  }
+
+  function wav(buf) {
+    const ch = buf.numberOfChannels, n = buf.length, sr = buf.sampleRate, bytes = n * ch * 2;
+    const v = new DataView(new ArrayBuffer(44 + bytes)), str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, 'RIFF'); v.setUint32(4, 36 + bytes, true); str(8, 'WAVE'); str(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true); v.setUint32(24, sr, true);
+    v.setUint32(28, sr * ch * 2, true); v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true);
+    str(36, 'data'); v.setUint32(40, bytes, true);
+    const d = []; for (let c = 0; c < ch; c++) d.push(buf.getChannelData(c));
+    for (let i = 0, o = 44; i < n; i++) for (let c = 0; c < ch; c++, o += 2) { const x = Math.max(-1, Math.min(1, d[c][i])); v.setInt16(o, x < 0 ? x * 0x8000 : x * 0x7fff, true); }
+    return new Blob([v], { type: 'audio/wav' });
   }
 
   function play(buf) {
@@ -107,6 +191,7 @@ var StingClip = (function () {
 .sc-zcap { display: flex; gap: 0.6rem; align-items: center; color: #888; font-size: 0.8rem; margin: 0.1rem 0 0.2rem; min-height: 1.5rem; }
 .sc-box .sc-zcap button { padding: 0.05rem 0.5rem; font-size: 0.8rem; }
 .sc-box canvas.sc-grab { cursor: ew-resize; }
+.sc-box canvas.sc-move { cursor: grab; }
 .sc-row input.sc-ms::-webkit-inner-spin-button { opacity: 1; }
 .sc-hint { color: #777; font-size: 0.8rem; margin: 0.3rem 0 0.6rem; }
 .sc-row { display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center; margin: 0.5rem 0; }
@@ -116,13 +201,20 @@ var StingClip = (function () {
 .sc-row input.sc-name { width: 18rem; }
 .sc-row input.sc-on { border-color: #4aa8ff; }
 .sc-row input[type=checkbox] { width: auto; }
+.sc-looprow { border-left: 3px solid #ff9a3c; padding-left: 0.6rem; }
+.sc-looprow .sc-ltag { color: #ff9a3c; font-weight: bold; }
+.sc-looprow input.sc-on { border-color: #ff9a3c; }
+.sc-lnote { color: #c9a27a; font-size: 0.85rem; min-height: 1.2em; padding-left: 0.85rem; }
+.sc-lnote .sc-lwarn { color: #e0b030; }
 .sc-len { color: #fff; font-variant-numeric: tabular-nums; }
 .sc-box button { font: inherit; color: #ddd; background: #222; border: 1px solid #444; border-radius: 0.35rem; padding: 0.35rem 0.8rem; cursor: pointer; }
 .sc-box button:hover { background: #2c2c2c; }
+.sc-box button:disabled { opacity: .45; cursor: default; }
 .sc-box button.sc-primary { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
 .sc-btns { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 0.8rem; }
 .sc-btns .sc-grow { flex: 1; }
-.sc-msg { color: #e0b030; min-height: 1.2em; }`;
+.sc-msg { color: #e0b030; min-height: 1.2em; }
+.sc-box [hidden] { display: none !important; }`;
 
   const fmt = t => { t = Math.max(0, t || 0); const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
   const parse = text => {
@@ -130,18 +222,32 @@ var StingClip = (function () {
     if (!p.length || p.length > 3 || p.some(x => x === '' || !isFinite(Number(x)))) return null;
     return p.reduce((a, x) => a * 60 + Number(x), 0);
   };
+  // A window of an AudioBuffer (t0–t1 s) as its own buffer
+  function slice(b, t0, t1) {
+    const sr = b.sampleRate, a = Math.max(0, Math.min(b.length - 1, Math.round(t0 * sr))), z = Math.max(a + 1, Math.min(b.length, Math.round(t1 * sr)));
+    const o = audio().createBuffer(b.numberOfChannels, z - a, sr);
+    for (let c = 0; c < b.numberOfChannels; c++) o.getChannelData(c).set(b.getChannelData(c).subarray(a, z));
+    return o;
+  }
+  // Where in the source a moment of the clip comes from (segs: plan().segs)
+  function sourceAt(t, segs) {
+    let acc = 0;
+    for (const g of segs) { const l = g[1] - g[0]; if (t <= acc + l + 1e-9) return g[0] + Math.max(0, t - acc); acc += l; }
+    return segs.length ? segs[segs.length - 1][1] : 0;
+  }
 
   function open(opts) {
     return new Promise(resolve => {
       if (!document.getElementById('sc-css')) { const st = document.createElement('style'); st.id = 'sc-css'; st.textContent = CSS; document.head.appendChild(st); }
+      const canLoop = opts.media !== 'video';         // loops and WAV files: audio only (a video would lose its picture)
       const wrap = document.createElement('div');
       wrap.className = 'sc-wrap';
       wrap.innerHTML = `<div class="sc-box" role="dialog" aria-modal="true">
         <div class="sc-head"><b>Choose the part to play</b><span class="sc-src"></span></div>
-        <canvas class="sc-over" title="The whole track: drag across it to choose a part, or drag a start/end line"></canvas>
+        <canvas class="sc-over" title="The whole track: drag across it to choose a part, or drag a start/end line${canLoop ? '; Shift+drag marks a loop' : ''}"></canvas>
         <div class="sc-zcap"><span class="sc-zlabel"></span><button class="sc-zall" hidden>Show the whole part</button></div>
         <canvas class="sc-zoom" title="Close up: drag the start or end line"></canvas>
-        <div class="sc-hint">Drag across the whole track to choose a part; drag a white line (the pointer becomes ↔) to move that edge. ← → move the selected edge (Shift: 1 s, Alt: 0.01 s); ↑ ↓ in a time or fade box step it · Space plays · Enter saves · Esc cancels</div>
+        <div class="sc-hint">Drag across the whole track to choose a part; drag a white line (the pointer becomes ↔) to move that edge.${canLoop ? ' Shift+drag marks a loop (orange); drag its ⟲ tab to put the repeats somewhere else.' : ''} ← → move the selected edge (Shift: 1 s, Alt: 0.01 s); ↑ ↓ in a time or fade box step it · Space plays · Enter saves · Esc cancels</div>
         <div class="sc-row">
           <label>Start <input class="sc-t" data-k="start" spellcheck="false" title="↑ ↓: 0.01 s (Shift: 0.1 s)"></label>
           <label>End <input class="sc-t" data-k="end" spellcheck="false" title="↑ ↓: 0.01 s (Shift: 0.1 s)"></label>
@@ -149,42 +255,85 @@ var StingClip = (function () {
           <label>Fade in <input class="sc-ms" data-k="fadeIn" type="number" min="0" step="10" title="↑ ↓ or the arrows: 10 ms (Shift: 100 ms)"> ms</label>
           <label>Fade out <input class="sc-ms" data-k="fadeOut" type="number" min="0" step="10" title="↑ ↓ or the arrows: 10 ms (Shift: 100 ms)"> ms</label>
         </div>
+        <div class="sc-row sc-looprow" hidden>
+          <span class="sc-ltag">⟲ Loop</span>
+          <label>From <input class="sc-t" data-k="lfrom" spellcheck="false" title="↑ ↓: 0.01 s (Shift: 0.1 s)"></label>
+          <label>To <input class="sc-t" data-k="lto" spellcheck="false" title="↑ ↓: 0.01 s (Shift: 0.1 s)"></label>
+          <label>Plays <input class="sc-ms" data-k="plays" type="number" min="2" max="${LIMITS.plays}" step="1" title="How many times it plays where it is (moved: how many copies go in)"></label>
+          <label>Goes in at <input class="sc-t" data-k="at" spellcheck="false" placeholder="in place" title="Where the repeats go in: empty = straight after the loop (in place)"></label>
+          <button class="sc-lback" title="The repeats go back straight after the loop">Put back</button>
+          <button class="sc-lplay" title="From 2 s before the repeats to 2 s after them: hear the joins">▶ Around the loop</button>
+          <button class="sc-lremove">Remove loop</button>
+        </div>
+        <div class="sc-lnote"></div>
         <div class="sc-row">
           <button class="sc-play">▶ Play the part</button><button class="sc-first" title="Its first 2 seconds, with the fade in">▶ First 2 s</button><button class="sc-last" title="The 2 seconds before the fade out begins, then the fade (or just the last 2 seconds)">▶ Last 2 s</button><button class="sc-lead" title="From 2 seconds before the start: hear the lead-in">▶ From 2 s before</button><button class="sc-stop">■</button>
           <label>Name <input class="sc-name" spellcheck="false"></label>
         </div>
         <div class="sc-row sc-hide" hidden><label><input type="checkbox" class="sc-hideorig"> Hide the whole “<span class="sc-orig"></span>” from + sting (its clips are offered instead)</label></div>
         <div class="sc-msg"></div>
-        <div class="sc-btns"><button class="sc-whole">Whole track</button><span class="sc-grow"></span><button class="sc-cancel">Cancel</button><button class="sc-save sc-primary">Save</button></div>
+        <div class="sc-btns"><button class="sc-whole">Whole track</button><button class="sc-addloop" title="Repeat part of the track to make the sting longer">⟲ Add a loop</button><button class="sc-wav" title="Make this edit a WAV file of its own (for edits too long to keep as a clip): add it as the sting’s file">⬇ Save as WAV</button><span class="sc-grow"></span><button class="sc-cancel">Cancel</button><button class="sc-save sc-primary">Save</button></div>
       </div>`;
       document.body.appendChild(wrap);
       const $ = sel => wrap.querySelector(sel);
       const over = $('.sc-over'), zoom = $('.sc-zoom'), msg = t => { $('.sc-msg').textContent = t || ''; };
       $('.sc-src').textContent = opts.name || '';
       $('.sc-name').value = opts.name || '';
+      $('.sc-wav').hidden = !canLoop;
       if (opts.original) { $('.sc-hide').hidden = false; $('.sc-orig').textContent = opts.original; $('.sc-hideorig').checked = opts.hideOriginal !== false; }
-      let buf = null, peaks = null, voice = null, playFrom = 0, playT0 = 0, active = 'start', raf = 0, hover = null;
+      let buf = null, peaks = null, voice = null, playSegs = [], playOff = 0, active = 'start', raf = 0, hover = null;
       const r0 = region(opts.region) || {};
       const sel = { start: r0.start || 0, end: r0.end, fadeIn: r0.fadeIn || 0, fadeOut: r0.fadeOut || 0 };
+      let loop = canLoop && r0.loop ? Object.assign({}, r0.loop) : null;
 
       const dur = () => (buf ? buf.duration : 0);
       const endOf = () => (sel.end != null ? sel.end : dur());
+      const atOf = () => (loop.at != null ? loop.at : loop.to);
+      const TIMES = ['start', 'end', 'lfrom', 'lto', 'at'], LOOPK = { lfrom: 1, lto: 1, at: 1, plays: 1 };
+      const get = k => k === 'start' ? sel.start : k === 'end' ? endOf() : k === 'lfrom' ? loop.from : k === 'lto' ? loop.to : k === 'at' ? atOf() : k === 'plays' ? loop.plays : sel[k];
+      function set(k, v) {
+        if (k === 'start') sel.start = v; else if (k === 'end') sel.end = v;
+        else if (k === 'lfrom') loop.from = v; else if (k === 'lto') loop.to = v; else if (k === 'at') loop.at = v; else if (k === 'plays') loop.plays = v;
+        else sel[k] = v;
+      }
+      const cur = () => { const c = { start: sel.start, end: endOf(), fadeIn: sel.fadeIn, fadeOut: sel.fadeOut }; if (loop) c.loop = cleanLoop(loop); return c; };
       function clamp() {
         const d = dur();
         sel.start = Math.max(0, Math.min(sel.start, d - 0.05));
         if (sel.end != null) sel.end = Math.max(sel.start + 0.05, Math.min(sel.end, d));
-        sel.start = Math.round(sel.start * 100) / 100;
-        if (sel.end != null) sel.end = Math.round(sel.end * 100) / 100;
+        sel.start = r2(sel.start);
+        if (sel.end != null) sel.end = r2(sel.end);
         sel.fadeIn = Math.max(0, Math.round(sel.fadeIn)); sel.fadeOut = Math.max(0, Math.round(sel.fadeOut));
+        if (loop) {
+          loop.from = r2(Math.max(0, Math.min(loop.from, d - LIMITS.loopMin)));
+          loop.to = r2(Math.max(loop.from + LIMITS.loopMin, Math.min(loop.to, d)));
+          loop.plays = Math.max(2, Math.min(LIMITS.plays, Math.round(loop.plays) || 2));
+          if (loop.at != null) loop.at = r2(Math.max(0, Math.min(loop.at, d)));
+        }
       }
       function fields() {
         wrap.querySelectorAll('input[data-k]').forEach(i => {
-          if (document.activeElement === i) return;
           const k = i.dataset.k;
-          i.value = k === 'start' ? fmt(sel.start) : k === 'end' ? fmt(endOf()) : String(sel[k] || 0);
+          if (document.activeElement === i || (LOOPK[k] && !loop)) return;
+          i.value = k === 'at' && loop.at == null ? '' : TIMES.includes(k) ? fmt(get(k)) : String(get(k) || 0);
           i.classList.toggle('sc-on', k === active);
         });
-        $('.sc-len').textContent = (endOf() - sel.start).toFixed(2) + ' s';
+        $('.sc-looprow').hidden = !loop;
+        $('.sc-addloop').hidden = !!loop || !canLoop;
+        $('.sc-lback').disabled = !loop || loop.at == null;
+        const c = cur(), len = length(c, dur()) || 0;
+        $('.sc-len').textContent = len.toFixed(2) + ' s';
+        const note = $('.sc-lnote');
+        if (!loop) { note.textContent = ''; return; }
+        const chk = loopCheck(c, dur()), l = loop.to - loop.from;
+        note.textContent = loop.at == null ? 'Plays ' + loop.plays + ' times where it is (adds ' + ((loop.plays - 1) * l).toFixed(2) + ' s).'
+          : loop.plays + ' copies (' + (loop.plays * l).toFixed(2) + ' s) go in at ' + fmt(loop.at) + '; the loop’s own place plays as it was.';
+        if (chk.why) {
+          const w = document.createElement('span');
+          w.className = 'sc-lwarn';
+          w.textContent = ' ' + chk.why + (chk.ok ? '' : len <= LIMITS.download ? ' Save as WAV makes it a file of its own, to use as the sting’s file.' : ' Even as a WAV file it’s too long (' + clock(LIMITS.download) + ' at most).');
+          note.appendChild(w);
+        }
       }
 
       // Waveform: the loudest sample per column (channels mixed)
@@ -204,37 +353,65 @@ var StingClip = (function () {
         if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; return true; }
         return false;
       }
+      const tabs = new Map();                        // canvas → its ⟲ tab's box (css px from the canvas's top left)
       function drawWave(cv, p, from, to) {
-        const g = cv.getContext('2d'), W = cv.width, H = cv.height, mid = H / 2, x = t => (t - from) / (to - from) * W;
+        const g = cv.getContext('2d'), W = cv.width, H = cv.height, mid = H / 2, x = t => (t - from) / (to - from) * W, dpr = devicePixelRatio;
+        const edge = k => (k === hover ? 5 : k === active ? 3 : 2) * dpr;
         g.clearRect(0, 0, W, H);
         g.fillStyle = 'rgba(74,168,255,0.16)';
         g.fillRect(x(sel.start), 0, x(endOf()) - x(sel.start), H);
-        g.fillStyle = '#5a7a96';
         for (let i = 0; i < p.length; i++) { const t = from + (i + 0.5) / p.length * (to - from), inside = t >= sel.start && t <= endOf(); g.fillStyle = inside ? '#7fc0ff' : '#3c4a58'; const h = Math.max(1, p[i] * (H - 4)); g.fillRect(i * W / p.length, mid - h / 2, Math.max(1, W / p.length), h); }
+        // the loop: its region, and where the repeats go in if they've been moved
+        if (loop) {
+          g.fillStyle = loop.at != null ? 'rgba(255,154,60,0.10)' : 'rgba(255,154,60,0.22)';
+          g.fillRect(x(loop.from), 0, x(loop.to) - x(loop.from), H);
+          g.fillStyle = '#ff9a3c';
+          for (const k of ['lfrom', 'lto']) g.fillRect(x(get(k)) - edge(k) / 2, 0, edge(k), H);
+          if (loop.at != null) g.fillRect(x(loop.at) - edge('at') / 2, 0, edge('at'), H);
+        }
         // fades as ramps over the selection
-        g.strokeStyle = 'rgba(255,204,51,0.8)'; g.lineWidth = devicePixelRatio;
+        g.strokeStyle = 'rgba(255,204,51,0.8)'; g.lineWidth = dpr;
         g.beginPath();
         g.moveTo(x(sel.start), H); g.lineTo(x(sel.start + sel.fadeIn / 1000), 2); g.lineTo(x(endOf() - sel.fadeOut / 1000), 2); g.lineTo(x(endOf()), H);
         g.stroke();
         g.fillStyle = '#fff';
-        for (const k of ['start', 'end']) { const t = k === 'start' ? sel.start : endOf(), w = (k === hover ? 5 : k === active ? 3 : 2) * devicePixelRatio; g.fillRect(x(t) - w / 2, 0, w, H); }
-        if (voice) { const t = playFrom + voice.time(); g.fillStyle = '#ffcc33'; g.fillRect(x(t), 0, 2 * devicePixelRatio, H); }
+        for (const k of ['start', 'end']) g.fillRect(x(get(k)) - edge(k) / 2, 0, edge(k), H);
+        // the ⟲ tab: the repeats, where they go in (drag it to put them somewhere else)
+        tabs.delete(cv);
+        if (loop) {
+          const xa = x(atOf()), label = loop.at != null ? '⟲ ×' + loop.plays + ' here' : '⟲ plays ' + loop.plays + '×';
+          g.font = (11 * dpr) + 'px "Helvetica Neue", Arial, sans-serif';
+          const tw = g.measureText(label).width + 8 * dpr, th = 15 * dpr;
+          if (xa >= 0 && xa <= W) {
+            const x0 = xa + tw > W ? Math.max(0, xa - tw) : xa;
+            g.fillStyle = hover === 'tab' ? '#ffb468' : '#ff9a3c'; g.fillRect(x0, 0, tw, th);
+            g.fillStyle = '#1a1000'; g.textBaseline = 'middle'; g.fillText(label, x0 + 4 * dpr, th / 2 + 0.5 * dpr);
+            tabs.set(cv, { x0: x0 / dpr, x1: (x0 + tw) / dpr, y1: th / dpr });
+          }
+        }
+        if (voice) { const t = sourceAt(playOff + voice.time(), playSegs); g.fillStyle = '#ffcc33'; g.fillRect(x(t), 0, 2 * dpr, H); }
       }
       // The close-up: the whole part, or (working on an edge: First / Last 2 s, dragging, typing, nudging)
-      // 6 s at a standard scale, the start 1 s in from the left or the end 1 s in from the right
+      // 6 s at a standard scale, a left edge 1 s in from the left or a right edge 1 s in from the right
       let zmode = 'all';
+      const LEFT = { start: 1, lfrom: 1, at: 1 }, RIGHT = { end: 1, lto: 1 };
+      const LABELS = { start: 'Close up on the start: 1 s before, 5 s after', end: 'Close up on the end: 5 s before, 1 s after',
+        lfrom: 'Close up on the loop’s start: 1 s before, 5 s after', lto: 'Close up on the loop’s end: 5 s before, 1 s after',
+        at: 'Close up on where the repeats go in: 1 s before, 5 s after', all: 'Close up: the whole part' };
       const zoomRange = () => {
-        if (zmode === 'start') { const a = Math.max(0, Math.min(sel.start - 1, dur() - 6)); return [a, Math.min(dur(), a + 6)]; }
-        if (zmode === 'end') { const b = Math.min(dur(), Math.max(endOf() + 1, 6)); return [Math.max(0, b - 6), b]; }
+        if (LOOPK[zmode] && !loop) zmode = 'all';
+        if (LEFT[zmode]) { const a = Math.max(0, Math.min(get(zmode) - 1, dur() - 6)); return [a, Math.min(dur(), a + 6)]; }
+        if (RIGHT[zmode]) { const b = Math.min(dur(), Math.max(get(zmode) + 1, 6)); return [Math.max(0, b - 6), b]; }
         const len = endOf() - sel.start, pad = Math.max(0.5, len * 0.25); return [Math.max(0, sel.start - pad), Math.min(dur(), endOf() + pad)];
       };
       function focusOn(m) {
-        zmode = m;
-        $('.sc-zlabel').textContent = m === 'start' ? 'Close up on the start: 1 s before, 5 s after' : m === 'end' ? 'Close up on the end: 5 s before, 1 s after' : 'Close up: the whole part';
-        $('.sc-zall').hidden = m === 'all';
+        zmode = LOOPK[m] && !loop ? 'all' : m;
+        $('.sc-zlabel').textContent = LABELS[zmode] || LABELS.all;
+        $('.sc-zall').hidden = zmode === 'all';
         draw();
       }
       wrap.__zoom = () => zoomRange();               // (tests)
+      wrap.__loop = () => (loop ? cleanLoop(loop) : null);
       function draw() {
         if (!buf) return;
         if (sizeCanvas(over) || !peaks) peaks = columnPeaks(0, dur(), over.width);
@@ -246,81 +423,119 @@ var StingClip = (function () {
       }
       const redraw = () => { clamp(); draw(); };
 
-      // Pointer: drag across the whole track = a new selection; close up, drag the nearer edge
+      // Pointer: drag across the whole track = a new selection (Shift: a new loop); close up, drag the
+      // nearer edge; anywhere, a line within GRAB moves that line and the ⟲ tab moves the repeats
       const timeAt = (cv, e, from, to) => { const r = cv.getBoundingClientRect(); return from + Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * (to - from); };
       const GRAB = 7;                                // css px either side of a line
+      const edgeKeys = () => (loop ? ['start', 'end', 'lfrom', 'lto'].concat(loop.at != null ? ['at'] : []) : ['start', 'end']);
       function nearEdge(cv, e, from, to) {
         const r = cv.getBoundingClientRect(), px = t => r.left + (t - from) / (to - from) * r.width;
-        const ds = Math.abs(e.clientX - px(sel.start)), de = Math.abs(e.clientX - px(endOf()));
-        return Math.min(ds, de) > GRAB ? null : ds <= de ? 'start' : 'end';
+        let best = null, bd = GRAB + 1e-3;
+        for (const k of edgeKeys()) { const d = Math.abs(e.clientX - px(get(k))); if (d < bd) { bd = d; best = k; } }
+        return best;
+      }
+      function onTab(cv, e) {
+        const b = tabs.get(cv);
+        if (!b || !loop) return false;
+        const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+        return x >= b.x0 && x <= b.x1 && y >= 0 && y <= b.y1;
       }
       function dragEdge(cv, e, k, range) {
         active = k;
-        const move = ev => { const [a, b] = range(), t = timeAt(cv, ev, a, b); if (k === 'start') sel.start = t; else sel.end = t; redraw(); };
-        const up = () => { cv.removeEventListener('pointermove', move); cv.removeEventListener('pointerup', up); focusOn(k); };   // then the close-up centres on it
+        const move = ev => {
+          const [a, b] = range(), t = timeAt(cv, ev, a, b);
+          if (k === 'at' && Math.abs(t - loop.to) / (b - a) * cv.getBoundingClientRect().width <= GRAB) delete loop.at;   // back by the loop: in place
+          else set(k, t);
+          redraw();
+        };
+        const up = () => { cv.removeEventListener('pointermove', move); cv.removeEventListener('pointerup', up); focusOn(k === 'at' && loop.at == null ? 'all' : k); };   // then the close-up centres on it
         cv.addEventListener('pointermove', move); cv.addEventListener('pointerup', up);
         draw();
       }
       for (const [cv, range] of [[over, () => [0, dur()]], [zoom, zoomRange]]) {
         cv.addEventListener('pointermove', e => {
           if (!buf || e.buttons) return;
-          const [a, b] = range(), h = nearEdge(cv, e, a, b);
-          cv.classList.toggle('sc-grab', !!h);
+          const [a, b] = range(), h = onTab(cv, e) ? 'tab' : nearEdge(cv, e, a, b);
+          cv.classList.toggle('sc-grab', !!h && h !== 'tab');
+          cv.classList.toggle('sc-move', h === 'tab');
           if (h !== hover) { hover = h; draw(); }
         });
-        cv.addEventListener('pointerleave', () => { cv.classList.remove('sc-grab'); if (hover) { hover = null; draw(); } });
+        cv.addEventListener('pointerleave', () => { cv.classList.remove('sc-grab', 'sc-move'); if (hover) { hover = null; draw(); } });
       }
       over.addEventListener('pointerdown', e => {
         if (!buf) return;
         over.setPointerCapture(e.pointerId);
+        if (onTab(over, e)) return dragEdge(over, e, 'at', () => [0, dur()]);
         const k = nearEdge(over, e, 0, dur());
         if (k) return dragEdge(over, e, k, () => [0, dur()]);
         const t0 = timeAt(over, e, 0, dur());
-        zmode = 'all';                                 // a new part: see all of it
-        const move = ev => { const t = timeAt(over, ev, 0, dur()); sel.start = Math.min(t0, t); sel.end = Math.max(t0, t, Math.min(t0, t) + 0.05); active = t < t0 ? 'start' : 'end'; redraw(); };
+        let move;
+        if (e.shiftKey && canLoop) {                   // a new loop
+          loop = { from: t0, to: t0 + LIMITS.loopMin, plays: loop ? loop.plays : 2 };
+          move = ev => { const t = timeAt(over, ev, 0, dur()); loop.from = Math.min(t0, t); loop.to = Math.max(t0, t, Math.min(t0, t) + LIMITS.loopMin); active = t < t0 ? 'lfrom' : 'lto'; redraw(); };
+          active = 'lto';
+        } else {
+          zmode = 'all';                               // a new part: see all of it
+          move = ev => { const t = timeAt(over, ev, 0, dur()); sel.start = Math.min(t0, t); sel.end = Math.max(t0, t, Math.min(t0, t) + 0.05); active = t < t0 ? 'start' : 'end'; redraw(); };
+        }
         const up = () => { over.removeEventListener('pointermove', move); over.removeEventListener('pointerup', up); focusOn('all'); };
         over.addEventListener('pointermove', move); over.addEventListener('pointerup', up);
+        redraw();
       });
       zoom.addEventListener('pointerdown', e => {
         if (!buf) return;
         zoom.setPointerCapture(e.pointerId);
         const [a, b] = zoomRange(), t = timeAt(zoom, e, a, b);
+        if (onTab(zoom, e)) return dragEdge(zoom, e, 'at', () => [a, b]);
         const k = nearEdge(zoom, e, a, b);
         if (k) return dragEdge(zoom, e, k, () => [a, b]);   // (the view holds still while dragging)
         active = Math.abs(t - sel.start) <= Math.abs(t - endOf()) ? 'start' : 'end';
-        const move = ev => { const tt = timeAt(zoom, ev, a, b); if (active === 'start') sel.start = tt; else sel.end = tt; redraw(); };
+        const move = ev => { const tt = timeAt(zoom, ev, a, b); set(active, tt); redraw(); };
         move(e);
         const up = () => { zoom.removeEventListener('pointermove', move); zoom.removeEventListener('pointerup', up); focusOn(active); };
         zoom.addEventListener('pointermove', move); zoom.addEventListener('pointerup', up);
       });
       wrap.querySelectorAll('input[data-k]').forEach(i => {
-        i.addEventListener('focus', () => { if (i.dataset.k === 'start' || i.dataset.k === 'end') { active = i.dataset.k; focusOn(active); } });
+        const k = i.dataset.k;
+        i.addEventListener('focus', () => { if (TIMES.includes(k)) { active = k; focusOn(k); } });
         i.addEventListener('change', () => {
-          const k = i.dataset.k;
-          if (k === 'start' || k === 'end') { const t = parse(i.value); if (t == null) { msg('Type a time as m:ss.ss (e.g. 1:02.50) or seconds.'); fields(); return; } sel[k] = t; }
-          else sel[k] = Math.max(0, Number(i.value) || 0);
+          if (LOOPK[k] && !loop) return;
+          if (k === 'at' && !i.value.trim()) delete loop.at;            // empty: in place
+          else if (TIMES.includes(k)) { const t = parse(i.value); if (t == null) { msg('Type a time as m:ss.ss (e.g. 1:02.50) or seconds.'); fields(); return; } set(k, t); }
+          else set(k, Math.max(0, Number(i.value) || 0));
           msg(''); redraw();
         });
-        if (i.type === 'number') i.addEventListener('input', () => { sel[i.dataset.k] = Math.max(0, Number(i.value) || 0); clamp(); draw(); });
+        if (i.type === 'number') i.addEventListener('input', () => { if (LOOPK[k] && !loop) return; set(k, Math.max(0, Number(i.value) || 0)); clamp(); draw(); });
       });
 
       function stopPlay() { if (voice) { voice.stop(); voice = null; } cancelAnimationFrame(raf); draw(); }
+      // Plays the clip as it's set (piece: a variation of it), or the window w0–w1 s of it
       function playPart(how) {
         stopPlay();
         if (!buf) return;
-        const end = endOf(), outAt = Math.max(sel.start, end - sel.fadeOut / 1000);
-        const piece = how === 'lead' ? { start: Math.max(0, sel.start - 2), end, fadeIn: 0, fadeOut: sel.fadeOut }
-          : how === 'first' ? { start: sel.start, end: Math.min(end, sel.start + 2), fadeIn: sel.fadeIn, fadeOut: 0 }
-          : how === 'last' ? { start: Math.max(sel.start, outAt - 2), end, fadeIn: 0, fadeOut: sel.fadeOut }   // 2 s before the fade out begins, then the fade
-          : sel;
-        playFrom = piece.start;
-        playing = { from: piece.start, to: piece.end };
-        const v = voice = play(render(buf, piece));
+        const c = cur();
+        let piece = c, w0 = 0, w1 = null;
+        if (how === 'lead') piece = Object.assign({}, c, { start: Math.max(0, c.start - 2), fadeIn: 0 });
+        else if (how === 'first') { piece = Object.assign({}, c, { fadeOut: 0 }); w1 = 2; }
+        else if (how === 'last') { piece = Object.assign({}, c, { fadeIn: 0 }); w0 = (length(piece, dur()) || 0) - c.fadeOut / 1000 - 2; }   // 2 s before the fade out begins, then the fade
+        else if (how === 'loop') {
+          const p = plan(c, dur());
+          if (!p || !p.loop) return msg('The loop isn’t heard: it goes in outside the part.');
+          piece = Object.assign({}, c, { fadeIn: 0, fadeOut: 0 });
+          w0 = p.loop.inAt - 2; w1 = p.loop.inAt + p.loop.copies * p.loop.len + 2;
+        }
+        const L = length(piece, dur()) || 0;
+        if (L > LIMITS.download) return msg('Too long to play here (' + clock(L) + ').');
+        w0 = Math.max(0, Math.min(w0, L)); w1 = w1 == null ? L : Math.min(L, Math.max(w0, w1));
+        const full = render(buf, piece), out = w0 > 0 || w1 < L ? slice(full, w0, w1) : full;
+        playSegs = plan(piece, dur()).segs; playOff = w0;
+        playing = { from: r2(sourceAt(w0, playSegs)), to: r2(sourceAt(w1, playSegs)) };
+        const v = voice = play(out);
         v.ended.then(() => { if (voice === v) { voice = null; draw(); } });
         const tick = () => { if (voice !== v) return; draw(); raf = requestAnimationFrame(tick); };
         tick();
       }
-      let playing = null;                            // (tests: what's playing, from–to)
+      let playing = null;                            // (tests: what's playing, from–to in the source)
       wrap.__playing = () => (voice ? playing : null);
       $('.sc-play').addEventListener('click', () => { focusOn('all'); playPart(); });
       $('.sc-first').addEventListener('click', () => { active = 'start'; focusOn('start'); playPart('first'); });
@@ -329,6 +544,28 @@ var StingClip = (function () {
       $('.sc-lead').addEventListener('click', () => playPart('lead'));
       $('.sc-stop').addEventListener('click', stopPlay);
       $('.sc-whole').addEventListener('click', () => { sel.start = 0; sel.end = null; sel.fadeIn = sel.fadeOut = 0; zmode = 'all'; redraw(); focusOn('all'); });
+      $('.sc-addloop').addEventListener('click', () => {
+        if (!buf) return;
+        const a = sel.start, len = endOf() - a;
+        loop = { from: a + len * 0.4, to: a + len * 0.6, plays: 2 };
+        active = 'lfrom'; redraw(); focusOn('all');
+      });
+      $('.sc-lback').addEventListener('click', () => { if (loop) { delete loop.at; if (active === 'at') active = 'lto'; redraw(); focusOn('all'); } });
+      $('.sc-lremove').addEventListener('click', () => { loop = null; if (LOOPK[active]) active = 'start'; stopPlay(); redraw(); focusOn('all'); });
+      $('.sc-lplay').addEventListener('click', () => { if (loop) { focusOn('at'); playPart('loop'); } });
+      // Save as WAV: the edit as a file of its own (one too long to keep as a clip, a 6-minute sting…)
+      $('.sc-wav').addEventListener('click', () => {
+        if (!buf) return;
+        clamp();
+        const c = cur(), len = length(c, dur()) || 0;
+        if (len > LIMITS.download) return msg('Too long to save: ' + clock(len) + ' (' + clock(LIMITS.download) + ' at most).');
+        const name = ($('.sc-name').value.trim() || opts.name || 'sting').replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120) + '.wav';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(wav(render(buf, c))); a.download = name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+        msg('Saved “' + name + '” to your downloads: add it as the sting’s file (+ sting → Custom file, or From a file… in the sting library).');
+      });
 
       function finish(result) {
         stopPlay();
@@ -340,9 +577,12 @@ var StingClip = (function () {
       function save() {
         if (!buf) return finish(null);
         clamp();
-        const whole = sel.start <= 0 && sel.end == null && !sel.fadeIn && !sel.fadeOut;
+        const c = cur(), chk = loopCheck(c, dur());
+        if (!chk.ok) { msg(chk.why + ' Save as WAV instead, or fewer plays.'); return; }
+        const whole = sel.start <= 0 && sel.end == null && !sel.fadeIn && !sel.fadeOut && !loop;
         finish({ name: $('.sc-name').value.trim().slice(0, 200) || opts.name || 'Sting',
-          start: whole ? null : sel.start, end: whole ? null : endOf(), fadeIn: sel.fadeIn || null, fadeOut: sel.fadeOut || null, sourceLength: dur(),
+          start: whole ? null : sel.start, end: whole ? null : endOf(), fadeIn: sel.fadeIn || null, fadeOut: sel.fadeOut || null,
+          loop: c.loop || null, sourceLength: dur(),
           hideOriginal: opts.original ? $('.sc-hideorig').checked : undefined });
       }
       $('.sc-cancel').addEventListener('click', () => finish(null));
@@ -357,18 +597,21 @@ var StingClip = (function () {
         if (typing && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.target.dataset.k) {
           e.preventDefault();
           const k = e.target.dataset.k, dir = e.key === 'ArrowUp' ? 1 : -1;
-          if (k === 'start' || k === 'end') { const t = (k === 'start' ? sel.start : endOf()) + dir * (e.shiftKey ? 0.1 : 0.01); if (k === 'start') sel.start = t; else sel.end = t; active = k; zmode = k; }
+          if (LOOPK[k] && !loop) return;
+          if (TIMES.includes(k)) { set(k, get(k) + dir * (e.shiftKey ? 0.1 : 0.01)); active = k; }
+          else if (k === 'plays') loop.plays += dir;
           else sel[k] = Math.max(0, (sel[k] || 0) + dir * (e.shiftKey ? 100 : 10));
-          clamp(); e.target.value = k === 'start' ? fmt(sel.start) : k === 'end' ? fmt(endOf()) : String(sel[k]); draw();
+          clamp(); e.target.value = k === 'at' && loop.at == null ? '' : TIMES.includes(k) ? fmt(get(k)) : String(get(k));
+          if (TIMES.includes(k)) focusOn(k); else draw();
           return;
         }
         if (typing) return;
         if (e.key === ' ') { e.preventDefault(); if (voice) stopPlay(); else playPart(); return; }
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
           e.preventDefault();
+          if (LOOPK[active] && !loop) active = 'start';
           const step = (e.shiftKey ? 1 : e.altKey ? 0.01 : 0.1) * (e.key === 'ArrowLeft' ? -1 : 1);
-          if (active === 'start') sel.start += step; else sel.end = endOf() + step;
-          zmode = active;
+          set(active, get(active) + step);
           redraw();
           focusOn(active);
         }
@@ -380,7 +623,6 @@ var StingClip = (function () {
       msg('Reading the track…');
       decode(opts.src).then(b => {
         buf = b;
-        if (sel.end == null && !r0.start) sel.end = null;
         msg('');
         redraw();
         focusOn('all');
@@ -392,6 +634,6 @@ var StingClip = (function () {
     });
   }
 
-  return { region, length, decode, render, play, preview, open };
+  return { region, cleanLoop, plan, length, loopCheck, LIMITS, decode, render, wav, play, preview, open };
 })();
 if (typeof module !== 'undefined') module.exports = StingClip;

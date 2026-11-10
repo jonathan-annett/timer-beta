@@ -5,7 +5,7 @@
  * imported and exported as JSON. Its UI (mount) is a panel in the run sheet editor and stings.html.
  *
  * The library (localStorage sting_library) is the stock list's format with clip fields:
- *   {stings: [{name, stock | file | url, size?, media, duration, start?, end?, fadeIn?, fadeOut?}]}
+ *   {stings: [{name, stock | file | url, size?, media, duration, start?, end?, fadeIn?, fadeOut?, loop?}]}
  * stock = a stock sting's name (stock-stings.json), file = a track's file name (+ size: the file is
  * kept in this browser as 'lib:<file>:<size>', video-store.js; browsers can't read paths, so an
  * imported library asks for the files once), url = a link. duration = the whole track's length.
@@ -20,7 +20,7 @@ var StingLibrary = (function () {
   const read = () => { try { const j = JSON.parse(localStorage.getItem(KEY) || '{}'); return Array.isArray(j.stings) ? j.stings : []; } catch (_) { return []; } };
   const write = list => { try { localStorage.setItem(KEY, JSON.stringify({ stings: list })); } catch (_) { /* private mode */ } };
   const fileKey = e => 'lib:' + e.file + ':' + (e.size || 0);
-  const CLIP = ['start', 'end', 'fadeIn', 'fadeOut'];
+  const CLIP = ['start', 'end', 'fadeIn', 'fadeOut', 'loop'];
 
   // One entry, tidied (import, save): only the fields of the format
   function clean(x) {
@@ -33,6 +33,8 @@ var StingLibrary = (function () {
     e.media = x.media === 'video' ? 'video' : 'audio';
     if (Number.isFinite(x.duration)) e.duration = Math.round(x.duration * 100) / 100;
     for (const k of CLIP) if (Number.isFinite(x[k]) && x[k] > 0) e[k] = x[k];
+    const lp = window.StingClip && StingClip.cleanLoop(x.loop);   // a loop: part of it repeated (sting-clip.js)
+    if (lp) e.loop = lp;
     if (x.hideOriginal === true && (e.stock || e.url)) e.hideOriginal = true;
     return e;
   }
@@ -136,7 +138,7 @@ StingLibrary.mount = function (root, opts) {
     const mine = L.read();
     $('.sl-mine').innerHTML = mine.map((e, i) => {
       const r = StingClip.region(e);
-      const part = r ? (r.start != null || r.end != null ? t2(r.start || 0) + '–' + (r.end != null ? t2(r.end) : 'end') : 'whole track') + (r.fadeIn ? ' · in ' + r.fadeIn + ' ms' : '') + (r.fadeOut ? ' · out ' + r.fadeOut + ' ms' : '') : 'whole track';
+      const part = r ? (r.start != null || r.end != null ? t2(r.start || 0) + '–' + (r.end != null ? t2(r.end) : 'end') : 'whole track') + (r.fadeIn ? ' · in ' + r.fadeIn + ' ms' : '') + (r.fadeOut ? ' · out ' + r.fadeOut + ' ms' : '') + (r.loop ? ' · loop ×' + r.loop.plays + (r.loop.at != null ? ' moved' : '') : '') : 'whole track';
       return `<li data-i="${i}"><button class="small" data-a="play" title="Hear it">${playingId === 'm' + i ? '■' : '▶'}</button>` +
         `<span class="name" title="${esc(e.name)}">${esc(e.name)}</span>` +
         `<span class="meta">${esc(e.stock ? 'stock: ' + e.stock : e.file ? e.file : 'link')} · ${esc(part)} · ${esc(len(e))}${e.hideOriginal ? ' · hides the whole track in + sting' : ''}</span>` +
@@ -191,7 +193,7 @@ StingLibrary.mount = function (root, opts) {
     } else if (li && li.dataset.s != null) {
       const s = stock[Number(li.dataset.s)];
       if (a === 'play') preview('s' + li.dataset.s, s);
-      else if (a === 'clip') edit({ name: s.name, stock: s.name, media: s.media || 'audio', duration: s.duration, start: s.start, end: s.end, fadeIn: s.fadeIn, fadeOut: s.fadeOut }, s.url, true);
+      else if (a === 'clip') edit({ name: s.name, stock: s.name, media: s.media || 'audio', duration: s.duration, start: s.start, end: s.end, fadeIn: s.fadeIn, fadeOut: s.fadeOut, loop: s.loop }, s.url, true);
     }
   });
 

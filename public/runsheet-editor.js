@@ -636,7 +636,8 @@
   const mediaOf = name => /\.(mp4|m4v|webm|mov|ogv)(\?|#|$)/i.test(name || '') ? 'video' : 'audio';
   let stockList = null;
   // A clip's fields (sting-clip.js): only the ones it has
-  const clipFields = x => { const r = StingClip.region(x), o = {}; if (r) for (const k of ['start', 'end', 'fadeIn', 'fadeOut']) if (r[k] != null && r[k] !== 0) o[k] = r[k]; return o; };
+  const CLIP_KEYS = ['start', 'end', 'fadeIn', 'fadeOut', 'loop'];
+  const clipFields = x => { const r = StingClip.region(x), o = {}; if (r) for (const k of CLIP_KEYS) if (r[k] != null && r[k] !== 0) o[k] = r[k]; return o; };
   const stingIdOf = x => x.url + '#' + JSON.stringify(clipFields(x));   // the same track, cut the same way
   function stockStings() {
     if (!stockList) stockList = fetch('stock-stings.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : { stings: [] }).then(j => {
@@ -916,7 +917,7 @@
     const now = sheet.items.find(x => x.id === id);
     if (!now || !now.sting) return;
     const st = Object.assign({}, now.sting, { name: r.name });
-    for (const k of ['start', 'end', 'fadeIn', 'fadeOut']) { if (r[k] == null) delete st[k]; else st[k] = r[k]; }
+    for (const k of CLIP_KEYS) { if (r[k] == null) delete st[k]; else st[k] = r[k]; }
     if (st.duration == null && r.sourceLength) st.duration = Math.round(r.sourceLength);   // (the whole track's length)
     // From the sting library: the same change there too, if they like (a better cut, a new name)
     const list = st.lib && window.StingLibrary ? StingLibrary.read() : [], li = list.findIndex(x => x.name === st.lib);
@@ -925,7 +926,7 @@
         [{ label: 'Update the library', value: true, kind: 'primary' }, { label: 'Just this item', value: false, cancel: true }]);
       if (both) {
         const e = Object.assign({}, list[li], { name: r.name });
-        for (const k of ['start', 'end', 'fadeIn', 'fadeOut']) { if (r[k] == null) delete e[k]; else e[k] = r[k]; }
+        for (const k of CLIP_KEYS) { if (r[k] == null) delete e[k]; else e[k] = r[k]; }
         const clean = StingLibrary.clean(e);
         if (clean) { list[li] = clean; StingLibrary.write(list); st.lib = clean.name; }
       }

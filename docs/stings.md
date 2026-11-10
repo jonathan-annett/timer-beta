@@ -28,6 +28,16 @@ A run sheet editor on another computer can add stock and link stings from anywhe
 
 A guest brings a song and wants five seconds of it. Click **✂** on an item's sting in the run sheet editor: the track's waveform opens, the whole track on top and a close-up of the part below. Drag across the whole track to pick the part, then fine-tune the edges: drag a white line (the pointer turns into ↔ over one), type the times (m:ss.ss; ↑ ↓ step 0.01 s, Shift 0.1 s), or press ← → (Shift for a second, Alt for a hundredth). Set a fade in and a fade out in milliseconds (↑ ↓ or the box's arrows: 10 ms, Shift 100 ms). **▶ Play the part** plays it with its fades; **▶ First 2 s** its opening; **▶ Last 2 s** the 2 seconds before the fade out begins, then the fade; **▶ From 2 s before** the lead-in. While you work on an edge (First / Last 2 s, dragging, typing or nudging it) the close-up keeps a standard scale: 6 seconds across, the start 1 second in from the left, or the end 1 second in from the right; **Show the whole part** goes back to all of it. **Whole track** undoes it. The file isn't cut: the sting just remembers the part, and the timer cuts it in memory when it loads, so Next starts it at once and exactly.
 
+### Loops: make a short sting longer
+
+**⟲ Add a loop** (or Shift+drag across the whole track) marks a region to repeat, in orange, with its own edges to drag, type (From / To) or nudge. **Plays** is how many times it plays where it is: 3 plays the region three times in a row, so the sting grows by two copies (**Plays for** shows the new length). The joins are crossfaded over 10 ms, so a loop cut close to the beat doesn't click; **▶ Around the loop** plays from 2 seconds before the repeats to 2 seconds after them to check.
+
+Once it sounds right you can move the repeats: drag the ⟲ tab at the top of the region (or type **Goes in at**). The region itself stays where it was and plays once as part of the track; the copies (as many as **Plays** says) go in at the new place. So the repeated bit can come from anywhere in the track, even from outside the part that plays. Drag the tab back to the region's end, or click **Put back**, to put them back. A loop that goes in outside the part isn't heard (the editor says so). **Remove loop** removes it.
+
+The timer builds the loop in memory when it loads the sting, so it has limits: the last play has to start within the first 1:30 of the sting (it may end up to one loop later), the whole sting with its loop can be 3 minutes at most, and the track 10 minutes. Audio stings only.
+
+**Save as WAV** saves the edit as it sounds (part, loop and fades) as a WAV file in your downloads, up to 10 minutes. Use it for anything longer than a clip allows (a 6-minute version of a 30-second sting, say): add the file as the sting's file (**+ sting** → **Custom file**, or **+ From a file…** in the library).
+
 ## The sting library
 
 The library (a panel in the run sheet editor, from **+ sting** → **Edited sting** → **Open the sting library…**; also a page of its own, `stings.html`) keeps clips on this computer: make them from the stock stings (**✂** on one) or from your own tracks (**+ From a file…**). They appear in the run sheet editor's **+ sting** under **My clips** (an open dialog picks up changes made in the library's tab); a clip of your own file brings the file with it. Trimming such a sting with **✂** in the run sheet asks whether to update the library clip too (its cut and its name), or just this item.
@@ -37,9 +47,12 @@ The library (a panel in the run sheet editor, from **+ sting** → **Edited stin
 ```json
 { "stings": [
   { "name": "Keynote — 5 s hit", "stock": "Walk-up 3", "start": 32.5, "end": 37.5, "fadeIn": 150, "fadeOut": 800 },
-  { "name": "Sarah's walk-on", "file": "sarah-song.mp3", "size": 4197288, "start": 61.2, "end": 66.2, "fadeOut": 500 }
+  { "name": "Sarah's walk-on", "file": "sarah-song.mp3", "size": 4197288, "start": 61.2, "end": 66.2, "fadeOut": 500 },
+  { "name": "Awards — long", "stock": "Fanfare", "start": 0, "end": 12, "fadeOut": 1500, "loop": { "from": 4, "to": 8, "plays": 4 } }
 ] }
 ```
+
+`loop` is `{from, to, plays}` (seconds into the track; `plays` 2–99), plus `at` (seconds into the track) when the repeats have been moved.
 
 A clip of a stock sting can **hide the original** (ticked by default when you make one): while the clip exists, **+ sting** offers the clip and not the whole track, so nobody picks the original by mistake. A song can give several clips (a different middle can be just as good a sting); the original stays hidden while any of them has the box ticked, and the library shows how many clips each stock sting has. Delete those clips (or untick them) and the original is offered again. In the file it's `"hideOriginal": true`; the site's own clips can carry it too, for a better edit of a song with an odd start or end.
 

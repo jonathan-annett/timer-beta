@@ -6,9 +6,10 @@
  * play from this page, video stings in the player window (dropPlayer.js, its sting mode).
  * item.sting is {src: 'file'|'link'|'stock', media: 'audio'|'video', name, duration, key?, url?, size?}:
  * key = the copy in this browser (video-store.js, 'rssting:'), url = where a link or stock sting
- * came from (played from there only if it couldn't be kept here). A clip (start, end, fadeIn, fadeOut:
- * sting-clip.js) plays only that part: cut in memory when it's loaded (up to 3 minutes; longer parts
- * stream, seeked and stopped), so Next starts it at once and exactly.
+ * came from (played from there only if it couldn't be kept here). A clip (start, end, fadeIn, fadeOut,
+ * loop: sting-clip.js) plays only that part: cut in memory when it's loaded (up to 3 minutes, from a
+ * track up to 10; otherwise it streams, seeked and stopped, and a loop isn't heard), so Next starts it
+ * at once and exactly.
  *
  * window.stingPlayer:
  *   play(item)     play the item's sting (the last one, if still playing, stops: a 0.3 s fade).
@@ -124,13 +125,15 @@
     const s = item.sting, src = await source(s);
     if (!src) return null;
     const len = window.StingClip ? StingClip.length(s, s.duration) : null;
-    if (clip(s) && len != null && len <= MEMORY_MAX) {
+    const tooBig = s.duration > ((window.StingClip && StingClip.LIMITS.source) || Infinity);   // the whole track is decoded: not an hour's worth
+    if (clip(s) && len != null && len <= MEMORY_MAX && !tooBig) {
       try {
         const buf = StingClip.render(await StingClip.decode(src.blob || src.url), s);
         if (src.revoke) URL.revokeObjectURL(src.url);
         return bufferVoice(item, buf);
       } catch (err) { console.warn('Walk-up sting: couldn’t cut the clip in memory, streaming it instead', err); }
     }
+    if (clip(s) && clip(s).loop) console.warn('Walk-up sting: its loop needs it in memory; playing it without the loop');
     return elementVoice(item, src);
   }
 
