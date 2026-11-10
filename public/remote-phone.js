@@ -829,8 +829,8 @@
   let upload = null, upSeq = 0;
   const CHUNK = 64 * 1024;
   function uploadVideo(m) {
-    const kind = m.kind === 'deck' || m.kind === 'holding' || m.kind === 'sting' ? m.kind : 'video';   // a video, a PowerPoint deck, a holding slide or a walk-up sting (the same path)
-    const what = kind === 'deck' ? 'slides' : kind === 'holding' ? 'holding slide' : kind === 'sting' ? 'sting' : 'video';
+    const kind = m.kind === 'sting' ? 'sting' : 'video';   // a video or a walk-up sting (the same path)
+    const what = kind;
     const end = error => { if (upload && upload.id === m.id) upload = null; postEditor({ t: 'rs-vend', kind, id: m.id, error }); };
     if (upload) return end('Wait for the file being sent to finish first.');
     if (!peer || peer.mode !== 'lan') return end(`The ${what} can only be sent over a direct link on the same network as the timer.`);
@@ -1106,9 +1106,7 @@
     peer.send({ t: 'share', mode, req });
   }
 
-  const oldServerText = mode => mode === 'pptx'
-    ? 'This timer’s pairing server is out of date, so PowerPoint computers can’t connect. Update remote-server.js on the server and restart it.'
-    : 'This timer’s pairing server is out of date, so view-only displays can’t connect. Update remote-server.js on the server, or choose A remote control.';
+  const oldServerText = () => 'This timer’s pairing server is out of date, so view-only displays can’t connect. Update remote-server.js on the server, or choose A remote control.';
   function fail(msg) {
     if (!pending) return;
     clearTimeout(pending.timer);
@@ -1155,11 +1153,10 @@
 
   function onAdoptReply(p, r) {
     if (!r || r.req !== p.req) return;
-    const what = { control: 'a remote control', editor: 'a run sheet editor', runsheet: 'a run sheet display', countdown: 'a countdown display', pptx: 'the PowerPoint receiver page' }[p.mode] || 'a remote';
+    const what = { control: 'a remote control', editor: 'a run sheet editor', runsheet: 'a run sheet display', countdown: 'a countdown display' }[p.mode] || 'a remote';
     if (r.t === 'adopt-ok') {
       clearTimeout(p.timer);
-      admStatus('Done: the other computer is opening ' + what + ' of this timer (someone there has 8 seconds to cancel).' +
-        (p.mode === 'pptx' ? ' Then start the PowerPoint player there, as that page shows.' : ''), 'ok');
+      admStatus('Done: the other computer is opening ' + what + ' of this timer (someone there has 8 seconds to cancel).', 'ok');
       // Stay connected a little longer, to hear if it's cancelled
       p.timer = setTimeout(() => { if (pending === p) { try { p.ws.close(); } catch (_) { /* gone */ } pending = null; } }, 12000);
     } else if (r.t === 'adopt-cancelled') {

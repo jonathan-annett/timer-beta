@@ -172,8 +172,6 @@ var RunsheetCore = (function () {
       video: it.video || null,                  // {key, name, size, duration} (run sheet videos)
       videoIdle: it.videoIdle === 'hide' ? 'hide' : 'show',
       sting: it.sting || null,                  // {src, media, name, duration, key?, url?, size?} (walk-up stings, sting-player.js)
-      deck: it.deck || null,                    // {key, name, size} (PowerPoint decks, pptx-hub.js)
-      holding: it.holding || null,              // {key, name, size} (holding slide: an image set as the PowerPoint computers' wallpaper)
       hidden: !!it.hidden,                      // a completed item "deleted" in the editor: kept for the record, not shown or run
       auto: !!it.auto,                          // starts by itself at its own (typed) start time: a hard start (runsheet.js)
       planned: planned[i],
@@ -248,8 +246,6 @@ var RunsheetCore = (function () {
         duration: it.isEnd ? null : it.eff,
         ...(it.video ? { video: it.video, videoIdle: it.videoIdle } : {}),
         ...(it.sting ? { sting: it.sting } : {}),
-        ...(it.deck ? { deck: it.deck } : {}),
-        ...(it.holding ? { holding: it.holding } : {}),
         ...(it.hidden ? { hidden: true } : {}),
         ...(it.auto ? { auto: true } : {}),
       })),

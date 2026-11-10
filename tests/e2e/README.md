@@ -43,12 +43,8 @@ The same certificate and pairing server also back the local preview, `node tools
 | `runsheet_ripple.py` | no | Next start (No / Yes), end edits (future and live), duration edits: later starts move |
 | `runsheet_end_unanchored.py` | no | End times on a sheet with no start times (from the start shown), `1845`-style input, refusal messages |
 | `runsheet_actual_times.py` | no | Names-only sheet: Start shows actual starts (Next, Restart, ▶, early Next) and estimates after |
-| `pptx_holding.py` | yes | PowerPoint machines end to end: receiver page (origin-private file system as the folder) + `fake_player.mjs`; decks and holding slides synced, Next/Back/Close slides commands |
-| `pptx_reconnect.py` | yes | Player reconnect, Next while away, timer reload: no start/stop/wallpaper sent |
 | `companion_link.py` | yes | The Companion module's `TimerLink` (`comp_link.mjs`, built `dist/`) against a timer page, incl. the PIN flow |
 
-`fake_player.mjs` is a stand-in for `public/Pptx-WsController.ps1` (same protocol, logs each
-command as a JSON line). The real player has only been run by the user on Windows.
 
 ## Gotchas
 

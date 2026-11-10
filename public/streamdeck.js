@@ -97,7 +97,6 @@
     video_stop:       { label: '■ Stop\nvideo',   group: 'Video', cmd: () => _sendCmd({ cmd: 'videostop' }) },
     video_rewind:     { label: '⟲ Rewind\nvideo', group: 'Video', cmd: () => _sendCmd({ cmd: 'videorewind' }) },
     sting_fade:       { label: 'Fade\nsting',   group: 'Video', toggleState: 'sting_playing', cmd: () => _sendCmd({ cmd: 'stingfade' }) },   // lit while a walk-up sting plays
-    pptx_close:       { label: '✕ Close\nslides', group: 'Video', pptx: true, cmd: () => _sendCmd({ cmd: 'pptxclose' }) },   // PowerPoint computers: holding slide shows
     empty:            { label: '',          group: 'Other',     cmd: null },
   };
 
@@ -789,7 +788,6 @@
 
     const groups = {};
     for (const [key, action] of Object.entries(ACTIONS)) {
-      if (action.pptx && !(window.TimerFeatures && TimerFeatures.pptx)) continue;   // alpha-only trial (features.js)
       if (!groups[action.group]) groups[action.group] = [];
       groups[action.group].push({ key, action });
     }

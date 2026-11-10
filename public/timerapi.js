@@ -115,8 +115,6 @@ function processTimerApiMessage(msg) {
         }
         // The line-up tone ({on}: true/false, missing = toggle; {lufs}: else the level stings play at)
         case "tone":        { if (window.stingPlayer && window.stingPlayer.tone) return window.stingPlayer.tone(typeof msg.on === "boolean" ? msg.on : null, Number.isFinite(msg.lufs) ? Math.max(-40, Math.min(-6, msg.lufs)) : undefined); break; }
-        // PowerPoint computers (pptx-hub.js): close every slide show, so the holding slide shows
-        case "pptxclose":   { if (window.pptxHub) window.pptxHub.close(); break; }
 
         case "adjust": {
             if (msg.addtime) {
@@ -285,7 +283,6 @@ function processTimerApiMessage(msg) {
                 announceCustomMessage(true);
                 announceNoticeWords();        // the operator's notice words (notices.js), for devices
                 if (window.runsheet) window.runsheet.announce(true);
-                if (window.pptxHub) window.pptxHub.opened();
                 if (togglePIPMode) togglePIPMode.lastContent = "";
                 getTimerColors();
             }

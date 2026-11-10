@@ -20,7 +20,7 @@ In active development; used at real events.
 | `tools/` | `stamp-versions.mjs` (cache-busting `?v=` stamps, run before each commit), `serve-local.mjs` (local HTTPS preview) |
 | `companion/` | Bitfocus Companion module (TypeScript, own npm project, `npm test`) |
 | `glasses/` | Even Realities G2 app (TypeScript + Vite, own npm project) |
-| `docs/` | `powerpoint.md` (PowerPoint machines), `glasses-g2-plan.md` |
+| `docs/` | `glasses-g2-plan.md`, user guides for the alpha trials (`stings.md`, `playout.md`, `assist.md`) |
 | `README.md` | User guide, also shown in the app's help overlay |
 
 Branches: `alpha` = development, `main` = released.
@@ -54,7 +54,7 @@ payment or operations material in this repo.
 
 ## Gotchas
 - The e2e tests serve `public/` by intercepting `https://timer.sophtwhere.com/beta/`; no web server needed.
-- Hardware no server can test: Stream Deck (WebHID), the G2 glasses, the PowerPoint player (Windows),
+- Hardware no server can test: Stream Deck (WebHID), the G2 glasses,
   real phones (iOS Safari). These are checked by the owner by hand.
 - `tests/e2e/_*.py` are helpers, skipped by `run_all.sh`; `_move_to_new_site.py` is a one-off manual
   check that needs the `legacy-beta` branch checked out at `../timer-legacy`.

@@ -16,4 +16,4 @@ For bigger shows with several operators: an audio operator with the walk-up stin
 
 **Output:** video cues play in the **Output** box (one at a time). **Full screen (F)** fills a screen with it, for a capture card or a projector; audio comes out of this computer.
 
-Not yet: a Stream Deck on the playout computer (keys to fire cues and to take over), lower-thirds graphics, and slides (to replace the PowerPoint player script).
+Not yet: a Stream Deck on the playout computer (keys to fire cues and to take over), lower-thirds graphics, and slides (the PowerPoint computers were dropped from the run sheet in Nov 2026: slides belong here).

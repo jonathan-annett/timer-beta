@@ -4,7 +4,7 @@
  * The #fragment never reaches any server; it only passes between the two pages in this browser.
  *
  * Only the keys in ALLOWED are kept (settings, not the running countdown, share keys or tokens);
- * run sheet items lose their video / slides (the files stay in the old site's browser storage).
+ * run sheet items lose their videos (the files stay in the old site's browser storage).
  * If this browser already has different values for any of them here, it asks before replacing.
  * Then it removes the fragment and opens the timer.
  * MIT Licensed
@@ -69,7 +69,7 @@
   $('list').innerHTML = labels.map(l => `<li>${l}</li>`).join('');
   $('ask').hidden = false;
   $('go').hidden = false; $('skip').hidden = false;
-  $('note').textContent = 'Videos and slides attached to run sheet items stay on the old site; attach them again here.';
+  $('note').textContent = 'Videos attached to run sheet items stay on the old site; attach them again here.';
   $('go').addEventListener('click', store);
   $('skip').addEventListener('click', open);
 })();

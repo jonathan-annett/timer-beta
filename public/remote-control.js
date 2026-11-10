@@ -53,10 +53,9 @@
       p = { room: randomString(8, 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'), key: randomString(24, KEYCHARS) };
       localStorage.removeItem(APPROVED_KEY);                   // a new code: every phone starts again
     }
-    if (!p.view || !p.admin || !p.comp || !p.pptx) {  // view-only, admin, companion and PowerPoint keys (older pairings get them)
+    if (!p.view || !p.admin || !p.comp) {  // view-only, admin and companion keys (older pairings get them)
       p.view = p.view || randomString(24, KEYCHARS);
       p.comp = p.comp || randomString(24, KEYCHARS);
-      p.pptx = p.pptx || randomString(24, KEYCHARS);
       p.admin = p.admin || randomString(24, KEYCHARS);
       localStorage.setItem(PAIR_KEY, JSON.stringify(p));
     }
@@ -71,18 +70,15 @@
     runsheet:  { label: 'Run sheet', hint: '<b>View only</b>: run sheet status, e.g. for a green room. Can’t control the timer.' },
     admin:     { label: 'Admin',     hint: '<b>Admin</b>: can control the timer, use every view, and set up other computers as remotes or displays. Keep this one to yourself.' },
     companion: { label: 'Companion', hint: '<b>Bitfocus Companion</b> (or other automation): paste this link into the Companion connection’s settings. It gets every timer command and all the timer’s variables. It can’t set up other devices.' },
-    pptx:      { label: 'PowerPoint', hint: '<b>PowerPoint</b>: open this link in Chrome or Edge on the computer that shows the slides (same network as this one). It receives the run sheet’s decks and shows how to start the PowerPoint player. It can’t control the timer.' },
   };
-  const PPTX = !!(window.TimerFeatures && TimerFeatures.pptx);   // PowerPoint computers: an alpha-only trial (features.js)
-  const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet'].concat(PPTX ? ['pptx'] : []);   // what an admin phone can set another computer up as
-  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4, pptx: 5, overlay: 2, code: 6, offer: 7 };   // pairing server needed for each link (code: pairing by code)
+  const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet'];   // what an admin phone can set another computer up as
+  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4, overlay: 2, code: 6, offer: 7 };   // pairing server needed for each link (code: pairing by code)
   // 'editor' is the control link with m=runsheet: a computer opening it starts in the run sheet editor
   const linkFields = (p, mode) => mode === 'control' ? { r: p.room, k: p.key }
     : mode === 'editor' ? { r: p.room, k: p.key, m: 'runsheet' }
     : mode === 'admin' ? { r: p.room, a: p.admin }
-    : mode === 'companion' ? { r: p.room, c: p.comp }
-    : mode === 'pptx' ? { r: p.room, p: p.pptx } : { r: p.room, v: p.view, m: mode };   // (countdown, runsheet, overlay: view only)
-  const PASTE_MODES = ['companion', 'pptx'];          // links to copy, not codes to scan
+    : mode === 'companion' ? { r: p.room, c: p.comp } : { r: p.room, v: p.view, m: mode };   // (countdown, runsheet, overlay: view only)
+  const PASTE_MODES = ['companion'];                  // links to copy, not codes to scan
   // On a phone or tablet (the timer itself run on one), the panel is a simple sheet: a friend's
   // phone as a remote control or a countdown display. No run sheet or admin links there.
   const TOUCH = 'ontouchstart' in window;
@@ -90,13 +86,12 @@
   const linkMode = () => {
     const m = localStorage.getItem(LINK_MODE_KEY);
     if (TOUCH && !TOUCH_MODES.includes(m)) return 'control';
-    if (m === 'pptx' && !PPTX) return 'control';
     return LINK_MODES[m] ? m : 'control';
   };
   const serverUrl = () => localStorage.getItem(SERVER_KEY) || defaultServer();
   function phoneLink(mode = linkMode()) {
     const p = pairing();
-    const u = new URL(mode === 'pptx' ? 'pptx.html' : 'remote.html', location.href);
+    const u = new URL('remote.html', location.href);
     u.search = '';
     // Short names, and the server only when it isn't the default (the phone page works that
     // out from its own address): a shorter link makes a simpler, easier-to-scan QR code.
@@ -127,7 +122,7 @@
     sock.onopen = () => {
       retryDelay = 1000;
       const p = pairing();
-      sock.send(JSON.stringify({ type: 'host', room: p.room, key: p.key, viewKey: p.view, adminKey: p.admin, compKey: p.comp, pptxKey: PPTX ? p.pptx : undefined }));   // no PowerPoint key: the server refuses PowerPoint computers
+      sock.send(JSON.stringify({ type: 'host', room: p.room, key: p.key, viewKey: p.view, adminKey: p.admin, compKey: p.comp }));
     };
     sock.onmessage = ev => {
       let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
@@ -290,7 +285,8 @@
     removePeer(id);
     // 'view' only when the server says so; servers from before view-only keys send no role
     // (and reject view keys), so their phones joined with the control key.
-    const entry = { id, n: ++phoneCounter, role: ['view', 'admin', 'companion', 'pptx'].includes(role) ? role : 'control', sent: {}, peer: null, deck: false, faces: [],
+    // (A 'pptx' role, the PowerPoint computers' key from before they were dropped: view only, the least it could be)
+    const entry = { id, n: ++phoneCounter, role: ['view', 'admin', 'companion'].includes(role) ? role : role === 'pptx' ? 'view' : 'control', sent: {}, peer: null, deck: false, faces: [],
       varsSent: {},                              // companion peers: the raw bus variables already sent
       join: RemotePeer.joiner(), rsSub: false, rsSent: {}, upload: null,
       approved: false, pin: null, rejected: false };   // until it passes the proximity check (or brings a token from one)
@@ -299,10 +295,9 @@
       relay: relayTo(id),
       onMessage: (msg, via) => onPhoneMessage(id, msg, via),
       onBinary: buf => onPhoneBinary(id, buf),
-      onModeChange: mode => { if (mode !== 'lan') dropUpload(entry, 'The direct link was lost'); if (entry.role === 'pptx' && hub()) hub().mode(entry); renderPanel(); },
+      onModeChange: mode => { if (mode !== 'lan') dropUpload(entry, 'The direct link was lost'); renderPanel(); },
     });
     peers.set(id, entry);
-    if (entry.role === 'pptx' && hub()) hub().join(entry);
     renderPanel();
   }
 
@@ -312,7 +307,6 @@
     dropUpload(e, null);
     e.peer.close();
     peers.delete(id);
-    if (e.role === 'pptx' && hub()) hub().leave(e);
     renderPanel();
   }
 
@@ -358,7 +352,7 @@
       } else if (m.t === 'hello') {
         e.peer.send({ t: 'pin-required' });
         return;
-      } else if (m.t === 'pin' && typeof m.code === 'string' && /^\d{3,4}$/.test(m.code)) {   // 3 digits (4 from older devices, Companion, the PowerPoint player)
+      } else if (m.t === 'pin' && typeof m.code === 'string' && /^\d{3,4}$/.test(m.code)) {   // 3 digits (4 from older devices and Companion)
         e.pin = m.code;
         e.suggest = cleanName(m.name);           // the device's own idea of a name ("iPhone · Safari")
         openPanel();                             // the operator has to see the request
@@ -371,13 +365,6 @@
     if (m.t === 'relink') {
       const now = Date.now();
       if (e.peer.mode === 'server' && now - (e.relinkAt || 0) > 5000) { e.relinkAt = now; e.peer.restart(); }
-      return;
-    }
-    // A PowerPoint machine (receiver page or player script): only its own messages, all handled
-    // by pptx-hub.js. It gets no timer state and can't control anything.
-    if (e.role === 'pptx') {
-      if (m.t === 'hello') panelConnected();
-      if (hub() && typeof m.t === 'string' && /^(hello|pp-|pf-)/.test(m.t)) hub().message(e, m, via);
       return;
     }
     if (m.t === 'hello' || m.t === 'deck') deckFaces = null;   // outside a push: work them out afresh
@@ -427,7 +414,7 @@
       }
       e.peer.send({ t: 'share-link', req: String(m.req || '').slice(0, 40), mode, frag: shareFragment(mode) });
       const d = new Date();
-      shareNote = `Phone ${e.n} passed the ${mode === 'control' ? 'control' : mode === 'editor' ? 'run sheet editor' : mode === 'pptx' ? 'PowerPoint' : LINK_MODES[mode].label.toLowerCase() + ' display'} link to another computer at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      shareNote = `Phone ${e.n} passed the ${mode === 'control' ? 'control' : mode === 'editor' ? 'run sheet editor' : LINK_MODES[mode].label.toLowerCase() + ' display'} link to another computer at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       renderPanel();
     } else if (m.t === 'adopt') {
       adopt(e, m);                             // this computer is the "other computer"
@@ -683,8 +670,6 @@
   function cleanSheet(s, current) {
     if (!s || typeof s !== 'object' || !Array.isArray(s.items) || s.items.length > 500) return null;
     const known = new Map((current.items || []).filter(it => it && it.video && it.video.key).map(it => [it.video.key, it.video]));
-    const knownDecks = new Map((current.items || []).filter(it => it && it.deck && it.deck.key).map(it => [it.deck.key, it.deck]));
-    const knownHolds = new Map((current.items || []).filter(it => it && it.holding && it.holding.key).map(it => [it.holding.key, it.holding]));
     const knownStings = new Map((current.items || []).filter(it => it && it.sting && (it.sting.key || it.sting.url)).map(it => [it.sting.key || it.sting.url, it.sting]));
     const ids = new Set();
     const items = [];
@@ -701,8 +686,6 @@
         out.video = known.get(it.video.key);
         out.videoIdle = it.videoIdle === 'hide' ? 'hide' : 'show';
       }
-      if (it.deck && typeof it.deck === 'object' && knownDecks.has(it.deck.key)) out.deck = knownDecks.get(it.deck.key);   // likewise slides
-      if (it.holding && typeof it.holding === 'object' && knownHolds.has(it.holding.key)) out.holding = knownHolds.get(it.holding.key);
       // A walk-up sting: one already on the sheet (a file can't be made up), or a new link or stock sting (https only)
       const st = STINGS && !out.video && it.sting && typeof it.sting === 'object' ? it.sting : null;
       if (st && knownStings.has(st.key || st.url)) out.sting = Object.assign({}, knownStings.get(st.key || st.url), { name: typeof st.name === 'string' && st.name ? st.name.slice(0, 200) : knownStings.get(st.key || st.url).name });
@@ -726,12 +709,11 @@
     if (window.runsheet && window.runsheet.sheetChanged) window.runsheet.sheetChanged();
     // Videos no longer on the sheet (or in Recent videos) are removed from this browser
     const keep = new Set(sheet.items.filter(it => it.video).map(it => it.video.key));
-    sheet.items.forEach(it => { if (it.deck) keep.add(it.deck.key); if (it.holding) keep.add(it.holding.key); if (it.sting && it.sting.key) keep.add(it.sting.key); });
+    sheet.items.forEach(it => { if (it.sting && it.sting.key) keep.add(it.sting.key); });
     parseOr(localStorage.getItem('video_history'), []).forEach(h => { if (h && h.key) keep.add(h.key); });
     (before.items || []).forEach(it => {
       if (it && it.video && !keep.has(it.video.key) && window.videoStore) window.videoStore.remove(it.video.key).catch(() => {});
-      if (it && it.deck && !keep.has(it.deck.key) && window.videoStore) window.videoStore.remove(it.deck.key).catch(() => {});
-      if (it && it.holding && !keep.has(it.holding.key) && window.videoStore) window.videoStore.remove(it.holding.key).catch(() => {});
+      for (const k of ['deck', 'holding']) if (it && it[k] && it[k].key && window.videoStore) window.videoStore.remove(it[k].key).catch(() => {});   // slides, from before they were dropped
       if (it && it.sting && it.sting.key && !keep.has(it.sting.key) && window.videoStore) window.videoStore.remove(it.sting.key).catch(() => {});
     });
     return text;
@@ -779,7 +761,6 @@
       case 'reset':  rs.reset(); break;
       case 'active': rs.setActive(!!m.on); break;
       case 'autostart': if (rs.setAutostart) rs.setAutostart(!!m.on); break;
-      case 'pptxclose': if (window.pptxHub) window.pptxHub.close(); break;
       case 'pause':  processTimerApiMessage({ cmd: 'pause' }); break;
       case 'restart': if (rs.restart) rs.restart(); break;
       case 'fadeout': processTimerApiMessage({ cmd: 'fadeout', msecs: num(m.msecs, 100, 20000) || undefined }); break;   // what's playing fades out (the playing bar, Esc)
@@ -818,12 +799,10 @@
     const norm = window.RunsheetCore ? RunsheetCore.normalise(sheet) : null;
     const row = norm && norm.items.find(it => it.id === m.id);
     const size = num(m.size, 1, MAX_VIDEO);
-    const kind = m.kind === 'deck' || m.kind === 'holding' || m.kind === 'sting' ? m.kind : 'video';
-    if ((kind === 'deck' || kind === 'holding') && !PPTX) return fail('bad');
+    if (m.kind && m.kind !== 'sting' && m.kind !== 'video') return fail('bad');   // (decks and holding slides: gone with the PowerPoint computers)
+    const kind = m.kind === 'sting' ? 'sting' : 'video';
     if (kind === 'sting' && !STINGS) return fail('bad');
-    const typeOk = kind === 'deck' ? typeof m.name === 'string' && /\.(pptx|ppsx|pptm|ppsm|ppt|pps|potx)$/i.test(m.name)
-                 : kind === 'holding' ? typeof m.name === 'string' && /\.(png|jpe?g|bmp)$/i.test(m.name)
-                 : kind === 'sting' ? typeof m.type === 'string' && /^(audio|video)\//.test(m.type)
+    const typeOk = kind === 'sting' ? typeof m.type === 'string' && /^(audio|video)\//.test(m.type)
                  : typeof m.type === 'string' && /^video\//.test(m.type);
     if (!row || row.isEnd || size === null || !typeOk || !window.videoStore) return fail('bad');
     try {
@@ -863,7 +842,7 @@
   async function uploadFinish(e, u) {
     e.upload = null;
     const blob = new Blob(u.blobs.concat(u.chunks.length ? [new Blob(u.chunks)] : []), { type: u.type });
-    const key = (u.kind === 'deck' ? 'rsdeck:' : u.kind === 'holding' ? 'rsimg:' : u.kind === 'sting' ? 'rssting:' : 'rsvideo:') + u.id + ':' + Date.now();
+    const key = (u.kind === 'sting' ? 'rssting:' : 'rsvideo:') + u.id + ':' + Date.now();
     try {
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
       await window.videoStore.put(key, blob);
@@ -871,13 +850,6 @@
     const sheet = parseOr(localStorage.getItem('runsheet'), { title: '', perItem: 20, items: [] });
     const it = (sheet.items || []).find(x => x && x.id === u.id);
     if (!it) { window.videoStore.remove(key).catch(() => {}); e.peer.send({ t: 'vup-error', up: u.up, reason: 'gone' }); return; }
-    if (u.kind === 'deck' || u.kind === 'holding') {          // slides: sent on to the PowerPoint computers by pptx-hub.js
-      it[u.kind] = { key, name: u.name, size: u.size };
-      if (!it.name && u.kind === 'deck') it.name = u.name.replace(/\.[A-Za-z0-9]{1,5}$/, '');
-      writeSheet(sheet);
-      e.peer.send({ t: 'vup-done', up: u.up, key });
-      return;
-    }
     if (u.kind === 'sting') {                                // a walk-up sting: the item keeps its own time
       if (it.video) { window.videoStore.remove(key).catch(() => {}); e.peer.send({ t: 'vup-error', up: u.up, reason: 'bad' }); return; }
       it.sting = { src: 'file', media: /^video\//.test(u.type) ? 'video' : 'audio', name: u.label || u.name.replace(/\.[A-Za-z0-9]{1,5}$/, ''), size: u.size, duration: u.duration ? Math.round(u.duration) : null, key };
@@ -916,19 +888,17 @@
     const okRoom = /^[A-Za-z0-9]{6,32}$/.test(f.r || '');
     const okKey = k => typeof k === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(k);
     const isControl = okKey(f.k) && !f.v && !f.p, isView = okKey(f.v) && !f.k && !f.p && (f.m === 'countdown' || f.m === 'runsheet');
-    const isPptx = okKey(f.p) && !f.k && !f.v;                       // this computer becomes a PowerPoint computer (pptx.html)
     const okServer = /^wss:\/\/[^\s#?]+$/i.test(f.s || '');
-    if (!okRoom || !okServer || !(isControl || isView || isPptx) || f.r === pairing().room) {
+    if (!okRoom || !okServer || !(isControl || isView) || f.r === pairing().room) {
       e.peer.send({ t: 'adopt-refused', req });
       return;
     }
-    const h = isControl ? { r: f.r, k: f.k, s: f.s } : isPptx ? { r: f.r, p: f.p, s: f.s } : { r: f.r, v: f.v, m: f.m, s: f.s };
+    const h = isControl ? { r: f.r, k: f.k, s: f.s } : { r: f.r, v: f.v, m: f.m, s: f.s };
     if (isControl && f.m === 'runsheet') h.m = 'runsheet';          // open straight into the run sheet editor
-    const url = new URL(isPptx ? 'pptx.html' : 'remote.html', location.href);
+    const url = new URL('remote.html', location.href);
     url.search = '';
     url.hash = new URLSearchParams(h).toString();
-    const what = isPptx ? 'a PowerPoint computer (it receives the run sheet’s slides)'
-      : isControl ? (f.m === 'runsheet' ? 'a run sheet editor' : 'a remote control') : f.m === 'runsheet' ? 'a run sheet display' : 'a countdown display';
+    const what = isControl ? (f.m === 'runsheet' ? 'a run sheet editor' : 'a remote control') : f.m === 'runsheet' ? 'a run sheet display' : 'a countdown display';
     e.peer.send({ t: 'adopt-ok', req });
     showAdoptNotice(what, url.toString(), () => { const p = peers.get(e.id); if (p) p.peer.send({ t: 'adopt-cancelled', req }); });
   }
@@ -1034,7 +1004,6 @@
 
   // Sends only the fields that changed since the last message to this phone (low bandwidth)
   function pushTo(e, full) {
-    if (e.role === 'pptx') return;             // PowerPoint machines get no timer state
     const diff = {};
     let any = false;
     for (const [k, v] of Object.entries(state)) {
@@ -1139,7 +1108,6 @@
   #phone-panel.pp-touch .pp-qr canvas { max-height: calc(100vh - 44px); }
 }
 #phone-panel .pp-modes { display: flex; gap: 0; margin: 2px 0 6px; }
-html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
 #phone-panel .pp-modes button { border-radius: 0; margin: 0; }
 #phone-panel .pp-modes button:first-child { border-radius: 4px 0 0 4px; }
 #phone-panel .pp-modes button:last-child { border-radius: 0 4px 4px 0; }
@@ -1196,7 +1164,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       ${TOUCH ? '<div class="pp-intro"></div>' : ''}
       <div class="pp-status"></div>
       <div class="pp-modes" role="group" aria-label="What the QR code is for">
-        <button data-mode="control">${TOUCH ? 'Remote control' : 'Control'}</button><button data-mode="countdown">${TOUCH ? 'Countdown display' : 'Countdown'}</button>${TOUCH ? '' : '<button data-mode="runsheet">Run sheet</button><button data-mode="admin">Admin</button><button data-mode="companion">Companion</button><button data-mode="pptx">PowerPoint</button>'}
+        <button data-mode="control">${TOUCH ? 'Remote control' : 'Control'}</button><button data-mode="countdown">${TOUCH ? 'Countdown display' : 'Countdown'}</button>${TOUCH ? '' : '<button data-mode="runsheet">Run sheet</button><button data-mode="admin">Admin</button><button data-mode="companion">Companion</button>'}
       </div>
       <div class="pp-modehint"></div>
       <div class="pp-qr"></div>
@@ -1338,7 +1306,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
   function renderPanel(force) {
     const el = document.getElementById('phone-panel');
     const btn = document.getElementById('btnshare');
-    const lanCount = [...peers.values()].filter(e => e.peer.mode !== 'server' && e.role !== 'pptx').length;   // direct, either way
+    const lanCount = [...peers.values()].filter(e => e.peer.mode !== 'server').length;   // direct, either way
     if (btn) { btn.textContent = !enabled ? 'share' : peers.size ? `share ${peers.size}` : 'share ·'; btn.classList.toggle('on', enabled); }
     if (!el) return;
     const st = el.querySelector('.pp-status');
@@ -1351,7 +1319,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     // View-only links need pairing server protocol 2; an older server rejects their key
     const oldServer = hosted && serverProtocol < MIN_PROTOCOL[mode];
     el.querySelector('.pp-modehint').innerHTML = !enabled ? '' : oldServer
-      ? `<span class="pp-warn">The pairing server is out of date and will refuse ${mode === 'admin' ? 'admin' : mode === 'companion' ? 'Companion' : mode === 'pptx' ? 'PowerPoint' : 'view-only'} links. Update remote-server.js on the server and restart it.</span>`
+      ? `<span class="pp-warn">The pairing server is out of date and will refuse ${mode === 'admin' ? 'admin' : mode === 'companion' ? 'Companion' : 'view-only'} links. Update remote-server.js on the server and restart it.</span>`
       : TOUCH ? (mode === 'control'
           ? 'Their phone gets <b>Start</b>, <b>Pause</b>, ±1 min, presets and messages, a virtual Stream Deck, or a countdown display: they choose with ☰ View on their phone.'
           : '<b>View only</b>: a big countdown and messages on their phone. It can’t change the timer.')
@@ -1378,7 +1346,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       const keep = {}, had = pend.contains(document.activeElement) ? document.activeElement.closest('[data-id]')?.dataset.id : null;
       pend.querySelectorAll('[data-id]').forEach(r => { const i = r.querySelector('input'); if (i) keep[r.dataset.id] = i.value; });
       pend.dataset.sig = sig;
-      pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.suggest ? esc(e.suggest) + (e.role === 'view' ? ' (a display)' : '') : e.role === 'view' ? 'A display' : e.role === 'companion' ? 'Companion' : e.role === 'pptx' ? 'A PowerPoint computer' : 'A phone'} wants to connect.</b> Type the number it shows${e.role === 'companion' ? ' (in its connection log)' : e.role === 'pptx' ? ' (on its receiver page or in the player window)' : ''}. A wrong number disconnects it:
+      pend.innerHTML = rows.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${e.suggest ? esc(e.suggest) + (e.role === 'view' ? ' (a display)' : '') : e.role === 'view' ? 'A display' : e.role === 'companion' ? 'Companion' : 'A phone'} wants to connect.</b> Type the number it shows${e.role === 'companion' ? ' (in its connection log)' : ''}. A wrong number disconnects it:
         <span class="pp-askrow"><input inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="###" value="${esc(keep[e.id] || '')}">
         <button data-act="ok">Let it in</button><button data-act="no">Refuse</button></span>${e.client === 'g2' ? glassesChoice(e) : ''}</div>`).join('') +
         asks.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${esc(deviceLabel(e))} wants to edit the run sheet.</b> You can stop it later (Stop editing, below).
@@ -1395,12 +1363,11 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     }
     const srv = el.querySelector('.pp-server');
     if (force || document.activeElement !== srv) srv.value = serverUrl();
-    const pptxLines = hub() ? hub().summary().map(hub().describe).join('') : '';
-    const live = [...peers.values()].filter(e => !e.rejected && (e.role !== 'pptx' || !e.approved));
+    const live = [...peers.values()].filter(e => !e.rejected);
     const here = new Set([...peers.values()].filter(e => e.approved && e.token).map(e => e.token));
     const away = enabled ? approvedList().filter(x => !here.has(x.t)) : [];
     el.querySelector('.pp-peers').innerHTML = (!peers.size ? (enabled ? '<i>No devices connected</i>' : '') :
-      pptxLines + live.map(e => `<div class="pp-dev"><span><b>${esc(deviceLabel(e))}</b> · ` +
+      live.map(e => `<div class="pp-dev"><span><b>${esc(deviceLabel(e))}</b> · ` +
         (!e.approved ? '<span class="pp-warn">waiting for its number</span> · ' : '') +
         (e.client === 'g2' && e.approved ? `<span class="${e.g2 === 'operator' ? 'pp-admin' : 'pp-view'}">glasses · ${e.g2 === 'operator' ? 'operator' : 'presenter'}</span> · `
           : e.client === 'assist' && e.approved ? (e.assist === 'yes' ? '<span class="pp-admin">assist · moves starts</span> · ' : '<span class="pp-view">assist</span> · ')
@@ -1408,7 +1375,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
         (e.edit === 'yes' ? '<span class="pp-admin">editing</span> · ' : '') +
         `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : e.peer.mode === 'p2p' ? '<b class="pp-lan" title="A direct link over the internet: not the same network">direct</b>' : '<b class="pp-srv">via server</b>'}</span>` +
         (e.approved && e.token ? deviceButtons(e.token, e.edit === 'yes', e.client === 'g2' ? e.g2 : null, e.assist === 'yes') : '') + '</div>').join('') +
-      (lanCount < [...peers.values()].filter(e => e.role !== 'pptx').length ? '<div class="pp-hint">"via server": no direct link could be made (a network in between blocks it).</div>' : '') +
+      (lanCount < peers.size ? '<div class="pp-hint">"via server": no direct link could be made (a network in between blocks it).</div>' : '') +
       (shareNote ? `<div class="pp-hint">${shareNote}</div>` : '')) +
       (away.length ? `<details class="pp-known"${knownOpen ? ' open' : ''}><summary>Known devices, not connected (${away.length})</summary>` +
         away.map(x => `<div class="pp-dev"><span><b>${esc(x.name || 'Unnamed device')}</b>${x.role ? ' · ' + esc(deviceKind(x.role)) : ''}${x.edit ? ' · can edit' : ''}${x.assist ? ' · moves starts' : ''}${x.g2 ? ' · glasses, ' + esc(x.g2) : ''}${x.seen ? ' · last seen ' + when(x.seen) : ''}</span>${deviceButtons(x.t, !!x.edit, x.g2 || null, !!x.assist)}</div>`).join('') +
@@ -1474,7 +1441,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
   }
   // (function declarations and var here: renderPanel() may run before this part of the file has)
   function cleanName(s) { return typeof s === 'string' ? s.replace(/[\u0000-\u001f]/g, '').trim().slice(0, 40) : ''; }
-  var KIND = { view: 'Display', companion: 'Companion', pptx: 'PowerPoint', admin: 'Phone', control: 'Phone' };
+  var KIND = { view: 'Display', companion: 'Companion', admin: 'Phone', control: 'Phone' };
   function deviceKind(role) { return (KIND || {})[role] || 'Phone'; }
   function deviceLabel(e) { return e.name || e.suggest || `${deviceKind(e.role)} ${e.n}`; }
 
@@ -1665,7 +1632,6 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     return false;
   });
 
-  const hub = () => window.pptxHub || null;     // pptx-hub.js: the PowerPoint machines
   window.remoteControl = { open: openPanel, toggle: togglePanel, enable, disable, takeBack, get shared() { return shared(); }, refresh: () => renderPanel(), get peers() { return peers; }, get state() { return state; } };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

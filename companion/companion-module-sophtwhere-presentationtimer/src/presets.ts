@@ -105,11 +105,6 @@ export function UpdatePresets(self: ModuleInstance): void {
 	button('video_stop', 'Video', 'Stop video', '■ Stop', [{ actionId: 'video', options: { what: 'videostop' } }], [{ feedbackId: 'video_playing' }])
 	button('video_rewind', 'Video', 'Rewind video', '⟲ Rewind', [{ actionId: 'video', options: { what: 'videorewind' } }], [{ feedbackId: 'video_playing' }])
 
-	// PowerPoint (share → PowerPoint on the timer)
-	button('sl_showing', 'Slides', 'Slide show running', 'Slides\\n$(presentationtimer:pptx_current)', [], [{ feedbackId: 'slides_showing' }], '7')
-	button('sl_close', 'Slides', 'Close slides (holding slide)', 'Close\\nslides', [{ actionId: 'slides_close', options: {} }], [{ feedbackId: 'slides_showing' }], '14')
-	button('sl_ready', 'Slides', 'Next deck ready', 'Next deck\\nready', [], [{ feedbackId: 'slides_next_ready' }], '14')
-
 	button('link', 'Countdown', 'Connection status', 'Timer\\n$(presentationtimer:link_status)', [], [
 		{ feedbackId: 'connected', style: { bgcolor: combineRgb(0, 80, 0), color: BLACK } },
 	], '7')

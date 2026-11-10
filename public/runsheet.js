@@ -117,13 +117,10 @@
     if (it.video) { stopStings(); playItemVideo(it); }   // the player restarts the timer at the video's length
     else stopRunsheetVideo();                     // moving on from a video item stops its video
     if (STINGS && it.sting && !it.video) playSting(it);   // a walk-up sting: plays over the start, the item keeps its time (it stops the last one)
-    // Slides: every PowerPoint machine sets the item's holding slide as its wallpaper and opens its
-    // deck. An item without a deck leaves the last one on screen.
-    if ((it.deck || it.holding) && window.pptxHub) window.pptxHub.start(it);
   }
 
   // The editor's Restart: the countdown again from the current item's full time (or the default
-  // duration outside the run sheet). Only the timer: no log entry, message, video or slides.
+  // duration outside the run sheet). Only the timer: no log entry, message or video.
   // The item gets its full time from now (a long introduction, a late walk-on), so its start in
   // the log moves to now and everything after it runs that much later (see lateness()).
   function restartCountdown() {
@@ -238,9 +235,6 @@
     // Back onto an item that was hidden after it ran: it's live again, so it shows again
     const back = !state.finished && state.index >= 0 ? sheet.items.find(x => x.id === state.currentId) : null;
     if (back && back.hidden) { delete back.hidden; writeSheet(); }
-    // Back onto an item with slides shows them again (if another deck is up)
-    const it = !state.finished && state.index >= 0 ? norm.items[state.index] : null;
-    if (it && window.pptxHub) window.pptxHub.current(it);
     commit();
     return true;
   }
@@ -509,7 +503,6 @@
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
     render();
     preloadNext();
-    if (window.pptxHub) window.pptxHub.changed();   // decks to send ahead, current and next first
   }
 
   // ─── Videos ───────────────────────────────────────────────────────────────
@@ -667,7 +660,6 @@
       case 'goto':   goTo(c.id); break;
       case 'reset':  resetShow(); break;
       case 'active': setActive(c.on); break;
-      case 'pptxclose': if (window.pptxHub) window.pptxHub.close(); break;   // the editor's Close slides
       case 'pause':  api({ cmd: 'pause' }); break;                           // toggles
       case 'restart': restartCountdown(); break;
       case 'curdur': curDuration(c.id, c.duration == null ? null : Number(c.duration)); break;
@@ -849,7 +841,7 @@
       if (status) {
         // A hard start whose time came while items before it hadn't run (hardStartTick): said until it starts
         const missed = [...hardMiss].map(id => norm.items[idxOf(id)]).filter(Boolean).map(it => `⚠ ${it.name} was due at ${clockOf(plannedStartMs(idxOf(it.id)))}`).join(' · ');
-        status.textContent = flashText || [missed, sheet.title, pos, info.text, videoHint(), window.pptxHub ? window.pptxHub.hint() : ''].filter(Boolean).join(' · ');
+        status.textContent = flashText || [missed, sheet.title, pos, info.text, videoHint()].filter(Boolean).join(' · ');
         dash.classList.remove('rs-behind', 'rs-ahead', 'rs-ontime', 'rs-flash');
         dash.classList.add(flashText ? 'rs-flash' : missed ? 'rs-behind' : 'rs-' + (info.kind === 'none' ? 'ontime' : info.kind));
       }
