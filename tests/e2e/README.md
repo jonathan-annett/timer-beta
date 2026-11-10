@@ -14,7 +14,7 @@ and Playwright are pre-installed (don't `playwright install`).
 ```sh
 npm ci                            # ws, for the pairing server and the stand-ins
 npm run test:setup                # tests/e2e/setup.sh: the venv below, then npm ci && npm run build
-                                  # in the Companion module and glasses/ (companion_link, glasses_pair)
+                                  # in the Companion module (cloned beside this repo) and glasses/ (companion_link, glasses_pair)
 tests/e2e/server.sh &             # local pairing server on wss://localhost:8443/ (self-signed cert, made once)
 ```
 
