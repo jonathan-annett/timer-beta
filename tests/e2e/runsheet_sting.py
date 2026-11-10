@@ -86,7 +86,7 @@ with sync_playwright() as p:
     check("+ sting offered on rows without a video", e.locator(row("a") + " button[data-act=sadd]").count() == 1)
     # a: the stock sting
     e.click(row("a") + " button[data-act=sadd]"); e.wait_for_timeout(300)
-    e.click(".ask button:has-text('Use the stock sting')"); e.wait_for_timeout(300)
+    e.click(".sting-use"); e.wait_for_timeout(300)
     s = sheet()["a"]
     check("stock sting on the item", s and s["src"] == "stock" and s["url"] == BASE + "media/fanfare.wav" and s["media"] == "audio", s)
     # b: a link to a server that doesn't allow copying. First the dialog's preview and its "in use" marks
@@ -99,25 +99,27 @@ with sync_playwright() as p:
     check("hide stings already on the sheet", opts() == ["Drumroll · 6 s"], opts())
     check("… and the preview stops", not e.evaluate("window.__stingPreview()"))
     e.uncheck("#sting-hideused")
-    e.fill("#sting-url", CDN + "walkup.wav"); e.click(".ask button:has-text('Use the link')"); e.wait_for_timeout(1500)
+    e.click(".sting-tab[data-mode=custom]"); e.fill("#sting-url", CDN + "walkup.wav"); e.click(".sting-use"); e.wait_for_timeout(1500)
     s = sheet()["b"]
     check("link sting on the item (its length read from the link)", s and s["src"] == "link" and s["url"] == CDN + "walkup.wav" and s["duration"] == 6, s)
     # c: a file, through the picker
     e.click(row("c") + " button[data-act=sadd]"); e.wait_for_timeout(300)
-    with e.expect_file_chooser() as fc: e.click(".ask button:has-text('Choose a file')")
+    e.click(".sting-tab[data-mode=custom]")
+    with e.expect_file_chooser() as fc: e.click("#sting-browse")
     fc.value.set_files(wav_path); e.wait_for_timeout(1200)
     s = sheet()["c"]
     check("file sting kept in the browser", s and s["src"] == "file" and s["key"].startswith("rssting:c:") and s["duration"] == 2, s)
     # d: a video file dropped on the row is a video; through + sting it's a video sting
     e.click(row("d") + " button[data-act=sadd]"); e.wait_for_timeout(300)
-    with e.expect_file_chooser() as fc: e.click(".ask button:has-text('Choose a file')")
+    e.click(".sting-tab[data-mode=custom]")
+    with e.expect_file_chooser() as fc: e.click("#sting-browse")
     fc.value.set_files(vid_path); e.wait_for_timeout(1500)
     s = sheet()["d"]
     check("video sting", s and s["media"] == "video" and s["key"], s)
     # f: the same stock sting as the keynote, knowingly
     e.click(row("f") + " button[data-act=sadd]"); e.wait_for_timeout(300)
     e.click("#sting-prev"); e.wait_for_timeout(300)
-    e.click(".ask button:has-text('Use the stock sting')"); e.wait_for_timeout(300)
+    e.click(".sting-use"); e.wait_for_timeout(300)
     check("closing the dialog stops the preview", not e.evaluate("window.__stingPreview()"))
     asked = e.inner_text(".ask .ask-text") if e.locator(".ask").count() else ""
     check("using a sting again asks first", "already used for Keynote" in asked, asked)

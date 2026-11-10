@@ -684,56 +684,47 @@
   function stopPreview() {
     if (!preview) return;
     preview.stop(); preview = null;
-    const b = document.getElementById('sting-prev');
-    if (b) { b.textContent = '▶'; b.title = 'Hear it'; }
+    for (const bid of ['sting-prev', 'sting-mprev']) { const b = document.getElementById(bid); if (b) { b.textContent = '▶'; b.title = 'Hear it'; } }
   }
+  // + sting: three tabs along the top. Walk-up sting = the stock list (and the site's clips);
+  // Custom file = browse this computer or a link; Edited sting = my clips (the sting library, which
+  // opens as a panel over the editor). One Use button for whichever tab is showing.
+  const okList = (list, stock) => Promise.all(list.map(async e => !!(await StingLibrary.source(e, stock))));
   async function stingDialog(id) {
     if (!canEdit) return refused();
     const stock = await stockStings();
     let mine = window.StingLibrary ? StingLibrary.read() : [];
-    let mineOk = await Promise.all(mine.map(async e => !!(await StingLibrary.source(e, stock))));
-    const html = '<b>Walk-up sting</b><p class="sting-note">Plays as this item starts, on the timer’s computer. The item keeps its own time. <a href="stings.html" target="_blank" rel="noopener">Sting library…</a> (clips: just the part you want)</p>' +
-      '<label class="sting-field" id="sting-minerow">My clips <select id="sting-mine"></select></label>' +
-      (stock.length ? '<label class="sting-field">Stock sting <span class="sting-row"><select id="sting-stock"></select>' +
-        '<button type="button" id="sting-prev" title="Hear it">▶</button></span></label>' +
-        '<label class="sting-check"><input type="checkbox" id="sting-hideused"> Hide stings already on this run sheet</label>' +
-        '<p class="sting-note" id="sting-none" hidden>Every stock sting is already on this run sheet.</p>' : '') +
-      '<label class="sting-field">A link <input id="sting-url" type="url" placeholder="https://…/walk-up.mp3" spellcheck="false"></label>';
-    const answer = ask(html, [
-      { label: 'Use my clip', value: 'mine' },
-      ...(stock.length ? [{ label: 'Use the stock sting', value: 'stock', kind: 'primary' }] : []),
-      { label: 'Use the link', value: 'link' }, { label: 'Choose a file…', value: 'file' }, { label: 'Cancel', value: null, cancel: true }]);
-    // (the fields are read before the dialog goes; they keep their values once it's gone)
-    const sel = document.getElementById('sting-stock'), urlIn = document.getElementById('sting-url'), mineSel = document.getElementById('sting-mine');
-    const mineBtn = [...document.querySelectorAll('.ask .ask-btns button')].find(b => b.textContent === 'Use my clip');
-    // My clips (the sting library), rebuilt when the library changes in another tab while this is open
-    function fillMine() {
-      const keep = mineSel.value;
-      mineSel.innerHTML = mine.map((e, i) => {
-        const l = StingClip.length(e, e.duration);
-        return `<option value="${i}"${mineOk[i] ? '' : ' disabled'}>${esc(e.name)}${l ? ' · ' + C.formatDuration(Math.max(1, Math.round(l))) : ''}${mineOk[i] ? '' : ' (its file isn’t on this computer)'}</option>`;
-      }).join('');
-      if (keep && mineOk[Number(keep)]) mineSel.value = keep; else { const first = mineOk.indexOf(true); if (first >= 0) mineSel.value = String(first); }
-      document.getElementById('sting-minerow').style.display = mine.length ? '' : 'none';
-      if (mineBtn) mineBtn.style.display = mine.length ? '' : 'none';
-    }
-    fillMine();
-    async function libraryChanged() {
-      if (!window.StingLibrary) return;
-      const now = StingLibrary.read();
-      if (JSON.stringify(now) === JSON.stringify(mine)) return;
-      mine = now;
-      mineOk = await Promise.all(mine.map(async e => !!(await StingLibrary.source(e, stock))));
-      fillMine();
-      if (sel) fill();                         // (a clip that hides its original)
-    }
-    const onStore = ev => { if (ev.key === 'sting_library') libraryChanged(); };
-    window.addEventListener('storage', onStore);
-    window.addEventListener('focus', libraryChanged);   // (and on coming back from the library's tab)
-    const hideBox = document.getElementById('sting-hideused'), prevBtn = document.getElementById('sting-prev');
-    function fill() {
+    let mineOk = window.StingLibrary ? await okList(mine, stock) : [];
+    const wrap = document.createElement('div');
+    wrap.className = 'ask sting-dlg';
+    wrap.innerHTML = '<div class="ask-box" role="dialog" aria-modal="true">' +
+      '<div class="sting-tabs"><button class="sting-tab" data-mode="stock">Walk-up sting</button><button class="sting-tab" data-mode="custom">Custom file</button><button class="sting-tab" data-mode="edited">Edited sting</button></div>' +
+      '<p class="sting-note">Plays as this item starts, on the timer’s computer. The item keeps its own time.</p>' +
+      '<div class="sting-pane" data-mode="stock">' +
+        (stock.length ? '<span class="sting-row"><select id="sting-stock"></select><button type="button" id="sting-prev" title="Hear it">▶</button></span>' +
+          '<label class="sting-check"><input type="checkbox" id="sting-hideused"> Hide stings already on this run sheet</label>' +
+          '<p class="sting-note" id="sting-none" hidden>Every stock sting is already on this run sheet.</p>' : '<p class="sting-note">This site has no stock stings.</p>') +
+      '</div>' +
+      '<div class="sting-pane" data-mode="custom">' +
+        '<p class="sting-note">Music or a video of your own: a file from this computer, or a link to one.</p>' +
+        '<button type="button" id="sting-browse">Browse this computer…</button>' +
+        '<label class="sting-field">Or a link <input id="sting-url" type="url" placeholder="https://…/walk-up.mp3" spellcheck="false"></label>' +
+      '</div>' +
+      '<div class="sting-pane" data-mode="edited">' +
+        '<span class="sting-row" id="sting-minerow"><select id="sting-mine"></select><button type="button" id="sting-mprev" title="Hear it">▶</button></span>' +
+        '<p class="sting-note" id="sting-mnone">No clips yet. In the sting library, choose just the part of a track you want, with fades: of a stock sting or a file of your own.</p>' +
+        '<button type="button" id="sting-lib">Open the sting library…</button>' +
+      '</div>' +
+      '<div class="ask-btns"><button class="primary sting-use">Use</button><button class="sting-cancel">Cancel</button></div></div>';
+    document.body.appendChild(wrap);
+    const $d = sel => wrap.querySelector(sel);
+    const sel = $d('#sting-stock'), urlIn = $d('#sting-url'), mineSel = $d('#sting-mine'), hideBox = $d('#sting-hideused'), prevBtn = $d('#sting-prev'), useBtn = $d('.sting-use');
+    let mode = 'stock';
+
+    function fill() {                              // the stock list: whole tracks a better clip replaces left out
+      if (!sel) return;
       const keep = sel.value, hide = hideBox.checked;
-      const replaced = window.StingLibrary ? StingLibrary.hidden(stock, mine) : new Set();   // whole tracks a better clip replaces
+      const replaced = window.StingLibrary ? StingLibrary.hidden(stock, mine) : new Set();
       sel.innerHTML = stock.map((x, i) => {
         if (replaced.has(i)) return '';
         const users = stingUsers(x, id);
@@ -742,16 +733,39 @@
         return `<option value="${i}">${esc(x.name)}${len ? ' · ' + C.formatDuration(Math.max(1, Math.round(len))) : ''}${x.media === 'video' ? ' (video)' : ''}${users.length ? ' · in use: ' + esc(users.join(', ')) : ''}</option>`;
       }).join('');
       if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
-      document.getElementById('sting-none').hidden = sel.options.length > 0;
+      $d('#sting-none').hidden = sel.options.length > 0;
       prevBtn.disabled = !sel.options.length;
     }
+    function fillMine() {
+      const keep = mineSel.value;
+      mineSel.innerHTML = mine.map((e, i) => {
+        const l = StingClip.length(e, e.duration);
+        return `<option value="${i}"${mineOk[i] ? '' : ' disabled'}>${esc(e.name)}${l ? ' · ' + C.formatDuration(Math.max(1, Math.round(l))) : ''}${mineOk[i] ? '' : ' (its file isn’t on this computer)'}</option>`;
+      }).join('');
+      if (keep && mineOk[Number(keep)]) mineSel.value = keep; else { const first = mineOk.indexOf(true); if (first >= 0) mineSel.value = String(first); }
+      $d('#sting-minerow').style.display = mine.length ? '' : 'none';
+      $d('#sting-mnone').style.display = mine.length ? 'none' : '';
+    }
+    function setMode(m) {
+      mode = m;
+      stopPreview();
+      wrap.querySelectorAll('.sting-tab').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+      wrap.querySelectorAll('.sting-pane').forEach(p => { p.style.display = p.dataset.mode === m ? '' : 'none'; });
+      useBtn.textContent = m === 'stock' ? 'Use this sting' : m === 'custom' ? 'Use the link' : 'Use this clip';
+      useBtn.disabled = m === 'stock' ? !(sel && sel.options.length) : m === 'custom' ? !urlIn.value.trim() : !mineOk.some(Boolean);
+      if (m === 'custom') urlIn.focus();
+    }
+    async function libraryChanged() {
+      if (!window.StingLibrary) return;
+      const now = StingLibrary.read();
+      if (JSON.stringify(now) === JSON.stringify(mine)) return;
+      mine = now; mineOk = await okList(mine, stock);
+      fillMine(); fill(); setMode(mode);
+    }
+
     if (sel) {
       hideBox.checked = hideUsed();
-      fill();
-      hideBox.addEventListener('change', () => {
-        try { localStorage.setItem(HIDE_USED, hideBox.checked ? '1' : '0'); } catch (_) { /* private mode */ }
-        stopPreview(); fill();
-      });
+      hideBox.addEventListener('change', () => { try { localStorage.setItem(HIDE_USED, hideBox.checked ? '1' : '0'); } catch (_) { /* private mode */ } stopPreview(); fill(); setMode(mode); });
       sel.addEventListener('change', stopPreview);
       prevBtn.addEventListener('click', () => {
         if (preview) return stopPreview();
@@ -766,39 +780,93 @@
         prevBtn.textContent = '■'; prevBtn.title = 'Stop';
       });
     }
-    const v = await answer;
-    stopPreview();
-    window.removeEventListener('storage', onStore);
-    window.removeEventListener('focus', libraryChanged);
-    if (v === 'file') { pickFor = id; stingPicker.click(); return; }
-    if (v === 'mine' && mineSel && mine[Number(mineSel.value)] && mineOk[Number(mineSel.value)]) {
-      const e = mine[Number(mineSel.value)], clip = clipFields(e);
-      if (e.file) {                              // a clip of a track on this computer: the file goes with it
-        const blob = await StingLibrary.source(e, stock);
-        attachSting(id, new File([blob], e.file, { type: blob.type || (e.media === 'video' ? 'video/mp4' : 'audio/mpeg') }), { name: e.name, clip, lib: e.name });
-        return;
+    mineSel.addEventListener('change', stopPreview);
+    $d('#sting-mprev').addEventListener('click', async () => {
+      if (preview) return stopPreview();
+      const e = mine[Number(mineSel.value)];
+      const src = e && await StingLibrary.source(e, stock);
+      if (!src) return;
+      preview = StingClip.preview(src, e);
+      $d('#sting-mprev').textContent = '■';
+    });
+    urlIn.addEventListener('input', () => { if (mode === 'custom') useBtn.disabled = !urlIn.value.trim(); });
+    fill(); fillMine();
+    setMode(stock.length ? 'stock' : 'custom');
+
+    return new Promise(resolve => {
+      const onStore = ev => { if (ev.key === 'sting_library') libraryChanged(); };
+      window.addEventListener('storage', onStore);
+      window.addEventListener('focus', libraryChanged);   // (and on coming back from another tab)
+      const close = () => {
+        stopPreview();
+        document.removeEventListener('keydown', onKey, true);
+        window.removeEventListener('storage', onStore);
+        window.removeEventListener('focus', libraryChanged);
+        wrap.remove();
+        resolve();
+      };
+      function onKey(e) {
+        if (document.querySelector('.sting-libwrap, .sc-wrap')) return;   // the library or the clip editor has the keys
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+        else if (e.key === 'Enter' && !e.target.closest('button')) { e.preventDefault(); e.stopPropagation(); if (!useBtn.disabled) useBtn.click(); }
+        else if (e.key === 'PageDown' || e.key === 'PageUp') e.stopPropagation();   // not Next/Back behind it
       }
-      const url = await StingLibrary.source(e, stock), base = e.stock ? stock.find(x => x.name === e.stock) : null;
-      const st = Object.assign({ src: e.stock ? 'stock' : 'link', media: e.media, name: e.name, url, duration: e.duration != null ? Math.round(e.duration) : base && base.duration, lib: e.name }, clip);
-      if (!(await againOk(e.name, stingUsers(st, id)))) return;
-      setSting(id, st);
-      return;
-    }
-    if (v === 'stock' && sel && stock[Number(sel.value)] && sel.options.length) {
-      const x = stock[Number(sel.value)];
-      if (!(await againOk(x.name, stingUsers(x, id)))) return;
-      setSting(id, Object.assign({ src: 'stock', media: x.media, name: x.name, url: x.url, duration: x.duration }, clipFields(x)));
-      return;
-    }
-    if (v === 'link') {
-      let url;
-      try { url = new URL(urlIn.value.trim()); } catch (_) { url = null; }
-      if (!url || url.protocol !== 'https:') { alert('Type a link starting with https:// to an audio or video file.'); return; }
-      const media = mediaOf(url.pathname);
-      const name = noExt(decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || url.hostname)).slice(0, 200);
-      if (!(await againOk(name, stingUsers({ url: url.href }, id)))) return;
-      setSting(id, { src: 'link', media, name, url: url.href, duration: await probeUrl(url.href, media) });
-    }
+      document.addEventListener('keydown', onKey, true);
+      wrap.querySelectorAll('.sting-tab').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+      $d('.sting-cancel').addEventListener('click', close);
+      $d('#sting-browse').addEventListener('click', () => { pickFor = id; stingPicker.click(); close(); });   // (the picker needs this click)
+      $d('#sting-lib').addEventListener('click', async () => { stopPreview(); await openLibrary(); await libraryChanged(); setMode('edited'); });
+      useBtn.addEventListener('click', async () => {
+        if (mode === 'stock') {
+          const x = sel && stock[Number(sel.value)];
+          if (!x || !sel.options.length) return;
+          close();
+          if (!(await againOk(x.name, stingUsers(x, id)))) return;
+          setSting(id, Object.assign({ src: 'stock', media: x.media, name: x.name, url: x.url, duration: x.duration }, clipFields(x)));
+        } else if (mode === 'custom') {
+          let url;
+          try { url = new URL(urlIn.value.trim()); } catch (_) { url = null; }
+          if (!url || url.protocol !== 'https:') { alert('Type a link starting with https:// to an audio or video file.'); return; }
+          close();
+          const media = mediaOf(url.pathname);
+          const name = noExt(decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || url.hostname)).slice(0, 200);
+          if (!(await againOk(name, stingUsers({ url: url.href }, id)))) return;
+          setSting(id, { src: 'link', media, name, url: url.href, duration: await probeUrl(url.href, media) });
+        } else {
+          const i = Number(mineSel.value), e = mine[i];
+          if (!e || !mineOk[i]) return;
+          close();
+          const clip = clipFields(e);
+          if (e.file) {                              // a clip of a track on this computer: the file goes with it
+            const blob = await StingLibrary.source(e, stock);
+            attachSting(id, new File([blob], e.file, { type: blob.type || (e.media === 'video' ? 'video/mp4' : 'audio/mpeg') }), { name: e.name, clip, lib: e.name });
+            return;
+          }
+          const url = await StingLibrary.source(e, stock), base = e.stock ? stock.find(x => x.name === e.stock) : null;
+          const st = Object.assign({ src: e.stock ? 'stock' : 'link', media: e.media, name: e.name, url, duration: e.duration != null ? Math.round(e.duration) : base && base.duration, lib: e.name }, clip);
+          if (!(await againOk(e.name, stingUsers(st, id)))) return;
+          setSting(id, st);
+        }
+      });
+    });
+  }
+  // The sting library as a panel over the editor (sting-library.js mount); resolves when it's closed
+  function openLibrary() {
+    return new Promise(resolve => {
+      const wrap = document.createElement('div');
+      wrap.className = 'ask sting-libwrap';
+      wrap.innerHTML = '<div class="ask-box sting-libbox"><div class="sting-libtop"><b>Sting library</b><span class="sting-note">Clips: just the part of a track you want, with fades, kept on this computer.</span><button class="sting-libdone">Done</button></div><div class="sting-libbody"></div></div>';
+      document.body.appendChild(wrap);
+      const lib = StingLibrary.mount(wrap.querySelector('.sting-libbody'));
+      const close = () => { lib.stop(); document.removeEventListener('keydown', onKey, true); wrap.remove(); resolve(); };
+      function onKey(e) {
+        if (document.querySelector('.sc-wrap')) return;            // the clip editor has the keys
+        if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); }
+        else if (e.key === 'PageDown' || e.key === 'PageUp') e.stopPropagation();
+      }
+      document.addEventListener('keydown', onKey, true);
+      wrap.querySelector('.sting-libdone').addEventListener('click', close);
+    });
   }
   window.__stingPreview = () => !!preview;   // (tests)
   async function attachSting(id, file, extra) {   // extra: {name, clip, lib} (a library clip)

@@ -1,8 +1,8 @@
 /*!
  * sting-library.js
- * The sting library page (stings.html; a trial with the stings: TimerFeatures.stings): clips of stock
- * stings and of the user's own tracks (sting-clip.js), kept on this computer, offered by the run sheet
- * editor's + sting, imported and exported as JSON.
+ * The sting library (a trial with the stings: TimerFeatures.stings): clips of stock stings and of the
+ * user's own tracks (sting-clip.js), kept on this computer, offered by the run sheet editor's + sting,
+ * imported and exported as JSON. Its UI (mount) is a panel in the run sheet editor and stings.html.
  *
  * The library (localStorage sting_library) is the stock list's format with clip fields:
  *   {stings: [{name, stock | file | url, size?, media, duration, start?, end?, fadeIn?, fadeOut?}]}
@@ -64,21 +64,49 @@ var StingLibrary = (function () {
   return { read, write, clean, source, keepFile, fileKey, hidden, CLIP };
 })();
 
-// ─── The page ─────────────────────────────────────────────────────────────
-(function () {
+// ─── The library's UI: StingLibrary.mount(element) → {refresh} ────────────
+// In the run sheet editor (a panel over it: + sting → Edited sting → Open the sting library) and on
+// stings.html. Everything is scoped to the element (classes, not ids).
+StingLibrary.mount = function (root, opts) {
   'use strict';
-  const $ = id => document.getElementById(id);
-  if (!document.getElementById('mine')) return;              // (loaded by the run sheet editor too, for its + sting)
-  if (location.hostname) document.title = location.hostname + ' - Sting library';
-  if (window.TimerFeatures && !TimerFeatures.stings) {
-    document.querySelector('main').innerHTML = '<h1>Sting library</h1><p class="sub">Walk-up stings aren’t available on this site.</p>';
-    return;
-  }
+  opts = opts || {};
   const L = StingLibrary;
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const t2 = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
   const len = s => { const l = StingClip.length(s, s.duration); return l == null ? '' : l >= 60 ? Math.floor(l / 60) + ' min ' + Math.round(l % 60) + ' s' : l.toFixed(1) + ' s'; };
-  const msg = (text, bad) => { $('msg').textContent = text || ''; $('msg').className = bad ? 'bad' : ''; };
+  if (!document.getElementById('sl-css')) {
+    const st = document.createElement('style'); st.id = 'sl-css';
+    st.textContent = `
+.sl-root { color: #ddd; font-family: "Helvetica Neue", Arial, sans-serif; text-align: left; }
+.sl-msg { min-height: 1.4em; color: #7fdc7f; margin-bottom: 0.5rem; font-size: 0.9rem; }
+.sl-msg.bad { color: #e0b030; }
+.sl-card { background: #151515; border: 1px solid #2a2a2a; border-radius: 0.6rem; padding: 0.8rem 1rem; margin-bottom: 0.8rem; }
+.sl-head { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.5rem; }
+.sl-head h2 { flex: 1; font-size: 1rem; margin: 0; color: #fff; }
+.sl-root button { font: inherit; font-size: 0.88rem; color: #ddd; background: #222; border: 1px solid #444; border-radius: 0.35rem; padding: 0.3rem 0.7rem; cursor: pointer; }
+.sl-root button:hover { background: #2c2c2c; }
+.sl-root button.small { padding: 0.1rem 0.5rem; font-size: 0.82rem; }
+.sl-root ul { list-style: none; margin: 0; padding: 0; }
+.sl-root li { display: flex; gap: 0.6rem; align-items: center; padding: 0.35rem 0.25rem; border-top: 1px solid #2a2a2a; }
+.sl-root li .name { color: #fff; flex: 1 1 auto; min-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-root li .meta { color: #888; font-size: 0.82rem; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.sl-root li .need { color: #e0b030; font-size: 0.82rem; }
+.sl-root li.hid .name { color: #888; }
+.sl-root li.empty { color: #888; }
+.sl-hint { color: #888; font-size: 0.82rem; }`;
+    document.head.appendChild(st);
+  }
+  root.classList.add('sl-root');
+  root.innerHTML = `<div class="sl-msg"></div>
+    <section class="sl-card"><div class="sl-head"><h2>My clips</h2>
+      <button data-a="fromfile">+ From a file…</button><button data-a="import">Import…</button><button data-a="export">Export</button><button data-a="find" hidden>Find files…</button></div>
+      <ul class="sl-mine"></ul></section>
+    <section class="sl-card"><div class="sl-head"><h2>Stock stings</h2><span class="sl-hint">✂ makes a clip of one</span></div><ul class="sl-stock"></ul></section>
+    <input type="file" class="sl-pickfile" accept="audio/*,video/*" hidden>
+    <input type="file" class="sl-pickjson" accept=".json,application/json" hidden>
+    <input type="file" class="sl-pickdir" webkitdirectory multiple hidden>`;
+  const $ = sel => root.querySelector(sel);
+  const msg = (text, bad) => { $('.sl-msg').textContent = text || ''; $('.sl-msg').className = 'sl-msg' + (bad ? ' bad' : ''); };
   let stock = [], have = new Set(), playing = null, playingId = null;
 
   async function loadStock() {
@@ -106,7 +134,7 @@ var StingLibrary = (function () {
 
   function render() {
     const mine = L.read();
-    $('mine').innerHTML = mine.map((e, i) => {
+    $('.sl-mine').innerHTML = mine.map((e, i) => {
       const r = StingClip.region(e);
       const part = r ? (r.start != null || r.end != null ? t2(r.start || 0) + '–' + (r.end != null ? t2(r.end) : 'end') : 'whole track') + (r.fadeIn ? ' · in ' + r.fadeIn + ' ms' : '') + (r.fadeOut ? ' · out ' + r.fadeOut + ' ms' : '') : 'whole track';
       return `<li data-i="${i}"><button class="small" data-a="play" title="Hear it">${playingId === 'm' + i ? '■' : '▶'}</button>` +
@@ -115,12 +143,12 @@ var StingLibrary = (function () {
         (missing(e) ? '<span class="need" title="Imported: the file isn’t on this computer yet">⚠ needs the file</span>' : '') +
         `<button class="small" data-a="edit" title="Change the part">✂</button><button class="small" data-a="del" title="Remove">✕</button></li>`;
     }).join('') || '<li class="empty">No clips yet. Make one from a stock sting below, or from a file of your own.</li>';
-    $('find').hidden = !mine.some(missing);
+    $('[data-a=find]').hidden = !mine.some(missing);
     const hid = L.hidden(stock, mine);
     // A song can give several clips (a different middle is a sting too): how many it has, the site's and mine
     const nClips = s => StingClip.region(s) ? mine.filter(e => e.stock === s.name).length
       : stock.filter(c => c !== s && StingClip.region(c) && c.url === s.url).length + mine.filter(e => e.stock === s.name).length;
-    $('stock').innerHTML = stock.map((s, i) => `<li data-s="${i}"${hid.has(i) ? ' class="hid"' : ''}><button class="small" data-a="play">${playingId === 's' + i ? '■' : '▶'}</button>` +
+    $('.sl-stock').innerHTML = stock.map((s, i) => `<li data-s="${i}"${hid.has(i) ? ' class="hid"' : ''}><button class="small" data-a="play">${playingId === 's' + i ? '■' : '▶'}</button>` +
       `<span class="name">${esc(s.name)}</span><span class="meta">${esc(len(s))}${StingClip.region(s) ? ' · a clip' : ''}${nClips(s) ? ' · ' + nClips(s) + (nClips(s) === 1 ? ' clip' : ' clips') : ''}${hid.has(i) ? ' · original hidden from + sting' : ''}</span>` +
       `<button class="small" data-a="clip" title="Make a clip of it">✂</button></li>`).join('') || '<li class="empty">This site has no stock stings.</li>';
   }
@@ -139,39 +167,42 @@ var StingLibrary = (function () {
     L.write(list);
     msg(isNew ? `Added “${clean.name}”.` : `Saved “${clean.name}”.`);
     render();
+    if (opts.onChange) opts.onChange();
   }
 
-  $('mine').addEventListener('click', async ev => {
-    const b = ev.target.closest('button[data-a]'), li = b && b.closest('li[data-i]');
-    if (!li) return;
-    const i = Number(li.dataset.i), list = L.read(), e = list[i];
-    if (!e) return;
-    if (b.dataset.a === 'play') preview('m' + i, e);
-    else if (b.dataset.a === 'del') { if (confirm(`Remove “${e.name}” from your clips?`)) { list.splice(i, 1); L.write(list); render(); } }
-    else if (b.dataset.a === 'edit') {
-      const src = await L.source(e, stock);
-      if (!src) return msg('That clip’s file isn’t on this computer: use Find files…', true);
-      edit(Object.assign({ __i: i }, e), src, false);
+  root.addEventListener('click', async ev => {
+    const b = ev.target.closest('button[data-a]');
+    if (!b || !root.contains(b)) return;
+    const a = b.dataset.a, li = b.closest('li');
+    if (a === 'fromfile') return $('.sl-pickfile').click();
+    if (a === 'import') return $('.sl-pickjson').click();
+    if (a === 'find') return $('.sl-pickdir').click();
+    if (a === 'export') return exportLib();
+    if (li && li.dataset.i != null) {
+      const i = Number(li.dataset.i), list = L.read(), e = list[i];
+      if (!e) return;
+      if (a === 'play') preview('m' + i, e);
+      else if (a === 'del') { if (confirm(`Remove “${e.name}” from your clips?`)) { list.splice(i, 1); L.write(list); render(); if (opts.onChange) opts.onChange(); } }
+      else if (a === 'edit') {
+        const src = await L.source(e, stock);
+        if (!src) return msg('That clip’s file isn’t on this computer: use Find files…', true);
+        edit(Object.assign({ __i: i }, e), src, false);
+      }
+    } else if (li && li.dataset.s != null) {
+      const s = stock[Number(li.dataset.s)];
+      if (a === 'play') preview('s' + li.dataset.s, s);
+      else if (a === 'clip') edit({ name: s.name, stock: s.name, media: s.media || 'audio', duration: s.duration, start: s.start, end: s.end, fadeIn: s.fadeIn, fadeOut: s.fadeOut }, s.url, true);
     }
   });
-  $('stock').addEventListener('click', ev => {
-    const b = ev.target.closest('button[data-a]'), li = b && b.closest('li[data-s]');
-    if (!li) return;
-    const s = stock[Number(li.dataset.s)];
-    if (b.dataset.a === 'play') preview('s' + li.dataset.s, s);
-    else if (b.dataset.a === 'clip') edit({ name: s.name, stock: s.name, media: s.media || 'audio', duration: s.duration, start: s.start, end: s.end, fadeIn: s.fadeIn, fadeOut: s.fadeOut }, s.url, true);
-  });
 
-  $('fromfile').addEventListener('click', () => $('pickfile').click());
-  $('pickfile').addEventListener('change', async () => {
-    const f = $('pickfile').files[0]; $('pickfile').value = '';
+  $('.sl-pickfile').addEventListener('change', async () => {
+    const f = $('.sl-pickfile').files[0]; $('.sl-pickfile').value = '';
     if (!f) return;
     try { await L.keepFile(f); } catch (err) { return msg('Couldn’t keep the file in this browser: ' + (err && err.message || err), true); }
     have.add(L.fileKey({ file: f.name, size: f.size }));
     edit({ name: f.name.replace(/\.[^.]+$/, ''), file: f.name, size: f.size, media: f.type.startsWith('video/') ? 'video' : 'audio' }, f, true);
   });
-
-  $('export').addEventListener('click', () => {
+  function exportLib() {
     const list = L.read();
     if (!list.length) return msg('There are no clips to export yet.', true);
     const json = JSON.stringify({ about: 'Walk-up sting clips (a sting library from ' + location.host + '): stock = a stock sting by name, file = a track by file name (and size), start/end in seconds, fades in ms.', stings: list }, null, 2);
@@ -181,10 +212,9 @@ var StingLibrary = (function () {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     msg(`Exported ${list.length} clip${list.length === 1 ? '' : 's'} as sting-library.json.`);
-  });
-  $('import').addEventListener('click', () => $('pickjson').click());
-  $('pickjson').addEventListener('change', async () => {
-    const f = $('pickjson').files[0]; $('pickjson').value = '';
+  }
+  $('.sl-pickjson').addEventListener('change', async () => {
+    const f = $('.sl-pickjson').files[0]; $('.sl-pickjson').value = '';
     if (!f) return;
     let j;
     try { j = JSON.parse(await f.text()); } catch (_) { return msg('That isn’t a sting library (not JSON).', true); }
@@ -197,10 +227,10 @@ var StingLibrary = (function () {
     const need = list.filter(missing).length;
     msg(`Imported ${incoming.length} clip${incoming.length === 1 ? '' : 's'}.` + (need ? ` ${need} need${need === 1 ? 's' : ''} its file: click Find files… and pick the folder they’re in.` : ''), need > 0);
     render();
+    if (opts.onChange) opts.onChange();
   });
-  $('find').addEventListener('click', () => $('pickdir').click());
-  $('pickdir').addEventListener('change', async () => {
-    const files = Array.from($('pickdir').files || []); $('pickdir').value = '';
+  $('.sl-pickdir').addEventListener('change', async () => {
+    const files = Array.from($('.sl-pickdir').files || []); $('.sl-pickdir').value = '';
     let found = 0;
     for (const e of L.read().filter(missing)) {
       const f = files.find(x => x.name === e.file && (!e.size || x.size === e.size)) || files.find(x => x.name === e.file);
@@ -211,11 +241,26 @@ var StingLibrary = (function () {
     const still = L.read().filter(missing).length;
     msg(`Found ${found} file${found === 1 ? '' : 's'}.` + (still ? ` ${still} still missing.` : ''), still > 0);
     render();
+    if (opts.onChange) opts.onChange();
   });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && playing) stopPlay(); });
 
   // (tests)
   window.__stingLibrary = { list: () => L.read(), missing: () => L.read().filter(missing).map(e => e.name), playing: () => playingId, hidden: () => [...L.hidden(stock)].map(i => stock[i].name) };
 
   loadStock().then(checkFiles).then(render);
+  return { refresh: () => checkFiles().then(render), stop: stopPlay };
+};
+
+// ─── stings.html: the library on a page of its own ────────────────────────
+(function () {
+  'use strict';
+  const host = document.getElementById('library');
+  if (!host) return;                                         // (the run sheet editor mounts it itself)
+  if (location.hostname) document.title = location.hostname + ' - Sting library';
+  if (window.TimerFeatures && !TimerFeatures.stings) {
+    document.querySelector('main').innerHTML = '<h1>Sting library</h1><p class="sub">Walk-up stings aren’t available on this site.</p>';
+    return;
+  }
+  const lib = StingLibrary.mount(host);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') lib.stop(); });
 })();

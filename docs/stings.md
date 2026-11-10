@@ -6,11 +6,13 @@ Only on the alpha site (`features.js`, `TimerFeatures.stings`): elsewhere the ru
 
 A walk-up sting is a short piece of music (or a video) that plays as a run sheet item starts: the speaker's walk-on music, say. Unlike a video on an item, it doesn't set the timer: the item keeps its own duration, and the sting just plays over its start.
 
-In the run sheet editor, click **+ sting** in an item's Video column and choose:
+In the run sheet editor, click **+ sting** in an item's Video column. Three tabs along the top:
 
-- **a stock sting** from the list the site offers (`stock-stings.json` next to the timer: `name`, `url`, `media` audio or video, `duration` in seconds),
-- **a link** to an audio or video file (https), or
-- **a file** from your computer. Dropping an audio file on a row does the same (a video file dropped on a row is still a video for the item).
+- **Walk-up sting:** the stock stings the site offers (`stock-stings.json` next to the timer: `name`, `url`, `media` audio or video, `duration` in seconds), including the site's own clips of them.
+- **Custom file:** **Browse this computer…** for a file of your own, or type a link to one (https). Dropping an audio file on a row does the same (a video file dropped on a row is still a video for the item).
+- **Edited sting:** your clips from the sting library, and **Open the sting library…**, which opens it as a panel over the editor.
+
+**Use** takes the one on the tab that's showing.
 
 In the dialog, **▶** next to the stock list lets you hear the selected sting first. Stock stings already on this run sheet are marked *in use* with the items using them; tick **Hide stings already on this run sheet** to leave them out (some presenters want their walk-up to themselves). Choosing a stock sting or link that another item already uses asks first.
 
@@ -28,7 +30,7 @@ A guest brings a song and wants five seconds of it. Click **✂** on an item's s
 
 ## The sting library
 
-`stings.html` (linked from the sting dialog as **Sting library…**) keeps clips on this computer: make them from the stock stings (**✂** on one) or from your own tracks (**+ From a file…**). They appear in the run sheet editor's **+ sting** under **My clips** (an open dialog picks up changes made in the library's tab); a clip of your own file brings the file with it. Trimming such a sting with **✂** in the run sheet asks whether to update the library clip too (its cut and its name), or just this item.
+The library (a panel in the run sheet editor, from **+ sting** → **Edited sting** → **Open the sting library…**; also a page of its own, `stings.html`) keeps clips on this computer: make them from the stock stings (**✂** on one) or from your own tracks (**+ From a file…**). They appear in the run sheet editor's **+ sting** under **My clips** (an open dialog picks up changes made in the library's tab); a clip of your own file brings the file with it. Trimming such a sting with **✂** in the run sheet asks whether to update the library clip too (its cut and its name), or just this item.
 
 **Export** saves the library as `sting-library.json`, the same format as the site's stock list with the clip fields added:
 

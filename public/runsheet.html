@@ -117,6 +117,20 @@
     .sting-note { color: var(--dim); margin: 0.4rem 0 0.8rem; }
     .sting-field { display: block; margin: 0.5rem 0; color: var(--dim); }
     .sting-row { display: flex; gap: 0.4rem; margin-top: 0.25rem; }
+    .sting-dlg .ask-box { width: min(36rem, 94vw); max-width: none; }
+    .sting-dlg select { font: inherit; padding: 0.3rem 0.4rem; background: #1a1a1a; color: var(--text); border: 1px solid var(--line2); border-radius: 0.3rem; }
+    .sting-tabs { display: flex; margin: 0 0 0.6rem; }
+    .sting-tabs .sting-tab { flex: 1; border-radius: 0; padding: 0.45rem 0.6rem; }
+    .sting-tabs .sting-tab:first-child { border-radius: 0.35rem 0 0 0.35rem; }
+    .sting-tabs .sting-tab:last-child { border-radius: 0 0.35rem 0.35rem 0; }
+    .sting-tabs .sting-tab + .sting-tab { border-left: 0; }
+    .sting-tabs .sting-tab.on { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
+    .sting-pane { min-height: 6.5rem; margin-bottom: 0.8rem; }
+    .sting-pane > button { margin: 0.3rem 0 0.4rem; }
+    .sting-libwrap { z-index: 60; }
+    .ask .sting-libbox { width: min(64rem, 94vw); max-width: none; max-height: 88vh; overflow: auto; }
+    .sting-libtop { display: flex; gap: 0.8rem; align-items: baseline; margin-bottom: 0.6rem; }
+    .sting-libtop .sting-note { flex: 1; margin: 0; }
     .sting-row select { flex: 1; margin-top: 0 !important; }
     .sting-row button { flex: none; padding: 0.2rem 0.7rem; }
     .sting-check { display: flex; gap: 0.4rem; align-items: center; margin: 0.2rem 0 0.6rem; color: var(--dim); cursor: pointer; }
@@ -356,10 +370,10 @@
 
   <script src="markdown-lite.js?v=938fee93"></script>
   <script src="help-overlay.js?v=8a5dbd9d"></script>
-  <script src="sting-library.js?v=1dbdf9ee"></script>
+  <script src="sting-library.js?v=2edcf7eb"></script>
   <script src="sting-clip.js?v=412f11bf"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="runsheet-core.js?v=a0f5cc65"></script>
-  <script src="runsheet-editor.js?v=de2a0768"></script>
+  <script src="runsheet-editor.js?v=080971cd"></script>
 </body>
 </html>
