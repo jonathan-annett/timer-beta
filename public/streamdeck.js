@@ -44,14 +44,14 @@
   // ─── Action definitions ───────────────────────────────────────────────────
 
   const ACTIONS = {
-    preset_10:        { label: '10 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 600000 }) },
-    preset_20:        { label: '20 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 1200000 }) },
-    preset_30:        { label: '30 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 1800000 }) },
-    preset_45:        { label: '45 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 2700000 }) },
-    preset_60:        { label: '1 hour',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 3600000 }) },
-    preset_90:        { label: '90 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 5400000 }) },
-    preset_120:       { label: '2 hours',   group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 7200000 }) },
-    preset_180:       { label: '3 hours',   group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 10800000 }) },
+    preset_10:        { label: '10 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 600000 }) },
+    preset_20:        { label: '20 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 1200000 }) },
+    preset_30:        { label: '30 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 1800000 }) },
+    preset_45:        { label: '45 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 2700000 }) },
+    preset_60:        { label: '1 hour',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 3600000 }) },
+    preset_90:        { label: '90 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 5400000 }) },
+    preset_120:       { label: '2 hours',   group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 7200000 }) },
+    preset_180:       { label: '3 hours',   group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 10800000 }) },
     start_restart:    { label: 'Start',     group: 'Controls',  cmd: () => _sendCmd({ cmd: 'keys', keys: [' '] }) },
     pause_resume: {
       label: 'Pause', altLabel: 'Resume',

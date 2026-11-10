@@ -519,7 +519,7 @@ html.over.paused #ends_disp {
 html.standby.paused #remain_info_message { display: block !important; }
 /* The operator's screen shows that notice in the run sheet dashboard instead (#rs_standby), and the
    times as what will happen: "will start at" / "will end at" (timer.js), steady, no pause total */
-html.standby.paused:not(.reduced) #remain_info_message { display: none !important; }
+html.runsheet.standby.paused:not(.reduced) #remain_info_message { display: none !important; }   /* (outside run sheet mode: an armed preset, which has no dashboard) */
 html.standby #started_disp:before { content: "will start at "; color: var(--color-future-start); }
 html.standby #ends_disp:before { content: "will end at "; }
 html.standby.paused #ends_disp { animation: none !important; color: inherit !important; }
@@ -738,6 +738,13 @@ div.buttons .btn-label {
 }
 div.buttons .btn-label:first-child { margin-left: 2px; }
 div.buttons .btn-presets div.btn { font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Arm presets: the Presets label is the switch, a bright badge while on (html.presetarm) */
+div.buttons #preset_arm { cursor: pointer; padding: 2px 6px; border: 1px solid transparent; border-radius: 9px; }
+div.buttons #preset_arm:hover { color: var(--ui-text); border-color: var(--ui-faint); }
+#preset_arm .pa-on, html.presetarm #preset_arm .pa-off { display: none; }
+html.presetarm #preset_arm .pa-on { display: inline; }
+html.presetarm div.buttons #preset_arm { background: #ffd400; border-color: #ffd400; color: #000; font-weight: 700; }
+html.presetarm.runsheet .btn-presets > #preset_arm { visibility: visible; }   /* the deck's presets still arm: keep the warning in sight */
 
 /* Flex instead of inline-block: no stray whitespace gaps, so the row fits narrower screens */
 html.showbuttons div.buttons {

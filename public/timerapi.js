@@ -1,4 +1,4 @@
-/* global timerAPI,onKey_Pause,onKey_UndoPause,catchUpNow,announceCustomMessage,captureTimerState,restoreTimerState,restoreMessages,setOperatorMessage,setItemMessage,setQuiet,quiet*/
+/* global timerAPI,presetArm,armTimer,onKey_Pause,onKey_UndoPause,catchUpNow,announceCustomMessage,captureTimerState,restoreTimerState,restoreMessages,setOperatorMessage,setItemMessage,setQuiet,quiet*/
 
 function processTimerApiMessage(msg) {
     const { error,cmd, code } = msg ;
@@ -9,6 +9,12 @@ function processTimerApiMessage(msg) {
             restartTimer(msg.msecs);
             break;
         } 
+
+        // A preset (the deck's preset keys): starts it, or with Arm presets on only arms it (armTimer)
+        case "preset" : {
+            if (presetArm) armTimer(msg.msecs); else restartTimer(msg.msecs);
+            break;
+        }
 
         case "default" : {
             setDefaultDuration(msg.msecs);

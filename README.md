@@ -10,6 +10,8 @@ A keyboard-driven countdown timer for talks, conferences and live events. One wi
 
 1. **Open the timer** in Chrome or Edge on the computer you'll operate from.
 2. **Pick a duration**: click a preset (10, 20, 30, 45, 60, 90 min, 2h, 3h; **Up** counts up from zero), or type the minutes (e.g. `4` `5`) and press **Enter**. For hours, type `1` `:` `30` for 1 h 30 min.
+
+   **Arm presets:** click the **Presets** label at the left of the button bar and it turns into a yellow **PRESETS ARM ONLY** badge. Presets (the bar's and the Stream Deck's) then only *arm* the timer: it shows the new time, paused and *Standing by*, and the time becomes the default. Press **Space**, **Resume** or the Stream Deck's **Start** key to start it. Click the badge again to go back to presets that start straight away.
 3. **Press Space** to start. Press **Space** again any time to restart from the full duration.
 4. **Show it on the stage screen**: press **R** (or click *display* at the bottom) to open the presenter window. Drag it to the stage display and press **F** for fullscreen.
 5. **During the talk**:

@@ -139,6 +139,10 @@ function announceNoticeWords() {
 }
 document.addEventListener("notice-words", announceNoticeWords);
 if (standby && !window.location.search.startsWith("?presenter")) html.classList.add("standby");	// (setHtmlClass isn't defined yet here)
+// Arm presets (the button bar's Presets label is its switch; preset_arm): a preset only arms the timer
+// (armTimer: its time, paused and standing by) and Space, Resume or the deck's Start key starts it
+var presetArm = localStorage.getItem("preset_arm") === "1";
+if (presetArm && !window.location.search.startsWith("?presenter")) html.classList.add("presetarm");
 
 
 let lastUpdateTick = 0;
@@ -247,6 +251,10 @@ custom_message.addEventListener('focus', function(){
 
 		  
  
+		  const presetArmBadge = document.getElementById("preset_arm");	// Arm presets' switch (setPresetArm)
+		  if (presetArmBadge) presetArmBadge.addEventListener("click", function () { setPresetArm(!presetArm); });
+		  presetArmTitle();
+
 		  function keyMacroClick(e) {
 			  if (e.pointerType === "mouse") {
 				  if (e.button !== 0) {
@@ -283,6 +291,10 @@ custom_message.addEventListener('focus', function(){
 					}
 			  }
 			  
+			  // Arm presets: a preset sets the default (Space as Enter, like Shift+click), then arms it
+			  const arm = presetArm && !e.shiftKey && keys[0].key === " " && this.closest(".btn-presets");
+			  if (arm) keys = keys.map(function(k){ return k.key === " " ? { key: "Enter" } : k; });
+
 			  keys.forEach(function(e){
 				  if (e.__up) { 
 					onDocKeyUp(e);
@@ -290,6 +302,7 @@ custom_message.addEventListener('focus', function(){
 					onDocKeyDown(e);
 				  }
 			  });
+			  if (arm) armTimer(defaultDuration);
 		  }
 		  
   
@@ -393,8 +406,9 @@ custom_message.addEventListener('focus', function(){
 
   // Standby on or off (the `standby` API command; restartTimer ends it). at: an auto start time (ms) or
   // null; start: the first item's planned start (ms) or null, for "will start at" / "will end at"
-  function setStandby(on, at, start) {
+  function setStandby(on, at, start, armed) {
 	  standby = on ? { at: Number.isFinite(at) ? at : null, start: Number.isFinite(start) ? start : null } : null;
+	  if (standby && armed) standby.armed = true;	// an armed preset (armTimer): standbyStart starts it
 	  if (standby) localStorage.setItem("standby", JSON.stringify(standby)); else localStorage.removeItem("standby");
 	  if (standby) setHtmlClass("standby"); else clearHtmlClass("standby");
 	  clockAnchor = null;			// devices get the new notice with the next anchor
@@ -406,6 +420,11 @@ custom_message.addEventListener('focus', function(){
   // Resume or restart while standing by starts the show (the run sheet's first item), not just the countdown
   function standbyStart() {
 	  if (!standby) return false;
+	  if (standby.armed) {		// an armed preset: from its full time, unless a time has been typed since (Space starts that)
+		  if (enterTimeText !== "") { setStandby(false); return false; }
+		  restartTimer();
+		  return true;
+	  }
 	  if (window.runsheet && window.runsheet.standbyStart && window.runsheet.standbyStart()) return true;
 	  setStandby(false);
 	  return false;
@@ -888,6 +907,33 @@ custom_message.addEventListener('focus', function(){
  }
 
   
+  // A preset with Arm presets on (the `preset` command, the button bar's presets): its time becomes the
+  // default and shows paused, standing by, until Space, Resume or the deck's Start key (standbyStart)
+  function armTimer(msecs) {
+	setDefaultDuration(msecs);
+	if (timerAPI) timerAPI.send({ setVariableValues: { default: dispNextMins.textContent } });
+	restartTimer(msecs);
+	const armedAt = startedAt;
+	setTimeout(function () {		// a moment after the start: paused at exactly N.000 s the display reads N+1
+		if (startedAt !== armedAt || pausedAt !== undefined) return;		// started again (or paused) meanwhile
+		onKey_Pause();
+		setStandby(true, null, null, true);
+	}, 60);
+  }
+
+  function setPresetArm(on) {
+	presetArm = !!on;
+	if (presetArm) localStorage.setItem("preset_arm", "1"); else localStorage.removeItem("preset_arm");
+	if (presetArm) setHtmlClass("presetarm"); else clearHtmlClass("presetarm");
+	presetArmTitle();
+  }
+  function presetArmTitle() {
+	const el = document.getElementById("preset_arm");
+	if (el) el.title = presetArm
+		? "Presets only ARM the timer: they show the time, paused. Press Space (or the Stream Deck's Start key) to start it. Click to turn this off"
+		: "Click to make presets arm the timer (show the time, paused) instead of starting it";
+  }
+
   function restartTimer(useDuration) {
 	if (standby) setStandby(false);		// any start ends standby
 	thisDuration = useDuration ===undefined ? defaultDuration : useDuration;
