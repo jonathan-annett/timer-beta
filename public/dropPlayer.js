@@ -17,7 +17,7 @@
  *   load(url, {name, idle, controls, message, revoke, tag, onEnd, history, sting, region, volume})   cue a video
  *   loadFile(file, handle)  cue a file the operator dropped or browsed for (handle: a
  *               FileSystemFileHandle or a promise of one, kept so the history can reopen it)
- *   play()      play the cued video; the timer counts down its length
+ *   play({volume})  play the cued video; the timer counts down its length (volume: a sting's level, now)
  *   stop({quiet})  stop what's playing (or unload what's cued); unless quiet, clear the
  *               message and the timer
  *   rewind()    the playing video back to the start, cued, timer paused at its length
@@ -222,8 +222,9 @@
     el.addEventListener('loadedmetadata', fn, { once: true });
   }
 
-  function play() {
+  function play(opts) {
     if (!cued || !isOpen()) return false;
+    if (cued.sting && opts && opts.volume > 0 && opts.volume <= 1) cued.volume = opts.volume;   // a sting's level as it starts (it may have changed since it was cued)
     if (playing) { release(playing); playing = null; }
     playing = cued; cued = null;
     const s = playing;

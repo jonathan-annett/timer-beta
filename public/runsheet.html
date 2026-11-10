@@ -191,6 +191,14 @@
     #imp-msg { font-size: 0.857rem; margin-top: 0.571rem; color: var(--dim); white-space: pre-line; }
     #imp-msg.ok { color: var(--now-text); } #imp-msg.warn { color: var(--warn); }
     .sep { border: 0; border-top: 1px solid var(--line); margin: 1rem 0 0.429rem; }
+    /* What's playing (a sting, the tone, a video): the timer's playing bar, the same look (sting-player.js);
+       not when docked, where the timer's own sits on top of the editor */
+    #playing { position: fixed; left: 50%; bottom: 1.2rem; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 0.7rem;
+      background: #1a1408; border: 1px solid #6b5420; border-radius: 0.55rem; padding: 0.4rem 0.7rem; color: #f0d890; box-shadow: 0 0.3rem 1.1rem rgba(0,0,0,.5); white-space: nowrap; }
+    #playing[hidden] { display: none; }
+    #playing .pl-name { overflow: hidden; text-overflow: ellipsis; max-width: 24rem; }
+    #playing button { color: #fff; background: #3a2e12; border-color: #8a6c28; padding: 0.2rem 0.7rem; }
+    #playing button:hover { background: #4a3a18; }
     .lvl-table { border-collapse: collapse; margin: 0.6rem 0; font-size: 0.857rem; }
     .lvl-table td { padding: 0.2rem 0.6rem 0.2rem 0; border-bottom: 1px solid var(--line); }
     .lvl-table td.lvl-r { color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -299,6 +307,8 @@
       <label class="mode" id="autostart" hidden title="Start the first item on its own at its start time (the timer stands by until then)"><input type="checkbox"> <span></span></label>
       <button id="btn-help" title="Help (? or F1)" aria-label="Help">?</button>
       <span id="tod" title="Time of day"></span>
+      <div id="playing" hidden><span class="pl-icon"></span><span class="pl-name"></span>
+        <button id="btn-fadeout" title="Fade it out over 3 seconds (Esc). A video then ends as if it had finished">Fade out</button><button id="btn-plstop" title="Stop it now (a quick fade, no click)">Stop</button></div>
       <div id="conn">The timer window isn't open. Open the timer in another tab or window; Next and Back won't do anything until it's running.</div>
     </header>
 
@@ -397,6 +407,6 @@
   <script src="sting-clip.js?v=5b53a56f"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="runsheet-core.js?v=a0f5cc65"></script>
-  <script src="runsheet-editor.js?v=a8953c2e"></script>
+  <script src="runsheet-editor.js?v=f0fb7705"></script>
 </body>
 </html>

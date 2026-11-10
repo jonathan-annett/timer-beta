@@ -782,6 +782,7 @@
       case 'pptxclose': if (window.pptxHub) window.pptxHub.close(); break;
       case 'pause':  processTimerApiMessage({ cmd: 'pause' }); break;
       case 'restart': if (rs.restart) rs.restart(); break;
+      case 'fadeout': processTimerApiMessage({ cmd: 'fadeout', msecs: num(m.msecs, 100, 20000) || undefined }); break;   // what's playing fades out (the playing bar, Esc)
       case 'tone':   processTimerApiMessage({ cmd: 'tone', on: typeof m.on === 'boolean' ? m.on : undefined }); break;   // the line-up tone
       // The item running now: a new duration, a new end (with the next item's start), its name on screen
       case 'curdur':

@@ -31,6 +31,7 @@
   // the editor is view only (Next, Back, Pause and Restart still work). editState: 'no', 'asked', 'yes',
   // 'refused' or 'stopped' (the last two: the operator's answer, shown until asked again).
   const TOUCH_UI = REMOTE && new URLSearchParams(location.search).has('touch');   // in the phone remote
+  const DOCKED = !REMOTE && window.parent !== window;                               // in the timer's screen (runsheet-dock.js)
   let editState = REMOTE ? 'no' : 'yes';
   let canEdit = !REMOTE;
   let lastSheet = '';                                // remote: the sheet as the timer has it (to undo refused edits)
@@ -490,6 +491,11 @@
     auto.hidden = at == null;
     if (at != null) { auto.querySelector('span').textContent = 'Auto start at ' + clockOf(at); auto.querySelector('input').checked = !!live.auto; }
     auto.querySelector('input').disabled = !canEdit;
+    // What's playing (a video in the player, a sting, the tone): the timer's playing bar, here too (Fade
+    // out, Stop). Not when docked: the timer's own bar sits on top of the editor then
+    const pl = live.playing, plEl = $('playing');
+    plEl.hidden = !pl || DOCKED;
+    if (pl) { plEl.querySelector('.pl-icon').textContent = pl.kind === 'video' ? '🎬' : pl.kind === 'tone' ? '🔊' : '🎵'; plEl.querySelector('.pl-name').textContent = pl.name; }
     $('conn').classList.toggle('show', !controllerAlive());
     if (REMOTE) $('conn').textContent = 'Not connected to the timer right now: reconnecting… Changes made now may not reach it.';
   }
@@ -1030,7 +1036,7 @@
         const l = StingClip.loudness(StingClip.render(await StingClip.decode(src), s));
         found[it.id] = l;
         c.textContent = l == null ? 'silent' : l.toFixed(1) + ' LUFS';
-      } catch (_) { c.textContent = 'couldn’t be read'; }
+      } catch (_) { c.textContent = s.media === 'video' ? 'no sound to measure (or unreadable)' : 'couldn’t be read'; }
     }
     if (!open) return;
     // Keep each measurement on its sting (the timer levels with it)
@@ -1846,6 +1852,15 @@
   // ─── Transport ────────────────────────────────────────────────────────────
 
   $('btn-next').addEventListener('click', () => send('next'));
+  $('btn-fadeout').addEventListener('click', e => { e.currentTarget.blur(); send('fadeout'); });
+  $('btn-plstop').addEventListener('click', e => { e.currentTarget.blur(); send('fadeout', { msecs: 300 }); });
+  // Esc, when nothing here wants it (a dialog, the help, typing in a box): what's playing fades out
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || e.defaultPrevented || e.metaKey || !live.playing || typingIn(e.target)) return;
+    if (document.querySelector('.ask, .sc-wrap, .sting-libwrap, #help:not([hidden])')) return;
+    e.preventDefault();
+    if (!e.repeat) send('fadeout');
+  });
   $('btn-back').addEventListener('click', () => send('back'));
   // Close every slide show on the PowerPoint computers: the holding slide shows
   $('btn-pptxclose').addEventListener('click', () => send('pptxclose'));

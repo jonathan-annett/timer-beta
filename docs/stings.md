@@ -47,6 +47,8 @@ Stings come from everywhere, mastered at very different loudness. The timer even
 - **Level this show…** measures every sting on the run sheet and uses the quietest one's loudness as this show's level: it plays as it is and the others come down to it, so you keep as much signal as you can. Do it once before the show (and again if you add a quieter sting); **Use the house level** goes back.
 - **▶ Line-up tone** plays a 1 kHz tone from the timer, at the level the stings play at (the show's, or the house level), until you stop it (or press Esc, or Stop on the sting bar). Set the mixer's input so the tone reads your nominal level: every levelled sting then lands there. Stings are only turned down, so the mixer may need a little more gain than for a full-level track; the tone shows how much.
 
+Video stings level the same way: their soundtrack is measured, and the player window plays them at that level (a video with no sound shows *no sound to measure*).
+
 A sting that hasn't been measured (added since the show was levelled, and not saved in the clip editor) plays at its own level: level the show again.
 
 In the library file a clip's level is `"lufs"` (its measured loudness) and `"volume"` (the trim, 0–1).

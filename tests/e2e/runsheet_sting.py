@@ -59,11 +59,14 @@ INIT = "if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStora
 with sync_playwright() as p:
     b = p.chromium.launch(args=ARGS)
 
-    # A two-second test video, made in the browser (no ffmpeg here)
+    # A test video with a soundtrack (1 kHz at about -12 LUFS), made in the browser (no ffmpeg here)
     mk = b.new_page()
     VIDEO["data"] = base64.b64decode(mk.evaluate("""() => new Promise(res => {
       const c = document.createElement('canvas'); c.width = 160; c.height = 90; const g = c.getContext('2d');
-      const rec = new MediaRecorder(c.captureStream(25), { mimeType: 'video/webm' }); const parts = [];
+      const ac = new AudioContext(), o = ac.createOscillator(), gn = ac.createGain(), dst = ac.createMediaStreamDestination();
+      o.frequency.value = 1000; gn.gain.value = 0.25; o.connect(gn); gn.connect(dst); o.start();
+      const st = new MediaStream([...c.captureStream(25).getVideoTracks(), ...dst.stream.getAudioTracks()]);
+      const rec = new MediaRecorder(st, { mimeType: 'video/webm;codecs=vp8,opus' }); const parts = [];
       rec.ondataavailable = e => parts.push(e.data);
       rec.onstop = () => { const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.readAsDataURL(new Blob(parts, { type: 'video/webm' })); };
       let n = 0; const iv = setInterval(() => { g.fillStyle = n++ % 2 ? '#c00' : '#00c'; g.fillRect(0, 0, 160, 90); }, 40);
@@ -196,7 +199,13 @@ with sync_playwright() as p:
 
     # the video sting: the player window, timer untouched
     t.evaluate("window.videoPlayer.open()"); t.wait_for_timeout(800)
+    dl = t.evaluate("(async () => { const it = JSON.parse(localStorage.runsheet).items.find(x => x.id === 'd'); return StingClip.loudness(StingClip.render(await StingClip.decode(await videoStore.get(it.sting.key)), it.sting)); })()")
+    check("a video sting's soundtrack can be measured (Level this show…, the clip editor)", dl is not None and -13 < dl < -11, dl)
+    t.evaluate("l => { const sh = JSON.parse(localStorage.runsheet); Object.assign(sh.items.find(x => x.id === 'd').sting, { lufs: l, volume: 0.5 }); localStorage.runsheet = JSON.stringify(sh); window.runsheet.sheetChanged(); }", dl)
+    t.wait_for_timeout(300)
     t.evaluate("window.runsheet.next()"); t.wait_for_timeout(1200); s = sp()
+    pv = t.evaluate("(() => { const w = window.open('', 'video_player_window'); const v = [...w.document.querySelectorAll('video')].find(x => x.style.zIndex === '3'); return v ? v.volume : null; })()")
+    check("… and it plays levelled in the player window (its level as it starts)", pv is not None and abs(pv - 0.5 * 10 ** ((-23 - dl) / 20)) < 0.002, (pv, dl))
     check("a video sting plays in the player window", s["video"] and s["video"]["id"] == "d", s)
     check("… without setting the timer to its length", remain().startswith("1:5"), remain())
     check("… or the message", t.evaluate("localStorage.message_item") == "Close")
@@ -219,6 +228,21 @@ with sync_playwright() as p:
     check("Esc fades a video out, picture and sound", vs() == "playing" and op is not None and 0 < op < 1, (vs(), op))
     t.wait_for_timeout(2500)
     check("… then ends it as if it had finished: unloaded, message and timer cleared", vs() == "empty" and t.evaluate("localStorage.message_item") == "", (vs(), t.evaluate("localStorage.message_item")))
+    # the run sheet editor: what's playing, ■ Fade out, and Esc there
+    play = lambda: (t.evaluate("window.videoPlayer.load('%smedia/clip.webm', {name: 'Clip'}); setTimeout(() => window.videoPlayer.play(), 500)" % BASE), t.wait_for_timeout(2500))
+    play()
+    check("the timer's playing bar shows the video too", t.is_visible("#sting-bar") and "🎬" in t.inner_text("#sting-bar") and "Clip" in t.inner_text("#sting-bar"))
+    check("the run sheet editor (its own window) shows the same bar", e.is_visible("#playing") and "Clip" in e.inner_text("#playing") and e.is_visible("#btn-plstop"), e.inner_text("#playing") if e.is_visible("#playing") else None)
+    e.click("#btn-fadeout"); t.wait_for_timeout(3600)
+    check("… which fades it out", vs() == "empty", vs())
+    e.wait_for_timeout(1200)
+    check("… and the line goes", not e.is_visible("#playing"))
+    play()
+    e.click("#btn-plstop"); t.wait_for_timeout(800)
+    check("… Stop: at once (a quick fade)", vs() == "empty", vs())
+    play()
+    e.evaluate("document.activeElement && document.activeElement.blur()"); e.keyboard.press("Escape"); t.wait_for_timeout(3600)
+    check("Esc in the run sheet editor fades it out too", vs() == "empty", vs())
 
     # Off: no + sting, nothing plays
     c2 = b.new_context(ignore_https_errors=True)

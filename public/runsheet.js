@@ -647,6 +647,15 @@
     commit();
   }
 
+  // What's playing, for the editor's ■ Fade out (and its Esc): a video in the player, a sting, the tone
+  function playingNow() {
+    const vs = vp() && vp().state(), ss = window.stingPlayer && window.stingPlayer.state();
+    if (vs && vs.playing && !vs.playing.sting) return { kind: 'video', name: vs.playing.name };
+    if (ss && ss.video) return { kind: 'sting', name: ss.video.name };
+    if (ss && ss.audio) return { kind: ss.audio.id === 'tone' ? 'tone' : 'sting', name: ss.audio.name };
+    return null;
+  }
+
   function onCommand() {
     const raw = localStorage.getItem(CMD_KEY);
     if (!raw) return;
@@ -667,6 +676,7 @@
       case 'autostart': setAutostart(c.on); break;
       case 'dock': if (window.runsheetDock) window.runsheetDock.dock(); break;   // the editor window's ⇲ Dock
       case 'tone': api({ cmd: 'tone', on: typeof c.on === 'boolean' ? c.on : undefined }); break;      // the editor's line-up tone
+      case 'fadeout': api({ cmd: 'fadeout', msecs: Number.isFinite(c.msecs) ? c.msecs : undefined }); break;   // the editor's playing bar (and Esc): whatever is playing
     }
   }
 
@@ -919,7 +929,7 @@
     const autoP0 = autostartOffer();
     const live = JSON.stringify({ text: info.text, kind: info.kind, late: info.late == null ? null : Math.round(info.late),
       auto: firstAuto(), autoAt: autoP0, standby: !!state.standby, hardMiss: [...hardMiss],
-      curId: ts ? state.currentId : null, curEnd: ts ? Math.round(timerEndMs(ts) / 1000) * 1000 : null });
+      curId: ts ? state.currentId : null, curEnd: ts ? Math.round(timerEndMs(ts) / 1000) * 1000 : null, playing: playingNow() });
     if (live !== lastLive) { lastLive = live; localStorage.setItem(LIVE_KEY, live); }
   }
 

@@ -190,7 +190,7 @@
       if (!item.sting.key && !item.sting.url) return 'missing';
       if (!(await cue(item))) return 'missing';
     }
-    return p.play();
+    return p.play({ volume: gainOf(item.sting) });   // its level now: the show may have been levelled since it was cued
   }
 
   async function preload(item) {
@@ -248,7 +248,11 @@
     };
   }
 
-  // ─── On the bus (the deck's Fade sting key), and the sting bar on the operator's screen ───
+  // ─── On the bus (the deck's Fade sting key), and the playing bar on the operator's screen ───
+  // The bar shows whatever is playing: a sting, the line-up tone, or a video in the player (never two at
+  // once: a video item stops stings). Fade out = Esc (3 s); Stop = a 0.3 s fade, no click. Both are the
+  // fadeout command, so a video ends as if it had finished. Docked, the run sheet editor sits under it
+  // (runsheet-dock.js moves it up); the editor in its own window shows the same bar (runsheet_live.playing).
   let lastBus = '';
   function update() {
     const st = state(), on = st.audio || st.video, name = on ? on.name : '';
@@ -257,7 +261,8 @@
       lastBus = bus;
       window.timerAPI.send({ setVariableValues: { sting_playing: !!on, sting_name: name } });
     }
-    renderBar(on);
+    const vs = !on && window.videoPlayer && window.videoPlayer.state();
+    renderBar(on ? Object.assign({ icon: st.audio && st.audio.id === 'tone' ? '🔊' : '🎵' }, on) : vs && vs.playing && !vs.playing.sting ? { icon: '🎬', name: vs.playing.name } : null);
   }
   const CSS = `
 #sting-bar { position: fixed; left: 50%; bottom: 76px; transform: translateX(-50%); z-index: 2147481001; display: flex; align-items: center; gap: 10px;
@@ -276,20 +281,21 @@ html.reduced #sting-bar { display: none; }`;
       const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
       bar = document.createElement('div');
       bar.id = 'sting-bar';
-      bar.innerHTML = '<span>🎵</span><span class="sb-name"></span><span class="sb-time"></span>' +
-        '<button data-a="fade" title="Fade the sting out over 3 seconds (the Stream Deck\'s Fade sting key does the same)">Fade out</button><button data-a="stop" title="Stop it now">Stop</button>';
+      bar.innerHTML = '<span class="sb-icon"></span><span class="sb-name"></span><span class="sb-time"></span>' +
+        '<button data-a="fade" title="Fade it out over 3 seconds (Esc; the Stream Deck\'s Fade sting key does the same for a sting). A video then ends as if it had finished">Fade out</button><button data-a="stop" title="Stop it now (a quick fade, no click)">Stop</button>';
       bar.addEventListener('click', e => {
         const b = e.target.closest('button');
         if (!b) return;
         b.blur();                                        // the timer's keys keep working
-        if (b.dataset.a === 'fade') fadeOut(OPERATOR_FADE_MS); else stop();
+        if (typeof processTimerApiMessage === 'function') processTimerApiMessage({ cmd: 'fadeout', msecs: b.dataset.a === 'fade' ? OPERATOR_FADE_MS : FADE_MS });
       });
       document.body.appendChild(bar);
     }
     bar.hidden = !on;
     if (!on) return;
+    bar.querySelector('.sb-icon').textContent = on.icon;
     bar.querySelector('.sb-name').textContent = on.name;
-    bar.querySelector('.sb-time').textContent = cur && cur.duration ? mmss(cur.time) + ' / ' + mmss(cur.duration) : '';
+    bar.querySelector('.sb-time').textContent = on.icon === '🎵' && cur && cur.duration ? mmss(cur.time) + ' / ' + mmss(cur.duration) : '';
   }
   setInterval(update, 500);
 

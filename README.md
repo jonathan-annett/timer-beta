@@ -68,7 +68,7 @@ At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. O
 |---|---|
 | **R** | Open / close the presenter window |
 | **F** | Fullscreen on / off |
-| **Esc** | Cancels a duration being typed, or closes an open panel; otherwise fades out whatever is playing over 3 seconds: a walk-up sting, and a video, which then ends as if it had finished (a dropped video unloads and its countdown and message clear; a run sheet video goes back to its start, ready). In Chrome's full screen a tap does this too, and holding Esc leaves full screen |
+| **Esc** | Cancels a duration being typed, or closes an open panel; otherwise fades out whatever is playing over 3 seconds: a walk-up sting, and a video, which then ends as if it had finished (a dropped video unloads and its countdown and message clear; a run sheet video goes back to its start, ready). In Chrome's full screen a tap does this too, and holding Esc leaves full screen. What's playing (a sting, a video or the line-up tone) also shows in a yellow bar with **Fade out** and **Stop**: on the timer's screen (above the run sheet editor when it's docked) and in the run sheet editor's own window. Esc in the editor fades too |
 | **P** | Toggle presenter mode in this window (hides controls) |
 | **S** | Single-screen mode: presenter view, fullscreen, in this window |
 | **B** | Progress bar on / off |

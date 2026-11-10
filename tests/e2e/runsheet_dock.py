@@ -54,7 +54,13 @@ with sync_playwright() as p:
     check("an edit there reaches the sheet", json.loads(ls("runsheet"))["title"] == "Docked show", ls("runsheet"))
     ed().locator("#btn-next").click(); t.wait_for_timeout(800)
     check("Next there starts the item on the timer", json.loads(ls("runsheet_state")).get("currentId") == "a", ls("runsheet_state"))
+    # something playing (the line-up tone): one bar, the timer's, on top of the dock; the docked editor shows none of its own
+    t.evaluate("processTimerApiMessage({cmd: 'tone', on: true})"); t.wait_for_timeout(1600)
+    bb, db = t.locator("#sting-bar").bounding_box(), t.locator("#rs-dock").bounding_box()
+    check("playing: the timer's bar sits on top of the dock", bb and bb["y"] + bb["height"] <= db["y"] + 1 and "1 kHz" in t.inner_text("#sting-bar"), (bb, db))
+    check("… and the docked editor doesn't show a second one", not ed().locator("#playing").is_visible())
     t.screenshot(path=OUTDIR + "/runsheet_dock.png")
+    t.evaluate("processTimerApiMessage({cmd: 'tone', on: false})")
 
     # resize, reload
     bar = t.locator("#rs-dock .rsd-grip").bounding_box()
