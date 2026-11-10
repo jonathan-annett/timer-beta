@@ -1,8 +1,8 @@
 # Walk-up stings (experimental)
 
-## Using it (an alpha-only trial)
+## Using it (a trial: alpha and beta)
 
-Only on the alpha site (`features.js`, `TimerFeatures.stings`): elsewhere the run sheet editor doesn't offer them and the timer doesn't play them.
+On the alpha and beta sites (`features.js`, `TimerFeatures.stings`; beta since 11 Nov 2026): elsewhere the run sheet editor doesn't offer them and the timer doesn't play them.
 
 A walk-up sting is a short piece of music (or a video) that plays as a run sheet item starts: the speaker's walk-on music, say. Unlike a video on an item, it doesn't set the timer: the item keeps its own duration, and the sting just plays over its start.
 
