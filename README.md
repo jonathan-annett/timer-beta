@@ -87,7 +87,7 @@ The **clock** badge under the button bar says what the timer's clock is running 
 
 - **Internet** can only be picked when a time server answers. If none does, the timer runs on local and the badge turns yellow. **Sync now** tries again and goes back to internet if it works (**Shift+T** does the same).
 - **Local** uses this computer's clock with no correction (**Shift+L**).
-- **Manual** is for when you know this computer's clock is wrong: type the right time and press **Set time**, or add or take off a minute, 15 seconds or a second. The panel shows the correction and the corrected time.
+- **Manual** is for when you know this computer's clock is wrong: type the right time and press **Set time**, or add or take off a minute, 15 seconds or a second. The panel shows the correction and the corrected time. A successful sync replaces any correction you'd set with the internet time's, so Manual then starts from the right time, ready to tweak (to run the clock 30 seconds early, say).
 
 Changing the clock doesn't disturb a running countdown: only the times of day move. A run sheet's planned times are clock times, so an automatic start that the corrected clock has just passed will fire.
 

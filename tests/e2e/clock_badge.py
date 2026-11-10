@@ -119,6 +119,17 @@ with sync_playwright() as p:
     check("local: yellow, no correction", badge()[0] == "cb-local" and offset() == 0 and t.evaluate("localStorage.internetTimeError") == "0")
     check("the countdown didn't jump (local)", abs(remain() - before) < 2000, (before, remain()))
 
+    # A successful sync replaces the manual correction, so Manual starts from internet time
+    t.evaluate("timeProvider.setManual(-30000)")
+    up["timeapi"] = True
+    t.click("#clock-panel .cp-sync"); t.wait_for_function("timeProvider.state === 'internet' && !timeProvider.busy")
+    synced = offset()
+    check("Sync now: replaces the manual correction", t.evaluate("Number(localStorage.clock_manual)") == synced and abs(synced - OFFSET) < 1000, t.evaluate("localStorage.clock_manual"))
+    t.check("#clock-panel input[value=manual]")
+    check("manual after a sync: starts from internet time", badge()[0] == "cb-manual" and offset() == synced, (badge(), offset()))
+    t.click("#clock-panel .cp-steps button[data-ms='-15000']")
+    check("manual after a sync: can be tweaked", offset() == synced - 15000, offset() - synced)
+
     # The real pairing server's `time` message, with every HTTP time server blocked
     up["timeapi"] = False
     c4 = b.new_context(ignore_https_errors=True)

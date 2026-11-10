@@ -151,6 +151,7 @@ class InternetTimeProvider {
       console.log("calculated internet time error at",got.offset,"from",got.source);
       this.source = got.source;
       this.syncedAt = Date.now();
+      localStorage.setItem('clock_manual', String(got.offset));   // so Manual starts from the known good time, to tweak
       this.saveMode('internet');
       this.use('internet', got.offset);
       return true;
