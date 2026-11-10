@@ -12,6 +12,8 @@ In the run sheet editor, click **+ sting** in an item's Video column and choose:
 - **a link** to an audio or video file (https), or
 - **a file** from your computer. Dropping an audio file on a row does the same (a video file dropped on a row is still a video for the item).
 
+In the dialog, **▶** next to the stock list lets you hear the selected sting first. Stock stings already on this run sheet are marked *in use* with the items using them; tick **Hide stings already on this run sheet** to leave them out (some presenters want their walk-up to themselves). Choosing a stock sting or link that another item already uses asks first.
+
 An item has a video or a sting, not both.
 
 **Everything plays on the timer's computer:** audio from the timer page itself, video in the player window (open it with **video**). It's made for a small show run from one laptop, with no network needed. A file is kept in the browser; a link or stock sting is copied there too, as soon as the timer sees it, if its server allows it (it has to send `Access-Control-Allow-Origin`). One that couldn't be copied shows **⚠** in the editor and plays from its link, so it needs the internet.

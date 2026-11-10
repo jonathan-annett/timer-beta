@@ -663,33 +663,89 @@
     if (!it.name) it.name = sting.name;
     saveSheet();
   }
+  // Who else on this sheet uses a stock or link sting (some presenters want "their" sting to themselves)
+  function stingUsers(url, exceptId) {
+    return sheet.items.filter(x => x.id !== exceptId && !x.hidden && x.sting && x.sting.url === url).map(x => x.name || 'an unnamed item');
+  }
+  const HIDE_USED = 'sting_hide_used';           // this computer's choice: hide stock stings already on the sheet
+  const hideUsed = () => { try { return localStorage.getItem(HIDE_USED) === '1'; } catch (_) { return false; } };
+  async function againOk(name, users) {
+    if (!users.length) return true;
+    return ask(`<b>${esc(name)}</b> is already used for ${esc(users.join(', '))}. Use it again here?`,
+      [{ label: 'Use it again', value: true, kind: 'primary' }, { label: 'Cancel', value: false, cancel: true }]);
+  }
+  let preview = null;                            // the stock sting being previewed in the dialog
+  function stopPreview() {
+    if (!preview) return;
+    preview.pause(); preview.removeAttribute('src'); preview.load(); preview = null;
+    const b = document.getElementById('sting-prev');
+    if (b) { b.textContent = '▶'; b.title = 'Hear it'; }
+  }
   async function stingDialog(id) {
     if (!canEdit) return refused();
     const stock = await stockStings();
     const html = '<b>Walk-up sting</b><p class="sting-note">Plays as this item starts, on the timer’s computer. The item keeps its own time.</p>' +
-      (stock.length ? '<label class="sting-field">Stock sting <select id="sting-stock">' +
-        stock.map((x, i) => `<option value="${i}">${esc(x.name)}${x.duration ? ' · ' + C.formatDuration(x.duration) : ''}${x.media === 'video' ? ' (video)' : ''}</option>`).join('') + '</select></label>' : '') +
+      (stock.length ? '<label class="sting-field">Stock sting <span class="sting-row"><select id="sting-stock"></select>' +
+        '<button type="button" id="sting-prev" title="Hear it">▶</button></span></label>' +
+        '<label class="sting-check"><input type="checkbox" id="sting-hideused"> Hide stings already on this run sheet</label>' +
+        '<p class="sting-note" id="sting-none" hidden>Every stock sting is already on this run sheet.</p>' : '') +
       '<label class="sting-field">A link <input id="sting-url" type="url" placeholder="https://…/walk-up.mp3" spellcheck="false"></label>';
     const answer = ask(html, [
       ...(stock.length ? [{ label: 'Use the stock sting', value: 'stock', kind: 'primary' }] : []),
       { label: 'Use the link', value: 'link' }, { label: 'Choose a file…', value: 'file' }, { label: 'Cancel', value: null, cancel: true }]);
-    const sel = document.getElementById('sting-stock'), urlIn = document.getElementById('sting-url');   // (read before the dialog goes)
-    let typed = '';
-    if (urlIn) urlIn.addEventListener('input', () => { typed = urlIn.value.trim(); });
-    let chosen = 0;
-    if (sel) sel.addEventListener('change', () => { chosen = Number(sel.value) || 0; });
+    // (the fields are read before the dialog goes; they keep their values once it's gone)
+    const sel = document.getElementById('sting-stock'), urlIn = document.getElementById('sting-url');
+    const hideBox = document.getElementById('sting-hideused'), prevBtn = document.getElementById('sting-prev');
+    function fill() {
+      const keep = sel.value, hide = hideBox.checked;
+      sel.innerHTML = stock.map((x, i) => {
+        const users = stingUsers(x.url, id);
+        if (hide && users.length) return '';
+        return `<option value="${i}">${esc(x.name)}${x.duration ? ' · ' + C.formatDuration(x.duration) : ''}${x.media === 'video' ? ' (video)' : ''}${users.length ? ' · in use: ' + esc(users.join(', ')) : ''}</option>`;
+      }).join('');
+      if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+      document.getElementById('sting-none').hidden = sel.options.length > 0;
+      prevBtn.disabled = !sel.options.length;
+    }
+    if (sel) {
+      hideBox.checked = hideUsed();
+      fill();
+      hideBox.addEventListener('change', () => {
+        try { localStorage.setItem(HIDE_USED, hideBox.checked ? '1' : '0'); } catch (_) { /* private mode */ }
+        stopPreview(); fill();
+      });
+      sel.addEventListener('change', stopPreview);
+      prevBtn.addEventListener('click', () => {
+        if (preview) return stopPreview();
+        const x = stock[Number(sel.value)];
+        if (!x) return;
+        preview = document.createElement(x.media === 'video' ? 'video' : 'audio');   // (a video: its sound only)
+        preview.src = x.url;
+        preview.onended = stopPreview;
+        preview.play().catch(() => stopPreview());
+        prevBtn.textContent = '■'; prevBtn.title = 'Stop';
+      });
+    }
     const v = await answer;
+    stopPreview();
     if (v === 'file') { pickFor = id; stingPicker.click(); return; }
-    if (v === 'stock' && stock[chosen]) { const x = stock[chosen]; setSting(id, { src: 'stock', media: x.media, name: x.name, url: x.url, duration: x.duration }); return; }
+    if (v === 'stock' && sel && stock[Number(sel.value)] && sel.options.length) {
+      const x = stock[Number(sel.value)];
+      if (!(await againOk(x.name, stingUsers(x.url, id)))) return;
+      setSting(id, { src: 'stock', media: x.media, name: x.name, url: x.url, duration: x.duration });
+      return;
+    }
     if (v === 'link') {
       let url;
-      try { url = new URL(typed); } catch (_) { url = null; }
+      try { url = new URL(urlIn.value.trim()); } catch (_) { url = null; }
       if (!url || url.protocol !== 'https:') { alert('Type a link starting with https:// to an audio or video file.'); return; }
       const media = mediaOf(url.pathname);
       const name = noExt(decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || url.hostname)).slice(0, 200);
+      if (!(await againOk(name, stingUsers(url.href, id)))) return;
       setSting(id, { src: 'link', media, name, url: url.href, duration: await probeUrl(url.href, media) });
     }
   }
+  window.__stingPreview = () => !!(preview && !preview.paused);   // (tests)
   async function attachSting(id, file) {
     const item = sheet.items.find(it => it.id === id);
     if (!item || !file) return;

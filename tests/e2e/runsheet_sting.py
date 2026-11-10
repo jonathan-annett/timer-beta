@@ -18,7 +18,8 @@ SHEET = {"title": "Stings", "perItem": 20, "items": [
     {"id": "b", "name": "Panel", "start": None, "duration": 300},
     {"id": "c", "name": "Awards", "start": None, "duration": 900},
     {"id": "d", "name": "Close", "start": None, "duration": 120},
-    {"id": "e", "name": "Speaker", "start": None, "duration": 600}]}
+    {"id": "e", "name": "Speaker", "start": None, "duration": 600},
+    {"id": "f", "name": "Encore", "start": None, "duration": 300}]}
 
 def tone(seconds, hz=440):
     buf = io.BytesIO()
@@ -27,7 +28,8 @@ def tone(seconds, hz=440):
         w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * hz * i / 16000))) for i in range(int(16000 * seconds))))
     return buf.getvalue()
 WAV_LONG, WAV_SHORT = tone(6), tone(2, 660)
-STOCK = {"stings": [{"name": "Fanfare", "url": "media/fanfare.wav", "media": "audio", "duration": 6}]}
+STOCK = {"stings": [{"name": "Fanfare", "url": "media/fanfare.wav", "media": "audio", "duration": 6},
+                    {"name": "Drumroll", "url": "media/fanfare.wav?d", "media": "audio", "duration": 6}]}
 VIDEO = {"data": None}
 errs = []
 
@@ -87,8 +89,16 @@ with sync_playwright() as p:
     e.click(".ask button:has-text('Use the stock sting')"); e.wait_for_timeout(300)
     s = sheet()["a"]
     check("stock sting on the item", s and s["src"] == "stock" and s["url"] == BASE + "media/fanfare.wav" and s["media"] == "audio", s)
-    # b: a link to a server that doesn't allow copying
+    # b: a link to a server that doesn't allow copying. First the dialog's preview and its "in use" marks
     e.click(row("b") + " button[data-act=sadd]"); e.wait_for_timeout(300)
+    opts = lambda: e.evaluate("[...document.querySelectorAll('#sting-stock option')].map(o => o.textContent)")
+    check("a stock sting in use is marked", any("Fanfare" in o and "in use: Keynote" in o for o in opts()), opts())
+    e.click("#sting-prev"); e.wait_for_timeout(600)
+    check("▶ previews the stock sting", e.evaluate("window.__stingPreview()") and e.text_content("#sting-prev") == "■")
+    e.check("#sting-hideused"); e.wait_for_timeout(200)
+    check("hide stings already on the sheet", opts() == ["Drumroll · 6 s"], opts())
+    check("… and the preview stops", not e.evaluate("window.__stingPreview()"))
+    e.uncheck("#sting-hideused")
     e.fill("#sting-url", CDN + "walkup.wav"); e.click(".ask button:has-text('Use the link')"); e.wait_for_timeout(1500)
     s = sheet()["b"]
     check("link sting on the item (its length read from the link)", s and s["src"] == "link" and s["url"] == CDN + "walkup.wav" and s["duration"] == 6, s)
@@ -104,6 +114,15 @@ with sync_playwright() as p:
     fc.value.set_files(vid_path); e.wait_for_timeout(1500)
     s = sheet()["d"]
     check("video sting", s and s["media"] == "video" and s["key"], s)
+    # f: the same stock sting as the keynote, knowingly
+    e.click(row("f") + " button[data-act=sadd]"); e.wait_for_timeout(300)
+    e.click("#sting-prev"); e.wait_for_timeout(300)
+    e.click(".ask button:has-text('Use the stock sting')"); e.wait_for_timeout(300)
+    check("closing the dialog stops the preview", not e.evaluate("window.__stingPreview()"))
+    asked = e.inner_text(".ask .ask-text") if e.locator(".ask").count() else ""
+    check("using a sting again asks first", "already used for Keynote" in asked, asked)
+    e.click(".ask button:has-text('Use it again')"); e.wait_for_timeout(300)
+    check("… and uses it again", (sheet()["f"] or {}).get("url") == BASE + "media/fanfare.wav", sheet()["f"])
 
     t.wait_for_timeout(1500)   # the timer keeps copies of link and stock stings
     st = sheet()
