@@ -690,25 +690,46 @@
   async function stingDialog(id) {
     if (!canEdit) return refused();
     const stock = await stockStings();
-    const mine = window.StingLibrary ? StingLibrary.read() : [];
-    const mineOk = await Promise.all(mine.map(async e => !!(await StingLibrary.source(e, stock))));
+    let mine = window.StingLibrary ? StingLibrary.read() : [];
+    let mineOk = await Promise.all(mine.map(async e => !!(await StingLibrary.source(e, stock))));
     const html = '<b>Walk-up sting</b><p class="sting-note">Plays as this item starts, on the timer’s computer. The item keeps its own time. <a href="stings.html" target="_blank" rel="noopener">Sting library…</a> (clips: just the part you want)</p>' +
-      (mine.length ? '<label class="sting-field">My clips <select id="sting-mine">' + mine.map((e, i) => {
-        const l = StingClip.length(e, e.duration);
-        return `<option value="${i}"${mineOk[i] ? '' : ' disabled'}>${esc(e.name)}${l ? ' · ' + C.formatDuration(Math.max(1, Math.round(l))) : ''}${mineOk[i] ? '' : ' (its file isn’t on this computer)'}</option>`;
-      }).join('') + '</select></label>' : '') +
+      '<label class="sting-field" id="sting-minerow">My clips <select id="sting-mine"></select></label>' +
       (stock.length ? '<label class="sting-field">Stock sting <span class="sting-row"><select id="sting-stock"></select>' +
         '<button type="button" id="sting-prev" title="Hear it">▶</button></span></label>' +
         '<label class="sting-check"><input type="checkbox" id="sting-hideused"> Hide stings already on this run sheet</label>' +
         '<p class="sting-note" id="sting-none" hidden>Every stock sting is already on this run sheet.</p>' : '') +
       '<label class="sting-field">A link <input id="sting-url" type="url" placeholder="https://…/walk-up.mp3" spellcheck="false"></label>';
     const answer = ask(html, [
-      ...(mine.length ? [{ label: 'Use my clip', value: 'mine' }] : []),
+      { label: 'Use my clip', value: 'mine' },
       ...(stock.length ? [{ label: 'Use the stock sting', value: 'stock', kind: 'primary' }] : []),
       { label: 'Use the link', value: 'link' }, { label: 'Choose a file…', value: 'file' }, { label: 'Cancel', value: null, cancel: true }]);
     // (the fields are read before the dialog goes; they keep their values once it's gone)
     const sel = document.getElementById('sting-stock'), urlIn = document.getElementById('sting-url'), mineSel = document.getElementById('sting-mine');
-    if (mineSel) { const first = mineOk.indexOf(true); if (first >= 0) mineSel.value = String(first); }
+    const mineBtn = [...document.querySelectorAll('.ask .ask-btns button')].find(b => b.textContent === 'Use my clip');
+    // My clips (the sting library), rebuilt when the library changes in another tab while this is open
+    function fillMine() {
+      const keep = mineSel.value;
+      mineSel.innerHTML = mine.map((e, i) => {
+        const l = StingClip.length(e, e.duration);
+        return `<option value="${i}"${mineOk[i] ? '' : ' disabled'}>${esc(e.name)}${l ? ' · ' + C.formatDuration(Math.max(1, Math.round(l))) : ''}${mineOk[i] ? '' : ' (its file isn’t on this computer)'}</option>`;
+      }).join('');
+      if (keep && mineOk[Number(keep)]) mineSel.value = keep; else { const first = mineOk.indexOf(true); if (first >= 0) mineSel.value = String(first); }
+      document.getElementById('sting-minerow').style.display = mine.length ? '' : 'none';
+      if (mineBtn) mineBtn.style.display = mine.length ? '' : 'none';
+    }
+    fillMine();
+    async function libraryChanged() {
+      if (!window.StingLibrary) return;
+      const now = StingLibrary.read();
+      if (JSON.stringify(now) === JSON.stringify(mine)) return;
+      mine = now;
+      mineOk = await Promise.all(mine.map(async e => !!(await StingLibrary.source(e, stock))));
+      fillMine();
+      if (sel) fill();                         // (a clip that hides its original)
+    }
+    const onStore = ev => { if (ev.key === 'sting_library') libraryChanged(); };
+    window.addEventListener('storage', onStore);
+    window.addEventListener('focus', libraryChanged);   // (and on coming back from the library's tab)
     const hideBox = document.getElementById('sting-hideused'), prevBtn = document.getElementById('sting-prev');
     function fill() {
       const keep = sel.value, hide = hideBox.checked;
@@ -747,16 +768,18 @@
     }
     const v = await answer;
     stopPreview();
+    window.removeEventListener('storage', onStore);
+    window.removeEventListener('focus', libraryChanged);
     if (v === 'file') { pickFor = id; stingPicker.click(); return; }
     if (v === 'mine' && mineSel && mine[Number(mineSel.value)] && mineOk[Number(mineSel.value)]) {
       const e = mine[Number(mineSel.value)], clip = clipFields(e);
       if (e.file) {                              // a clip of a track on this computer: the file goes with it
         const blob = await StingLibrary.source(e, stock);
-        attachSting(id, new File([blob], e.file, { type: blob.type || (e.media === 'video' ? 'video/mp4' : 'audio/mpeg') }), { name: e.name, clip });
+        attachSting(id, new File([blob], e.file, { type: blob.type || (e.media === 'video' ? 'video/mp4' : 'audio/mpeg') }), { name: e.name, clip, lib: e.name });
         return;
       }
       const url = await StingLibrary.source(e, stock), base = e.stock ? stock.find(x => x.name === e.stock) : null;
-      const st = Object.assign({ src: e.stock ? 'stock' : 'link', media: e.media, name: e.name, url, duration: e.duration != null ? Math.round(e.duration) : base && base.duration }, clip);
+      const st = Object.assign({ src: e.stock ? 'stock' : 'link', media: e.media, name: e.name, url, duration: e.duration != null ? Math.round(e.duration) : base && base.duration, lib: e.name }, clip);
       if (!(await againOk(e.name, stingUsers(st, id)))) return;
       setSting(id, st);
       return;
@@ -778,7 +801,7 @@
     }
   }
   window.__stingPreview = () => !!preview;   // (tests)
-  async function attachSting(id, file, extra) {   // extra: {name, clip} (a library clip)
+  async function attachSting(id, file, extra) {   // extra: {name, clip, lib} (a library clip)
     const item = sheet.items.find(it => it.id === id);
     if (!item || !file) return;
     if (!isMedia(file)) { alert('That isn’t an audio or video file.'); return; }
@@ -791,7 +814,7 @@
       if (busy.size) { alert('Wait for the file being sent to finish first.'); return; }
       busy.add(id); sending.set(id, 0); renderAll();
       const duration = await probeDuration(file);
-      toParent({ t: 'rs-video', kind: 'sting', id, file, name: noExt(file.name), duration, label: extra && extra.name, clip: extra && extra.clip });
+      toParent({ t: 'rs-video', kind: 'sting', id, file, name: noExt(file.name), duration, label: extra && extra.name, clip: extra && extra.clip, lib: extra && extra.lib });
       return;
     }
     if (!window.videoStore) { alert('Stings can’t be stored in this browser.'); return; }
@@ -802,7 +825,7 @@
       const key = 'rssting:' + id + ':' + Date.now();
       await window.videoStore.put(key, file);
       if (!sheet.items.find(x => x.id === id)) { window.videoStore.remove(key); return; }
-      setSting(id, Object.assign({ src: 'file', media, name: String((extra && extra.name) || noExt(file.name)).slice(0, 200), size: file.size, duration: duration ? Math.round(duration) : null, key }, extra && extra.clip));
+      setSting(id, Object.assign({ src: 'file', media, name: String((extra && extra.name) || noExt(file.name)).slice(0, 200), size: file.size, duration: duration ? Math.round(duration) : null, key }, extra && extra.clip, extra && extra.lib ? { lib: extra.lib } : {}));
     } catch (err) {
       alert('Couldn’t store the sting in this browser: ' + (err && err.message || err));
     } finally {
@@ -827,6 +850,18 @@
     const st = Object.assign({}, now.sting, { name: r.name });
     for (const k of ['start', 'end', 'fadeIn', 'fadeOut']) { if (r[k] == null) delete st[k]; else st[k] = r[k]; }
     if (st.duration == null && r.sourceLength) st.duration = Math.round(r.sourceLength);   // (the whole track's length)
+    // From the sting library: the same change there too, if they like (a better cut, a new name)
+    const list = st.lib && window.StingLibrary ? StingLibrary.read() : [], li = list.findIndex(x => x.name === st.lib);
+    if (li >= 0) {
+      const both = await ask(`This sting came from <b>${esc(st.lib)}</b> in your sting library. Update the library too?`,
+        [{ label: 'Update the library', value: true, kind: 'primary' }, { label: 'Just this item', value: false, cancel: true }]);
+      if (both) {
+        const e = Object.assign({}, list[li], { name: r.name });
+        for (const k of ['start', 'end', 'fadeIn', 'fadeOut']) { if (r[k] == null) delete e[k]; else e[k] = r[k]; }
+        const clean = StingLibrary.clean(e);
+        if (clean) { list[li] = clean; StingLibrary.write(list); st.lib = clean.name; }
+      }
+    }
     now.sting = st;
     saveSheet();
   }

@@ -123,14 +123,31 @@ with sync_playwright() as p:
     e.select_option("#sting-mine", "1"); e.click(".ask button:has-text('Use my clip')"); e.wait_for_timeout(1200)
     s = sheet()["c"]
     check("a clip of my own file: the file goes with it, cut the same", s and s["src"] == "file" and s["name"] == "Sarah's walk-on" and s.get("end") == 3 and s.get("fadeIn") == 100 and s["key"], s)
+    check("… and remembers its library clip", s and s.get("lib") == "Sarah's walk-on", s)
 
-    # delete the clip: its original comes back
-    lib.on("dialog", lambda d: d.accept())
-    lib.click('#mine li[data-i="0"] button[data-a=del]'); lib.wait_for_timeout(300)
+    # with the dialog open, the library changes in its own tab: the dialog follows
     e.click(row("d") + " button[data-act=sadd]"); e.wait_for_timeout(500)
-    opts = e.evaluate("[...document.querySelectorAll('#sting-stock option')].map(o => o.textContent)")
-    check("the clip deleted: its original is offered again", any(o.startswith("Song ·") for o in opts), opts)
+    stockOpts = lambda: e.evaluate("[...document.querySelectorAll('#sting-stock option')].map(o => o.textContent)")
+    mineOpts = lambda: e.evaluate("[...document.querySelectorAll('#sting-mine option')].map(o => o.textContent.split(' · ')[0])")
+    check("(the original is hidden while its clip exists)", not any(o.startswith("Song ·") for o in stockOpts()), stockOpts())
+    lib.on("dialog", lambda d: d.accept())
+    lib.click('#mine li[data-i="0"] button[data-a=del]'); lib.wait_for_timeout(600)
+    check("the clip deleted in the library: gone from the open dialog, its original back", mineOpts() == ["Sarah's walk-on"] and any(o.startswith("Song ·") for o in stockOpts()), (mineOpts(), stockOpts()))
+    lib.click('#stock li[data-s="0"] button[data-a=clip]'); lib.wait_for_timeout(1200)
+    lib.fill(".sc-name", "Fresh clip"); lib.click(".sc-save"); lib.wait_for_timeout(600)
+    check("a new clip in the library: in the open dialog at once", mineOpts() == ["Sarah's walk-on", "Fresh clip"] and e.is_visible(".ask button:has-text('Use my clip')"), mineOpts())
     e.keyboard.press("Escape")
+
+    # ✂ on a sting from the library: update the library too?
+    e.click(row("c") + " button[data-act=strim]"); e.wait_for_timeout(1500)
+    e.fill(".sc-t[data-k=end]", "2.5"); e.press(".sc-t[data-k=end]", "Tab")
+    e.fill(".sc-name", "Sarah's walk-on (short)"); e.click(".sc-save"); e.wait_for_timeout(400)
+    check("saving asks whether to update the library", e.locator(".ask").count() == 1 and "sting library" in e.inner_text(".ask .ask-text"))
+    e.click(".ask button:has-text('Update the library')"); e.wait_for_timeout(500)
+    libnow = e.evaluate("StingLibrary.read().map(x => [x.name, x.end])")
+    check("… the library clip gets the new name and cut", ["Sarah's walk-on (short)", 2.5] in libnow and not any(n == "Sarah's walk-on" for n, _ in libnow), libnow)
+    s = sheet()["c"]
+    check("… and so does the item (still linked to it)", s and s.get("end") == 2.5 and s.get("lib") == "Sarah's walk-on (short)", s)
 
     # import on another computer: the file is asked for once
     c2 = b.new_context(ignore_https_errors=True); c2.add_init_script("window.TimerFeatures={stings:true}"); c2.route("**/*", h)

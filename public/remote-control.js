@@ -710,6 +710,7 @@
         for (const k of ['start', 'end', 'fadeIn', 'fadeOut']) delete out.sting[k];
         const r = { start: secs(st.start, 36000), end: secs(st.end, 36000), fadeIn: num(st.fadeIn, 0, 60000), fadeOut: num(st.fadeOut, 0, 60000) };
         for (const k of Object.keys(r)) if (r[k] != null && r[k] !== 0) out.sting[k] = r[k];
+        if (typeof st.lib === 'string' && st.lib) out.sting.lib = st.lib.slice(0, 200); else delete out.sting.lib;   // the sender's library clip it came from
       }
       items.push(out);
     }
@@ -831,6 +832,7 @@
       name: typeof m.name === 'string' ? m.name.slice(0, 200) : 'video',
       duration: num(m.duration, 0, 86400), got: 0, chunks: [], blobs: [], chunkBytes: 0,
       label: typeof m.label === 'string' ? m.label.slice(0, 200) : null,              // a sting from the sender's library: its name
+      lib: typeof m.lib === 'string' ? m.lib.slice(0, 200) : null,                    // … and which library clip it came from
       clip: m.clip && typeof m.clip === 'object' ? { start: num(m.clip.start, 0, 36000), end: num(m.clip.end, 0, 36000), fadeIn: num(m.clip.fadeIn, 0, 60000), fadeOut: num(m.clip.fadeOut, 0, 60000) } : null };
     e.upload.step = Math.max(256 << 10, Math.ceil(size / 50));    // progress reports: about every 2 %
     e.upload.nextProg = e.upload.step;
@@ -875,6 +877,7 @@
       if (it.video) { window.videoStore.remove(key).catch(() => {}); e.peer.send({ t: 'vup-error', up: u.up, reason: 'bad' }); return; }
       it.sting = { src: 'file', media: /^video\//.test(u.type) ? 'video' : 'audio', name: u.label || u.name.replace(/\.[A-Za-z0-9]{1,5}$/, ''), size: u.size, duration: u.duration ? Math.round(u.duration) : null, key };
       if (u.clip) for (const k of Object.keys(u.clip)) if (u.clip[k] != null && u.clip[k] !== 0) it.sting[k] = u.clip[k];   // a clip: just its part
+      if (u.lib) it.sting.lib = u.lib;
       if (!it.name) it.name = it.sting.name;
       writeSheet(sheet);                                      // removes the item's old sting file too
       e.peer.send({ t: 'vup-done', up: u.up, key });

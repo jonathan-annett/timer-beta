@@ -28,7 +28,7 @@ A guest brings a song and wants five seconds of it. Click **✂** on an item's s
 
 ## The sting library
 
-`stings.html` (linked from the sting dialog as **Sting library…**) keeps clips on this computer: make them from the stock stings (**✂** on one) or from your own tracks (**+ From a file…**). They appear in the run sheet editor's **+ sting** under **My clips**; a clip of your own file brings the file with it.
+`stings.html` (linked from the sting dialog as **Sting library…**) keeps clips on this computer: make them from the stock stings (**✂** on one) or from your own tracks (**+ From a file…**). They appear in the run sheet editor's **+ sting** under **My clips** (an open dialog picks up changes made in the library's tab); a clip of your own file brings the file with it. Trimming such a sting with **✂** in the run sheet asks whether to update the library clip too (its cut and its name), or just this item.
 
 **Export** saves the library as `sting-library.json`, the same format as the site's stock list with the clip fields added:
 
