@@ -24,6 +24,7 @@
  *   unloadCued()  drop the cued video only
  *   setIdle('show'|'hide')  before play: first frame, or black
  *   fadeOut(ms)  fade the playing sting out, then unload it
+ *   finish(ms)  fade the playing video (not a sting) out, then end it as if it had played to its end (Esc)
  *   state()     {status: 'empty'|'cued'|'playing', name, idle, duration, playing:{tag,name}, cued:{tag,name,idle}}
  *   onChange(fn)
  * onEnd: 'unload' (dropped videos: stop and clear) or 'recue' (run sheet: back to before-play,
@@ -331,6 +332,25 @@
     return true;
   }
 
+  // Esc (the fadeout command): a graceful exit. The playing video (not a sting: fadeOut above) fades
+  // out, picture and sound, then ends as if it had played to its end (onEnded): a dropped video
+  // unloads and clears the message and timer, a run sheet video goes back to before-play.
+  function finish(ms) {
+    const s = playing;
+    if (!s || s.sting || s.ending || !isOpen()) return false;
+    s.ending = true;
+    const steps = Math.max(1, Math.round((ms || 3000) / 50)), v0 = s.el.volume;
+    let n = 0;
+    const t = win.setInterval(() => {
+      n++;
+      if (playing !== s) { win.clearInterval(t); s.ending = false; s.el.volume = v0; return; }
+      const k = Math.max(0, 1 - n / steps);
+      s.el.volume = v0 * k; s.el.style.opacity = String(k);
+      if (n >= steps) { win.clearInterval(t); s.el.pause(); s.el.volume = v0; s.ending = false; onEnded(s.el); }
+    }, 50);
+    return true;
+  }
+
   function onEnded(el) {
     const s = playing;
     if (!s || s.el !== el) return;
@@ -475,5 +495,5 @@ html.reduced #video-controls, html.reduced #video-toast { display: none; }`;
 
   // The "video" button (opens this window and the video panel) is in video-library.js
 
-  window.videoPlayer = { open, isOpen, load, loadDrop, loadFile, noExt, play, stop, rewind, unloadCued, setIdle, fadeOut, state, toast, onChange: fn => listeners.push(fn) };
+  window.videoPlayer = { open, isOpen, load, loadDrop, loadFile, noExt, play, stop, rewind, unloadCued, setIdle, fadeOut, finish, state, toast, onChange: fn => listeners.push(fn) };
 })();

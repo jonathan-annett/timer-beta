@@ -1584,6 +1584,15 @@ function onKey_R ( ev ) {
 }
 
 
+// In full screen (F, S) Chrome keeps Escape for leaving it, so the page never hears it. Keyboard Lock
+// lets it through (a tap fades a sting, drops a typed time); holding Esc still leaves full screen, and
+// Chrome says so as it opens. Not in the presenter window: its Escape is its own (key-focus.js).
+if (!window.location.search.startsWith("?presenter") && navigator.keyboard && navigator.keyboard.lock) {
+	document.addEventListener("fullscreenchange", function () {
+		if (document.fullscreenElement) navigator.keyboard.lock(["Escape"]).catch(function () {});
+	});
+}
+
 function onDocKeyDown(ev){
 
 	// Leave Cmd shortcuts (Mac) to the browser and OS: Cmd+R reload, Cmd+C/V copy/paste,
@@ -1700,11 +1709,16 @@ function onDocKeyDown(ev){
 					
 				}
 				break;
-			case "Escape" :		// drops a time being typed
+			case "Escape" :		// drops a time being typed; closes an open panel; otherwise fades out whatever is playing
 				if (html.classList.contains("editing")) {
 					enterTimeText = enterHoursText = "";
 					clearHtmlClass("editing");
 					dispNextMins.textContent = secToStr(defaultDuration/1000);
+				} else if (!ev.repeat) {
+					const panelOpen = ["notice-panel", "clock-panel", "video-panel", "phone-panel"].some(function (id) { const el = document.getElementById(id); return el && !el.hidden; });
+					const deck = document.getElementById("deck-editor");
+					if (panelOpen) document.dispatchEvent(new CustomEvent("timer-panel", { detail: "escape" }));	// (each panel closes on another's)
+					else if (!(deck && deck.style.display !== "none")) processTimerApiMessage({ cmd: "fadeout" });	// stings and videos: a graceful exit
 				}
 				break;
 			case "Enter" : 

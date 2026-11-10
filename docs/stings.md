@@ -9,10 +9,10 @@ A walk-up sting is a short piece of music (or a video) that plays as a run sheet
 In the run sheet editor, click **+ sting** in an item's Video column. Three tabs along the top:
 
 - **Walk-up sting:** the stock stings the site offers (`stock-stings.json` next to the timer: `name`, `url`, `media` audio or video, `duration` in seconds), including the site's own clips of them.
-- **Custom file:** **Browse this computer…** for a file of your own, or type a link to one (https). Dropping an audio file on a row does the same (a video file dropped on a row is still a video for the item).
+- **Custom file:** **Browse for a file…** for a file of your own (dropping an audio file on a row does the same; a video file dropped on a row is still a video for the item), or **Choose a folder…** to pick from a list of the audio and video files in a folder (and its subfolders), with **▶** to hear one first. Chrome and Edge remember the folder: next time the list is there at once, or after one click on **Show the files in … again** if the browser wants to ask. Other browsers keep it until the run sheet editor is closed. The file you use is copied into the browser like a browsed one.
 - **Edited sting:** your clips from the sting library, and **Open the sting library…**, which opens it as a panel over the editor.
 
-**Use** takes the one on the tab that's showing.
+**Use** takes the one on the tab that's showing. **✂** beside a list opens the clip editor on the sting chosen there (see *Clips* below): on a stock sting or a file from the folder list it makes a new clip, on one of your clips it changes that clip. **Save and use** keeps the clip in your sting library (for next time) and puts it on the item; **Cancel** goes back to the dialog with nothing saved.
 
 In the dialog, **▶** next to the stock list lets you hear the selected sting first. Stock stings already on this run sheet are marked *in use* with the items using them; tick **Hide stings already on this run sheet** to leave them out (some presenters want their walk-up to themselves). Choosing a stock sting or link that another item already uses asks first.
 
@@ -20,7 +20,7 @@ An item has a video or a sting, not both.
 
 **Everything plays on the timer's computer:** audio from the timer page itself, video in the player window (open it with **video**). It's made for a small show run from one laptop, with no network needed. A file is kept in the browser; a link or stock sting is copied there too, as soon as the timer sees it, if its server allows it (it has to send `Access-Control-Allow-Origin`). One that couldn't be copied shows **⚠** in the editor and plays from its link, so it needs the internet.
 
-**During the show:** **Next** plays the item's sting (the next one is loaded ahead, so it starts at once). A sting plays to its end: long tracks cover activity on stage, and an item without a sting leaves it playing, so an introduction spoken over a sting can be followed by the speaker's countdown. It stops when another sting (or a video item) starts, or when you fade it: the sting bar on the timer's screen (**Fade out** over 3 seconds, or **Stop**), or a Stream Deck **Fade sting** key (lit while one plays). **Back** stops a sting only if it undoes the item that started it. Video stings show only a stop button in the player window.
+**During the show:** **Next** plays the item's sting (the next one is loaded ahead, so it starts at once). A sting plays to its end: long tracks cover activity on stage, and an item without a sting leaves it playing, so an introduction spoken over a sting can be followed by the speaker's countdown. It stops when another sting (or a video item) starts, or when you fade it: the sting bar on the timer's screen (**Fade out** over 3 seconds, or **Stop**), **Esc** on the timer (the same fade, for videos in the player too; in Chrome's full screen a tap fades and holding Esc leaves full screen), or a Stream Deck **Fade sting** key (lit while one plays). **Back** stops a sting only if it undoes the item that started it. Video stings show only a stop button in the player window.
 
 A run sheet editor on another computer can add stock and link stings from anywhere, and send a sting file to the timer over the same network (like a video).
 

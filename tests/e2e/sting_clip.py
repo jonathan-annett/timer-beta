@@ -24,7 +24,9 @@ SHEET = {"title": "Clips", "perItem": 20, "items": [
     {"id": "a", "name": "Keynote", "start": None, "duration": 600},
     {"id": "b", "name": "Panel", "start": None, "duration": 300},
     {"id": "c", "name": "Awards", "start": None, "duration": 300},
-    {"id": "d", "name": "Close", "start": None, "duration": 300}]}
+    {"id": "d", "name": "Close", "start": None, "duration": 300},
+    {"id": "e", "name": "Thanks", "start": None, "duration": 300},
+    {"id": "f", "name": "Drinks", "start": None, "duration": 300}]}
 def h(route, req):
     u = req.url
     if u.startswith(BASE + "media/song.wav"): return route.fulfill(status=200, body=SONG, headers={"content-type": "audio/wav"})
@@ -253,7 +255,43 @@ with sync_playwright() as p:
     t.evaluate("window.stingPlayer.play(JSON.parse(localStorage.runsheet).items[0])"); t.wait_for_timeout(700)
     st = t.evaluate("window.stingPlayer.state()")
     check("the timer builds the loop in memory and plays it", st["audio"] and abs(st["audio"]["duration"] - 11) < 0.05, st)
-    t.evaluate("window.stingPlayer.stop()")
+    t.bring_to_front(); t.keyboard.press("Escape"); t.wait_for_timeout(200)
+    st = t.evaluate("window.stingPlayer.state()")
+    check("Escape on the timer fades the sting out", st["audio"] is None and st["fading"] == 1, st)
+    t.wait_for_timeout(3300)
+    check("… and it's gone after the 3 s fade", t.evaluate("window.stingPlayer.state().fading") == 0)
+
+    # ✂ in the + sting dialog: straight into the clip editor; Save and use keeps the clip in the library and puts it on the item
+    libnames = lambda: e.evaluate("StingLibrary.read().map(x => x.name)")
+    before = libnames()
+    e.click(row("d") + " button[data-act=sadd]"); e.wait_for_timeout(400)
+    song = e.evaluate("[...document.querySelectorAll('#sting-stock option')].find(o => o.textContent.startsWith('Song ·')).value")
+    e.select_option("#sting-stock", song); e.click("#sting-sedit"); e.wait_for_timeout(1200)
+    check("stock ✂: the clip editor, its button Save and use", e.is_visible(".sc-wrap") and e.inner_text(".sc-save") == "Save and use" and e.is_visible(".sc-hide"))
+    e.click(".sc-cancel"); e.wait_for_timeout(300)
+    check("… Cancel: back in the dialog, nothing saved", e.is_visible(".sting-dlg") and libnames() == before and not sheet()["d"], libnames())
+    e.click("#sting-sedit"); e.wait_for_timeout(1200)
+    e.fill(".sc-t[data-k=start]", "1"); e.press(".sc-t[data-k=start]", "Tab"); e.fill(".sc-t[data-k=end]", "2"); e.press(".sc-t[data-k=end]", "Tab")
+    e.click(".sc-save"); e.wait_for_timeout(600)
+    s = sheet()["d"]
+    check("… Save and use: the clip in the library (a free name) and on the item", not e.locator(".sting-dlg").count() and libnames() == before + ["Song"] and s and s["src"] == "stock" and s.get("start") == 1 and s.get("end") == 2 and s.get("lib") == "Song", (libnames(), s))
+    e.click(row("e") + " button[data-act=sadd]"); e.wait_for_timeout(400); e.click(".sting-tab[data-mode=edited]")
+    e.select_option("#sting-mine", str(libnames().index("Song"))); e.click("#sting-medit"); e.wait_for_timeout(1200)
+    e.fill(".sc-t[data-k=end]", "2.5"); e.press(".sc-t[data-k=end]", "Tab"); e.click(".sc-save"); e.wait_for_timeout(600)
+    lib = e.evaluate("StingLibrary.read()")
+    s = sheet()["e"]
+    check("edited ✂: the library clip changed in place, and on this item", len(lib) == len(before) + 1 and [x for x in lib if x["name"] == "Song"][0].get("end") == 2.5 and s and s.get("end") == 2.5 and s.get("lib") == "Song", (lib, s))
+    e.click(row("f") + " button[data-act=sadd]"); e.wait_for_timeout(400); e.click(".sting-tab[data-mode=custom]")
+    e.evaluate("window.showDirectoryPicker = undefined")
+    with e.expect_file_chooser() as fc: e.click("#sting-folderpick")
+    fc.value.set_files(folder); e.wait_for_timeout(500)
+    e.click("#sting-fedit"); e.wait_for_timeout(1200)
+    e.fill(".sc-t[data-k=end]", "1.5"); e.press(".sc-t[data-k=end]", "Tab"); e.click(".sc-save"); e.wait_for_timeout(1500)
+    lib = e.evaluate("StingLibrary.read()")
+    new = [x for x in lib if x.get("file") == "my-track.wav" and x.get("end") == 1.5]
+    s = sheet()["f"]
+    check("file ✂: a new library clip of the file (its file kept), and on this item", new and s and s["src"] == "file" and s.get("end") == 1.5 and s.get("lib") == new[0]["name"] and s.get("key"), (lib, s))
+    check("… its file is in the library's store", e.evaluate("(async () => !!(await videoStore.get('lib:my-track.wav:%d')))()" % os.path.getsize(mytrack)))
 
     # import on another computer: the file is asked for once
     c2 = b.new_context(ignore_https_errors=True); c2.add_init_script("window.TimerFeatures={stings:true}"); c2.route("**/*", h)

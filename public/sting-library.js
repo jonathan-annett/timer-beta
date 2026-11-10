@@ -63,7 +63,23 @@ var StingLibrary = (function () {
     return e;
   }
 
-  return { read, write, clean, source, keepFile, fileKey, hidden, CLIP };
+  // A clip editor result (StingClip.open) applied to an entry: its part, name, and hiding the original
+  function fromEdit(entry, r) {
+    const e = Object.assign({}, entry, { name: r.name });
+    if (r.hideOriginal) e.hideOriginal = true; else delete e.hideOriginal;
+    for (const k of CLIP) { if (r[k] == null) delete e[k]; else e[k] = r[k]; }
+    if (r.sourceLength) e.duration = Math.round(r.sourceLength * 100) / 100;
+    return clean(e);
+  }
+  // A name no other clip has ("Song", "Song (2)"…; except: the clip being changed), so an item's link to it is clear
+  function freeName(name, except) {
+    const list = read();
+    let n = name, i = 2;
+    while (list.some((x, j) => j !== except && x.name === n)) n = name + ' (' + i++ + ')';
+    return n;
+  }
+
+  return { read, write, clean, source, keepFile, fileKey, hidden, fromEdit, freeName, CLIP };
 })();
 
 // ─── The library's UI: StingLibrary.mount(element) → {refresh} ────────────
@@ -159,11 +175,7 @@ StingLibrary.mount = function (root, opts) {
     stopPlay();
     const r = await StingClip.open({ src, name: entry.name, region: entry, media: entry.media, original: entry.stock || null, hideOriginal: isNew ? true : entry.hideOriginal === true });
     if (!r) return;
-    const e = Object.assign({}, entry, { name: r.name });
-    if (r.hideOriginal) e.hideOriginal = true; else delete e.hideOriginal;
-    for (const k of L.CLIP) { if (r[k] == null) delete e[k]; else e[k] = r[k]; }
-    if (r.sourceLength) e.duration = Math.round(r.sourceLength * 100) / 100;
-    const list = L.read(), clean = L.clean(e);
+    const list = L.read(), clean = L.fromEdit(entry, r);
     if (!clean) return;
     if (isNew) list.push(clean); else list[entry.__i] = clean;
     L.write(list);

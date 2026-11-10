@@ -105,6 +105,14 @@ function processTimerApiMessage(msg) {
         case "videorewind": { if (window.videoPlayer) return window.videoPlayer.rewind(); break; }
         // Walk-up stings (sting-player.js): fade the playing one out ({msecs}, default 3 s): the deck's Fade sting key
         case "stingfade":   { if (window.stingPlayer) window.stingPlayer.fadeOut(Number.isFinite(msg.msecs) ? Math.max(100, Math.min(20000, msg.msecs)) : 3000); break; }
+        // Esc: fade out whatever is playing ({msecs}, default 3 s): walk-up stings, and the video player's
+        // video, which then ends as if it had played to its end (a run sheet video back to before-play)
+        case "fadeout": {
+            const ms = Number.isFinite(msg.msecs) ? Math.max(100, Math.min(20000, msg.msecs)) : 3000;
+            if (window.stingPlayer) window.stingPlayer.fadeOut(ms);
+            if (window.videoPlayer) window.videoPlayer.finish(ms);
+            break;
+        }
         // PowerPoint computers (pptx-hub.js): close every slide show, so the holding slide shows
         case "pptxclose":   { if (window.pptxHub) window.pptxHub.close(); break; }
 

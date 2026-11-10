@@ -28,7 +28,7 @@
  *   wav(buf)           an AudioBuffer → a 16-bit WAV Blob
  *   play(buf, {loop})  plays an AudioBuffer (loop: over and over until stopped) → {stop(), ended: Promise, time()}
  *   preview(src, s)    decode, render and play (the stock dialog's ▶) → {stop()}
- *   open({src, name, region, media, original, hideOriginal})  the clip editor: waveform (whole track + zoomed on the
+ *   open({src, name, region, media, original, hideOriginal, saveLabel})  the clip editor: waveform (whole track + zoomed on the
  *                      selection), start/end handles, fades, a loop, play, Save as WAV → Promise<{name, start, end,
  *                      fadeIn, fadeOut, loop, hideOriginal} | null>; original (a stock sting's name) adds the
  *                      choice to hide it from + sting while this clip exists (hideOriginal: a better edit)
@@ -294,6 +294,7 @@ var StingClip = (function () {
       $('.sc-src').textContent = opts.name || '';
       $('.sc-name').value = opts.name || '';
       $('.sc-wav').hidden = !canLoop;
+      if (opts.saveLabel) $('.sc-save').textContent = opts.saveLabel;   // (the + sting dialog's ✂: Save and use)
       if (opts.original) { $('.sc-hide').hidden = false; $('.sc-orig').textContent = opts.original; $('.sc-hideorig').checked = opts.hideOriginal !== false; }
       let buf = null, peaks = null, voice = null, playSegs = [], playOff = 0, active = 'start', raf = 0, hover = null;
       const r0 = region(opts.region) || {};

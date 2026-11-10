@@ -3,7 +3,7 @@ HERE = _os.path.dirname(_os.path.abspath(__file__))
 PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
 # Walk-up stings (a trial: TimerFeatures.stings; sting-player.js): the run sheet editor's + sting takes
-# a stock sting, a link or a file (or an audio file dropped on the row); the timer keeps a copy of
+# a stock sting or a file (browsed, picked from a folder's list, or an audio file dropped on the row); the timer keeps a copy of
 # link and stock stings when their server allows it (CORS), else plays them from the link. Next plays
 # the item's sting while the item keeps its own time; it plays on into an item without a sting,
 # another sting stops it (a 0.3 s fade), the operator fades it (the sting bar, stingfade); Back stops
@@ -99,9 +99,12 @@ with sync_playwright() as p:
     check("hide stings already on the sheet", opts() == ["Drumroll · 6 s"], opts())
     check("… and the preview stops", not e.evaluate("window.__stingPreview()"))
     e.uncheck("#sting-hideused")
-    e.click(".sting-tab[data-mode=custom]"); e.fill("#sting-url", CDN + "walkup.wav"); e.click(".sting-use"); e.wait_for_timeout(1500)
-    s = sheet()["b"]
-    check("link sting on the item (its length read from the link)", s and s["src"] == "link" and s["url"] == CDN + "walkup.wav" and s["duration"] == 6, s)
+    e.click(".sting-tab[data-mode=custom]")
+    check("Custom file: a file or a folder, no link box", e.locator("#sting-url").count() == 0 and e.is_visible("#sting-browse") and e.is_visible("#sting-folderpick"))
+    e.keyboard.press("Escape")
+    # (link stings still play: one already on a sheet, say, or from the library)
+    t.evaluate("u => { const sh = JSON.parse(localStorage.runsheet); sh.items.find(x => x.id === 'b').sting = { src: 'link', media: 'audio', name: 'walkup', url: u, duration: 6 }; localStorage.runsheet = JSON.stringify(sh); window.runsheet.sheetChanged(); }", CDN + "walkup.wav")
+    e.wait_for_timeout(500)
     # c: a file, through the picker
     e.click(row("c") + " button[data-act=sadd]"); e.wait_for_timeout(300)
     e.click(".sting-tab[data-mode=custom]")
@@ -116,8 +119,28 @@ with sync_playwright() as p:
     fc.value.set_files(vid_path); e.wait_for_timeout(1500)
     s = sheet()["d"]
     check("video sting", s and s["media"] == "video" and s["key"], s)
-    # f: the same stock sting as the keynote, knowingly
+    # f: from a folder's list (here the folder input: Chrome's folder picker can't be driven by the test), then
+    # the same stock sting as the keynote, knowingly
+    fdir = os.path.join(OUTDIR, "sting_folder"); os.makedirs(os.path.join(fdir, "more"), exist_ok=True)
+    open(os.path.join(fdir, "b-short.wav"), "wb").write(WAV_SHORT); open(os.path.join(fdir, "more", "a-clip.webm"), "wb").write(VIDEO["data"]); open(os.path.join(fdir, "notes.txt"), "w").write("x")
     e.click(row("f") + " button[data-act=sadd]"); e.wait_for_timeout(300)
+    e.click(".sting-tab[data-mode=custom]")
+    check("Custom file: Use is off until a folder is chosen", e.is_disabled(".sting-use"))
+    e.evaluate("window.showDirectoryPicker = undefined")
+    with e.expect_file_chooser() as fc: e.click("#sting-folderpick")
+    fc.value.set_files(fdir); e.wait_for_timeout(500)
+    fopts = e.evaluate("[...document.querySelectorAll('#sting-folder option')].map(o => o.textContent)")
+    check("Choose a folder…: its audio and video files in a list (subfolders too, sorted, nothing else)", fopts == ["b-short", "more/a-clip"], fopts)
+    e.screenshot(path=OUTDIR + "/sting_folder.png")
+    e.click("#sting-fprev"); e.wait_for_timeout(500)
+    check("… ▶ plays the one chosen", e.evaluate("window.__stingPreview()"))
+    e.click(".sting-use"); e.wait_for_timeout(1200)
+    s = sheet()["f"]
+    check("… Use this file: kept with the item like a browsed file", s and s["src"] == "file" and s["name"] == "b-short" and s["key"].startswith("rssting:f:"), s)
+    e.once("dialog", lambda d: d.accept()); e.click(row("f") + " button[data-act=sdel]"); e.wait_for_timeout(400)
+    e.click(row("f") + " button[data-act=sadd]"); e.wait_for_timeout(300); e.click(".sting-tab[data-mode=custom]")
+    check("the folder's list is still there next time", e.locator("#sting-folder option").count() == 2 and not e.is_disabled(".sting-use"))
+    e.click(".sting-tab[data-mode=stock]")
     e.click("#sting-prev"); e.wait_for_timeout(300)
     e.click(".sting-use"); e.wait_for_timeout(300)
     check("closing the dialog stops the preview", not e.evaluate("window.__stingPreview()"))
@@ -181,6 +204,21 @@ with sync_playwright() as p:
     check("an item without a sting: the last one plays on (under the speaker's countdown)", s["video"] and s["video"]["id"] == "d" and (remain() == "10:00" or remain().startswith("9:5")), (s, remain()))
     t.evaluate("window.runsheet.back()"); t.wait_for_timeout(500); s = sp()
     check("Back from that item leaves it playing (it didn't start it)", s["video"] and s["video"]["id"] == "d", s)
+
+    # Esc: a graceful exit for whatever is playing (not over a panel)
+    vs = lambda: t.evaluate("window.videoPlayer.state().status")
+    t.bring_to_front(); t.mouse.click(640, 400); t.keyboard.press("Escape"); t.wait_for_timeout(3500); s = sp()
+    check("Esc fades the video sting out", s["video"] is None, s)
+    t.evaluate("window.videoPlayer.load('%smedia/clip.webm', {name: 'Clip'}); setTimeout(() => window.videoPlayer.play(), 500)" % BASE); t.wait_for_timeout(1500)
+    check("(a dropped video plays)", vs() == "playing", vs())   # (a recorded webm has no length until read through, so the timer may not be set yet)
+    t.evaluate("window.noticePanel.toggle()"); t.wait_for_timeout(200); t.mouse.click(640, 400)
+    t.keyboard.press("Escape"); t.wait_for_timeout(300)
+    check("Esc with a panel open closes the panel, nothing else", t.evaluate("document.getElementById('notice-panel').hidden") and vs() == "playing", vs())
+    t.keyboard.press("Escape"); t.wait_for_timeout(1000)
+    op = t.evaluate("(() => { const w = window.open('', 'video_player_window'); const v = [...w.document.querySelectorAll('video')].find(x => x.style.zIndex === '3'); return v ? Number(v.style.opacity) : null; })()")
+    check("Esc fades a video out, picture and sound", vs() == "playing" and op is not None and 0 < op < 1, (vs(), op))
+    t.wait_for_timeout(2500)
+    check("… then ends it as if it had finished: unloaded, message and timer cleared", vs() == "empty" and t.evaluate("localStorage.message_item") == "", (vs(), t.evaluate("localStorage.message_item")))
 
     # Off: no + sting, nothing plays
     c2 = b.new_context(ignore_https_errors=True)
