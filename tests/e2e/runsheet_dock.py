@@ -61,6 +61,13 @@ with sync_playwright() as p:
     t.mouse.move(bar["x"] + 10, bar["y"] + 5); t.mouse.down(); t.mouse.move(bar["x"] + 10, 500); t.mouse.move(bar["x"] + 10, 600); t.mouse.up()
     h1 = t.locator("#rs-dock").bounding_box()["height"]
     check("dragging the bar resizes it", abs(h1 - 300) < 15, h1)
+    # a lost release (let go outside the window, another app took focus): the next move, with no button down, ends the drag
+    bar = t.locator("#rs-dock .rsd-grip").bounding_box()
+    t.mouse.move(bar["x"] + 10, bar["y"] + 5); t.mouse.down(); t.mouse.move(bar["x"] + 10, 550)
+    t.evaluate("document.querySelector('#rs-dock .rsd-bar').dispatchEvent(new PointerEvent('pointermove', {clientY: 300, buttons: 0, bubbles: true, pointerId: 1}))")
+    t.mouse.up()
+    h1 = t.locator("#rs-dock").bounding_box()["height"]
+    check("a lost release doesn't leave it resizing", abs(h1 - 350) < 15, h1)
     t.reload(); t.wait_for_timeout(1500)
     check("a reload brings it back, the same height", docked() and abs(t.locator("#rs-dock").bounding_box()["height"] - h1) < 3)
 

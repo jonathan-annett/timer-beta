@@ -24,6 +24,10 @@
       --now: #2e7d32; --now-text: #9cf59c; --next: #1d2b3a;
       --behind: #ff6b6b; --ahead: #5fd35f; --warn: #ffcc33; --accent: #4aa8ff;
     }
+    /* typing in a text box: Space and delete type, they aren't Next and Back (runsheet-editor.js markTyping) */
+    html.typing { --bg: #0e1f3d; --panel: #12274b; }
+    html.typing #rs-table tr:hover td { background: rgba(255,255,255,0.04); }
+    html, body, header, .side, aside { transition: background-color 0.15s; }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
       font-family: "Helvetica Neue", Arial, sans-serif; line-height: 1.4; }
@@ -294,7 +298,7 @@
       <button id="btn-back" title="Undo the last Next (Page Up)">◀ Back</button>
       <button id="btn-next" class="primary" title="Start the next item (Page Down)">Next ▶</button>
       <span class="now-next" id="now-next"></span>
-      <span class="hint">Page Down / Page Up work here too</span>
+      <span class="hint" title="On a Mac, Page Down / Page Up are Fn+↓ / Fn+↑. While you type in a box (the page turns navy) Space and delete just type.">Space / delete, Page Down / Page Up work here too</span>
       <button id="btn-pptxclose" title="Close whatever slide show is up on the PowerPoint computers, so their holding slide shows">Close slides</button>
       <button id="btn-reset" class="danger" title="Clear the log and start the show again">Reset show…</button>
     </div>
@@ -371,9 +375,9 @@
   <script src="markdown-lite.js?v=938fee93"></script>
   <script src="help-overlay.js?v=8a5dbd9d"></script>
   <script src="sting-library.js?v=54fa2565"></script>
-  <script src="sting-clip.js?v=3550428c"></script>
+  <script src="sting-clip.js?v=c319988a"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="runsheet-core.js?v=a0f5cc65"></script>
-  <script src="runsheet-editor.js?v=1b27273b"></script>
+  <script src="runsheet-editor.js?v=bbf0067c"></script>
 </body>
 </html>

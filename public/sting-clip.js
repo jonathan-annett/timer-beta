@@ -454,6 +454,22 @@ var StingClip = (function () {
         const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
         return x >= b.x0 && x <= b.x1 && y >= 0 && y <= b.y1;
       }
+      // A drag on a canvas: move(ev) while the button is down, then done() once. The release can go
+      // missing (the button let go outside the window, another app taking focus mid-drag) and the
+      // drag would carry on with the button up: a move with no button down, a lost capture or a blur
+      // ends it too
+      function track(cv, move, done) {
+        const ENDS = ['pointerup', 'pointercancel', 'lostpointercapture'];
+        let ended = false;
+        const mv = ev => { if (!ev.buttons) end(); else move(ev); };
+        const end = () => {
+          if (ended) return;
+          ended = true;
+          cv.removeEventListener('pointermove', mv); ENDS.forEach(t => cv.removeEventListener(t, end)); removeEventListener('blur', end);
+          if (done && wrap.isConnected) done();
+        };
+        cv.addEventListener('pointermove', mv); ENDS.forEach(t => cv.addEventListener(t, end)); addEventListener('blur', end);
+      }
       function dragEdge(cv, e, k, range) {
         active = k;
         const move = ev => {
@@ -462,8 +478,7 @@ var StingClip = (function () {
           else set(k, t);
           redraw();
         };
-        const up = () => { cv.removeEventListener('pointermove', move); cv.removeEventListener('pointerup', up); focusOn(k === 'at' && loop.at == null ? 'all' : k); if (k === 'lfrom' || k === 'lto') reloop(); };   // then the close-up centres on it
-        cv.addEventListener('pointermove', move); cv.addEventListener('pointerup', up);
+        track(cv, move, () => { focusOn(k === 'at' && loop.at == null ? 'all' : k); if (k === 'lfrom' || k === 'lto') reloop(); });   // then the close-up centres on it
         draw();
       }
       for (const [cv, range] of [[over, () => [0, dur()]], [zoom, zoomRange]]) {
@@ -477,7 +492,7 @@ var StingClip = (function () {
         cv.addEventListener('pointerleave', () => { cv.classList.remove('sc-grab', 'sc-move'); if (hover) { hover = null; draw(); } });
       }
       over.addEventListener('pointerdown', e => {
-        if (!buf) return;
+        if (!buf || e.button !== 0) return;          // (a right click: its menu would swallow the release)
         over.setPointerCapture(e.pointerId);
         if (onTab(over, e)) return dragEdge(over, e, 'at', () => [0, dur()]);
         const k = nearEdge(over, e, 0, dur());
@@ -492,12 +507,11 @@ var StingClip = (function () {
           zmode = 'all';                               // a new part: see all of it
           move = ev => { const t = timeAt(over, ev, 0, dur()); sel.start = Math.min(t0, t); sel.end = Math.max(t0, t, Math.min(t0, t) + 0.05); active = t < t0 ? 'start' : 'end'; redraw(); };
         }
-        const up = () => { over.removeEventListener('pointermove', move); over.removeEventListener('pointerup', up); focusOn('all'); if (e.shiftKey) reloop(); };
-        over.addEventListener('pointermove', move); over.addEventListener('pointerup', up);
+        track(over, move, () => { focusOn('all'); if (e.shiftKey) reloop(); });
         redraw();
       });
       zoom.addEventListener('pointerdown', e => {
-        if (!buf) return;
+        if (!buf || e.button !== 0) return;
         zoom.setPointerCapture(e.pointerId);
         const [a, b] = zoomRange(), t = timeAt(zoom, e, a, b);
         if (onTab(zoom, e)) return dragEdge(zoom, e, 'at', () => [a, b]);
@@ -506,8 +520,7 @@ var StingClip = (function () {
         active = Math.abs(t - sel.start) <= Math.abs(t - endOf()) ? 'start' : 'end';
         const move = ev => { const tt = timeAt(zoom, ev, a, b); set(active, tt); redraw(); };
         move(e);
-        const up = () => { zoom.removeEventListener('pointermove', move); zoom.removeEventListener('pointerup', up); focusOn(active); };
-        zoom.addEventListener('pointermove', move); zoom.addEventListener('pointerup', up);
+        track(zoom, move, () => focusOn(active));
       });
       wrap.querySelectorAll('input[data-k]').forEach(i => {
         const k = i.dataset.k;

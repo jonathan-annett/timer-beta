@@ -1679,6 +1679,14 @@ function onDocKeyDown(ev){
 				}
 				break;
 			case "Backspace" :		// like text: digits, then the ":" (the hours become plain digits again), then it closes
+				// In run sheet mode, with no time being typed, a real Backspace (a Mac's delete key) is Back,
+				// like Page Up: the counterpart of Space = Next (Page Up/Down are Fn+↑/↓ on a Mac)
+				if (!controlling && !shifting && typeof ev.stopPropagation === "function" && !html.classList.contains("editing") && enterTimeText === "" && enterHoursText === ""
+					&& window.runsheet && window.runsheet.isActive && window.runsheet.isActive()) {
+					ev.preventDefault();
+					if (!ev.repeat) processTimerApiMessage({ cmd: "runsheetprev" });	// a held delete is one Back
+					break;
+				}
 				if (enterTimeText !== "" ) {
 					enterTimeText = enterTimeText.substr(0,enterTimeText.length-1);
 					updateEnteredTimeText () ;

@@ -214,6 +214,14 @@ with sync_playwright() as p:
     l = lp()
     check("dragging the ⟲ tab moves the repeats (4 copies there, the loop's own place as it was)", l and abs(l.get("at", 0) - 5) < 0.1 and e.inner_text(".sc-len") == "7.00 s", (l, e.inner_text(".sc-len")))
     e.screenshot(path=OUTDIR + "/clip_loop.png")
+    # a lost release (let go outside the window, another app took focus): a move with no button down ends the drag
+    e.mouse.move(X(5) + 4, ob["y"] + 7); e.mouse.down(); e.mouse.move(X(5.3), ob["y"] + 7); e.mouse.move(X(5.5), ob["y"] + 7)
+    e.evaluate("document.querySelector('.sc-over').dispatchEvent(new PointerEvent('pointermove', {clientX: 0, clientY: 0, buttons: 0, bubbles: true, pointerId: 1}))")
+    e.mouse.move(X(6.5), ob["y"] + 7); e.mouse.up()
+    l = lp()
+    check("a lost release doesn't leave a drag going", l and abs(l.get("at", 0) - 5.5) < 0.1, l)
+    e.mouse.click(X(6), ob["y"] + 40, button="right"); e.mouse.move(X(6.5), ob["y"] + 40)
+    check("a right click doesn't start a drag", lp() == l and e.input_value(".sc-t[data-k=end]") == "0:07.00", (lp(), e.input_value(".sc-t[data-k=end]")))
     e.click(".sc-lback")
     check("Put back: in place again", "at" not in lp() and e.input_value(".sc-t[data-k=at]") == "", lp())
     e.click(".sc-lprev"); e.wait_for_timeout(1300)      # the loop is 0.5 s: it's been round twice

@@ -68,13 +68,23 @@ html.rs-docked #sting-bar { bottom: calc(var(--rs-dock-h, 55vh) + 12px); }`;
     // Drag the bar to resize
     const bar = el.querySelector('.rsd-bar');
     bar.addEventListener('pointerdown', e => {
-      if (e.target.closest('button')) return;
+      if (e.target.closest('button') || e.button !== 0) return;   // (a right click: its menu would swallow the release)
       e.preventDefault();
       bar.setPointerCapture(e.pointerId);
       el.classList.add('dragging');
-      const move = ev => { const f = Math.max(0.15, Math.min(0.85, (innerHeight - ev.clientY) / innerHeight)); put(HEIGHT, f.toFixed(3)); applyHeight(f); };
-      const up = () => { bar.removeEventListener('pointermove', move); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up); el.classList.remove('dragging'); };
-      bar.addEventListener('pointermove', move); bar.addEventListener('pointerup', up); bar.addEventListener('pointercancel', up);
+      // The release can go missing (the button let go outside the window, another app taking focus
+      // mid-drag); the bar follows the pointer, so every later move would land on it and keep
+      // resizing. So a move with no button down ends the drag too, as do a lost capture and a blur.
+      const move = ev => {
+        if (!ev.buttons) return up();
+        const f = Math.max(0.15, Math.min(0.85, (innerHeight - ev.clientY) / innerHeight)); put(HEIGHT, f.toFixed(3)); applyHeight(f);
+      };
+      const ENDS = ['pointerup', 'pointercancel', 'lostpointercapture'];
+      const up = () => {
+        bar.removeEventListener('pointermove', move); ENDS.forEach(t => bar.removeEventListener(t, up)); removeEventListener('blur', up);
+        el.classList.remove('dragging');
+      };
+      bar.addEventListener('pointermove', move); ENDS.forEach(t => bar.addEventListener(t, up)); addEventListener('blur', up);
     });
     addEventListener('resize', () => { if (isOpen()) applyHeight(frac()); });
   }

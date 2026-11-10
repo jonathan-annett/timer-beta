@@ -1729,19 +1729,25 @@
     if (e.repeat) return;
     send(e.key === 'PageDown' ? 'next' : 'back');
   });
-  // In run sheet mode Space is Next here too, as on the timer, unless something is being typed (a text
-  // box, a list) or a question is open. A focused button (Reset show… just clicked, say) doesn't get it:
-  // Space would press it again. Checkboxes neither: they're not typing.
+  // In run sheet mode Space is Next and delete (Backspace) is Back here too, as on the timer, unless
+  // something is being typed (a text box, a list) or a question is open. A focused button (Reset show…
+  // just clicked, say) doesn't get Space: it would press it again. Checkboxes neither: they're not typing.
   const typingIn = t => t && (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' ||
     (t.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|reset|range|color|file)$/.test(t.type)))
-  const spaceIsNext = e => e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !!state.active &&
+  const nextBackKey = e => (e.key === ' ' || e.key === 'Backspace') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !!state.active &&
     !typingIn(e.target) && !document.querySelector('.ask')
   document.addEventListener('keydown', e => {
-    if (!spaceIsNext(e)) return;
+    if (!nextBackKey(e)) return;
     e.preventDefault();
-    if (!e.repeat) send('next');
+    if (!e.repeat) send(e.key === ' ' ? 'next' : 'back');
   });
-  document.addEventListener('keyup', e => { if (spaceIsNext(e)) e.preventDefault(); });   // buttons act on Space's keyup
+  document.addEventListener('keyup', e => { if (nextBackKey(e)) e.preventDefault(); });   // buttons act on Space's keyup
+  // While a text box has the keyboard (Space and delete type there) the whole surface turns navy,
+  // so it's plain that they aren't Next and Back (html.typing)
+  const markTyping = () => document.documentElement.classList.toggle('typing', document.hasFocus() && !!typingIn(document.activeElement));
+  document.addEventListener('focusin', markTyping);
+  document.addEventListener('focusout', () => setTimeout(markTyping, 0));
+  addEventListener('focus', markTyping); addEventListener('blur', markTyping);
 
   // ─── Help (README overlay, see help-overlay.js; ? / F1 also open it) ───────
 
