@@ -2,6 +2,8 @@
  * streamdeck.js
  * Stream Deck WebHID integration for Presentation Timer
  * Supports: Mini (6), MK.II (15), XL (32)
+ * USB device IDs and report layouts follow Julian Waller's node-elgato-stream-deck
+ * (https://github.com/Julusian/node-elgato-stream-deck, MIT).
  * MIT Licensed
  */
 
@@ -44,14 +46,15 @@
   // ─── Action definitions ───────────────────────────────────────────────────
 
   const ACTIONS = {
-    preset_10:        { label: '10 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 600000 }) },
-    preset_20:        { label: '20 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 1200000 }) },
-    preset_30:        { label: '30 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 1800000 }) },
-    preset_45:        { label: '45 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 2700000 }) },
-    preset_60:        { label: '1 hour',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 3600000 }) },
-    preset_90:        { label: '90 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 5400000 }) },
-    preset_120:       { label: '2 hours',   group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 7200000 }) },
-    preset_180:       { label: '3 hours',   group: 'Presets',   cmd: () => _sendCmd({ cmd: 'start', msecs: 10800000 }) },
+    preset_10:        { label: '10 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 600000 }) },
+    preset_20:        { label: '20 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 1200000 }) },
+    preset_30:        { label: '30 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 1800000 }) },
+    preset_45:        { label: '45 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 2700000 }) },
+    preset_60:        { label: '1 hour',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 3600000 }) },
+    preset_90:        { label: '90 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 5400000 }) },
+    preset_120:       { label: '2 hours',   group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 7200000 }) },
+    preset_180:       { label: '3 hours',   group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 10800000 }) },
+    toggle_preset_arm: { label: 'Arm\npresets', group: 'Presets', toggleState: 'preset_arm', cmd: () => _sendCmd({ cmd: 'presetarm' }) },   // lit while presets only arm the timer
     start_restart:    { label: 'Start',     group: 'Controls',  cmd: () => _sendCmd({ cmd: 'keys', keys: [' '] }) },
     pause_resume: {
       label: 'Pause', altLabel: 'Resume',
@@ -72,13 +75,16 @@
     toggle_time:      { label: 'Clock',     group: 'Display',   toggleState: 'showtimenow',  cmd: () => _sendCmd({ cmd: 'time' }) },
     toggle_messages:  { label: 'Messages',  group: 'Display',   toggleState: 'showmessages', cmd: () => _sendCmd({ cmd: 'messages' }) },
     toggle_presenter: { label: 'Remote',    group: 'Display',   cmd: () => _sendCmd({ cmd: 'presenter' }) },
+    // Quiet mode: only the countdown on the presenter screens (lit while on; the next run sheet item ends it)
+    toggle_quiet:     { label: 'Quiet',     group: 'Display',   toggleState: 'quiet',        cmd: () => _sendCmd({ cmd: 'quiet' }) },
     brightness_cycle: { label: 'Backlight', group: 'Display',   cmd: () => cycleBrightness() },
     // Display-only keys showing the remaining time (see countdownText). Pressing them does nothing.
     countdown:        { label: 'Timer',     group: 'Countdown', display: 'full',  cmd: null },
     countdown_major:  { label: 'Min / Hr',  group: 'Countdown', display: 'major', cmd: null },
     countdown_minor:  { label: 'Sec / Min', group: 'Countdown', display: 'minor', cmd: null },
     // Preset message: text is stored per key (keyOverrides[...].message). Press shows it on the
-    // presenter screen; press again (while it's showing) clears it.
+    // presenter screen; press again (while it's showing) clears it. These and Clear message work the
+    // operator's message only: clearing it brings back the run sheet item's name.
     message:          { label: 'Message',   group: 'Messages',  isMessage: true, cmd: (i, m) => toggleMessage(i, m) },
     message_clear:    { label: 'Clear\nmessage', group: 'Messages', cmd: () => _sendCmd({ cmd: 'custommessage', text: '' }) },
     // Run sheet (see runsheet.js). Next shows the upcoming item's name; Schedule shows ahead/behind.
@@ -101,12 +107,12 @@
     mk2: [
       'preset_10','preset_20','preset_30','preset_45','preset_60',
       'start_restart','pause_resume','add_1min','sub_1min','undo_pause',
-      'toggle_bar','toggle_time','toggle_messages','toggle_presenter','custom_msg',
+      'toggle_bar','toggle_time','toggle_messages','toggle_presenter','toggle_preset_arm',
     ],
     xl: [
       'preset_10','preset_20','preset_30','preset_45','preset_60','preset_90','preset_120','preset_180',
       'message','message','message_clear','rs_prev','rs_next','rs_status','countdown_major','countdown_minor',
-      'start_restart','pause_resume','add_1min','sub_1min','add_15sec','sub_15sec','undo_pause','custom_msg',
+      'start_restart','pause_resume','add_1min','sub_1min','add_15sec','sub_15sec','undo_pause','toggle_preset_arm',
       'toggle_bar','toggle_time','toggle_messages','toggle_presenter','catch_up','brightness_cycle','video_stop','video_rewind',
     ],
   };
@@ -124,13 +130,13 @@
   // whole deck ~10x a second.
   let deckState = {
     expired: false, impending: false, adjusting_up: false, adjusting_down: false,
-    pausing: false, showbar: false, showtimenow: false, showmessages: false,
+    pausing: false, showbar: false, showtimenow: false, showmessages: false, quiet: false, preset_arm: false,
     video_cued: false, video_playing: false,    // from the bus's video_status
   };
 
   // Remaining time, from the timer's `remain` text ("M:SS" or "H:MM:SS"; counts up overtime
   // once `expired`). Kept out of deckState: only countdown keys repaint when it changes.
-  let currentMessage = '';   // message on the presenter screen ('' = none), from `custommsg`
+  let currentMessage = '';   // the operator's message ('' = none), from `operator_msg` (older timers: `custommsg`)
   // Run sheet state pushed by runsheet.js (rs_* variables). Kept out of deckState so a
   // change repaints only the run sheet keys.
   let rs = { active: false, next: '', canBack: false, status: '', late: null };
@@ -181,8 +187,9 @@
               if (device && !changed) scheduleRsKeys();
             }
           }
-          if (typeof v.custommsg === 'string' && v.custommsg !== currentMessage) {
-            currentMessage = v.custommsg;
+          const opMsg = typeof v.operator_msg === 'string' ? v.operator_msg : 'msg_kind' in v ? undefined : v.custommsg;
+          if (typeof opMsg === 'string' && opMsg !== currentMessage) {
+            currentMessage = opMsg;
             if (device && !changed) scheduleMessageKeys();
           }
           if (typeof v.remain === 'string' && v.remain !== remainText) {

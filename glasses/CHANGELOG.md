@@ -2,6 +2,27 @@
 
 One entry per shipped version (`npm run ship -- "what changed"` writes it).
 
+## 0.1.21
+- Pairing code on the glasses is for a solo presenter: always pairs as the presenter's countdown
+
+## 0.1.20
+- Pair from one phone: Show a pairing code on my glasses, typed in the timer's share panel (Glasses); no number to type back
+
+## 0.1.19
+- Phone page: every glasses menu action as a button; Taps for Next can be Off
+
+## 0.1.18
+- Presenter chooses what shows beside the countdown (messages by default); operator Quiet on/off; Minimal view sits in the corner (Next corner moves it); presenters see Timer offline only after 60 s down
+
+## 0.1.17
+- Operator Minimal view sits in the corner (Next corner moves it); presenters see Timer offline only after 60 s down
+
+## 0.1.16
+- Dev copy keeps its own pairing and settings (the Even app's storage is shared between plugins)
+
+## 0.1.15
+- Message layers: presenter chooses what shows (messages by default); quiet mode; operator Quiet on/off
+
 ## 0.1.14
 - A 2-second hold toggles Minimal view (operator); not when it follows a tap
 

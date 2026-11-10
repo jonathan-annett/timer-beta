@@ -10,5 +10,6 @@ export default defineConfig({
   plugins: [viteSingleFile()],
   build: { target: 'es2020', outDir: 'dist' },
   server: { host: true },
-  define: { __APP_VERSION__: JSON.stringify(manifest.version) },
+  // __APP_DEV__: the dev copy (npm run ship -- --dev sets TS_DEV=1): its settings are kept apart from the real app's
+  define: { __APP_VERSION__: JSON.stringify(manifest.version), __APP_DEV__: JSON.stringify(process.env.TS_DEV === '1') },
 })

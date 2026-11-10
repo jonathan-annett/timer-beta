@@ -32,15 +32,6 @@ if (
 
 window.addEventListener ("pagehide",onControlUnload);
 
-const wc_canvas = document.getElementById('wc_canvas');
-const wc_canvas2 = document.getElementById('wc_canvas2');
-const wc_canvas3 = document.getElementById('wc_canvas3');
-const wc_videoElement = document.getElementById('webcam');
-      
-wc_canvas.width = 1270;
-wc_canvas.height = 720;
-  
-let wc_viewer ;
 
 let doc = document;
 let qs = doc.querySelector.bind(doc);
@@ -148,6 +139,10 @@ function announceNoticeWords() {
 }
 document.addEventListener("notice-words", announceNoticeWords);
 if (standby && !window.location.search.startsWith("?presenter")) html.classList.add("standby");	// (setHtmlClass isn't defined yet here)
+// Arm presets (the button bar's Presets label is its switch; preset_arm): a preset only arms the timer
+// (armTimer: its time, paused and standing by) and Space, Resume or the deck's Start key starts it
+var presetArm = localStorage.getItem("preset_arm") === "1";
+if (presetArm && !window.location.search.startsWith("?presenter")) html.classList.add("presetarm");
 
 
 let lastUpdateTick = 0;
@@ -232,6 +227,8 @@ custom_message.addEventListener('focus', function(){
   // Show the current message on load. Without this, a presenter window opened after a
   // message was set (or a reloaded controller) stayed blank until the message changed.
   (function restoreStoredMessage() {
+	  loadMessages();
+	  if (runMode !== "presenter") { renderMessage(false); return; }
 	  const msg = localStorage.getItem("custom_message");
 	  if (msg) {
 		  custom_message.textContent = msg;
@@ -245,7 +242,8 @@ custom_message.addEventListener('focus', function(){
   
   doc.addEventListener("contextmenu",function(e){ e.preventDefault();});
   addEventListener('storage',onLocalStorage);
-  
+  doc.addEventListener("clock-moved",onClockMoved);
+
 		   // Only key-macro buttons; others (deck, share) have their own click handlers
 		   [].forEach.call(document.querySelectorAll('div.buttons div.btn[data-keys]'),function(el){
 			  el.addEventListener('pointerdown',keyMacroClick);
@@ -253,6 +251,10 @@ custom_message.addEventListener('focus', function(){
 
 		  
  
+		  const presetArmBadge = document.getElementById("preset_arm");	// Arm presets' switch (setPresetArm)
+		  if (presetArmBadge) presetArmBadge.addEventListener("click", function () { setPresetArm(!presetArm); });
+		  presetArmTitle();
+
 		  function keyMacroClick(e) {
 			  if (e.pointerType === "mouse") {
 				  if (e.button !== 0) {
@@ -289,6 +291,10 @@ custom_message.addEventListener('focus', function(){
 					}
 			  }
 			  
+			  // Arm presets: a preset sets the default (Space as Enter, like Shift+click), then arms it
+			  const arm = presetArm && !e.shiftKey && keys[0].key === " " && this.closest(".btn-presets");
+			  if (arm) keys = keys.map(function(k){ return k.key === " " ? { key: "Enter" } : k; });
+
 			  keys.forEach(function(e){
 				  if (e.__up) { 
 					onDocKeyUp(e);
@@ -296,6 +302,7 @@ custom_message.addEventListener('focus', function(){
 					onDocKeyDown(e);
 				  }
 			  });
+			  if (arm) armTimer(defaultDuration);
 		  }
 		  
   
@@ -317,21 +324,71 @@ custom_message.addEventListener('focus', function(){
   }
   
   
-  // The message currently on screen ('' when none). Messages are set from several places
-  // (C key, custommessage command, remote-json, storage sync), so it is announced from one point.
+  // Messages come in two layers: the run sheet item's name (itemMessage, the `itemmessage` command) and
+  // the operator's own (operatorMessage: C, the `custommessage` command from phones, the deck, Companion).
+  // The screen shows the operator's if there is one, else the item's, so clearing the operator's brings
+  // the item's name back. (The automatic notices, notices.js, are a third kind with their own line.)
+  // Quiet mode (Q, the `quiet` command; html.quiet) takes everything but the countdown off the presenter
+  // screens for a while; the run sheet ends it when an item starts. localStorage: message_item,
+  // message_operator, quiet; custom_message holds what's on screen (the presenter window shows it).
+  // var and no initial values: loadMessages() runs (restoreStoredMessage) before these lines execute
+  var itemMessage, operatorMessage, quiet;
+  function shownMessage() { return operatorMessage || itemMessage || ""; }
+  function loadMessages() {
+	  const item = localStorage.getItem("message_item"), op = localStorage.getItem("message_operator");
+	  if (item === null && op === null) {			// saved before the layers: whatever was showing counts as the operator's
+		  itemMessage = ""; operatorMessage = (localStorage.getItem("custom_message") || "").trim();
+	  } else {
+		  itemMessage = (item || "").trim(); operatorMessage = (op || "").trim();
+	  }
+	  quiet = localStorage.getItem("quiet") === "1";
+	  if (quiet) setHtmlClass("quiet"); else clearHtmlClass("quiet");
+  }
+  // Puts the shown message on screen (not over one being typed); store: save the layers (own changes only)
+  function renderMessage(store) {
+	  const msg = shownMessage();
+	  if (!html.classList.contains("edit_custom_message")) {
+		  custom_message.contentEditable = false;
+		  custom_message.innerText = msg;
+		  if (msg) setHtmlClass("show_custom_message"); else clearHtmlClass("show_custom_message");
+	  }
+	  if (store) {
+		  localStorage.setItem("message_item", itemMessage);
+		  localStorage.setItem("message_operator", operatorMessage);
+		  localStorage.setItem("custom_message", msg);
+	  }
+  }
+  function setOperatorMessage(text) {
+	  operatorMessage = String(text || "").trim();
+	  clearHtmlClass("edit_custom_message");
+	  renderMessage(true);
+  }
+  function setItemMessage(text) {
+	  itemMessage = String(text || "").trim();
+	  renderMessage(true);
+  }
+  function setQuiet(on) {
+	  quiet = !!on;
+	  if (quiet) { setHtmlClass("quiet"); localStorage.setItem("quiet", "1"); }
+	  else { clearHtmlClass("quiet"); localStorage.removeItem("quiet"); }
+  }
+
+  // The message currently on screen ('' when none), announced from one point each tick
   function currentCustomMessage() {
-	  return html.classList.contains("show_custom_message") ? custom_message.textContent.trim() : "";
+	  return shownMessage();
   }
   var lastAnnouncedMessage = null;   // var: displayUpdate runs before later lines execute
   function announceCustomMessage(force) {
 	  const msg = currentCustomMessage();
-	  if (!force && msg === lastAnnouncedMessage) return;
-	  lastAnnouncedMessage = msg;
+	  const kind = operatorMessage ? "operator" : itemMessage ? "item" : "";
+	  const sig = [msg, itemMessage, operatorMessage, !!quiet].join("\u0000");
+	  if (!force && sig === lastAnnouncedMessage) return;
+	  lastAnnouncedMessage = sig;
 	  // Long messages (e.g. run sheet item names) get a smaller font so they don't run into the countdown
 	  if (msg.length > 90) { setHtmlClass("msg-xlong"); clearHtmlClass("msg-long"); }
 	  else if (msg.length > 28) { setHtmlClass("msg-long"); clearHtmlClass("msg-xlong"); }
 	  else { clearHtmlClass("msg-long"); clearHtmlClass("msg-xlong"); }
-	  if (timerAPI) timerAPI.send({ setVariableValues: { custommsg: msg } });
+	  if (timerAPI) timerAPI.send({ setVariableValues: { custommsg: msg, item_msg: itemMessage || "", operator_msg: operatorMessage || "", msg_kind: kind, quiet: !!quiet } });
   }
 
   // The tick that drives everything (display, bus, Stream Deck, phones, Companion). In a
@@ -349,8 +406,9 @@ custom_message.addEventListener('focus', function(){
 
   // Standby on or off (the `standby` API command; restartTimer ends it). at: an auto start time (ms) or
   // null; start: the first item's planned start (ms) or null, for "will start at" / "will end at"
-  function setStandby(on, at, start) {
+  function setStandby(on, at, start, armed) {
 	  standby = on ? { at: Number.isFinite(at) ? at : null, start: Number.isFinite(start) ? start : null } : null;
+	  if (standby && armed) standby.armed = true;	// an armed preset (armTimer): standbyStart starts it
 	  if (standby) localStorage.setItem("standby", JSON.stringify(standby)); else localStorage.removeItem("standby");
 	  if (standby) setHtmlClass("standby"); else clearHtmlClass("standby");
 	  clockAnchor = null;			// devices get the new notice with the next anchor
@@ -362,6 +420,11 @@ custom_message.addEventListener('focus', function(){
   // Resume or restart while standing by starts the show (the run sheet's first item), not just the countdown
   function standbyStart() {
 	  if (!standby) return false;
+	  if (standby.armed) {		// an armed preset: from its full time, unless a time has been typed since (Space starts that)
+		  if (enterTimeText !== "") { setStandby(false); return false; }
+		  restartTimer();
+		  return true;
+	  }
 	  if (window.runsheet && window.runsheet.standbyStart && window.runsheet.standbyStart()) return true;
 	  setStandby(false);
 	  return false;
@@ -641,9 +704,6 @@ custom_message.addEventListener('focus', function(){
 					 }
 					 
 					 
-					 if (wc_viewer && wc_viewer.updateFlyoutVideoFrame) {
-                        wc_viewer.updateFlyoutVideoFrame (undefined,undefined,elapsedMsecAbs,remainMsecAbs);
-					 }
 				  }
 		 }
 		 localStorage.setItem("remainDispClass",html.className);
@@ -667,20 +727,22 @@ custom_message.addEventListener('focus', function(){
 	  const typed = getEl("ep_typed"), clock = getEl("ep_clock"), words = getEl("ep_words");
 	  if (!typed) return;
 	  typed.textContent = enterHoursText !== "" ? enterHoursText + ":" + enterTimeText : enterTimeText;
-	  getEl("ep_unit").textContent = enterHoursText !== "" ? (enterTimeText === "" ? "hours :" : "h : min") : "min";
+	  getEl("ep_unit").textContent = enterHoursText !== "" ? (enterTimeText === "" ? "hours :" : enterTimeText.includes("..") ? "h : min . . s" : "h : min") : enterTimeText.includes("..") ? "min . . s" : "min";
 	  clock.textContent = secToStr(sec);
 	  words.textContent = durationWords(sec);
   }
 
-  function updateEnteredTimeText () {
-		 renderEntryPad((Number(enterHoursText) * 3600) + (Number(enterTimeText) * 60));
-		 if (enterHoursText === "") {
-			dispNextMins.textContent = secToStr(Number(enterTimeText) * 60);
-		 } else {
-			dispNextMins.textContent = secToStr((Number(enterHoursText) * 3600) + (Number(enterTimeText) * 60)); 
-		 } 
+  // The typed time in seconds: hours before ":", then minutes (1.5 = a minute and a half); a second
+  // "." straight after the first separates minutes from seconds (1..30, 1:20..25)
+  function enteredSec() {
+	  const mm = enterTimeText.split("..");
+	  return Number(enterHoursText) * 3600 + Number(mm[0]) * 60 + (mm.length > 1 ? Number(mm[1]) : 0);
   }
 
+  function updateEnteredTimeText () {
+		 renderEntryPad(enteredSec());
+		 dispNextMins.textContent = secToStr(enteredSec());
+  }
 
  // Custom styles (Ctrl+S) are stored as only the rules that differ from timer.css and
  // applied in a second <style> after it, so later changes to timer.css still show up.
@@ -845,17 +907,39 @@ custom_message.addEventListener('focus', function(){
  }
 
   
+  // A preset with Arm presets on (the `preset` command, the button bar's presets): its time becomes the
+  // default and shows paused, standing by, until Space, Resume or the deck's Start key (standbyStart)
+  function armTimer(msecs) {
+	setDefaultDuration(msecs);
+	if (timerAPI) timerAPI.send({ setVariableValues: { default: dispNextMins.textContent } });
+	restartTimer(msecs);
+	const armedAt = startedAt;
+	setTimeout(function () {		// a moment after the start: paused at exactly N.000 s the display reads N+1
+		if (startedAt !== armedAt || pausedAt !== undefined) return;		// started again (or paused) meanwhile
+		onKey_Pause();
+		setStandby(true, null, null, true);
+	}, 60);
+  }
+
+  function setPresetArm(on) {
+	presetArm = !!on;
+	if (presetArm) localStorage.setItem("preset_arm", "1"); else localStorage.removeItem("preset_arm");
+	if (presetArm) setHtmlClass("presetarm"); else clearHtmlClass("presetarm");
+	if (timerAPI) timerAPI.send({ setVariableValues: { preset_arm: presetArm } });	// the deck's Arm presets key
+	presetArmTitle();
+  }
+  function presetArmTitle() {
+	const el = document.getElementById("preset_arm");
+	if (el) el.title = presetArm
+		? "Presets only ARM the timer: they show the time, paused. Press Space (or the Stream Deck's Start key) to start it. Click to turn this off"
+		: "Click to make presets arm the timer (show the time, paused) instead of starting it";
+  }
+
   function restartTimer(useDuration) {
 	if (standby) setStandby(false);		// any start ends standby
 	thisDuration = useDuration ===undefined ? defaultDuration : useDuration;
 	lastUpdateTick = 0;
 	startedAt  = timeProvider.now();  
-	if (wc_viewer) {
-	    wc_viewer.reset();
-	    setHtmlClass('video-track');
-	} else {
-	    clearHtmlClass('video-track');
-	}
 	endsAt	 = startedAt + thisDuration;
 	pausedAt=undefined;
 	pauseAcum=0;
@@ -881,6 +965,7 @@ custom_message.addEventListener('focus', function(){
 		timerAPI.send( {
 			setVariableValues:{
 				startedAt:startedDisp.textContent,
+				started_ms:startedAt,			// the start as a time (the assist station's "started here")
 				endsAt:endsDisp.textContent,
 				default:durationDisp.textContent,
 				paused:'0:00',
@@ -902,13 +987,24 @@ custom_message.addEventListener('focus', function(){
 		  pausedAt: pausedAt === undefined ? null : pausedAt,
 		  pauseAcum,
 		  message: currentCustomMessage(),
+		  itemMessage: itemMessage || "", operatorMessage: operatorMessage || "", quiet: !!quiet,
 		  standby: !!standby,
 		  standbyText: standby && pausedAt ? standbyText(timeProvider.now()) : "",	// for the run sheet dashboard
 	  };
   }
 
-  // Restores the countdown. The message is restored separately by the `restore`
-  // API command (via `custommessage`), so it reaches the presenter screen too.
+  // Restores the countdown. The messages and quiet mode are restored separately by the `restore`
+  // API command (restoreMessages), so they reach the presenter screen too.
+  function restoreMessages(s) {
+	  if (!s) return;
+	  if ("operatorMessage" in s) {
+		  itemMessage = String(s.itemMessage || "").trim();
+		  setOperatorMessage(s.operatorMessage);
+		  setQuiet(s.quiet);
+	  } else {
+		  setOperatorMessage(s.message || "");		// a snapshot from before the layers
+	  }
+  }
   function restoreTimerState(s) {
 	  if (!s || !isFinite(s.startedAt)) return;
 	  setDefaultDuration(s.defaultDuration);          // first: it may also set thisDuration
@@ -940,12 +1036,45 @@ custom_message.addEventListener('focus', function(){
 	  if (timerAPI) {
 		  timerAPI.send({ setVariableValues: {
 			  startedAt: startedDisp.textContent,
+			  started_ms: startedAt,
 			  endsAt: endsDisp.textContent,
 			  default: secToStr(defaultDuration / 1000),
 			  pausing: pausedAt !== undefined,
 		  }});
 	  }
 	  displayUpdate();
+  }
+
+  // The clock was corrected (inettime.js): everything held on it moves too, so the countdown carries
+  // on exactly as it was and only the times of day change.
+  function onClockMoved(ev) {
+	  const delta = ev.detail;
+	  startedAt  += delta;
+	  endsAt     += delta;
+	  seekEndsAt += delta;
+	  writeNumber("startedAt", startedAt);
+	  writeNumber("endsAt", endsAt);
+	  writeNumber("seekEndsAt", seekEndsAt);
+	  if (pausedAt !== undefined) {
+		  pausedAt += delta;
+		  writeNumber("pausedAt", pausedAt);
+	  }
+	  // The tabs' heartbeats are on this clock too: without this a jump makes them look dead
+	  Object.keys(localStorage).filter(function(k){ return k.startsWith("tab_") || k.startsWith("controller_tab_"); }).forEach(function(k){
+		  writeNumber(k, Number(localStorage.getItem(k)) + delta);
+	  });
+	  lastHeartbeat = 0;
+	  lastUpdateTick = 0;
+
+	  startedDisp.textContent = local24HourTime(timeProvider.date(startedAt));
+	  endsDisp.textContent    = local24HourTime(timeProvider.date(seekEndsAt));
+	  if (timerAPI) {
+		  timerAPI.send({ setVariableValues: {
+			  startedAt: startedDisp.textContent,
+			  started_ms: startedAt,
+			  endsAt: endsDisp.textContent,
+		  }});
+	  }
   }
 
   function setPresenterMode() {
@@ -992,32 +1121,13 @@ function onLocalStorage(ev){
 	            const {cmd, msg, msecs, endTime } = JSON.parse(json);
 	            
 	            const doMsg = (msg)=>{
-	                 if (typeof msg==='string') {
-                        html.classList.remove("edit_custom_message");
-                        if (msg.length===0) {
-                            html.classList.remove("show_custom_message");
-                        } else {
-                        	html.classList.add("show_custom_message");
-                        }
-                    	custom_message.innerText=msg;
-                    	custom_message.contentEditable=false;
-                    }
+	                 if (typeof msg==='string') setOperatorMessage(msg);
 	            };
 	            
 	            switch (cmd) {
 	                
 	                case 'custom' : 
-	                    if (msg && msg.length>0) {
-	                        html.classList.remove("edit_custom_message");
-                        	html.classList.add("show_custom_message");
-                        	custom_message.innerText=msg;
-                        	custom_message.contentEditable=false;
-	                    } else {
-	                         html.classList.remove("edit_custom_message");
-	                         html.classList.remove("show_custom_message");
-	                         custom_message.innerText="";
-                        	 custom_message.contentEditable=false;
-	                    }
+	                    setOperatorMessage(msg || "");
 	                    break;
 	                case 'restart' :
 	                    restartTimer(msecs);
@@ -1089,7 +1199,9 @@ function onLocalStorage(ev){
 
 	  }
 	  
-	  if (ev.key==="custom_message") {
+	  if (runMode!=="presenter" && ev.key==="quiet") { quiet = ev.newValue === "1"; if (quiet) setHtmlClass("quiet"); else clearHtmlClass("quiet"); }
+	  if (runMode!=="presenter" && ev.key==="custom_message") { loadMessages(); renderMessage(false); }
+	  else if (ev.key==="custom_message") {
 		  let msg = localStorage.getItem("custom_message");
 		  custom_message.textContent=msg;
 		  if (msg==="") {
@@ -1159,7 +1271,6 @@ function getTabCount(cont) {
 	return count;
 }
 
-let custom_msg_timeout;
 
 function onKey_Pause(ev) {
 		if (standby && html.classList.contains("paused") && standbyStart()) return;   // Resume in standby: the show starts
@@ -1272,10 +1383,18 @@ function  onKey_Shift_ArrowUp(ev) {
 	 displayUpdate();
 }
 
+// ← / → shift the whole timer by a second; Ctrl or Shift: a minute (Shift because macOS keeps
+// Ctrl+← / → for switching desktops, so the page never sees them there)
+function arrowStep(ev) {
+	const minutes = controlling || !!(ev && ev.shiftKey);
+	return { start: minutes ? 60000 : 1000, seek: minutes ? 60000 : 1000, end: minutes ? 60000 : 0 };
+}
+
 function onKey_ArrowLeft(ev) {
 
-	bumpStart(0-nudgeFactor);
-	bumpEnd(0-seekEndDelta,0-endDelta);
+	const step = arrowStep(ev);
+	bumpStart(0-step.start);
+	bumpEnd(0-step.seek,0-step.end);
 	
 	durationDisp.textContent = secToStr((seekEndsAt-startedAt) / 1000);
 	displayUpdate();
@@ -1286,8 +1405,9 @@ function onKey_ArrowRight(ev) {
 
 
 
-	bumpStart(nudgeFactor); 
-	bumpEnd(seekEndDelta,endDelta);
+	const step = arrowStep(ev);
+	bumpStart(step.start); 
+	bumpEnd(step.seek,step.end);
 	
 	durationDisp.textContent = secToStr((seekEndsAt-startedAt) / 1000);
 	displayUpdate();
@@ -1355,167 +1475,6 @@ function catchUpNow() {
 	writeNumber("endsAt",endsAt);
 }
 
-let videoFrameTimer;
-
-function hideFSVideoAfterTimeout () {
-    if (videoFrameTimer) {
-        clearTimeout(videoFrameTimer);
-        videoFrameTimer = undefined;
-    }
-    clearHtmlClass("video-live-fullscreen");
-	clearHtmlClass("video-start-fullscreen");
-	if (wc_viewer) {
-        wc_viewer.updateTimestamp(wc_viewer.getTimestamp());
-	}
-    clearHtmlClass("video-live-fullscreen");
-	clearHtmlClass("video-start-fullscreen");}
-
-function onVideoUpdate () {
-    if (videoFrameTimer) {
-		clearTimeout(videoFrameTimer);
-		videoFrameTimer = undefined;
-    }
-	if (wc_viewer.showingLive() &&  html.classList.contains("video-auto") ) {	
-        clearHtmlClass("video-live-fullscreen");
-        setHtmlClass("video-start-fullscreen");
-	    videoFrameTimer = setTimeout(hideFSVideoAfterTimeout,2000);
-	}
-	
-}
-
-function onVideoReset () {
-    onVideoUpdate ();
-}
-
-function onKey_V(ev) {
-   // V by itself = toggle live view
-    if (!wc_viewer) {   
-			wc_viewer = createTimestampViewer(wc_videoElement,wc_canvas,wc_canvas2,wc_canvas3);
-			wc_viewer.on('update',onVideoUpdate);
-			wc_viewer.on('reset',onVideoReset);
-		    setHtmlClass('video-track');
-		    clearHtmlClass("video-auto");
-	} else {
-		wc_viewer.showLive(!wc_viewer.showingLive());
-		setHtmlClass('video-track');
-		clearHtmlClass("video-auto");
-    }
-    clearHtmlClass("video-live-fullscreen");
-    clearHtmlClass("video-start-fullscreen");
-}
-
-function onKey_Shift_V(ev) {
-	if (!wc_viewer) {   
-		
-			wc_viewer = createTimestampViewer(wc_videoElement,wc_canvas,wc_canvas2,wc_canvas3);
-			wc_viewer.on('update',onVideoUpdate);
-			wc_viewer.on('reset',onVideoReset);
-			clearHtmlClass("video-live-fullscreen");
-			clearHtmlClass("video-start-fullscreen");
-			setHtmlClass('video-track');
-	
-	} else {
-		// shift V = choose next camera
-		wc_viewer.nextCamera();
-	}
-}
-
-
-
-function onKey_Control_V(ev) {
-	if (!wc_viewer) {   
-		wc_viewer = createTimestampViewer(wc_videoElement,wc_canvas,wc_canvas2,wc_canvas3);
-		wc_viewer.on('update',onVideoUpdate);
-		wc_viewer.on('reset',onVideoReset);
-		clearHtmlClass("video-start-fullscreen");
-		setHtmlClass("video-live-fullscreen");
-		wc_viewer.showLive(true);
-		setHtmlClass("video-auto");
-		setHtmlClass('video-track');
-	} else {
-	
-		if (wc_viewer.getTimestamp()) {
-		    
-		    if (html.classList.contains("video-auto")) {
-                clearHtmlClass("video-auto");
-                hideFSVideoAfterTimeout ();
-		    } else {
-		        setHtmlClass("video-auto");
-		        wc_viewer.showLive(true);
-		
-		    }
-
-	        onVideoUpdate ();
-	
-		} else {
-	    	setHtmlClass("video-live-fullscreen");
-	    	clearHtmlClass("video-start-fullscreen");
-    		setHtmlClass('video-track');
-	    	toggleHtmlClass('video-auto');
-	    	if (html.classList.contains('video-auto')) {
-	            wc_viewer.showLive(true);
-	    	}	
-    		onVideoUpdate ();
-		}
-	}
-}
-
-function onKey_Control_Shift_V(ev) {
-	if (wc_viewer) {   
-		// ctrl-shift-v = stop using video mode
-		hideFSVideoAfterTimeout ();
-		 wc_viewer.stop();
-		 wc_viewer=undefined;
-		 
-	 }
-	 
-	 if (window.top.flyoutVideoWin) {
-		 window.top.flyoutVideoWin.close();
-		 window.top.flyoutVideoWin = undefined;
-	 }
-	  
-	clearHtmlClass("video-live-fullscreen");
-	clearHtmlClass("video-start-fullscreen");
-	clearHtmlClass('video-track');
-	clearHtmlClass('video-auto');
-	wc_canvas.style.display="none";
-	wc_canvas2.style.display="none";
-	wc_canvas3.style.display="none";
-	
-}
-
-function onKey_Control_Shift_W(ev) {
-	if (wc_viewer) {   
-		// ctrl-shift-v = stop using video mode
-		hideFSVideoAfterTimeout ();
-		 wc_viewer.stop();
-		 wc_viewer=undefined;
-		 
-	 }
-	 clearHtmlClass('video-track');
-}
-function onKey_Shift_W(ev) {
-    if (!wc_viewer) {   
-		wc_viewer = createTimestampViewer(wc_videoElement,wc_canvas,wc_canvas2,wc_canvas3,true);
-		wc_viewer.on('update',onVideoUpdate);
-		wc_viewer.on('reset',onVideoReset);
-		clearHtmlClass("video-live-fullscreen");
-		clearHtmlClass("video-start-fullscreen");
-	    setHtmlClass('video-track');
-	} else {
-	    wc_viewer.useScreenCapture();
-        clearHtmlClass("video-live-fullscreen");
-        clearHtmlClass("video-start-fullscreen");
-	}
-}
-
-function onKey_W (ev) {
-
-}
-
-function onKey_Control_W (ev) {
-
-}
 
 
 function onKey_M (ev) {
@@ -1647,33 +1606,17 @@ function onDocKeyDown(ev){
 	   
 		if  ( ev.key === "Enter") {
 			   custom_message.contentEditable=false;
-			   html.classList.remove("edit_custom_message");
-			   if (custom_message.textContent==="custom message") {
-				   html.classList.remove("show_custom_message");
-				   localStorage.setItem("custom_message","");
-				   
-			   } else {
-				   html.classList.add("show_custom_message");
-				   custom_msg_timeout = setTimeout(function(){
-					   custom_msg_timeout = undefined;
-					   localStorage.setItem("custom_message",custom_message.textContent);
-				   },500);
-			   }
+			   const typed = custom_message.textContent.trim();
+			   setOperatorMessage(typed === "custom message" ? "" : typed);	// nothing typed: the item's name comes back
 		}
 	   return checkModifiers();
    } else {
-	   if (html.classList.contains("show_custom_message")) {
+	   // C clears the operator's message (the item's name comes back); over just an item name it opens the editor
+	   if (operatorMessage && !ev.ctrlKey) {
 
 			if  ( ev.key ==="c" || ev.key==="C") {
-			   html.classList.remove("edit_custom_message");
-			   html.classList.remove("show_custom_message");
-			   if (custom_msg_timeout) {
-				   clearTimeout(custom_msg_timeout);
-				   custom_msg_timeout = undefined;
-			   }
-			   localStorage.setItem("custom_message","");
-			   return checkModifiers();		   
-			   
+			   setOperatorMessage("");
+			   return checkModifiers();
 			}
 
 	   }
@@ -1717,7 +1660,8 @@ function onDocKeyDown(ev){
 			case "'":  return onKey_UndoPause (ev);
 				
 			case ".":
-				 if ( (enterTimeText !== "") && (enterTimeText.indexOf(".") <0 ) ) {
+				 // a decimal point, or a second one straight after it: minutes .. seconds
+				 if ( (enterTimeText !== "") && (enterTimeText.indexOf(".") <0 || /^\d+\.$/.test(enterTimeText)) ) {
 					 
 					 enterTimeText = enterTimeText + ev.key;
 					 setHtmlClass("editing");
@@ -1769,6 +1713,8 @@ function onDocKeyDown(ev){
 			case "Q":
 					if (controlling) {
 						onKey_Ctrl_Q(ev);
+					} else if (runMode !== "presenter" && !ev.repeat) {
+						setQuiet(!quiet);		// quiet mode: only the countdown on the presenter screens
 					}
 	
 					break;
@@ -1939,45 +1885,6 @@ function onDocKeyDown(ev){
 			    
 				break;
 				
-			case "v":
-			    
-			case "V":
-			    if (window.location.search !== "?presenter") {
-			        
-			        if (controlling) {
-			            if (shifting) {
-			                onKey_Control_Shift_V (ev);
-						} else {
-							onKey_Control_V (ev);
-						}
-			        } else {
-			            if (shifting) {
-			              
-			                onKey_Shift_V (ev);
-			                
-			            } else {
-			                onKey_V (ev);
-			            }
-			        }
-			        
-    			   
-
-			    }			    
-			    break;
-			 case "w" :
-			 case "W" :
-			     
-			     if (window.location.search !== "?presenter") {
-					 
-					 	 if (shifting) {
-        				    onKey_Shift_W (ev);
-            			 }
-				 
-					
- 
-				 }				
-				 break;
-
 			case "o":
 			case "O":
 				if (!controlling) {onKey_O (ev);}
@@ -2057,7 +1964,7 @@ function isSingleScreenMode() {
 
 	function saveEditedTime(){
 		if (  (enterTimeText !== "" ) ) {
-			setDefaultDuration  ( ((Number(enterHoursText) * 3600) + (Number(enterTimeText) * 60) ) * 1000);
+			setDefaultDuration  ( enteredSec() * 1000);
 
 			if (timerAPI) {
 				timerAPI.send( {setVariableValues:{default:dispNextMins.textContent}});
@@ -2093,10 +2000,7 @@ add milliseconds to the start time
 		writeNumber("startedAt",startedAt);
 		lastTimeText="";
 		if (timerAPI) {
-			timerAPI.send ({setVariableValues:{startedAt:startedDisp.textContent}});
-		}
-		if (wc_viewer) {
-		    wc_viewer.updateTimestamp(startedAt);
+			timerAPI.send ({setVariableValues:{startedAt:startedDisp.textContent, started_ms:startedAt}});
 		}
 	}
 	
@@ -2238,11 +2142,6 @@ add milliseconds to the start time
 	 if (timerWin) {
 		timerWin.close();
 		timerWin = undefined;
-	 }
-	 
-	 if (window.top.flyoutVideoWin) {
-		window.top.flyoutVideoWin.close();
-		window.top.flyoutVideoWin = undefined;
 	 }
 	 
 	 if ( window.top.flyoutPlayerWin ) {

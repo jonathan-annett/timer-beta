@@ -201,92 +201,7 @@ html.reduced #now_disp:before {
       font-size:2vh;
 }
 
- #wc_canvas2 {
-    position : absolute;
-    left     : 4px;
-  top : calc( 50% - 44px );
-    width    : 15vw;
-    height   : auto;
- }
- #wc_canvas3 {
-    position : absolute;
-    right    : 4px;
-   top : calc( 50% - 44px );
-    width    : 15vw;
-    height   : auto;
- }
- 
 
-
-#video-track, #video-auto {
-    font-size:2vh;
-    position : absolute;
-    left : 0;
-    bottom : 0;
-    width : auto;
-    display:none;
-}
-html.video-auto #video-auto {
-    left : 140px;
-    display : block;
-    color : red;
-}
-html.video-track #video-track {
-    display : block;
-    color : lime;
-}
- 
-video.screenVideoElement {
-    display : none;
-}
- 
- html.video-start-fullscreen  #wc_canvas3  {
-    top	  : 0;
-	left	 : 0;
-	width	: 0;
-	height   : 0;
-	
- }
- 
- html.video-start-fullscreen  #wc_canvas2,
- html.video-live-fullscreen   #wc_canvas3 {
-	 
-	position : absolute;
-	left	 : 5vw;
-	top	  : 2vh;
-	width	: 90vw;
-	height   : auto;
-	z-index  : 999998;
- }
-
-
- html.video-live-fullscreen  div.buttons span,
- html.video-live-fullscreen  div.buttons div,
- html.video-live-fullscreen  #elapsed_disp,
- html.video-live-fullscreen  #started_disp,
- html.video-live-fullscreen  #ends_disp,
- html.video-live-fullscreen  #duration_disp,
- 
- html.video-start-fullscreen  div.buttons span,
- html.video-start-fullscreen  div.buttons div,
- html.video-start-fullscreen  #elapsed_disp,
- html.video-start-fullscreen  #started_disp,
- html.video-start-fullscreen  #ends_disp,
- html.video-start-fullscreen  #duration_disp {
-     
-     display : none;
- } 
-
-html.video-start-fullscreen body.fullscreen  #wc_canvas2,
-html.video-live-fullscreen  body.fullscreen #wc_canvas3 {
-    position : absolute;
-    top	  : 0;
-    left	 : 0;
-    width	: 100vw;
-    height   : auto;
-    
-    z-index  : 999999;
-}
 
 /* (video player controls: styled by dropPlayer.js) */
 
@@ -411,12 +326,6 @@ html.show_custom_message.paused #remain_info_message {
     display:none;
 }
  
-html.reduced #video-track,
-html.reduced #video-auto,
-html.reduced #wc_canvas,
-html.reduced #webcam,
-html.reduced #wc_canvas2,
-html.reduced #wc_canvas3,
 html.reduced #messages_enabled {
     display:none;
     
@@ -610,7 +519,7 @@ html.over.paused #ends_disp {
 html.standby.paused #remain_info_message { display: block !important; }
 /* The operator's screen shows that notice in the run sheet dashboard instead (#rs_standby), and the
    times as what will happen: "will start at" / "will end at" (timer.js), steady, no pause total */
-html.standby.paused:not(.reduced) #remain_info_message { display: none !important; }
+html.runsheet.standby.paused:not(.reduced) #remain_info_message { display: none !important; }   /* (outside run sheet mode: an armed preset, which has no dashboard) */
 html.standby #started_disp:before { content: "will start at "; color: var(--color-future-start); }
 html.standby #ends_disp:before { content: "will end at "; }
 html.standby.paused #ends_disp { animation: none !important; color: inherit !important; }
@@ -619,33 +528,24 @@ html.standby #extra_time_disp { display: none !important; }
 
 
 /* Keyboard hints (timer.html #key_hints): one line per state, key caps and emoji; the state classes
-   pick which. Shift/Ctrl held change what the arrows do; typing a time, editing the message and the
-   video modes have their own. The duration after it hides when it doesn't apply. */
+   pick which. Shift/Ctrl held change what the arrows do; typing a time and editing the message have
+   their own. The duration after it hides when it doesn't apply. */
 #key_hints { color: var(--color-keyboard-help-text); }
 #key_hints .kh { display: none; }
 #key_hints kbd { display: inline-block; min-width: 1.1em; padding: 0 0.35em; margin: 0 0.1em; border: 1px solid #444; border-bottom-width: 2px;
   border-radius: 4px; background: #1a1a1a; color: #ccc; font: inherit; font-size: 0.9em; line-height: 1.3; text-align: center; }
-html:not(.editing):not(.edit_custom_message):not(.video-live-fullscreen):not(.video-start-fullscreen):not(.controlling):not(.shifting) #key_hints .kh-plain,
+html:not(.editing):not(.edit_custom_message):not(.controlling):not(.shifting) #key_hints .kh-plain,
 html.controlling:not(.shifting):not(.editing):not(.edit_custom_message) #key_hints .kh-ctrl,
 html.shifting:not(.controlling):not(.editing):not(.edit_custom_message) #key_hints .kh-shift,
 html.shifting.controlling:not(.editing):not(.edit_custom_message) #key_hints .kh-shiftctrl,
 html.editing:not(.edit_custom_message) #key_hints .kh-edit,
-html.edit_custom_message #key_hints .kh-msg,
-html.video-live-fullscreen:not(.editing):not(.edit_custom_message) #key_hints .kh-vlive,
-html.video-start-fullscreen:not(.editing):not(.edit_custom_message) #key_hints .kh-vstart { display: inline; }
-
-html.video-start-fullscreen  #link,
-html.video-live-fullscreen  #link {
-   display:none;
-}
+html.edit_custom_message #key_hints .kh-msg { display: inline; }
 
 /* the duration: lime while typing it, yellow with a message up, hidden where Space doesn't start it */
 html.show_custom_message #disp_next_mins { color: yellow; }
 html.editing #disp_next_mins { color: var(--color-next-default-editing); }
 html.controlling:not(.editing) #disp_next_mins,
-html.edit_custom_message #disp_next_mins,
-html.video-start-fullscreen #disp_next_mins,
-html.video-live-fullscreen #disp_next_mins { visibility: hidden; }
+html.edit_custom_message #disp_next_mins { visibility: hidden; }
 
 .fs_only {
    display : none;    
@@ -838,6 +738,13 @@ div.buttons .btn-label {
 }
 div.buttons .btn-label:first-child { margin-left: 2px; }
 div.buttons .btn-presets div.btn { font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Arm presets: the Presets label is the switch, a bright badge while on (html.presetarm) */
+div.buttons #preset_arm { cursor: pointer; padding: 2px 6px; border: 1px solid transparent; border-radius: 9px; }
+div.buttons #preset_arm:hover { color: var(--ui-text); border-color: var(--ui-faint); }
+#preset_arm .pa-on, html.presetarm #preset_arm .pa-off { display: none; }
+html.presetarm #preset_arm .pa-on { display: inline; }
+html.presetarm div.buttons #preset_arm { background: #ffd400; border-color: #ffd400; color: #000; font-weight: 700; }
+html.presetarm.runsheet .btn-presets > #preset_arm { visibility: visible; }   /* the deck's presets still arm: keep the warning in sight */
 
 /* Flex instead of inline-block: no stray whitespace gaps, so the row fits narrower screens */
 html.showbuttons div.buttons {
@@ -1605,7 +1512,7 @@ html.runsheet .btn-presets::after {
 /* In run sheet mode the controller's copy of the message moves to the top right,
    so long item names don't collide with the dashboard (presenter view unchanged). */
 html.runsheet:not(.reduced) #custom_message {
-  top: calc(var(--buttons-bottom, 104px) + 12px);
+  top: calc(var(--buttons-bottom, 104px) + 36px);   /* below the clock badge (clock-panel.js) */
   left: 50vw;
   right: 12px;
   width: auto;
@@ -1616,3 +1523,28 @@ html.runsheet:not(.reduced) #custom_message {
   overflow: hidden;
 }
 
+
+/* QUIET MODE (html.quiet: Q, the `quiet` command; ends when a run sheet item starts). The presenter
+   screens (html.reduced: the presenter window, display.html) show only the countdown: no message,
+   notice, time of day or bar. The operator's screen keeps them, dimmed, under a QUIET badge. */
+#quiet_badge { display: none; }
+html.quiet:not(.reduced) #quiet_badge {
+    display: block; position: absolute; top: 48px; left: 50%; transform: translateX(-50%); z-index: 5;
+    font: 13px var(--ui-font); color: #111; background: #ffcc33; border-radius: 5px; padding: 3px 10px; white-space: nowrap;
+}
+html.quiet:not(.reduced) #quiet_badge kbd { font: inherit; font-weight: bold; }
+html.quiet.reduced #custom_message,
+html.quiet.reduced #remain_info_message,
+html.quiet.reduced #now_disp,
+html.quiet.reduced #messages_enabled,
+html.quiet.reduced .mainDiv { display: none !important; }
+html.quiet:not(.reduced):not(.edit_custom_message) #custom_message,
+html.quiet:not(.reduced) #remain_info_message,
+html.quiet:not(.reduced) .mainDiv { opacity: 0.3; }
+
+/* Toggles in the button bar, lit while on: notices (M; replaces the yellow "messages enabled" line,
+   which is kept only on touch screens, where there's no button bar) and run sheet mode, however it
+   was turned on (Shift+click on the button, the editor, a phone, the deck) */
+html.showmessages div.buttons #btnnotices,
+html.runsheet div.buttons #btnrunsheet { border-color: #2a5a7a; color: #9fd8ff; }
+@media not (pointer: coarse) { #messages_enabled { display: none !important; } }

@@ -10,7 +10,8 @@
  *
  *   TimerNotices.words(custom?)   the words to use: defaults + custom (object or JSON string;
  *                                 omitted: this computer's notice_words)
- *   TimerNotices.notice(s, w)     the notice for s = {standby, paused, over, impending, msgs, pausedFor}:
+ *   TimerNotices.notice(s, w)     the notice for s = {standby, paused, over, impending, msgs, pausedFor, quiet}:
+ *                                 none in quiet mode;
  *                                 standby (the text) always; paused always (+ " · 2:13" with pausedFor);
  *                                 last minute / over time only with the messages switch (M) on
  *   TimerNotices.standby(ms, w)   the standby notice, ms until the auto start (≤ 0 or null: none)
@@ -70,7 +71,7 @@ var TimerNotices = (function () {
 
   function notice(s, w) {
     w = w || DEFAULTS;
-    if (!s) return '';
+    if (!s || s.quiet) return '';                // quiet mode: only the countdown
     if (s.standby) return s.standby;
     if (s.paused) return w.paused + (s.pausedFor ? ' · ' + s.pausedFor : '');
     if (!s.msgs) return '';

@@ -1,4 +1,4 @@
-/* global timerAPI,onKey_Pause,onKey_UndoPause,catchUpNow,announceCustomMessage,captureTimerState,restoreTimerState*/
+/* global timerAPI,presetArm,armTimer,setPresetArm,onKey_Pause,onKey_UndoPause,catchUpNow,announceCustomMessage,captureTimerState,restoreTimerState,restoreMessages,setOperatorMessage,setItemMessage,setQuiet,quiet*/
 
 function processTimerApiMessage(msg) {
     const { error,cmd, code } = msg ;
@@ -9,6 +9,12 @@ function processTimerApiMessage(msg) {
             restartTimer(msg.msecs);
             break;
         } 
+
+        // A preset (the deck's preset keys): starts it, or with Arm presets on only arms it (armTimer)
+        case "preset" : {
+            if (presetArm) armTimer(msg.msecs); else restartTimer(msg.msecs);
+            break;
+        }
 
         case "default" : {
             setDefaultDuration(msg.msecs);
@@ -74,7 +80,7 @@ function processTimerApiMessage(msg) {
 
         case "restore": {
             restoreTimerState(msg.state);
-            if (msg.state) processTimerApiMessage({ cmd: 'custommessage', text: msg.state.message || '' });
+            restoreMessages(msg.state);
             break;
         }
 
@@ -111,6 +117,30 @@ function processTimerApiMessage(msg) {
             break;
         }
 
+        // Move the start by msecs (+ = later: the speaker actually began after the timer started).
+        // whole (the default): the end moves too, so they still get their full time; whole false:
+        // only the start, so elapsed is put right and the end stays. From the assist station
+        // (remote-control.js); the run sheet records the moved start as the item's actual start.
+        // In run sheet mode the sheet decides whole (runsheet.shiftPolicy); the reply says which.
+        // A moved end is eased, not jumped: see below.
+        case "shiftstart": {
+            const ms = Math.round(Number(msg.msecs));
+            if (!Number.isFinite(ms) || !ms) break;
+            const was = startedAt;
+            // in run sheet mode the sheet decides (runsheet.shiftPolicy: the next item's auto start)
+            const pol = window.runsheet && window.runsheet.shiftPolicy ? window.runsheet.shiftPolicy(was) : null;
+            const whole = pol ? pol.whole : msg.whole !== false;
+            bumpStart(ms);
+            // The presenter never sees the seconds jump: under 30 s the countdown eases to the new end
+            // (as ↑/↓ do); from 30 s the minutes snap at once (the nearest whole minute) and the rest eases
+            if (whole) bumpEnd(ms, Math.abs(ms) < 30000 ? 0 : Math.round(ms / 60000) * 60000);
+            durationDisp.textContent = secToStr((seekEndsAt - startedAt) / 1000);
+            lastTimeText = "";
+            displayUpdate();
+            if (window.runsheet && window.runsheet.startShifted) window.runsheet.startShifted(was, ms, whole);
+            return { startedAt, seekEndsAt, whole };
+        }
+
         case "nudge": {
             if (msg.addtime) {
                 bumpEnd(msg.msecs, 0);
@@ -123,18 +153,27 @@ function processTimerApiMessage(msg) {
             break;
         }
 
+        // The operator's message ('' clears it, and the run sheet item's name shows again)
         case "custommessage": {
+            setOperatorMessage(typeof msg.text === "string" ? msg.text : "");
+            break;
+        }
 
-            html.classList.remove("edit_custom_message");
-            html.classList.remove("show_custom_message");
-            custom_message.innerText = msg.text.trim();
-            custom_message.contentEditable = false;
+        // The run sheet item's name: shown whenever there's no operator's message
+        case "itemmessage": {
+            setItemMessage(typeof msg.text === "string" ? msg.text : "");
+            break;
+        }
 
+        // Quiet mode: only the countdown on the presenter screens. {on: true|false}; no `on` toggles
+        // Arm presets on / off ({on}; no on toggles): the button bar's Presets badge, the deck's Arm presets key
+        case "presetarm": {
+            setPresetArm(typeof msg.on === "boolean" ? msg.on : !presetArm);
+            break;
+        }
 
-            if (custom_message.innerText.length > 0) {
-                html.classList.add("show_custom_message");
-            }
-            localStorage.setItem("custom_message", custom_message.innerText);
+        case "quiet": {
+            setQuiet(typeof msg.on === "boolean" ? msg.on : !quiet);
             break;
         }
 
@@ -222,6 +261,7 @@ function processTimerApiMessage(msg) {
                         showtimenow: localStorage.getItem('showtimenow') || '0',
                         showbar: localStorage.getItem('showbar') || '0',
                         showmessages: localStorage.getItem('showmessages') || '0',
+                        preset_arm: presetArm,
                         barpct: String(Math.floor(Number(localStorage.getItem('barpct')) || 0)),
                         htmlclass: document.documentElement.className,
                         paused: secToStr(pausedMsec / 1000),

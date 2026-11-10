@@ -13,37 +13,37 @@
       <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
       <link rel="manifest" href="manifest.json">
       <title>Presentation Timer</title>
-      <link rel="stylesheet" href="timer.css?v=a578d278" id="style_1">
+      <link rel="stylesheet" href="timer.css?v=2a1de527" id="style_1">
       <link rel="stylesheet" href="help-overlay.css?v=ab22e694">
   </head>
   <body>
       <script src="w3color.js?v=bdf5431f"></script> 
       <script src="fsapi.js?v=3ce5f801"></script>
-      <script src="inettime.js?v=cf74160a"></script>
-      <script src="tsview.js?v=dd5ebb23"></script>
-      <script src="features.js?v=4136908a"></script>
+      <script src="inettime.js?v=46355ee9"></script>
+      <script src="features.js?v=4ba08b60"></script>
       <script src="whats-new.js?v=1c7b0b76"></script>   <!-- not deferred: it checks for earlier timer state before timer.js writes any -->
       <script>var timerAPI = null; /* populated by streamdeck.js, remote-control.js and the others (each chains the previous one) */</script>
-      <script src="notices.js?v=d42b0943"></script>
+      <script src="notices.js?v=7f9aa52c"></script>
       <script src="key-focus.js?v=4b14eb98"></script>
-      <script src="overlay-view.js?v=abca4a81"></script>
-      <script src="local-overlay.js?v=c124fbf2"></script>
+      <script src="overlay-view.js?v=8086ceed"></script>
+      <script src="local-overlay.js?v=63b67b83"></script>
       <script src="elementcolors.js?v=3346b988"></script>
-      <script src="timerapi.js?v=5ee38730"></script>
-      <script src="timer.js?v=60af139d" defer></script>    
+      <script src="timerapi.js?v=f1813591"></script>
+      <script src="timer.js?v=20302be7" defer></script>    
       <script src="FileSaver.js?v=de19cbb6" defer></script>    
       <script src="video-store.js?v=069f77d9" defer></script>
-      <script src="dropPlayer.js?v=3514f595" defer></script>
+      <script src="dropPlayer.js?v=ba43f571" defer></script>
       <script src="notice-panel.js?v=5ae3f7e7" defer></script>
+      <script src="clock-panel.js?v=d8aa3fac" defer></script>
       <script src="video-library.js?v=bfdbb3f7" defer></script>
       <script src="deck-face.js?v=c546849b" defer></script>
-      <script src="streamdeck.js?v=4bf1bb42" defer></script>
+      <script src="streamdeck.js?v=efb400c6" defer></script>
       <script src="back-guard.js?v=1ffc51f1" defer></script>
       <script src="touchcontrols.js?v=a4339318" defer></script>
       <script src="runsheet-core.js?v=d0fec52c" defer></script>
-      <script src="runsheet.js?v=b08600eb" defer></script>
+      <script src="runsheet.js?v=5b57cf7f" defer></script>
       <script src="remote-peer.js?v=fd06de67" defer></script>
-      <script src="remote-control.js?v=ac169ee3" defer></script>
+      <script src="remote-control.js?v=aa8f3f11" defer></script>
       <script src="pptx-hub.js?v=e1230167" defer></script>
       <script src="markdown-lite.js?v=938fee93" defer></script>
       <script src="help-overlay.js?v=8a5dbd9d" defer></script>
@@ -71,7 +71,7 @@
       
       <div class="buttons">
           <span class="btn-presets">   <!-- hidden in run sheet mode (timer.css) -->
-          <span class="btn-label">Presets</span>
+          <span id="preset_arm" class="btn-label"><span class="pa-off">Presets</span><span class="pa-on">Presets arm only</span></span>   <!-- Arm presets' switch (timer.js setPresetArm) -->
           <div class="btn" data-keys=" ,1,0, ">
               10
           </div>
@@ -124,6 +124,9 @@
           <div id="btnresume" class="btn btn2" data-keys="&quot;">
               resume
           </div>
+          <div id="btnnotices" class="btn btn2" data-keys="m" title="Notices on the presenter's screen: last minute and time's up (M). Lit while on">
+            notices
+          </div>
           <div id="btnfloat" class="btn btn2" data-keys="o">
             overlay
          </div>
@@ -133,7 +136,7 @@
           <div id="btndeck" class="btn btn2">
             deck
           </div>
-          <div id="btnrunsheet" class="btn btn2" title="Run sheet editor (E)">
+          <div id="btnrunsheet" class="btn btn2" title="Run sheet editor (E). Shift+click: run sheet mode on / off. Lit while run sheet mode is on">
             run&nbsp;sheet
           </div>
           <div id="btnvideo" class="btn btn2" title="Video: the player window (drag it to the video screen, F for full screen), browse for a video, recent videos">
@@ -155,6 +158,7 @@
           <div class="xfs_only" id="started_disp"></div>
           <div class="xfs_only" id="elapsed_disp"></div>
           <div id="messages_enabled">messages enabled</div>
+          <div id="quiet_badge" title="Quiet: the presenter screens show only the countdown. Q (or the next item) ends it.">QUIET · only the countdown is showing · <kbd>Q</kbd> ends it</div>
           
           <div id="remain_info_message"></div>
           <div id="custom_message"></div>
@@ -167,14 +171,12 @@
        
       <!-- Keyboard hints: timer.css shows the one for the state (Ctrl/Shift held, typing a time, …) -->
       <div class="xfs_only" id="key_line"><span id="key_hints">
-          <span class="kh kh-plain"><kbd>←</kbd><kbd>→</kbd> late/early start · <kbd>↓</kbd><kbd>↑</kbd> nudge the end · seconds (<kbd>Ctrl</kbd> minutes) · <kbd>Space</kbd> ▶️ start </span>
+          <span class="kh kh-plain"><kbd>←</kbd><kbd>→</kbd> late/early start · <kbd>↓</kbd><kbd>↑</kbd> nudge the end · seconds (<kbd>Ctrl</kbd> minutes; <kbd>←</kbd><kbd>→</kbd> also <kbd>Shift</kbd>) · <kbd>Space</kbd> ▶️ start </span>
           <span class="kh kh-ctrl"><kbd>Ctrl</kbd> <kbd>←</kbd><kbd>→</kbd> late/early start · <kbd>↓</kbd><kbd>↑</kbd> nudge the end · in minutes · <kbd>Enter</kbd> ⏩ catch up</span>
-          <span class="kh kh-shift"><kbd>Shift</kbd> <kbd>←</kbd><kbd>→</kbd> late/early start · <kbd>↓</kbd><kbd>↑</kbd> nudge the start · seconds · <kbd>Space</kbd> 🔁 make this countdown </span>
+          <span class="kh kh-shift"><kbd>Shift</kbd> <kbd>←</kbd><kbd>→</kbd> late/early start in minutes · <kbd>↓</kbd><kbd>↑</kbd> nudge the start in seconds · <kbd>Space</kbd> 🔁 make this countdown </span>
           <span class="kh kh-shiftctrl"><kbd>Shift</kbd><kbd>Ctrl</kbd> <kbd>←</kbd><kbd>→</kbd> late/early start · <kbd>↓</kbd><kbd>↑</kbd> nudge the start · in minutes · <kbd>Enter</kbd> ⏩ catch up</span>
           <span class="kh kh-edit">Typing a time · <kbd>Enter</kbd> 💾 set as the default · <kbd>Space</kbd> ▶️ start </span>
           <span class="kh kh-msg">💬 Editing the message · <kbd>Enter</kbd> 📺 show it</span>
-          <span class="kh kh-vlive">📹 Video preview, full screen</span>
-          <span class="kh kh-vstart">📹 Video assist zoom · <kbd>Ctrl</kbd><kbd>V</kbd> toggles</span>
         </span><span id="disp_next_mins">mins</span></div>
       <!-- Typing a time: big, for operators on a numeric keypad (timer.js renderEntryPad; shown while html.editing) -->
       <div id="entry_pad">
@@ -184,15 +186,11 @@
         <div class="ep-keys"><span><kbd>Enter</kbd> 💾 set as the default</span><span><kbd>Space</kbd> or <kbd>*</kbd> ▶️ start now</span><span><kbd>⌫</kbd> delete · <kbd>Esc</kbd> cancel</span></div>
       </div>
       
-      <video id="webcam" autoplay style="display: none;"></video>
-      <canvas id="wc_canvas" style="display: none; width : auto; height:1080px;"></canvas>
-      <canvas class="xfs_only" id="wc_canvas2" style="display:none;"></canvas>
-      <canvas class="xfs_only" id="wc_canvas3" style="display:none;"></canvas>
   
  
      
       <div id="key_disp"></div>
-      <p id="link">open timer <a href="timer.html#" onclick="return openTimerWindow();">display</a> screen. <a href="https://github.com/jonathan-annett/timer-beta#quick-start" target="_blank" rel="noopener">help</a> · <a href="changelog.html" target="_blank" rel="noopener">what’s new</a> · <a href="#" onclick="window.noticePanel &amp;&amp; noticePanel.toggle(); return false;" title="The words the screens show: last minute, time’s up, paused, standing by">notices</a></p>
+      <p id="link">open timer <a href="timer.html#" onclick="return openTimerWindow();">display</a> screen. <a href="https://github.com/jonathan-annett/timer-beta#quick-start" target="_blank" rel="noopener">help</a> · <a href="changelog.html" target="_blank" rel="noopener">what’s new</a> · <a href="#" onclick="window.noticePanel &amp;&amp; noticePanel.toggle(); return false;" title="The words the screens show: last minute, time’s up, paused, standing by">notice words</a></p>
     
       <div class="media_query_detect"></div>
        <div class="mainDiv">
@@ -205,8 +203,6 @@
         <video id="remain_disp_video" muted autoplay></video>
 
        <div id="drag_to_monitor">Drag window to appropriate monitor and press F to make it Fullscreen</div>
-       <div id="video-track">Video Assist</div>
-       <div id="video-auto">Auto Zoom</div>
 
 
       <!-- Stream Deck editor overlay -->

@@ -37,6 +37,25 @@
     <h1>What's new</h1>
     <p class="sub">Changes to the timer, newest first. <a href="./">Back to the timer</a></p>
 
+    <section class="release" data-version="2026-11-10">
+      <h2>10 November 2026</h2>
+      <ul>
+        <li><b>Arm presets:</b> click the <b>Presets</b> label in the button bar to make presets (the bar's and the Stream Deck's) only arm the timer: it shows the time, paused and standing by, until you press <b>Space</b>, <b>Resume</b> or the deck's <b>Start</b> key. A yellow badge shows while it's on.</li>
+        <li><b>Clock badge:</b> the control screen now shows whether the clock is synced to internet time (green), on this computer's own clock (yellow) or corrected by hand (blue). Click it to switch, retry with <b>Sync now</b>, or set the right time yourself. Changing the clock doesn't disturb a running countdown.</li>
+        <li><b>Messages and run sheet names are kept apart.</b> A message you send (<b>C</b>, a phone, a Stream Deck key, Companion) now shows over the run sheet item's name instead of replacing it, and clearing your message brings the name back. A new item clears the last speaker's message.</li>
+        <li><b>Quiet mode</b> (<b>Q</b>, a Stream Deck <i>Quiet</i> key, the phone's <b>Quiet</b> button): only the countdown on the presenter's screens, with no message, notice, time of day or bar, until you turn it off or the next item starts. Your own screen keeps them, dimmed, under a <i>QUIET</i> badge.</li>
+        <li>On a phone or tablet, <b>sharing keeps the screen on</b>: a locked screen stops the timer page, and with it the devices following it.</li>
+        <li>A <b>notices</b> button in the button bar turns the last-minute and time's-up notices on and off (<b>M</b>), lit while they're on, in place of the yellow <i>messages enabled</i> line. The words themselves are now under <b>notice words</b>.</li>
+        <li><b>Shift+click run sheet</b> turns run sheet mode on or off without opening the editor, and the <b>run sheet</b> button is lit whenever run sheet mode is on.</li>
+        <li><b>Typing seconds:</b> two dots separate minutes from seconds, so <code>1..30</code> is a minute and a half and <code>1:20..25</code> an hour, 20 minutes and 25 seconds. One dot is still part of a minute (<code>1:30.5</code> = 1:30:30).</li>
+        <li><b>Shift+← / →</b> moves the timer by a whole minute, like Ctrl+← / →, which a Mac keeps for switching desktops.</li>
+        <li>Fixed: the run sheet view on phones and displays now shows when the current item actually started (red if late, green if early), not just its planned time.</li>
+        <li>The webcam video assist (<b>V</b>, <b>Shift+V</b>, <b>Ctrl+V</b>, <b>Shift+W</b>) has been removed.</li>
+        <li>Turning run sheet mode off now clears the item’s name from the screen and leaves the timer paused at your own default time (not the last item’s), ready to start.</li>
+        <li>Even G2 glasses: a presenter chooses what shows beside the countdown (your messages by default; the item name and the last-minute notices if they like), and the operator's glasses can turn quiet mode on and off. The operator's <b>Minimal view</b> now sits in a corner, like a presenter's (<b>Next corner</b> in the glasses' menu moves it). A presenter isn't shown <i>Timer offline</i> for a short drop: their countdown carries on, and the notice appears only after a minute (the operator's glasses show it at once). Everything in the glasses' menu is also a button on the app's phone page, and taps can be set never to fire Next.</li>
+      </ul>
+    </section>
+
     <section class="release" data-version="2026-10-31c">
       <h2>31 October 2026 (late)</h2>
       <ul>

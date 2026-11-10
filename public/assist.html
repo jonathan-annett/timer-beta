@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+ * assist.html
+ * The assist station: a second computer that listens to the room and tells the timer when the
+ * speaker actually started. Pairs with the timer by its 6-digit code (share → Pair a computer).
+ * The transcript stays on this computer; the timer is only told "move the start by N seconds".
+ * Logic: assist.js. MIT Licensed
+-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assist station</title>
+  <style>
+    :root { --bg: #0b0b0b; --panel: #151515; --line: #2a2a2a; --text: #ddd; --dim: #888; --accent: #4aa8ff; --ok: #7fdc7f; --warn: #ffcc33; --bad: #ff8080; --late: #ff8a80; --early: #8be28b; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font: 15px/1.45 "Helvetica Neue", Arial, sans-serif; }
+    [hidden] { display: none !important; }
+    main { max-width: 900px; margin: 0 auto; padding: 24px 16px 40px; }
+    h1 { font-size: 20px; margin: 0 0 4px; color: #fff; }
+    h2 { font-size: 15px; margin: 0 0 8px; color: #fff; }
+    .sub { color: var(--dim); margin: 0 0 20px; }
+    button { font: inherit; color: var(--text); background: #222; border: 1px solid #444; border-radius: 6px; padding: 8px 14px; cursor: pointer; }
+    button:hover { background: #2c2c2c; }
+    button.primary { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
+    button:disabled { opacity: .4; cursor: default; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin-bottom: 16px; }
+    .center { text-align: center; }
+    .bad { color: var(--bad); } .ok { color: var(--ok); } .warn { color: var(--warn); }
+    .hint { color: var(--dim); font-size: 13px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+    .seg { display: inline-flex; }
+    .seg button { border-radius: 0; }
+    .seg button:first-child { border-radius: 6px 0 0 6px; }
+    .seg button:last-child { border-radius: 0 6px 6px 0; }
+    .seg button + button { border-left: 0; }
+    .seg button.on { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
+
+    /* Pairing by code */
+    #code { font: bold 44px/1.1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .3em; text-align: center; width: 100%; max-width: 360px;
+      background: #000; color: #fff; border: 2px solid #333; border-radius: 10px; padding: 10px 0 10px .3em; font-variant-numeric: tabular-nums; }
+    #code:focus { outline: none; border-color: var(--accent); }
+    #codemsg { min-height: 1.5em; margin-top: 10px; }
+    details { margin-top: 14px; color: var(--dim); font-size: 13px; }
+    details input { width: 100%; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 6px; font: 13px monospace; }
+    #pinwait .pin { font: bold 26px "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; color: #fff; }   /* readable close up, not across a room */
+
+    /* The timer, as it stands */
+    #status { font-size: 13px; color: var(--dim); }
+    #status.ok { color: var(--ok); } #status.warn { color: var(--warn); }
+    #now { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: baseline; }
+    #item { font-size: 20px; color: #fff; font-weight: bold; min-height: 1.4em; }
+    #remain { font: bold 28px "Helvetica Neue", Arial, sans-serif; font-variant-numeric: tabular-nums; text-align: right; }
+    #remain.impending { color: var(--warn); } #remain.over { color: var(--bad); } #remain.paused { color: var(--dim); }
+    #started { color: var(--dim); font-variant-numeric: tabular-nums; }
+    #moved { min-height: 1.4em; font-size: 14px; }
+    #moved button { padding: 2px 10px; margin-left: 8px; }
+    #hearstart { padding: 4px 10px; font-size: 13px; }
+    select { font: inherit; font-size: 14px; color: var(--text); background: #1a1a1a; border: 1px solid #444; border-radius: 5px; padding: 4px 6px; }
+    label { color: var(--dim); font-size: 14px; }
+    #levelbox { display: inline-block; width: 80px; height: 8px; background: #222; border-radius: 4px; overflow: hidden; vertical-align: middle; }
+    #level { display: block; height: 100%; width: 0; background: var(--ok); transition: width .1s; }
+    #ledgertxt { font-size: 11px; max-height: 40vh; overflow: auto; white-space: pre-wrap; background: rgba(127,127,127,.08); padding: 8px; border-radius: 5px; }
+    #asrstate.ok { color: var(--ok); } #asrstate.warn { color: var(--warn); } #asrstate.bad { color: var(--bad); }
+    .ln .x { display: flex; gap: 8px; align-items: baseline; }
+    .ln .x span { flex: 1; }
+    .ln button.play { padding: 0 8px; font-size: 12px; line-height: 1.6; opacity: .6; }
+    .ln:hover button.play { opacity: 1; }
+    #allow { margin-top: 8px; }
+
+    /* Transcript */
+    #listenstate { font-size: 13px; color: var(--dim); }
+    #listenstate.on::before { content: "● "; color: var(--bad); }
+    #log { max-height: 60vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: #0e0e0e; margin-top: 10px; }
+    #log:empty::before { content: "Nothing heard yet."; display: block; padding: 14px; color: var(--dim); font-size: 14px; }
+    .ln { display: grid; grid-template-columns: 5.6em 4.8em 1fr; gap: 10px; padding: 6px 10px; border-bottom: 1px solid #1b1b1b; cursor: pointer; }
+    .ln:hover { background: #17202a; }
+    .ln.far { cursor: default; } .ln.far:hover { background: none; }
+    .ln .t { color: var(--dim); font-variant-numeric: tabular-nums; }
+    .ln .o { font-variant-numeric: tabular-nums; color: var(--dim); }
+    .ln .o.late { color: var(--late); } .ln .o.early { color: var(--early); } .ln .o.zero { color: var(--ok); }
+    .ln.interim .x { color: var(--dim); font-style: italic; }
+    .ln.armed { background: #10243a; }
+    .ask { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 4px 0 2px; }
+    /* What the timer knows happened: the run sheet's actual starts ([15:45 Mr Smith +16:40]); the live one drags */
+    .mk { display: inline-block; margin-left: 8px; padding: 0 8px; border: 1px solid #3a5a3a; border-radius: 10px; background: #142014; color: #9cf59c; font-size: 13px; white-space: nowrap; }
+    .mk.late { border-color: #6a3a3a; background: #241414; color: var(--late); }
+    .mk.early { border-color: #3a6a3a; color: var(--early); }
+    .mk.drag { cursor: grab; border-style: dashed; box-shadow: 0 0 0 1px #2a6a9a; }
+    .mkrow { display: grid; grid-template-columns: 5.6em 4.8em 1fr; gap: 10px; padding: 4px 10px; border-bottom: 1px solid #1b1b1b; }
+    .mkrow .t { color: var(--dim); font-variant-numeric: tabular-nums; }
+    .mkrow .mk { margin-left: 0; }
+    #log.dragging .ln:not(.far) { cursor: copy; }
+    /* Pictures: pauses in the speech (both ends, and one every 10 s), and a strip beside the lines */
+    #camview { width: 96px; height: 54px; background: #000; border-radius: 4px; object-fit: contain; }
+    #camstate.ok { color: var(--ok); } #camstate.warn { color: var(--warn); } #camstate.bad { color: var(--bad); }
+    .gap { display: grid; grid-template-columns: 5.6em 4.8em 1fr; gap: 10px; padding: 6px 10px; border-bottom: 1px solid #1b1b1b; background: #101010; }
+    .gap .t { color: var(--dim); font-variant-numeric: tabular-nums; }
+    .gap .gx { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .gap .gl { color: var(--dim); font-style: italic; font-size: 13px; }
+    .thumbs { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 8px; vertical-align: middle; }
+    img.th { height: 54px; border-radius: 3px; border: 1px solid #333; cursor: zoom-in; }
+    img.th.edge { border-color: #2a6a9a; }
+    #big { position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.85); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+    #big figure { margin: 0; text-align: center; }
+    #big img { max-width: 92vw; max-height: 82vh; border-radius: 6px; }
+    #big figcaption { color: var(--text); margin-top: 8px; font-variant-numeric: tabular-nums; }
+    .ln.over { background: #10243a; box-shadow: inset 0 2px 0 var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Assist station</h1>
+    <p class="sub">Listens to the room and keeps a time-stamped transcript. Click the line where the speaker actually began (or drag the ⏱ start marker onto it), and the timer’s start moves to match.</p>
+
+    <section id="enter" class="card center" hidden>
+      <p>On the timer, open <b>share</b> and click <b>Pair a computer</b>. Type the 6-digit code it shows:</p>
+      <input id="code" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="······" aria-label="Pairing code">
+      <div id="codemsg"></div>
+      <details><summary>Pairing server</summary>
+        <input id="server" spellcheck="false" aria-label="Pairing server address">
+      </details>
+    </section>
+
+    <section id="paired" hidden>
+      <div id="pinwait" class="card center" hidden>
+        <p id="pinmsg">The timer asks who this is. Tell the person at the timer this number (or read it to them over the phone). One wrong try disconnects this computer.</p>
+        <div class="pin" id="pincode"></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="margin-top:0"><span id="status">Connecting…</span></div>
+        <div id="now">
+          <div id="item"></div><div id="remain">–:––</div>
+          <div id="started"></div><div><button id="hearstart" hidden title="Play what the microphone heard around the timer’s start">▶ Hear the start</button></div>
+        </div>
+        <div id="moved"></div>
+        <div id="allow" class="row">
+          <span id="allowtext" class="hint"></span>
+          <button id="ask" class="primary" hidden>Ask to move start times</button>
+        </div>
+        <div class="row">
+          <span>A move shifts</span>
+          <span class="seg" id="mode">
+            <button data-m="whole" title="Start and end together: the speaker still gets their full time from when they began">the whole timer</button>
+            <button data-m="start" title="Only the start: the elapsed time is put right and the end stays where it is">only the start</button>
+          </span>
+        </div>
+        <p id="modewhy" class="hint"></p>
+      </div>
+
+      <div class="card">
+        <div class="row" style="margin-top:0">
+          <h2 style="margin:0">Transcript</h2>
+          <span id="listenstate">Not listening</span>
+          <span id="levelbox" title="Microphone level"><span id="level"></span></span>
+          <span style="flex:1"></span>
+          <button id="listen" class="primary">Start listening</button>
+          <button id="save">Save transcript</button>
+          <button id="clear">Clear</button>
+        </div>
+        <div class="row">
+          <label>Microphone <select id="mic"><option value="">Default</option></select></label>
+          <label>Transcribe <select id="engine">
+            <option value="whisper">on this computer (Whisper)</option>
+            <option value="browser">with the browser’s speech service</option>
+          </select></label>
+          <label id="modelbox">Model <select id="model"></select></label>
+        </div>
+        <div class="row">
+          <label>Pictures <select id="cam"><option value="off">None</option></select></label>
+          <video id="camview" muted playsinline autoplay hidden></video>
+          <span id="camstate" class="hint"></span>
+        </div>
+        <p class="hint" id="srnote"></p>
+        <p class="hint" id="asrstate"></p>
+        <details id="ledger"><summary class="hint">Audio accounting (where every bit of the recording went) <button id="ledgercopy">Copy</button></summary><pre id="ledgertxt"></pre></details>
+        <div id="log"></div>
+      </div>
+
+      <div id="big" hidden><figure><img id="bigimg" alt=""><figcaption id="bigcap"></figcaption></figure></div>
+      <p class="hint">Paired with timer room <b id="room"></b>. <button id="unpair">Unpair this computer</button></p>
+    </section>
+  </main>
+  <script src="features.js?v=4ba08b60"></script>
+  <script src="remote-peer.js?v=fd06de67"></script>
+  <script src="notices.js?v=7f9aa52c"></script>
+  <script src="remote-clock.js?v=4358371f"></script>
+  <script src="assist-video.js?v=c09d34e1"></script>
+  <script src="assist-audio.js?v=3b31ac84"></script>
+  <script src="assist.js?v=00cfb71b"></script>
+</body>
+</html>

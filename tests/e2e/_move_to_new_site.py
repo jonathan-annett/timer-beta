@@ -2,7 +2,8 @@
 # The old beta's landing page and moved bar carry settings to the new site's import.html.
 import os, mimetypes, json
 from playwright.sync_api import sync_playwright
-OLD_ROOT="/Users/jonathanannett/timer-tests/timer-legacy/public"; NEW_ROOT="/Users/jonathanannett/timer-tests/timer-beta/public"
+REPO=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+OLD_ROOT=os.path.join(REPO, "..", "timer-legacy", "public"); NEW_ROOT=os.path.join(REPO, "public")
 OLD="https://timer.sophtwhere.com/beta/"; NEW="https://beta.timed-show.com/"
 def h(route, req):
     u=req.url

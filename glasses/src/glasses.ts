@@ -12,7 +12,7 @@
  * glasses' font). Only the latest layout is sent: one overtaken while a call was out is dropped.
  *
  * The glasses' menu (tap, then tap and hold: Even's own, with brightness and close) gets our items too
- * (setMenu: Next corner for a presenter; the show's controls for an operator).
+ * (setMenu: Next corner for a presenter; the show's controls and Next corner for an operator).
  * Hardware rules from the owner's g2-claude-starter: no zOrderIndex (stacking is declaration order),
  * text boxes a whole number of lines high (30 / 56 / 84 px) or a scrollbar shows, the page and menu as
  * plain objects (as its Mischief Mews sends them; confirmed on the glasses), centring with spaces.
@@ -23,7 +23,7 @@ import { getTextWidth } from '@evenrealities/pretext'
 export type Corner = 'tl' | 'tr' | 'bl' | 'br'
 export const CORNERS: Corner[] = ['tl', 'tr', 'bl', 'br']
 // The glasses' menu items, by role (menuFor in main.ts); the menu changes only with a page rebuild
-export const MENU = { corner: 1, next: 2, back: 3, pause: 4, reset: 5, auto: 6, minimal: 7 }
+export const MENU = { corner: 1, next: 2, back: 3, pause: 4, reset: 5, auto: 6, minimal: 7, quiet: 8 }
 export interface MenuItem { itemID: number; itemName: string }   // itemName ≤ 32 bytes
 export const W = 576, H = 288, MARGIN = 12
 

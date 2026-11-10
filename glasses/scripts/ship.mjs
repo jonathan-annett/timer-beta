@@ -4,13 +4,18 @@
 //   bump version -> build -> pack -> upload -> promote to beta -> make sure you're a tester (-> invite email)
 //
 // usage:  npm run ship -- "what changed"            (changelog is optional)
+//         npm run ship -- --dev "what changed"      the dev copy: a separate app (package id + '.dev',
+//                                                   name + ' dev'), so test builds don't go to the real
+//                                                   app's beta testers. Same version numbers and CHANGELOG.
 //         EVEN_TESTER_EMAIL=you@example.com npm run ship
 // First time only: npx evenhub login
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 
 const root = new URL('..', import.meta.url).pathname;
-const argText = process.argv.slice(2).join(' ').trim();
+const args = process.argv.slice(2);
+const dev = args[0] === '--dev';
+const argText = (dev ? args.slice(1) : args).join(' ').trim();
 const tester = process.env.EVEN_TESTER_EMAIL || readConfig('testerEmail');
 
 function sh(cmd, args, opts = {}) {
@@ -39,7 +44,12 @@ const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 const [a, b, c] = manifest.version.split('.').map(Number);
 manifest.version = `${a}.${b}.${c + 1}`;
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-console.log(`Version ${manifest.version} (${manifest.package_id})`);
+// The dev copy: the same manifest under its own id and name, written beside it (git-ignored) for pack
+const pkg = dev ? { ...manifest, package_id: manifest.package_id + '.dev', name: (manifest.name + ' dev').slice(0, 20) } : manifest;
+const manifestFile = dev ? 'app.dev.json' : 'app.json';
+if (dev) writeFileSync(root + manifestFile, JSON.stringify(pkg, null, 2) + '\n');
+const id = ['--package-id', pkg.package_id];
+console.log(`Version ${pkg.version} (${pkg.package_id})`);
 
 // 2b. changelog: one source of truth in CHANGELOG.md. The text given on the command line becomes the
 // new version's entry; with no text, the top entry must already be for this version.
@@ -59,29 +69,30 @@ if (argText) {
 console.log(`Changelog: ${changelog}`);
 
 // 3. build + pack
-sh('npm', ['run', 'build'], { stdio: 'inherit' });
-const slug = manifest.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-const ehpk = `${slug}-${manifest.version}.ehpk`;
-sh('npx', ['evenhub', 'pack', 'app.json', 'dist', '-o', ehpk], { stdio: 'inherit' });
+sh('npm', ['run', 'build'], { stdio: 'inherit', env: { ...process.env, TS_DEV: dev ? '1' : '' } });   // the dev copy keeps its own settings (vite.config.ts)
+const slug = pkg.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const ehpk = `${slug}-${pkg.version}.ehpk`;
+sh('npx', ['evenhub', 'pack', manifestFile, 'dist', '-o', ehpk], { stdio: 'inherit' });
 
 // 4. upload (creates the app on first run)
 const apps = evenhub(['ls']);
-const known = JSON.stringify(apps).includes(manifest.package_id);
+const known = JSON.stringify(apps).includes(JSON.stringify(pkg.package_id));   // exact: the dev id contains the real one
 if (known) {
-  console.log(evenhub(['upload', ehpk, '-m', changelog], false));
+  console.log(evenhub(['upload', ehpk, ...id, '-m', changelog], false));
 } else {
   const icon = existsSync(root + 'icon.png') ? ['--icon', 'icon.png'] : [];   // the 24×24 icon (make-icon.mjs)
-  console.log(evenhub(['create', ehpk, '--name', manifest.name, '--tagline', readConfig('tagline') || manifest.name, ...icon], false));
+  const tagline = dev ? 'Test builds of Timed Show' : readConfig('tagline') || pkg.name;
+  console.log(evenhub(['create', ehpk, ...id, '--name', pkg.name, '--tagline', tagline, ...icon], false));
 }
 
 // 5. promote to beta (the one beta slot; replaces the previous build)
-console.log(evenhub(['promote', manifest.version, '--to', 'beta'], false));
+console.log(evenhub(['promote', pkg.version, ...id, '--to', 'beta'], false));
 
 // 6. make sure the phone's account is a tester
 if (tester) {
-  const list = evenhub(['testers']);
+  const list = evenhub(['testers', ...id]);
   const present = JSON.stringify(list).toLowerCase().includes(tester.toLowerCase());
-  if (!present) { console.log(`Inviting ${tester}`); console.log(evenhub(['testers', 'add', tester], false)); }
+  if (!present) { console.log(`Inviting ${tester}`); console.log(evenhub(['testers', 'add', tester, ...id], false)); }
   else console.log(`${tester} is already a tester`);
 } else {
   console.log('No tester email set (EVEN_TESTER_EMAIL or ship.config.json), skipping invite.');

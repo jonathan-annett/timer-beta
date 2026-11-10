@@ -75,7 +75,7 @@
   };
   const PPTX = !!(window.TimerFeatures && TimerFeatures.pptx);   // PowerPoint computers: an alpha-only trial (features.js)
   const SHARE_MODES = ['control', 'editor', 'countdown', 'runsheet'].concat(PPTX ? ['pptx'] : []);   // what an admin phone can set another computer up as
-  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4, pptx: 5, overlay: 2, code: 6 };   // pairing server needed for each link (code: pairing by code)
+  const MIN_PROTOCOL = { control: 1, editor: 1, countdown: 2, runsheet: 2, admin: 3, companion: 4, pptx: 5, overlay: 2, code: 6, offer: 7 };   // pairing server needed for each link (code: pairing by code)
   // 'editor' is the control link with m=runsheet: a computer opening it starts in the run sheet editor
   const linkFields = (p, mode) => mode === 'control' ? { r: p.room, k: p.key }
     : mode === 'editor' ? { r: p.room, k: p.key, m: 'runsheet' }
@@ -140,6 +140,9 @@
           break;
         case 'pair-code': pair.code = m.code; pair.ms = m.ms || 30000; pair.at = Date.now(); renderPanel(); break;
         case 'claim': grantClaim(m.id); break;
+        case 'took': glassesTook(m); break;
+        case 'given': glassesGiven(m); break;
+        case 'take-error': glassesTakeError(m); break;
         case 'peer-join': addPeer(m.id, m.role); break;
         case 'peer-leave': removePeer(m.id); break;
         case 'from': { const p = peers.get(m.id); if (p) p.peer.receive(m.msg); break; }
@@ -210,6 +213,73 @@
     const u = new URL('control.html', location.href); u.search = ''; u.hash = ''; return u.toString();
   };
 
+  // ─── A device's own code (pairing server protocol 7): Even G2 glasses ─────
+  // The glasses show a 6-digit code that only their wearer can read; typed in the share panel's
+  // Glasses box (take), the server gives us their public key and we send their link (the view-only
+  // one, as by the code route; an Operator gets control by {t:'role'} as usual) sealed for it (give).
+  // Typing the code proves the operator can see the glasses, so the link carries an approval token
+  // (t=) and there's no proximity number: one person with only a phone can pair their own glasses,
+  // which a back-and-forth between two apps on one phone kept breaking. That's a presenter on their
+  // own, so it's always as a presenter's (the device list's Make operator still works afterwards).
+  // The server holds the sealed link until the glasses (perhaps in the background) collect it.
+  const GLASSES = !!(window.TimerFeatures && TimerFeatures.glasses);
+  const ASSIST = !!(window.TimerFeatures && TimerFeatures.assist);   // the assist station: an alpha-only trial (features.js)
+  const gl = { code: '', token: '', note: '', bad: false };
+  const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+  // ECDH (P-256) with a key made for this one message, then AES-GCM: "<our public key>.<iv>.<ciphertext>"
+  async function seal(pub, text) {
+    const S = crypto.subtle, curve = { name: 'ECDH', namedCurve: 'P-256' };
+    const theirs = await S.importKey('raw', unb64u(pub), curve, false, []);
+    const ours = await S.generateKey(curve, true, ['deriveKey']);
+    const key = await S.deriveKey({ name: 'ECDH', public: theirs }, ours.privateKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await S.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(text));
+    return [b64u(await S.exportKey('raw', ours.publicKey)), b64u(iv), b64u(ct)].join('.');
+  }
+  function glassesNote(text, bad) { gl.note = text; gl.bad = !!bad; renderPanel(); }
+  function takeGlasses(code) {
+    code = String(code || '').replace(/\D/g, '');
+    if (code.length !== 6) { glassesNote('Type the 6 digits on the glasses.', true); return; }
+    if (!hosted || serverProtocol < MIN_PROTOCOL.offer) { glassesNote('The pairing server is out of date (it needs protocol 7).', true); return; }
+    gl.code = code; gl.token = '';
+    sendServer({ type: 'take', code });
+    glassesNote('Checking the code…');
+  }
+  async function glassesTook(m) {
+    if (!m || m.code !== gl.code) return;
+    const token = randomString(24, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789');
+    const now = Date.now();
+    gl.token = token;
+    saveApproved(approvedList().concat({ t: token, name: cleanName(m.name) || 'Even G2 glasses', role: 'view', added: now, seen: now, g2: 'presenter' }));
+    const frag = shareFragment('countdown') + '&t=' + token;
+    let msg;
+    try { msg = m.pub ? { type: 'give', code: m.code, sealed: await seal(m.pub, frag) } : { type: 'give', code: m.code, frag }; }
+    catch (_) { glassesNote('This browser couldn’t seal the link for the glasses.', true); return; }
+    sendServer(msg);
+  }
+  function glassesGiven(m) {
+    if (!m || m.code !== gl.code) return;
+    gl.code = '';
+    glassesNote(m.delivered ? 'Glasses paired. They’re connecting…' : 'Glasses paired. They’ll connect when the Even app is open again.');
+  }
+  const TAKE_ERRORS = { 'bad-code': 'That code didn’t work. Check the glasses and type it again.', 'too-many': 'Too many wrong codes. Wait a minute, then try again.',
+    gone: 'The glasses’ code ran out. Pair again on the glasses.' };
+  function glassesTakeError(m) {
+    if (!m || (m.code && m.code !== gl.code)) return;
+    if (gl.token) saveApproved(approvedList().filter(x => x.t !== gl.token));   // never used
+    gl.code = ''; gl.token = '';
+    glassesNote(TAKE_ERRORS[m.reason] || 'The glasses couldn’t be paired (' + String(m.reason || 'error') + ').', true);
+  }
+  function renderGlasses(el) {
+    const box = el.querySelector('.pp-gl');
+    if (!box) return;
+    box.style.display = GLASSES && enabled && hosted && serverProtocol >= MIN_PROTOCOL.offer ? '' : 'none';
+    const note = box.querySelector('.pp-glnote');
+    note.textContent = gl.note;
+    note.classList.toggle('pp-warn', gl.bad);
+  }
+
   function relayTo(id) {
     return msg => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'to', id, msg })); };
   }
@@ -259,6 +329,7 @@
     catchup:       () => ({ cmd: 'catchup' }),
     nudge:         m => num(m.msecs, 1000, HOUR) && { cmd: 'nudge', addtime: !!m.addtime, msecs: m.msecs },   // eases; catch up snaps
     custommessage: m => typeof m.text === 'string' && { cmd: 'custommessage', text: m.text.slice(0, 200) },
+    quiet:         m => ({ cmd: 'quiet', on: typeof m.on === 'boolean' ? m.on : undefined }),   // no `on`: toggles
     runsheetnext:  () => ({ cmd: 'runsheetnext' }),
     runsheetprev:  () => ({ cmd: 'runsheetprev' }),
   };
@@ -272,12 +343,14 @@
     // Even G2 glasses (the glasses/ app) say so in their hello, with the role they'd like. The
     // operator decides (approvePeer, setGlassesRole); the glasses' wish is only shown.
     if (m.t === 'hello' && m.client === 'g2') { e.client = 'g2'; e.wants = m.mode === 'operator' ? 'operator' : 'presenter'; }
+    if (m.t === 'hello' && m.client === 'assist' && ASSIST) e.client = 'assist';   // the assist station (assist.html); without the trial, a plain view-only device
     if (!e.approved) {
       const known = m.t === 'hello' && typeof m.token === 'string' ? approvedEntry(m.token) : null;
       if (known) {
         e.approved = true; e.token = m.token; e.name = known.name || '';
         e.edit = known.edit ? 'yes' : 'no';      // allowed to edit the run sheet (kept with its approval)
         if (e.client === 'g2') e.g2 = known.g2 === 'operator' ? 'operator' : 'presenter';
+        e.assist = known.assist ? 'yes' : 'no';   // may move the start (assist station; kept with its approval)
         updateApproved(m.token, { seen: Date.now(), role: e.role });
       } else if (m.t === 'hello') {
         e.peer.send({ t: 'pin-required' });
@@ -310,8 +383,12 @@
       e.clock = m.clock === 1;                   // counts the countdown itself (remote-clock.js)
       pushTo(e, true);
       if (e.client === 'g2') sendGlassesRole(e);
+      else if (e.client === 'assist') { e.peer.send({ t: 'assist', state: e.assist || 'no' }); e.startSent = e.rsSent = undefined; sendAssistStart(e); }
       else if (e.role === 'control' || e.role === 'admin') e.peer.send({ t: 'rs-edit', state: e.edit || 'no' });
       panelConnected();
+    } else if (e.client === 'assist') {
+      assistMessage(e, m);                     // only its own messages, whatever key it holds
+      return;
     } else if (e.client === 'g2') {
       // Glasses: an Operator's may work the show (three taps = Next; the glasses' menu: Back, Pause /
       // resume, Reset show, auto start), and nothing else; a Presenter's nothing. Checked against the
@@ -407,6 +484,81 @@
       if (full || e.varsSent[k] !== v) { diff[k] = v; e.varsSent[k] = v; any = true; }
     }
     if (any || full) e.peer.send({ t: 'vars', full: !!full, v: diff });
+  }
+
+  // ─── The assist station (assist.html, on another computer) ──────────────────
+  // It records the room (a transcript now; video and audio later) and tells the timer when the
+  // speaker actually started: {t:'shift', msecs, whole} moves the start (the shiftstart command).
+  // It pairs like an overlay (view only) and says client:'assist' in its hello; moving the start
+  // needs the operator's say-so first, as editing the run sheet does: {t:'assist', on} asks, the
+  // share panel shows Allow / Refuse, the answer {t:'assist', state} (no, asked, yes, refused,
+  // stopped) is kept with its approval (remote_approved .assist). It's sent the timer's start as a
+  // time with the timer's clock beside it ({t:'assist-start', at, now}), so it can place its own
+  // recordings against the timer's start whatever either computer's clock says. Every move shows
+  // a notice on the timer with Undo.
+  // In run sheet mode it's also sent {t:'assist-rs', shift, log, now}: how a move moves the timer
+  // (bus rs_shift; the station's own switch is off then) and the show's actual starts (rs_log), to
+  // mark them in its transcript.
+  function sendAssistStart(e) {
+    const now = typeof timeProvider !== 'undefined' ? timeProvider.now() : Date.now();
+    const rs = [rawVars.rs_shift || '', rawVars.rs_log || ''];
+    if (e.rsSent !== rs.join('\n')) {
+      e.rsSent = rs.join('\n');
+      e.peer.send({ t: 'assist-rs', shift: rs[0], log: rs[1], now });
+    }
+    const at = rawVars.started_ms;
+    if (typeof at !== 'number' || e.startSent === at) return;
+    e.startSent = at;
+    e.peer.send({ t: 'assist-start', at, now });
+  }
+  function assistMessage(e, m) {
+    if (m.t === 'assist') {
+      if (m.on && e.assist !== 'yes' && e.assist !== 'asked') { e.assist = 'asked'; openPanel(); }
+      else if (!m.on && e.assist === 'asked') e.assist = 'no';
+      e.peer.send({ t: 'assist', state: e.assist || 'no' });
+      renderPanel();
+    } else if (m.t === 'shift') {
+      const req = typeof m.req === 'string' ? m.req.slice(0, 40) : undefined;
+      if (e.assist !== 'yes') { e.peer.send({ t: 'assist', state: e.assist || 'no' }); return; }
+      const ms = num(m.msecs, -HOUR, HOUR);
+      if (ms === null || !Math.round(ms) || typeof processTimerApiMessage !== 'function') return e.peer.send({ t: 'shift-result', req, error: 'bad' });
+      const r = processTimerApiMessage({ cmd: 'shiftstart', msecs: Math.round(ms), whole: m.whole !== false });
+      const whole = !(r && r.whole === false);       // the run sheet may have decided
+      e.peer.send({ t: 'shift-result', req, msecs: Math.round(ms), whole });
+      shiftNotice(deviceLabel(e), Math.round(ms), whole);
+    }
+  }
+  function answerAssist(e, yes) {
+    if (!e || e.assist !== 'asked') return;
+    e.assist = yes ? 'yes' : 'no';
+    if (yes && e.token) updateApproved(e.token, { assist: true });
+    e.peer.send({ t: 'assist', state: yes ? 'yes' : 'refused' });
+    renderPanel();
+  }
+  function stopAssist(token) {
+    updateApproved(token, { assist: false });
+    for (const e of peers.values()) {
+      if (e.token !== token || e.assist !== 'yes') continue;
+      e.assist = 'no';
+      e.peer.send({ t: 'assist', state: 'stopped' });
+    }
+    renderPanel();
+  }
+  // "Start moved 0:42 later by Assist PC · Undo", for 20 s (styles in PANEL_CSS)
+  let noticeTimer = null;
+  function shiftNotice(who, ms, whole) {
+    let box = document.getElementById('assist-notice');
+    if (!box) { box = document.createElement('div'); box.id = 'assist-notice'; document.body.appendChild(box); }
+    const s = Math.round(Math.abs(ms) / 1000), mmss = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    box.innerHTML = `Start moved <b>${mmss} ${ms > 0 ? 'later' : 'earlier'}</b>${whole ? '' : ' (end unchanged)'} by ${esc(who)} <button type="button">Undo</button>`;
+    box.hidden = false;
+    box.querySelector('button').addEventListener('click', ev => {
+      ev.currentTarget.blur();
+      processTimerApiMessage({ cmd: 'shiftstart', msecs: -ms, whole });
+      box.textContent = 'Start put back';
+      clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { box.hidden = true; }, 3000);
+    });
+    clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { box.hidden = true; }, 20000);
   }
 
   // ─── Run sheet editing from another computer ─────────────────────────────
@@ -736,6 +888,8 @@
     remain: ['remain', String], expired: ['over', truthy], impending: ['impending', truthy],
     pausing: ['paused', truthy], adjusting_up: ['adjUp', truthy], adjusting_down: ['adjDown', truthy],
     custommsg: ['msg', String], default: ['def', String],
+    // The message's layers (msg is the one on screen: the operator's, else the item's), and quiet mode
+    item_msg: ['itemMsg', String], operator_msg: ['opMsg', String], msg_kind: ['msgKind', String], quiet: ['quiet', truthy],
     rs_active: ['rsOn', truthy], rs_current: ['rsNow', String], rs_next: ['rsNext', String],
     rs_can_back: ['rsBack', truthy], rs_status: ['rsStatus', String], rs_late: ['rsLate', v => (v === '' ? null : Number(v))],
     rs_title: ['rsTitle', String], rs_text: ['rsText', String], rs_list: ['rsList', String],
@@ -818,6 +972,7 @@
     if (diff.clk) diff.clk = currentAnchor(diff.clk);
     if (any || full) e.peer.send({ t: 'state', full: !!full, s: diff });
     if (e.role === 'companion') pushVars(e, full);
+    if (e.client === 'assist') sendAssistStart(e);
     if (e.deck && e.role !== 'view') pushDeck(e);
   }
 
@@ -837,6 +992,10 @@
   color: #ddd; font: 13px/1.4 "Helvetica Neue", Arial, sans-serif; padding: 10px 12px 12px; cursor: auto;
 }
 #phone-panel[hidden] { display: none; }
+#assist-notice { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 2147481001; background: #10243a; border: 1px solid #2a5a7a;
+  border-radius: 8px; padding: 8px 12px; color: #dde; font: 14px/1.4 "Helvetica Neue", Arial, sans-serif; box-shadow: 0 4px 24px rgba(0,0,0,.6); }
+#assist-notice[hidden] { display: none; }
+#assist-notice button { margin-left: 10px; font: inherit; color: #fff; background: #2a5a7a; border: 1px solid #4a8ab0; border-radius: 5px; padding: 2px 10px; cursor: pointer; }
 #phone-panel .pp-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: #fff; }
 #phone-panel .pp-exp { font-size: 10px; color: #ffcc33; border: 1px solid #665200; border-radius: 3px; padding: 0 4px; }
 #phone-panel .pp-close { margin-left: auto; background: none; border: 0; color: #888; font-size: 15px; cursor: pointer; }
@@ -873,6 +1032,13 @@
 #phone-panel .pp-askrow input { width: 5em; flex: none; font: 18px "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; text-align: center;
   background: #111; color: #fff; border: 1px solid #665200; border-radius: 4px; padding: 4px; }
 #phone-panel .pp-askrow button { flex: 1; }
+#phone-panel .pp-gl { border: 1px solid #444; border-radius: 6px; padding: 8px; margin: 6px 0; font-size: 13px; color: #ccc; }
+#phone-panel .pp-gl .pp-askrow input { width: 6.5em; }
+#phone-panel .pp-glnote { margin-top: 6px; color: #9bd; }
+#phone-panel .pp-glnote.pp-warn { color: #f88; }
+#phone-panel .pp-glnote:empty { display: none; }
+#phone-panel.pp-touch .pp-gl { font-size: 15px; }
+#phone-panel.pp-touch .pp-gl .pp-askrow input { width: 6.5em; }
 #phone-panel.pp-touch .pp-code .pp-digits { font-size: 48px; }
 #phone-panel.pp-touch .pp-code .pp-codehint { font-size: 14px; }
 #phone-panel.pp-touch .pp-pin { font-size: 14px; margin: 8px 0 4px; }
@@ -966,6 +1132,8 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       <div class="pp-code" hidden></div>
       ${TOUCH ? '<div class="pp-row pp-qrrow"><button class="pp-qrswitch"></button></div>' : ''}
       <div class="pp-pending"></div>
+      ${GLASSES ? `<div class="pp-gl" style="display:none"><b>Your glasses</b> showing a pairing code? Type it here for the countdown on them:
+        <span class="pp-askrow"><input class="pp-glcode" inputmode="numeric" pattern="[0-9]*" maxlength="7" autocomplete="off" placeholder="######"><button class="pp-glgo">Pair glasses</button></span><div class="pp-glnote"></div></div>` : ''}
       <div class="pp-row"><button class="pp-pair" title="Show a 6-digit code to type on another computer on this network (no QR code or link needed)">Pair a computer</button></div>
       <div class="pp-row"><button class="pp-copy">Copy link</button><button class="pp-renew" title="Disconnect all phones and make a new code">New code</button><button class="pp-toggle"></button></div>
       <div class="pp-peers"></div>
@@ -987,9 +1155,13 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       const row = b.closest('[data-id]');
       const e = peers.get(row.dataset.id);
       if (b.dataset.act === 'edit-ok' || b.dataset.act === 'edit-no') answerEdit(e, b.dataset.act === 'edit-ok');
+      else if (b.dataset.act === 'assist-ok' || b.dataset.act === 'assist-no') answerAssist(e, b.dataset.act === 'assist-ok');
       else if (b.dataset.act === 'ok') approvePeer(e, row.querySelector('input').value.trim(), row.querySelector('input[type=radio]:checked')?.value);
       else rejectPeer(e);
     });
+    const glGo = () => takeGlasses(el.querySelector('.pp-glcode').value);
+    el.querySelector('.pp-glgo')?.addEventListener('click', glGo);
+    el.querySelector('.pp-glcode')?.addEventListener('keydown', ev => { if (ev.key === 'Enter') glGo(); });
     el.querySelector('.pp-pending').addEventListener('keydown', ev => {
       if (ev.key !== 'Enter' || ev.target.tagName !== 'INPUT' || ev.target.type === 'radio') return;
       const row = ev.target.closest('[data-id]');
@@ -1003,6 +1175,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       if (b.dataset.dev === 'rename') renameDevice(token);
       else if (b.dataset.dev === 'g2role') setGlassesRole(token, b.dataset.role);
       else if (b.dataset.dev === 'noedit') stopEditing(token);
+      else if (b.dataset.dev === 'noassist') stopAssist(token);
       else if (armed(token)) { armedRevoke.delete(token); revokeDevice(token); }
       else { armedRevoke.set(token, Date.now()); renderPanel(); setTimeout(renderPanel, 3100); }
     });
@@ -1117,13 +1290,15 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     el.querySelector('.pp-qr').hidden = paste;
     if (enabled && !paste) drawQR(phoneLink());
     renderPairing(el);
+    renderGlasses(el);
     const pend = el.querySelector('.pp-pending');
     const rows = pending();
     // Rebuilt only when the requests change (a rebuild loses focus and the caret mid-typing). A new
     // request, or the panel being opened with one waiting, puts the caret in its box (touch too),
     // unless someone is typing in another field.
     const asks = [...peers.values()].filter(e => e.approved && !e.rejected && e.edit === 'asked');   // want to edit the run sheet
-    const sig = rows.map(e => e.id + '|' + (e.suggest || '') + '|' + e.role + '|' + (e.client || '')).join(',') + '/' + asks.map(e => e.id + '|' + deviceLabel(e)).join(',');
+    const assists = [...peers.values()].filter(e => e.approved && !e.rejected && e.assist === 'asked');   // want to move the start (assist station)
+    const sig = rows.map(e => e.id + '|' + (e.suggest || '') + '|' + e.role + '|' + (e.client || '')).join(',') + '/' + asks.map(e => e.id + '|' + deviceLabel(e)).join(',') + '/' + assists.map(e => e.id + '|' + deviceLabel(e)).join(',');
     const opened = !el.hidden && el.dataset.shown !== '1';
     el.dataset.shown = el.hidden ? '' : '1';
     const changed = pend.dataset.sig !== sig;
@@ -1135,7 +1310,9 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
         <span class="pp-askrow"><input inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="###" value="${esc(keep[e.id] || '')}">
         <button data-act="ok">Let it in</button><button data-act="no">Refuse</button></span>${e.client === 'g2' ? glassesChoice(e) : ''}</div>`).join('') +
         asks.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${esc(deviceLabel(e))} wants to edit the run sheet.</b> You can stop it later (Stop editing, below).
-        <span class="pp-askrow"><button data-act="edit-ok">Allow</button><button data-act="edit-no">Refuse</button></span></div>`).join('');
+        <span class="pp-askrow"><button data-act="edit-ok">Allow</button><button data-act="edit-no">Refuse</button></span></div>`).join('') +
+        assists.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${esc(deviceLabel(e))} wants to move the start time</b> when it hears the speaker begin. Every move shows here with Undo; you can stop it later (Stop moving starts, below).
+        <span class="pp-askrow"><button data-act="assist-ok">Allow</button><button data-act="assist-no">Refuse</button></span></div>`).join('');
       const back = had && pend.querySelector(`[data-id="${had}"] input`);
       if (back) { back.focus(); back.setSelectionRange(back.value.length, back.value.length); }
     }
@@ -1154,14 +1331,15 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
       pptxLines + live.map(e => `<div class="pp-dev"><span><b>${esc(deviceLabel(e))}</b> · ` +
         (!e.approved ? '<span class="pp-warn">waiting for its number</span> · ' : '') +
         (e.client === 'g2' && e.approved ? `<span class="${e.g2 === 'operator' ? 'pp-admin' : 'pp-view'}">glasses · ${e.g2 === 'operator' ? 'operator' : 'presenter'}</span> · `
+          : e.client === 'assist' && e.approved ? (e.assist === 'yes' ? '<span class="pp-admin">assist · moves starts</span> · ' : '<span class="pp-view">assist</span> · ')
           : e.role === 'view' ? '<span class="pp-view">view only</span> · ' : e.role === 'admin' ? '<span class="pp-admin">admin</span> · ' : e.role === 'companion' ? 'Companion · ' : '') +
         (e.edit === 'yes' ? '<span class="pp-admin">editing</span> · ' : '') +
         `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : e.peer.mode === 'p2p' ? '<b class="pp-lan" title="A direct link over the internet: not the same network">direct</b>' : '<b class="pp-srv">via server</b>'}</span>` +
-        (e.approved && e.token ? deviceButtons(e.token, e.edit === 'yes', e.client === 'g2' ? e.g2 : null) : '') + '</div>').join('') +
+        (e.approved && e.token ? deviceButtons(e.token, e.edit === 'yes', e.client === 'g2' ? e.g2 : null, e.assist === 'yes') : '') + '</div>').join('') +
       (lanCount < [...peers.values()].filter(e => e.role !== 'pptx').length ? '<div class="pp-hint">"via server": no direct link could be made (a network in between blocks it).</div>' : '') +
       (shareNote ? `<div class="pp-hint">${shareNote}</div>` : '')) +
       (away.length ? `<details class="pp-known"${knownOpen ? ' open' : ''}><summary>Known devices, not connected (${away.length})</summary>` +
-        away.map(x => `<div class="pp-dev"><span><b>${esc(x.name || 'Unnamed device')}</b>${x.role ? ' · ' + esc(deviceKind(x.role)) : ''}${x.edit ? ' · can edit' : ''}${x.g2 ? ' · glasses, ' + esc(x.g2) : ''}${x.seen ? ' · last seen ' + when(x.seen) : ''}</span>${deviceButtons(x.t, !!x.edit, x.g2 || null)}</div>`).join('') +
+        away.map(x => `<div class="pp-dev"><span><b>${esc(x.name || 'Unnamed device')}</b>${x.role ? ' · ' + esc(deviceKind(x.role)) : ''}${x.edit ? ' · can edit' : ''}${x.assist ? ' · moves starts' : ''}${x.g2 ? ' · glasses, ' + esc(x.g2) : ''}${x.seen ? ' · last seen ' + when(x.seen) : ''}</span>${deviceButtons(x.t, !!x.edit, x.g2 || null, !!x.assist)}</div>`).join('') +
         '</details>' : '');
   }
 
@@ -1260,10 +1438,11 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     const d = new Date(t), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     return d.toDateString() === new Date().toDateString() ? hm : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' + hm;
   }
-  function deviceButtons(token, editing, g2) {
+  function deviceButtons(token, editing, g2, assist) {
     return `<span class="pp-devbtns">` +
       (g2 ? `<button data-dev="g2role" data-role="${g2 === 'operator' ? 'presenter' : 'operator'}" data-token="${esc(token)}" title="${g2 === 'operator'
         ? 'Countdown only, in a corner; it can no longer fire Next' : 'Messages and times too, and three taps fire Next'}">${g2 === 'operator' ? 'Make presenter' : 'Make operator'}</button>` : '') +
+      (assist ? `<button data-dev="noassist" data-token="${esc(token)}" title="It keeps listening, but can't move the start until you allow it again">Stop moving starts</button>` : '') +
       (editing ? `<button data-dev="noedit" data-token="${esc(token)}" title="It can still see the run sheet; to edit again it has to ask">Stop editing</button>` : '') +
       `<button data-dev="rename" data-token="${esc(token)}" title="Give this device a name">Rename</button>` +
       `<button data-dev="revoke" data-token="${esc(token)}" title="Disconnect this device and remove its approval (click twice)"${armed(token) ? ' class="pp-armed"' : ''}>${armed(token) ? 'Sure?' : 'Revoke'}</button></span>`;
@@ -1277,7 +1456,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
     const entry = { t: token, name: e.suggest || '', role: e.role, added: now, seen: now };
     if (e.client === 'g2') entry.g2 = e.g2 = g2 === 'operator' ? 'operator' : 'presenter';   // Presenter unless the operator picked otherwise
     saveApproved(approvedList().concat(entry));
-    e.approved = true; e.pin = null; e.token = token; e.name = e.suggest || ''; e.edit = 'no';
+    e.approved = true; e.pin = null; e.token = token; e.name = e.suggest || ''; e.edit = 'no'; e.assist = 'no';
     e.peer.send({ t: 'pin-ok', token });       // the phone says hello again and gets its state
     renderPanel();
   }
@@ -1297,7 +1476,7 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
   function glassesCommand(m) {
     const rs = window.runsheet, api = typeof processTimerApiMessage === 'function' ? processTimerApiMessage : null;
     if (!api) return;
-    if (m.cmd === 'runsheetnext' || m.cmd === 'runsheetprev' || m.cmd === 'pause') api(ALLOWED[m.cmd](m));
+    if (m.cmd === 'runsheetnext' || m.cmd === 'runsheetprev' || m.cmd === 'pause' || m.cmd === 'quiet') api(ALLOWED[m.cmd](m));
     else if (m.cmd === 'reset' && rs && rs.reset) rs.reset();
     else if (m.cmd === 'autostart' && rs && rs.setAutostart) rs.setAutostart(m.on === true);
   }
@@ -1329,15 +1508,32 @@ html.no-pptx #phone-panel .pp-modes button[data-mode="pptx"] { display: none; }
 
   // ─── On / off ────────────────────────────────────────────────────────────
 
+  // On a phone or tablet, sharing keeps the screen on: a locked screen (or the browser in the
+  // background) freezes the page, and its devices, glasses most of all on one phone, lose the timer.
+  // A wake lock goes when the page is hidden, so it's asked for again when it's back.
+  let wakeLock = null;
+  async function keepAwake() {
+    if (!TOUCH || !enabled || wakeLock || document.hidden || !('wakeLock' in navigator)) return;
+    try { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.onrelease = () => { wakeLock = null; }; }
+    catch (_) { /* not allowed right now (no user gesture yet, low battery) */ }
+    if (wakeLock && !enabled) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  }
+  if (TOUCH) {
+    document.addEventListener('visibilitychange', keepAwake);
+    document.addEventListener('pointerdown', keepAwake, true);   // Safari wants a user gesture for the first one
+  }
+
   function enable() {
     enabled = true;
     localStorage.setItem(ENABLED_KEY, '1');
     if (typeof processTimerApiMessage === 'function') processTimerApiMessage({ cmd: 'opened' });   // fill `state`
     connect();
     renderPanel();
+    keepAwake();
   }
   function disable() {
     enabled = false;
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
     localStorage.removeItem(ENABLED_KEY);
     clearTimeout(retryTimer);
     if (ws) { const s = ws; ws = null; s.close(); }

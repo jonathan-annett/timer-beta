@@ -16,35 +16,47 @@
  * the Even app serves the plugin from http://127.0.0.1:<port> with a new port each launch, and browser
  * storage belongs to the origin, port included, so it started empty every time. localStorage is still
  * written, for a plain browser (development, tests), and read when the bridge has nothing.
+ * The Even app's storage is shared between plugins (the dev copy found the real app's pairing), so
+ * the dev copy (__APP_DEV__) keeps its settings under 'dev_' + the names below.
  *   ts_link    {server, room, key, view}: the paired timer (the view-only link the code gave)
  *   ts_ctl     the control link, while the timer has made these glasses its operator's
  *   ts_token   the proximity check's token for that room
+ *   ts_offer   while the glasses show a code of their own (the timer on this phone): {secret, priv, pub, until}
  *   ts_role    presenter | operator: as the timer last said
  *   ts_wants   presenter | operator: the role asked for when pairing
  *   ts_corner  tl | tr | bl | br
- *   ts_minimal '1': the operator's layout without its corner items (the glasses' menu)
- *   ts_taps    3 | 4 | 5: the taps an operator needs for Next (more makes an accident less likely)
+ *   ts_minimal '1': the operator's layout as just the countdown and message, in the corner (ts_corner)
+ *   ts_taps    3 | 4 | 5: the taps an operator needs for Next (more makes an accident less likely); 0: taps never fire Next
+ *   ts_see     a presenter's own choice of what shows beside the countdown, JSON {custom, item, notices}
+ *              (default: the operator's messages only; the countdown's brightness already says last
+ *              minute and time up)
+ *
+ * The timer's message comes in layers (its state: msg on screen, msgKind item | operator, itemMsg,
+ * opMsg) and quiet mode (quiet: only the countdown). A presenter sees what ts_see allows, nothing but
+ * the countdown in quiet mode; an operator sees everything, the item's name dimmer than a message.
  */
 import { waitForEvenAppBridge, OsEventTypeList, type EvenAppBridge } from '@evenrealities/even_hub_sdk'
-import { claim, CLAIM_ERRORS, TimerLink, type Paired, type Status, type Mode } from './link'
+import { claim, CLAIM_ERRORS, TimerLink, OfferLink, newOffer, OFFER_ERRORS, type OfferKeep, type Paired, type Status, type Mode } from './link'
 import { Clock, secToStr, type ClockValues } from './clock'
 import { Glasses, CORNERS, MENU, type Corner, type Layout, type MenuItem } from './glasses'
 import { scan, readCode, codeFromPhoto } from './scan'
 
 declare const __APP_VERSION__: string
+declare const __APP_DEV__: boolean
+const KEY_PREFIX = __APP_DEV__ ? 'dev_' : ''
 const $ = (id: string) => document.getElementById(id) as HTMLElement
 
 // ─── Saved settings ──────────────────────────────────────────────────────────
 
-const KEYS = ['ts_link', 'ts_ctl', 'ts_token', 'ts_role', 'ts_wants', 'ts_corner', 'ts_minimal', 'ts_taps']
+const KEYS = ['ts_link', 'ts_ctl', 'ts_token', 'ts_role', 'ts_wants', 'ts_corner', 'ts_minimal', 'ts_taps', 'ts_see', 'ts_offer']
 const cache: Record<string, string> = {}
 let storeBridge: EvenAppBridge | null = null
 const store = {
   get(k: string): string { return cache[k] || '' },
   set(k: string, v: string): void {
     cache[k] = v
-    try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k) } catch { /* no storage */ }
-    storeBridge?.setLocalStorage(k, v).catch(() => { /* kept for this session at least */ })
+    try { if (v) localStorage.setItem(KEY_PREFIX + k, v); else localStorage.removeItem(KEY_PREFIX + k) } catch { /* no storage */ }
+    storeBridge?.setLocalStorage(KEY_PREFIX + k, v).catch(() => { /* kept for this session at least */ })
   },
 }
 // Reads the saved settings once at start (the bridge's storage is asynchronous)
@@ -52,8 +64,8 @@ async function loadStore(bridge: EvenAppBridge | null): Promise<void> {
   storeBridge = bridge
   for (const k of KEYS) {
     let v = ''
-    if (bridge) { try { v = (await bridge.getLocalStorage(k)) || '' } catch { /* none */ } }
-    if (!v) { try { v = localStorage.getItem(k) || '' } catch { /* none */ } }
+    if (bridge) { try { v = (await bridge.getLocalStorage(KEY_PREFIX + k)) || '' } catch { /* none */ } }
+    if (!v) { try { v = localStorage.getItem(KEY_PREFIX + k) || '' } catch { /* none */ } }
     cache[k] = v
   }
 }
@@ -69,13 +81,23 @@ let status: Status | 'unpaired' = 'unpaired'
 let role: Mode = 'presenter'
 let wants: Mode = 'presenter'
 let pin = ''
+let offer: OfferLink | null = null    // our own code on the glasses, waiting for the timer (the timer on this phone)
+let offerCode = '', offerTaken = false
 const clock = new Clock()
 const state: Record<string, unknown> = {}
 let glasses: Glasses | null = null
 let corner: Corner = 'tl'
 let hidden = false                    // a presenter's tap hides the countdown
-let minimal = false                   // an operator's layout without its corners (elapsed, total, started, ends)
-let tapsNeeded = 3                    // an operator's taps for Next (3–5, set on the phone page)
+let minimal = false                   // an operator's layout as just the countdown and message, in the corner
+// When the link last went down (0 while online; counts from launch until the first connect). A presenter
+// isn't told about a short drop: their countdown runs on from the last anchor for DOWN_GRACE first
+let downSince = performance.now()
+const DOWN_GRACE = 60000
+let tapsNeeded = 3                    // an operator's taps for Next (3–5, set on the phone page; 0 = never by taps)
+// What a presenter sees beside the countdown (set on the phone page)
+interface See { custom: boolean; item: boolean; notices: boolean }
+const SEE_DEFAULT: See = { custom: true, item: false, notices: false }
+let see: See = { ...SEE_DEFAULT }
 let flash = '', flashUntil = 0        // a moment of feedback on the glasses ("Next...")
 
 // ─── The glasses ─────────────────────────────────────────────────────────────
@@ -98,48 +120,78 @@ function glassesView(): Layout {
   const p = cornerPlace()
   const info = (text: string, bright = 2) => ({ text, bright, ...p, lines: 2, width: 300, bottom: p.v === 'b' })
   if (!DEMO) {
+    // Our own code: only the wearer sees it, so the timer that types it needn't ask for a number back
+    if (status === 'unpaired' && offer) return { info: { ...info(offerTaken ? 'Pairing...' : offerCode ? 'Pairing code ' + offerCode.slice(0, 3) + ' ' + offerCode.slice(3) + ' - type it in the timer\'s share panel' : 'Getting a pairing code...', 4) } }
     if (status === 'unpaired' || status === 'refused') return { info: info('Timer not connected - open the Even app to pair') }
     if (status === 'pin') return { info: info('Pairing - finish on your phone') }
-    if (status !== 'online') return { info: info('Timer offline - reconnecting...') }
+    const grace = role !== 'operator' && downSince > 0 && performance.now() - downSince < DOWN_GRACE
+    if (status !== 'online' && !grace) return { info: info('Timer offline - reconnecting...') }
   }
   const v = DEMO ? demoValues() : clock.values()
   const sb = v && v.standby ? standbyText(v.standbyIn) : ''      // the run sheet's standby (Reset show)
   const clk = !v ? '' : (v.over ? '+' : '') + v.remain + (v.standby ? '' : v.paused ? ' paused' : '')
   const bright = !v ? 0 : v.over ? 4 : v.impending ? 3 : v.paused ? 1 : 2
   const showFlash = flash && Date.now() < flashUntil ? flash : ''
+  const quiet = !!state.quiet
+  // The message's layers; an older timer sends only msg (the operator's, as far as we can tell)
+  const layered = typeof state.msgKind === 'string'
+  const opMsg = String((layered ? state.opMsg : state.msg) || ''), itemMsg = String((layered ? state.itemMsg : '') || '')
   if (role === 'operator' || (DEMO && location.hash.includes('operator'))) {
-    // The operator's screen: elapsed / total, the message, the countdown, started / ends at
-    const msg = showFlash || String(state.msg || (DEMO ? 'Keynote: the future of timing' : ''))
+    // The operator's screen: elapsed / total, the message, the countdown, started / ends at. The item's
+    // name is dimmer than a message of the operator's; quiet mode is marked (the presenters see neither)
+    const shown = opMsg || itemMsg || (DEMO ? 'Keynote: the future of timing' : '')
+    const msg = showFlash || (quiet ? 'QUIET - ' : '') + shown
+    const msgBright = showFlash || opMsg ? 4 : quiet ? 3 : 2
     const started = String(state.started || (DEMO ? '17:23:18' : '')), ends = String(state.ends || (DEMO ? '17:33:18' : ''))
     // Before the show: the auto start's state (the menu turns it on or off) where "started" goes
     const auto = String(state.rsAuto || ''), autoText = auto ? 'auto start ' + (auto.startsWith('on') ? 'on, ' : 'off, ') + auto.replace(/^\w+ /, '') : ''
-    const c = (t: string) => (minimal ? '' : t)
+    // Minimal view: the countdown in the corner (as a presenter's; Next corner moves it) with the message beside it
+    if (minimal) {
+      const top = p.v === 't'
+      return {
+        clk: { text: sb || clk, bright, ...p },
+        msg: { text: msg, bright: msgBright, h: p.h, v: top ? 44 : 186, lines: 2, width: 300, bottom: !top },
+      }
+    }
     return {
-      elapsed: { text: c(v ? 'elapsed ' + v.elapsed : ''), bright: 2, h: 'l', v: 't' },
-      total: { text: c(v ? v.total + ' total' : ''), bright: 2, h: 'r', v: 't' },
-      msg: { text: msg, bright: 4, h: 'c', v: 84, lines: 2, bottom: true },
+      elapsed: { text: v ? 'elapsed ' + v.elapsed : '', bright: 2, h: 'l', v: 't' },
+      total: { text: v ? v.total + ' total' : '', bright: 2, h: 'r', v: 't' },
+      msg: { text: msg, bright: msgBright, h: 'c', v: 84, lines: 2, bottom: true },
       clk: { text: sb ? clk + ' - ' + sb : clk, bright, h: 'c', v: 146 },
-      started: { text: c(autoText || (started ? (sb ? 'starts ' : 'started ') + started : '')), bright: auto.startsWith('on') ? 3 : 2, h: 'l', v: 'b' },
-      ends: { text: c(ends ? 'ends at ' + ends : ''), bright: 2, h: 'r', v: 'b' },
+      started: { text: autoText || (started ? (sb ? 'starts ' : 'started ') + started : ''), bright: auto.startsWith('on') ? 3 : 2, h: 'l', v: 'b' },
+      ends: { text: ends ? 'ends at ' + ends : '', bright: 2, h: 'r', v: 'b' },
     }
   }
+  // A presenter: the countdown in the corner, and next to it what they've chosen to see (none in quiet mode)
+  const note = !v || quiet ? '' : see.custom && opMsg ? opMsg : see.item && itemMsg ? itemMsg : see.notices ? noticeText(v) : ''
+  const top = p.v === 't'
   return {
     clk: { text: hidden || showFlash ? '' : sb || clk, bright, ...p },
     info: info(showFlash),
+    msg: { text: hidden || showFlash ? '' : note, bright: opMsg && note === opMsg ? 4 : 2, h: p.h, v: top ? 44 : 186, lines: 2, width: 300, bottom: !top },
   }
+}
+
+// The timer's words without emoji, which the glasses' font may not have
+function plainWord(key: string, fallback: string): string {
+  let w: Record<string, string> = {}
+  try { w = JSON.parse(String(state.words || '{}')) || {} } catch { /* defaults */ }
+  return (w[key] || '').replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '').trim() || fallback
+}
+// Last minute / time up, for a presenter who asked for notices (paused is on the countdown already)
+function noticeText(v: ClockValues): string {
+  if (v.standby || v.paused) return ''
+  return v.over ? plainWord('over', 'Time’s up') : v.impending ? plainWord('wrap', 'Wrap up - last minute') : ''
 }
 
 // The standby notice in the timer's words (its notices panel; state.words), without emoji, which the
 // glasses' font may not have
 function standbyText(ms: number): string {
-  let w: Record<string, string> = {}
-  try { w = JSON.parse(String(state.words || '{}')) || {} } catch { /* defaults */ }
-  const plain = (t: string | undefined, d: string) => (t || '').replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '').trim() || d
   const sec = Math.ceil(ms / 1000)
-  return ms > 0 ? plain(w.standbyIn, 'Standing by · starts in {t}').replace('{t}', secToStr(sec)) : plain(w.standby, 'Standing by')
+  return ms > 0 ? plainWord('standbyIn', 'Standing by · starts in {t}').replace('{t}', secToStr(sec)) : plainWord('standby', 'Standing by')
 }
 
-// The glasses' menu for the role: a presenter's corner; an operator's show controls
+// The glasses' menu for the role: a presenter's corner; an operator's show controls (and the corner, for Minimal view)
 function menuFor(r: Mode): MenuItem[] {
   if (r !== 'operator') return [{ itemID: MENU.corner, itemName: 'Next corner' }]
   return [
@@ -149,16 +201,23 @@ function menuFor(r: Mode): MenuItem[] {
     { itemID: MENU.reset, itemName: 'Reset show' },
     { itemID: MENU.auto, itemName: 'Auto start on / off' },
     { itemID: MENU.minimal, itemName: 'Minimal view on / off' },
+    { itemID: MENU.quiet, itemName: 'Quiet on / off' },
+    { itemID: MENU.corner, itemName: 'Next corner (minimal view)' },
   ]
 }
 function onMenu(id: number): void {
-  if (role !== 'operator') { if (id === MENU.corner) setCorner(CORNERS[(CORNERS.indexOf(corner) + 1) % CORNERS.length]); return }
-  if (id === MENU.minimal) { minimal = !minimal; store.set('ts_minimal', minimal ? '1' : ''); render(); return }
+  if (id === MENU.corner) { setCorner(CORNERS[(CORNERS.indexOf(corner) + 1) % CORNERS.length]); return }   // an operator's: for Minimal view
+  if (role !== 'operator') return
+  if (id === MENU.minimal) { toggleMinimal(); return }
   if (status !== 'online' || !link) return
   if (id === MENU.next) { link.command('runsheetnext'); showFlash('Next...') }
   else if (id === MENU.back) { link.command('runsheetprev'); showFlash('Back...') }
   else if (id === MENU.pause) link.command('pause')
   else if (id === MENU.reset) { link.command('reset'); showFlash('Show reset') }
+  else if (id === MENU.quiet) {
+    if (!('quiet' in state)) showFlash('This timer has no quiet mode')
+    else { const on = !state.quiet; link.command('quiet', { on }); showFlash(on ? 'Quiet: only the countdown' : 'Quiet off') }
+  }
   else if (id === MENU.auto) {
     const auto = String(state.rsAuto || '')
     if (!auto) showFlash('No auto start: the first item needs a start time, before the show')
@@ -177,7 +236,7 @@ function onTap(n: number): void {
   clearTimeout(holdTimer)
   taps += n
   clearTimeout(tapTimer)
-  if (role === 'operator' && taps >= tapsNeeded && !fired && status === 'online') {
+  if (role === 'operator' && tapsNeeded > 0 && taps >= tapsNeeded && !fired && status === 'online') {
     fired = true
     link?.command('runsheetnext')
     showFlash('Next...')
@@ -186,11 +245,15 @@ function onTap(n: number): void {
   tapTimer = window.setTimeout(() => {
     taps = 0
     if (role === 'operator') { fired = false; return }
-    if (status !== 'online') return
-    hidden = !hidden
-    if (hidden) showFlash('Countdown hidden - tap to show')
-    render()
+    toggleHidden()
   }, 600)
+}
+// A presenter's countdown hidden or shown (a tap on the glasses, or the phone page's button)
+function toggleHidden(): void {
+  if (status !== 'online') return
+  hidden = !hidden
+  if (hidden) showFlash('Countdown hidden - tap to show')
+  render()
 }
 // A hold of 2 s (an operator's) toggles Minimal view, as soon as the 2 s are up, finger still down.
 // (Tap, then tap and hold, is Even's menu; a plain hold is ours.) Let go sooner and nothing happens.
@@ -200,14 +263,48 @@ let holdTimer = 0, lastTapAt = 0
 function onHold(down: boolean): void {
   clearTimeout(holdTimer)
   if (!down || role !== 'operator' || Date.now() - lastTapAt < 800) return
-  holdTimer = window.setTimeout(() => { minimal = !minimal; store.set('ts_minimal', minimal ? '1' : ''); render() }, 2000)
+  holdTimer = window.setTimeout(toggleMinimal, 2000)
 }
+function toggleMinimal(): void { minimal = !minimal; store.set('ts_minimal', minimal ? '1' : ''); render() }
 function showFlash(text: string): void { flash = text; flashUntil = Date.now() + 1000 }
 
 // ─── The phone page ──────────────────────────────────────────────────────────
 
+// The glasses' menu (and a presenter's tap) as buttons here, built from menuFor so the two never
+// differ. Lit while on: Minimal view, Quiet, Auto start, a hidden countdown. Reset show needs a
+// second press within 3 s (a phone is easier to press by accident than the glasses' menu).
+const HIDE = -1
+let controlsSig = '', resetArmed = 0
+function controls(): void {
+  const box = $('controls')
+  const items: MenuItem[] = role === 'operator' ? menuFor(role) : [{ itemID: HIDE, itemName: 'Hide / show countdown' }, ...menuFor(role)]
+  const sig = role + items.map(i => i.itemID).join()
+  if (sig !== controlsSig) {
+    controlsSig = sig
+    box.replaceChildren(...items.map(i => {
+      const b = document.createElement('button')
+      b.dataset.id = String(i.itemID)
+      b.textContent = i.itemName.replace(/ on \/ off| \(.*\)$/g, '')
+      b.addEventListener('click', () => {
+        if (i.itemID === HIDE) return toggleHidden()
+        if (i.itemID === MENU.reset && Date.now() - resetArmed > 3000) { resetArmed = Date.now(); b.textContent = 'Press again to reset'; setTimeout(() => { b.textContent = 'Reset show' }, 3000); return }
+        if (i.itemID === MENU.reset) { resetArmed = 0; b.textContent = 'Reset show' }
+        onMenu(i.itemID)
+      })
+      return b
+    }))
+  }
+  const online = status === 'online'
+  const lit: Record<number, boolean> = { [HIDE]: hidden, [MENU.minimal]: minimal, [MENU.quiet]: !!state.quiet, [MENU.auto]: String(state.rsAuto || '').startsWith('on') }
+  box.querySelectorAll<HTMLButtonElement>('button').forEach(b => {
+    const id = Number(b.dataset.id)
+    b.classList.toggle('on', !!lit[id])
+    b.disabled = !online && id !== MENU.minimal && id !== MENU.corner
+  })
+}
+
 function statusText(): string {
-  if (status === 'online') return role === 'operator' ? `Connected as the operator’s glasses: the message and times are on your glasses, and ${tapsNeeded} quick taps fire Next.`
+  if (status === 'online') return role === 'operator' ? `Connected as the operator’s glasses: the message and times are on your glasses, and ${tapsNeeded ? tapsNeeded + ' quick taps fire Next' : 'taps don’t fire Next (use the menu or the buttons here)'}.`
     : 'Connected. The countdown is on your glasses' + (hidden ? ' (hidden: tap to show).' : '.')
   return ({
     connecting: 'Connecting to the timer…',
@@ -222,14 +319,20 @@ function render(): void {
   $('paired').hidden = !isPaired
   $('pinbox').hidden = status !== 'pin'
   $('pinnum').textContent = pin
+  $('offer').hidden = !!offer
+  $('offerbox').hidden = !offer
+  $('offertext').textContent = offerTaken ? 'The timer has the code: pairing…' : offerCode ? 'A pairing code is on your glasses. On the timer, open share (on a phone: ⋯ → Let a friend control this timer) and type it under Glasses.' : 'Getting a code…'
   $('status').textContent = statusText()
   $('status').className = status === 'online' ? 'ok' : ''
   $('rolename').textContent = role === 'operator' ? 'Operator' : 'Presenter'
-  $('cornerbox').hidden = role === 'operator'
+  $('cornernote').hidden = role !== 'operator'
   document.querySelectorAll<HTMLButtonElement>('#corners button').forEach(b => b.classList.toggle('on', b.dataset.c === corner))
   document.querySelectorAll<HTMLInputElement>('input[name=wants]').forEach(i => { i.checked = i.value === wants })
   $('tapsbox').hidden = role !== 'operator'
   document.querySelectorAll<HTMLButtonElement>('#taps button').forEach(b => b.classList.toggle('on', Number(b.dataset.n) === tapsNeeded))
+  $('seebox').hidden = role === 'operator'
+  document.querySelectorAll<HTMLButtonElement>('#see button').forEach(b => b.classList.toggle('on', !!see[b.dataset.s as keyof See]))
+  controls()
   const view = glassesView()
   glasses?.setMenu(menuFor(role))
   glasses?.show(view)
@@ -276,7 +379,9 @@ function connect(): void {
         unpair(detail === 'revoked' ? 'The timer took these glasses’ access away. Pair again with a new code.' : 'The timer didn’t accept the number. Pair again with a new code.')
         return
       }
-      if (s !== 'online') clock.clear()
+      if (s === 'online') downSince = 0
+      else if (!downSince) downSince = performance.now()
+      if (s !== 'online' && role === 'operator') clock.clear()   // a presenter's runs on through a short drop
       render()
     },
     state: (s, full) => {
@@ -312,12 +417,42 @@ function unpair(why = ''): void {
   render()
 }
 
-// Paired by the code or the QR code: start from the view-only link (the timer gives control, if at all)
-function pairedWith(p: Paired): void {
+// Paired by the code or the QR code: start from the view-only link (the timer gives control, if at all).
+// A link from our own code comes with its approval token.
+function pairedWith(p: Paired, token = ''): void {
+  endOffer()
   paired = p; control = null; role = 'presenter'
-  store.set('ts_link', JSON.stringify(p)); store.set('ts_ctl', ''); store.set('ts_token', ''); store.set('ts_role', '')
+  store.set('ts_link', JSON.stringify(p)); store.set('ts_ctl', ''); store.set('ts_token', token); store.set('ts_role', '')
   connect()
   render()
+}
+
+// Our own code on the glasses, for a timer on this phone (the same code again after the Even app was in
+// the background: the secret and key are kept in ts_offer until it runs out)
+async function startOffer(): Promise<void> {
+  if (offer || paired) return
+  say('')
+  let keep: OfferKeep | null = null
+  try { const k = JSON.parse(store.get('ts_offer') || 'null'); if (k && k.secret && k.priv && k.pub && k.until > Date.now() + 15000) keep = k } catch { /* a new one */ }
+  if (!keep) {
+    try { keep = await newOffer() } catch { say('This phone can’t make a pairing code (no Web Crypto). Type the timer’s code instead.', 'bad'); return }
+    store.set('ts_offer', JSON.stringify(keep))
+  }
+  if (offer || paired) return
+  offerCode = ''; offerTaken = false
+  offer = new OfferLink(keep, 'presenter', {      // a presenter on their own: always a presenter's
+    code: c => { offerCode = c; offerTaken = false; render() },
+    taken: () => { offerTaken = true; render() },
+    done: (p, token) => pairedWith(p, token),
+    fail: reason => { endOffer(); say(OFFER_ERRORS[reason] || 'Pairing failed (' + reason + ').', 'bad'); render() },
+  })
+  offer.start()
+  render()
+}
+function endOffer(): void {
+  offer?.stop(true); offer = null
+  offerCode = ''; offerTaken = false
+  store.set('ts_offer', '')
 }
 
 // The QR code (the share panel's Countdown one), read with the phone's camera
@@ -382,9 +517,17 @@ function setCorner(c: Corner): void { corner = c; store.set('ts_corner', c); ren
 function setup(): void {
   $('code').addEventListener('input', onCode)
   $('scan').addEventListener('click', startScan)
+  $('offer').addEventListener('click', () => { void startOffer() })
+  $('offercancel').addEventListener('click', () => { endOffer(); render() })
   $('scanstop').addEventListener('click', stopScan)
   document.querySelectorAll<HTMLButtonElement>('#corners button').forEach(b => b.addEventListener('click', () => setCorner(b.dataset.c as Corner)))
   document.querySelectorAll<HTMLButtonElement>('#taps button').forEach(b => b.addEventListener('click', () => { tapsNeeded = Number(b.dataset.n); store.set('ts_taps', String(tapsNeeded)); render() }))
+  document.querySelectorAll<HTMLButtonElement>('#see button').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.s as keyof See
+    see = { ...see, [k]: !see[k] }
+    store.set('ts_see', JSON.stringify(see))
+    render()
+  }))
   document.querySelectorAll<HTMLInputElement>('input[name=wants]').forEach(i => i.addEventListener('change', () => { wants = i.value === 'operator' ? 'operator' : 'presenter'; store.set('ts_wants', wants) }))
   let armed = 0
   $('unpair').addEventListener('click', () => {
@@ -393,12 +536,12 @@ function setup(): void {
     armed = 0; $('unpair').textContent = 'Unpair'
     unpair('Unpaired. Type a new code to pair again.')
   })
-  $('origin').textContent = 'version ' + __APP_VERSION__ + ' · origin ' + (location.origin || location.protocol)
+  $('origin').textContent = 'version ' + __APP_VERSION__ + (__APP_DEV__ ? ' dev' : '') + ' · origin ' + (location.origin || location.protocol)
   render()
   if (paired) connect()
   // The countdown ticks here; the glasses get a change only when some text or brightness changes
   setInterval(() => { const v = glassesView(); glasses?.show(v); mirror(v) }, 250)
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) link?.wake() })
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { link?.wake(); offer?.wake() } })
 }
 
 // ─── The Even app ────────────────────────────────────────────────────────────
@@ -416,7 +559,7 @@ function attach(bridge: EvenAppBridge): void {
     const txt = ev.textEvent as { eventType?: number } | undefined
     const type = sys ? sys.eventType : txt ? txt.eventType : null
     if (type !== OsEventTypeList.LONG_PRESS_EVENT && type !== OsEventTypeList.LONG_PRESS_RELEASE_EVENT) clearTimeout(holdTimer)
-    if (type === OsEventTypeList.FOREGROUND_ENTER_EVENT) { link?.wake(); glasses?.show(glassesView(), true); return }
+    if (type === OsEventTypeList.FOREGROUND_ENTER_EVENT) { link?.wake(); offer?.wake(); glasses?.show(glassesView(), true); return }
     if (type === OsEventTypeList.LONG_PRESS_EVENT) { onHold(true); return }
     if (type === OsEventTypeList.LONG_PRESS_RELEASE_EVENT) { onHold(false); return }
     if (type === OsEventTypeList.DOUBLE_CLICK_EVENT) onTap(2)
@@ -433,12 +576,14 @@ async function boot(): Promise<void> {
   role = store.get('ts_role') === 'operator' ? 'operator' : 'presenter'
   wants = store.get('ts_wants') === 'operator' ? 'operator' : 'presenter'
   minimal = store.get('ts_minimal') === '1'
-  tapsNeeded = [3, 4, 5].includes(Number(store.get('ts_taps'))) ? Number(store.get('ts_taps')) : 3
+  tapsNeeded = [0, 3, 4, 5].includes(Number(store.get('ts_taps'))) && store.get('ts_taps') !== '' ? Number(store.get('ts_taps')) : 3
+  try { const v = JSON.parse(store.get('ts_see') || '{}'); see = { custom: v.custom ?? SEE_DEFAULT.custom, item: !!v.item, notices: !!v.notices } } catch { see = { ...SEE_DEFAULT } }
   status = paired ? 'connecting' : 'unpaired'
   if ((CORNERS as string[]).includes(store.get('ts_corner'))) corner = store.get('ts_corner') as Corner
   for (const p of location.hash.startsWith('#demo=') ? location.hash.slice(6).split(',') : []) if ((CORNERS as string[]).includes(p)) corner = p as Corner
   setup()
   if (bridge) attach(bridge); else $('nobridge').hidden = false
+  if (!paired && store.get('ts_offer')) void startOffer()      // still showing our code when the app was closed
 }
 boot()
 // For tests: what the glasses would show (box name -> text, the countdown with @brightness), and taps
@@ -447,5 +592,8 @@ w.__g2view = () => Object.fromEntries(Object.entries(glassesView()).filter(([, b
 w.__g2tap = onTap
 ;(window as unknown as { __g2hold: (down: boolean) => void }).__g2hold = onHold   // a hold starting / ending
 ;(window as unknown as { __g2menu: (id: number) => void }).__g2menu = onMenu   // a menu item chosen on the glasses
+;(window as unknown as { __g2down: (ago: number) => void }).__g2down = ago => { if (downSince) downSince = performance.now() - ago }   // tests: pretend the drop began ago ms back
+;(window as unknown as { __g2where: () => Record<string, string> }).__g2where = () => Object.fromEntries(Object.entries(glassesView()).filter(([, b]) => b && b.text).map(([k, b]) => [k, b!.h + b!.v]))   // where each box sits
 ;(window as unknown as { __g2scanned: (t: string) => void }).__g2scanned = scanned   // a QR code's text, as the camera would read it
+;(window as unknown as { __g2offer: () => Promise<void> }).__g2offer = startOffer   // tests: the "Show a pairing code" button
 ;(window as unknown as { __g2photo: (b: string) => Promise<string> }).__g2photo = b => codeFromPhoto(b)   // a photo's QR code

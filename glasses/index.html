@@ -28,11 +28,16 @@
     #taps { display: flex; gap: 6px; }
     #taps button { flex: 1; font: inherit; font-size: 15px; color: var(--dim); background: #1a1a1a; border: 1px solid #333; border-radius: 6px; padding: 9px 2px; }
     #taps button.on { color: #9cf59c; border-color: #2e6b2e; background: #123a12; }
+    /* The glasses' menu as buttons (main.ts controls()) */
+    #controls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0 0 12px; }
+    #controls button { font: inherit; font-size: 14px; color: var(--text); background: #1a1a1a; border: 1px solid #333; border-radius: 6px; padding: 10px 4px; }
+    #controls button.on { color: #9cf59c; border-color: #2e6b2e; background: #123a12; }
+    #controls button:disabled { opacity: .4; }
     /* What the glasses show (576×288), scaled to the page; text sized as the glasses' ~20 px font */
     #mirror { position: relative; aspect-ratio: 2 / 1; background: #000; border: 1px solid #1d3a1d; border-radius: 10px; margin: 4px 0 12px;
       container-type: inline-size; overflow: hidden; color: #5fff5f; font-family: "Helvetica Neue", Arial, sans-serif; }
     #mirror > div { position: absolute; font-size: 4cqw; line-height: 1.3; white-space: pre-wrap; font-variant-numeric: tabular-nums; }
-    #scan, #scanstop { font: inherit; font-size: 15px; color: #9fd8ff; background: #0e2a3a; border: 1px solid #2a5a7a; border-radius: 8px; padding: 9px 14px; }
+    #scan, #scanstop, #offer, #offercancel { font: inherit; font-size: 15px; color: #9fd8ff; background: #0e2a3a; border: 1px solid #2a5a7a; border-radius: 8px; padding: 9px 14px; }
     #scanbox { text-align: center; margin-top: 12px; } #scanbox p { margin: 8px 0; }
     #video { width: 100%; max-height: 50vh; border-radius: 10px; background: #111; object-fit: cover; }
     #scanstop { color: #ccc; background: #1a1a1a; border-color: #333; }
@@ -44,6 +49,9 @@
       border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
     #corners button { font: inherit; font-size: 14px; color: var(--dim); background: #1a1a1a; border: 1px solid #333; border-radius: 6px; }
     #corners button.on { color: #9cf59c; border-color: #2e6b2e; background: #123a12; }
+    #see { display: flex; gap: 8px; }
+    #see button { flex: 1; font: inherit; font-size: 14px; color: var(--dim); background: #1a1a1a; border: 1px solid #333; border-radius: 6px; padding: 9px 2px; }
+    #see button.on { color: #9cf59c; border-color: #2e6b2e; background: #123a12; }
     #corners button:nth-child(odd) { text-align: left; padding-left: 10px; } #corners button:nth-child(even) { text-align: right; padding-right: 10px; }
     #corners button:nth-child(-n+2) { align-self: start; } #corners button:nth-child(n+3) { align-self: end; }
     #corners button { height: 2.4em; }
@@ -69,6 +77,15 @@
       <div id="msg"></div>
       <p style="text-align:center;margin:12px 0 0"><button id="scan">Or photograph the timer’s QR code</button></p>
       <div id="scanbox" hidden><video id="video" muted playsinline></video><p>Point at the share panel’s <b>Countdown</b> QR code.</p><button id="scanstop">Cancel</button></div>
+      <div id="offerwrap">
+        <p style="margin:12px 0 0"><b>Presenting on your own, with the timer on this phone?</b> Your glasses show a code instead: type it in the timer’s share panel, under <b>Glasses</b>. You get the presenter’s countdown.</p>
+        <p style="text-align:center;margin:8px 0 0"><button id="offer">Show a pairing code on my glasses</button></p>
+        <div id="offerbox" hidden>
+          <p id="offertext"></p>
+          <p class="note">The code is on your glasses only, so typing it proves the timer is yours: no number to type back. It lasts 10 minutes; you can leave this app meanwhile.</p>
+          <p style="text-align:center;margin:8px 0 0"><button id="offercancel">Cancel</button></p>
+        </div>
+      </div>
       <p class="note">The timer’s operator decides which these glasses are when letting them in; your choice is passed on as a request.</p>
     </section>
 
@@ -80,11 +97,17 @@
       </div>
       <p id="status"></p>
       <div id="mirror" hidden title="What your glasses show"></div>
+      <div id="controls" title="The glasses’ menu"></div>
       <p class="note">Shown as: <b id="rolename"></b> (set on the timer)</p>
       <div id="tapsbox" hidden>
         <h2>Taps for Next</h2>
-        <div id="taps"><button data-n="3">3 taps</button><button data-n="4">4 taps</button><button data-n="5">5 taps</button></div>
-        <p class="note">More taps make it harder to fire Next by accident.</p>
+        <div id="taps"><button data-n="3">3 taps</button><button data-n="4">4 taps</button><button data-n="5">5 taps</button><button data-n="0">Off</button></div>
+        <p class="note">More taps make it harder to fire Next by accident. <b>Off</b>: taps never fire Next; use the glasses’ menu or <b>Next item</b> above.</p>
+      </div>
+      <div id="seebox">
+        <h2>Beside the countdown</h2>
+        <div id="see"><button data-s="custom">Messages</button><button data-s="item">Item name</button><button data-s="notices">Notices</button></div>
+        <p class="note"><b>Messages</b> are the ones the operator types for you (“Please wrap up”). <b>Item name</b> is the run sheet item, usually your own name. <b>Notices</b> are <i>last minute</i> and <i>time’s up</i>; the countdown also brightens for those. Your choice, kept on this phone.</p>
       </div>
       <div id="cornerbox">
         <h2>Where on the glasses</h2>
@@ -92,6 +115,7 @@
           <button data-c="tl">Top left</button><button data-c="tr">Top right</button>
           <button data-c="bl">Bottom left</button><button data-c="br">Bottom right</button>
         </div>
+        <p class="note" id="cornernote" hidden>For <b>Minimal view</b> (the glasses' menu, or press and hold for 2 seconds): just the countdown and the message, in this corner.</p>
       </div>
       <div class="row"><button id="unpair">Unpair</button></div>
     </section>
@@ -102,8 +126,9 @@
     <ul>
       <li>This works with timers at <b>beta.timed-show.com</b>.</li>
       <li>The timer’s operator chooses whether these glasses are a <b>presenter’s</b> or the <b>operator’s</b>, and can change it at any time (share → the device list).</li>
-      <li><b>Presenter:</b> the time left, small and dim, in a corner. It gets brighter in the last minute and when time is up (shown as <b>+</b> and the time over), and says <b>paused</b> while the timer is paused. Tap the glasses to hide or show it. Choose the corner here, or on the glasses: tap, then tap and hold to open the menu, and choose <b>Next corner</b>.</li>
-      <li><b>Operator:</b> the operator’s screen in miniature: elapsed and total along the top, the message on screen and the countdown in the middle, started and ends-at times along the bottom. <b>Tap three times quickly</b> (or four or five: choose here) to go to the next item in the run sheet; fewer taps do nothing. The glasses’ menu (tap, then tap and hold) has <b>Next item</b>, <b>Back</b> (undo a Next), <b>Pause / resume</b>, <b>Reset show</b>, <b>Auto start on / off</b> (the run sheet’s first item, before the show) and <b>Minimal view</b> (just the message and the countdown). Pressing and holding on the glasses for 2 seconds also turns Minimal view on or off.</li>
+      <li><b>Presenter:</b> the time left, small and dim, in a corner. It gets brighter in the last minute and when time is up (shown as <b>+</b> and the time over), and says <b>paused</b> while the timer is paused. Beside it, the operator’s messages to you (and, if you choose here, the run sheet item’s name or the last-minute and time’s-up notices). When the operator turns on <b>quiet</b>, only the countdown shows. Tap the glasses to hide or show it. Choose the corner here, or on the glasses: tap, then tap and hold to open the menu, and choose <b>Next corner</b>.</li>
+      <li><b>Operator:</b> the operator’s screen in miniature: elapsed and total along the top, the message on screen and the countdown in the middle, started and ends-at times along the bottom. <b>Tap three times quickly</b> (or four or five, or never: choose here) to go to the next item in the run sheet; fewer taps do nothing. The glasses’ menu (tap, then tap and hold) has <b>Next item</b>, <b>Back</b> (undo a Next), <b>Pause / resume</b>, <b>Reset show</b>, <b>Auto start on / off</b> (the run sheet’s first item, before the show) <b>Minimal view</b> (just the message and the countdown) and <b>Quiet on / off</b> (only the countdown on the presenter’s screens; the next item ends it). The run sheet item’s name shows dimmer than a message typed for the presenter. Pressing and holding on the glasses for 2 seconds also turns Minimal view on or off.</li>
+      <li>Everything in the glasses’ menu (and a presenter’s tap) is also a button on this page, under the picture of the glasses.</li>
       <li>Before pairing, the glasses say <i>Timer not connected</i>. If the timer closes they say <i>Timer offline</i> and reconnect when it reopens. The pairing is remembered.</li>
       <li>To close the app, tap, then tap and hold on the glasses (Even’s menu) and choose close.</li>
       <li><b>Unpair</b> forgets the timer. The timer’s operator can also take the glasses’ access away at any time (share → the device list).</li>

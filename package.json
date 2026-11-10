@@ -4,7 +4,9 @@
   "description": "Presentation countdown timer (static site) with Stream Deck, run sheet, video, phone remotes/displays and Bitfocus Companion; remote-server.js is the pairing server for phones and Companion",
   "main": "remote-server.js",
   "scripts": {
-    "start": "node remote-server.js"
+    "start": "node remote-server.js",
+    "test": "sh tests/e2e/run_all.sh",
+    "test:setup": "sh tests/e2e/setup.sh"
   },
   "dependencies": {
     "ws": "^8.16.0"

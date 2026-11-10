@@ -9,6 +9,18 @@ timer, showed an expired countdown counting up). The Even app serves plugins fro
 Worker since 30 Oct; `remote-server.js` doesn't yet).
 
 Decisions since this plan was written (they override the sections below):
+- **Pairing from one phone (3 Nov 2026; built on alpha, not yet on the glasses):** with the timer in the
+  phone's browser and the glasses' app in the Even app on the same phone, the code route kept failing
+  (the timer's page froze or reconnected while the Even app was in front, so its code changed or went
+  unanswered; then the proximity number needed the browser again). The owner's idea: the glasses show a
+  code of their own on the HUD (*Show a pairing code on my glasses* on the phone page; never on the
+  phone page), typed in the share panel's **Glasses** box: always as a presenter's (the owner: on one phone
+  it's a solo presenter; shows with an operator use the share code and its role choice). No
+  proximity number (only the wearer can read the code). The link comes sealed for the glasses' key and
+  waits on the server until the Even app is back. Pairing server protocol 7 (*Device codes* in CLAUDE.md).
+  The share panel's Glasses box is alpha-only (`TimerFeatures.glasses`). Still open for one-phone use:
+  the timer runs only while its browser is in front (sharing now keeps the screen on); whether the Even
+  app keeps the glasses' socket in the background is untested.
 - **Pairing = the friend-code route** (`RemotePeer.claim`'s protocol), not a new claim/give
   exchange: the app claims the timer's 6-digit code with extra fields `client:'g2', mode`
   (`presenter` | `controller`), which servers ignore for now. The proximity check's 3-digit number
@@ -41,6 +53,15 @@ Decisions since this plan was written (they override the sections below):
   as set on the phone page) at once; standby shows on the glasses (presenter: in the corner; operator:
   after the countdown, the auto start's state bottom left). The menu is per role (`menuFor`).
   Rebuilding the page for text changes rebooted the glasses (fixed in 0.1.12: fixed slots, spaces).
+- **Minimal view in the corner (0.1.17):** an operator's Minimal view is the countdown in the corner
+  (`ts_corner`) with the message beside it, laid out like a presenter's; *Next corner* is on the
+  operator's menu too, and the phone page's corner picker shows for both roles. Toggling it rebuilds
+  the page (the boxes move): a user action, never in a hurry. A presenter's glasses don't show
+  *Timer offline* for the first 60 s of a drop (`downSince`, `DOWN_GRACE`; counted from launch until
+  the first connect): the countdown runs on from the last anchor. An operator's show it at once.
+- **Phone page controls (0.1.19):** `#controls`, built from `menuFor(role)` (so it always matches the
+  glasses' menu) plus a presenter's *Hide / show countdown*; lit for Minimal, Quiet, Auto start,
+  hidden; Reset show needs a second press within 3 s. *Taps for Next* has **Off** (`ts_taps` 0).
 - **Next, once Operator is proven on the glasses:** more operator commands, e.g. the phone remote's run
   sheet view and controls (Back / Pause / Next, nudges) on the plugin's phone page, so the operator
   needs only the Even app. (The owner finds typing the 6-digit code fine; the QR photo is a nice-to-have.)
@@ -56,6 +77,15 @@ Decisions since this plan was written (they override the sections below):
   hold) is the system's and always opens its menu (brightness, close), which apps can't block but can
   add items to (`menuObject` on the page: e.g. *Hide / show countdown*).
   Optionally the message (item name) too, configurable on the phone page.
+- **Message layers and quiet mode (0.1.15, Nov 2026):** the timer now keeps the run sheet item's name
+  and the operator's message apart (state `msgKind`, `itemMsg`, `opMsg`) and has quiet mode (`quiet`).
+  A presenter's glasses show only the operator's messages by default (the item name is usually their
+  own name: not news); on the phone page the wearer can add the item name and the last-minute /
+  time's-up notices (`ts_see`): a frequent flyer's personal choice. Quiet leaves only the countdown.
+  Operator glasses show everything (item name dimmer) and have *Quiet on / off* in the menu.
+- **Later: a green room cue call.** The run sheet item tags the people (glasses, but also run sheet
+  viewers in a green room, or a courtesy device lent to a keynote speaker) who should be called when
+  their item is coming up; the per-item glasses idea below becomes one case of it.
 - **Later: glasses per run sheet item.** Tag a run sheet entry with a specific pair of glasses (by
   the device's approval token / name in the share panel), so that presenter's glasses show the HUD
   only while their item is next up or live, and stay blank otherwise.

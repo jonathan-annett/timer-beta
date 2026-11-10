@@ -103,10 +103,14 @@
     state.log.push(entry);
     entry.planned = plannedStartMs(i);            // after push: an unanchored show is pinned to its first entry
     const ms = it.eff * 1000;
-    api({ cmd: 'default', msecs: ms });
+    itemDefault(ms);
     api({ cmd: 'start', msecs: ms });
     noteTimerStart();
-    api({ cmd: 'custommessage', text: it.name });
+    // The item's name is the item layer of the message; a new item also drops the operator's message
+    // and quiet mode (what was said to the last speaker isn't for this one)
+    api({ cmd: 'itemmessage', text: it.name });
+    api({ cmd: 'custommessage', text: '' });
+    api({ cmd: 'quiet', on: false });
     if (it.video) playItemVideo(it);              // the player restarts the timer at the video's length
     else stopRunsheetVideo();                     // moving on from a video item stops its video
     // Slides: every PowerPoint machine sets the item's holding slide as its wallpaper and opens its
@@ -123,6 +127,7 @@
     if (!it) { api({ cmd: 'start' }); return; }
     api({ cmd: 'start', msecs: it.eff * 1000 });
     noteTimerStart();
+    api({ cmd: 'quiet', on: false });
     const e = state.log[state.log.length - 1];
     if (e && e.id === it.id) {
       if (e.orig == null) e.orig = e.actual;      // keeps an unanchored sheet pinned to the first start
@@ -132,11 +137,63 @@
     commit();
   }
 
+  // The clock was corrected (inettime.js; timer.js moves the countdown): what happened stays what
+  // happened, so the log and Back's snapshots move with it. Planned clock times don't, except an
+  // unanchored sheet's, which are counted from the first actual start.
+  document.addEventListener('clock-moved', ev => {
+    const ms = ev.detail;
+    if (state.timerStart != null) state.timerStart += ms;
+    for (const e of state.log) {
+      e.actual += ms;
+      if (e.orig != null) e.orig += ms;
+      if (e.planned != null && !norm.anchored) e.planned += ms;
+    }
+    for (const h of state.history) {
+      if (!h.timer) continue;
+      for (const k of ['startedAt', 'endsAt', 'seekEndsAt', 'pausedAt']) if (Number.isFinite(h.timer[k])) h.timer[k] += ms;
+    }
+    commit();
+  });
+
+  // The timer's start was moved by ms (the shiftstart command: the assist station's "started
+  // here"). If it's this item's countdown, the log's actual start moves with it (orig keeps the
+  // first, as for a restart) and syncFromTimer keeps following it.
+  // whole: the end moved too (shiftPolicy), so the start times written on later rows move with it.
+  function startShifted(was, ms, whole) {
+    if (!isActive() || state.finished || state.timerStart == null || was !== state.timerStart) return;
+    state.timerStart += ms;
+    const e = state.log[state.log.length - 1];
+    if (e && e.id === state.currentId) {
+      if (e.orig == null) e.orig = e.actual;
+      e.actual += ms;
+    }
+    const src = liveItem();
+    if (whole && src) {
+      const sec = Math.sign(ms) * Math.round(Math.abs(ms) / 1000);   // so an Undo puts them back exactly
+      C.shiftStarts(sheet, sheet.items.indexOf(src), sec);
+      writeSheet();
+    }
+    commit();
+  }
+  // In run sheet mode the sheet decides how a moved start (shiftstart) moves the timer, for the
+  // item running now (the timer's start, `startedAt`, is the item's): if the next item starts by
+  // itself at a set time (its auto tick), only the start moves and the end stays; otherwise the
+  // whole timer moves and the later start times follow. null: not the run sheet's decision.
+  function shiftPolicy(startedAt) {
+    if (!liveItem() || state.timerStart == null || startedAt !== state.timerStart) return null;
+    const nj = nextIndex(state.index), nx = nj >= 0 ? norm.items[nj] : null;
+    if (nx && nx.auto && nx.start != null) {
+      const at = plannedStartMs(nj);
+      return { whole: false, why: `${nx.name || 'The next item'} starts by itself${at != null ? ' at ' + clockOf(at) : ''}, so only the start moves: the end stays.` };
+    }
+    return { whole: true, why: 'The whole timer moves: the speaker keeps their full time, and the later start times in the run sheet move with it.' };
+  }
+
   function finishShow() {
     state.finished = true;
     const end = norm.endIdx >= 0 ? norm.items[norm.endIdx] : null;
     state.log.push({ id: 'end', name: end ? end.name : 'Finish', planned: plannedFinishMs(), plannedDur: 0, actual: now() });
-    api({ cmd: 'custommessage', text: '' });
+    api({ cmd: 'itemmessage', text: '' });
   }
 
   function next() {
@@ -230,11 +287,13 @@
     const first = nextIndex(-1);
     if (first < 0) return;
     const it = norm.items[first], ms = it.eff * 1000;
-    api({ cmd: 'default', msecs: ms });
+    itemDefault(ms);
     api({ cmd: 'start', msecs: ms });
     // paused a moment after the start: paused at exactly N.000 s the display reads N+1 (as dropPlayer's rewind)
     setTimeout(() => { const s = api({ cmd: 'snapshot' }); if (state.standby && s && s.pausedAt == null) api({ cmd: 'pause' }); }, 60);
-    api({ cmd: 'custommessage', text: it.name });
+    api({ cmd: 'itemmessage', text: it.name });
+    api({ cmd: 'custommessage', text: '' });
+    api({ cmd: 'quiet', on: false });
     state.standby = true;
     sendStandby();
   }
@@ -388,8 +447,8 @@
     name = name.trim().slice(0, 300);
     const e = state.log[state.log.length - 1];
     const s = api({ cmd: 'snapshot' });
-    const shown = s ? s.message : null;
-    if (e && e.id === src.id && (shown === e.name || shown === src.name)) api({ cmd: 'custommessage', text: name });
+    const shown = s ? ('itemMessage' in s ? s.itemMessage : s.message) : null;
+    if (e && e.id === src.id && (shown === e.name || shown === src.name)) api({ cmd: 'itemmessage', text: name });
     if (e && e.id === src.id) e.name = name;
     if (src.name !== name) { src.name = name; writeSheet(); }
     commit();
@@ -412,9 +471,29 @@
     commit();
   }
 
+  // Items set the timer's default (their length). The operator's own default is kept in
+  // state.ownDefault the first time, and put back when run sheet mode goes off.
+  function itemDefault(ms) {
+    if (state.ownDefault == null) { const s = api({ cmd: 'snapshot' }); if (s && s.defaultDuration > 0) state.ownDefault = s.defaultDuration; }
+    api({ cmd: 'default', msecs: ms });
+  }
+
+  // Turning run sheet mode off leaves the timer as a plain timer: the item's name goes (the
+  // operator's own message stays), any run sheet video stops, the operator's own default comes
+  // back, and it's paused at the start of that countdown, ready for Space.
   function setActive(on) {
+    const was = isActive();
     state.active = !!on;
-    if (!state.active && state.standby) { state.standby = false; api({ cmd: 'standby', on: false }); }   // left paused, as a plain pause
+    if (!state.active && state.standby) { state.standby = false; api({ cmd: 'standby', on: false }); }
+    if (was && !state.active) {
+      stopRunsheetVideo();
+      api({ cmd: 'itemmessage', text: '' });
+      if (state.ownDefault > 0) api({ cmd: 'default', msecs: state.ownDefault });
+      state.ownDefault = null;
+      api({ cmd: 'start' });
+      // paused a moment after the start: paused at exactly N.000 s the display reads N+1 (as enterStandby)
+      setTimeout(() => { const s = api({ cmd: 'snapshot' }); if (!isActive() && s && s.pausedAt == null) api({ cmd: 'pause' }); }, 60);
+    }
     commit();
   }
 
@@ -752,6 +831,8 @@
   }
   function announce(force, info) {
     info = info || statusInfo();
+    // curEnd (below): when the item running now is due to end (the timer's end, pauses included), for the editor's checks
+    const ts = isActive() && !state.finished && state.index >= 0 ? api({ cmd: 'snapshot' }) : null;
     const nj = state.finished ? -1 : nextIndex(state.index);
     const cur = norm.items[state.index];
     const vars = {
@@ -767,14 +848,19 @@
       rs_list: scheduleList(),
       // Auto start, while it can be offered (before the show, the first start still ahead): "on 09:00" / "off 09:00"
       rs_auto: (o => (o == null ? '' : (firstAuto() ? 'on ' : 'off ') + clockOf(o)))(autostartOffer()),
+      // For the assist station: how a moved start moves the timer now (shiftPolicy; '' = its own choice),
+      // and the show so far: [{n: name, p: planned start ms, a: actual start ms, e: 1 = the finish}], last 30
+      rs_shift: (pol => (pol ? JSON.stringify({ w: pol.whole ? 1 : 0, why: pol.why }) : ''))(ts && shiftPolicy(ts.startedAt)),
+      rs_log: isActive() ? JSON.stringify(state.log.slice(-30).map(e => (e.id === 'end'
+        ? { n: String(e.name || 'Finish').slice(0, 80), p: e.planned, a: e.actual, e: 1 }
+        : { n: String(e.name || '').slice(0, 80), p: e.planned != null ? e.planned : null, a: e.actual })))
+        : '',
     };
     const v = JSON.stringify(vars);
     if ((force || v !== lastVars) && window.timerAPI) {
       lastVars = v;
       window.timerAPI.send({ setVariableValues: vars });
     }
-    // curEnd: when the item running now is due to end (the timer's end, pauses included), for the editor's checks
-    const ts = isActive() && !state.finished && state.index >= 0 ? api({ cmd: 'snapshot' }) : null;
     const autoP0 = autostartOffer();
     const live = JSON.stringify({ text: info.text, kind: info.kind, late: info.late == null ? null : Math.round(info.late),
       auto: firstAuto(), autoAt: autoP0, standby: !!state.standby, hardMiss: [...hardMiss],
@@ -815,7 +901,7 @@
   // sheetChanged(): the sheet in localStorage was rewritten by this window (the remote editor,
   // remote-control.js); the storage event that the editor window's writes give doesn't fire then.
   window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive, sheetChanged: onSheetChanged, flash, restart: restartCountdown,
-    curDuration, curEnd, liveName, standbyStart, setAutostart };
+    curDuration, curEnd, liveName, standbyStart, setAutostart, startShifted, shiftPolicy };
   // The dashboard's "Auto start at …" box; blurred after a click so Space goes back to the timer
   if ($('rs_auto')) $('rs_auto').addEventListener('change', e => { setAutostart(e.target.checked); e.target.blur(); });
 
@@ -834,7 +920,9 @@
 
   function init() {
     trackButtonBar();
-    document.getElementById('btnrunsheet')?.addEventListener('click', openEditor);
+    // The run sheet button opens the editor; Shift+click turns run sheet mode on or off instead
+    // (timer.css lights the button while it's on: html.runsheet)
+    document.getElementById('btnrunsheet')?.addEventListener('click', ev => { if (ev.shiftKey) { if (!state.active && !norm.items.length) flash("The run sheet is empty: open it (click, or E) to add items"); else setActive(!state.active); } else openEditor(); });
     // When the player window opens (or anything about it changes), cue the next video if needed
     if (vp()) vp().onChange(() => preloadNext());
     // The auto start used to be its own setting; it's now the first item's hard start
