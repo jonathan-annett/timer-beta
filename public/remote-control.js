@@ -223,6 +223,7 @@
   // own, so it's always as a presenter's (the device list's Make operator still works afterwards).
   // The server holds the sealed link until the glasses (perhaps in the background) collect it.
   const GLASSES = !!(window.TimerFeatures && TimerFeatures.glasses);
+  const ASSIST = !!(window.TimerFeatures && TimerFeatures.assist);   // the assist station: an alpha-only trial (features.js)
   const gl = { code: '', token: '', note: '', bad: false };
   const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
@@ -342,7 +343,7 @@
     // Even G2 glasses (the glasses/ app) say so in their hello, with the role they'd like. The
     // operator decides (approvePeer, setGlassesRole); the glasses' wish is only shown.
     if (m.t === 'hello' && m.client === 'g2') { e.client = 'g2'; e.wants = m.mode === 'operator' ? 'operator' : 'presenter'; }
-    if (m.t === 'hello' && m.client === 'assist') e.client = 'assist';   // the assist station (assist.html)
+    if (m.t === 'hello' && m.client === 'assist' && ASSIST) e.client = 'assist';   // the assist station (assist.html); without the trial, a plain view-only device
     if (!e.approved) {
       const known = m.t === 'hello' && typeof m.token === 'string' ? approvedEntry(m.token) : null;
       if (known) {

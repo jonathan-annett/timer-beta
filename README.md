@@ -159,7 +159,7 @@ It reconnects automatically after that. The **deck** button shows **deck ✓** w
 
 In the editor you can drag actions from the palette onto keys, set per-key labels and colours, and import or export layouts as JSON. Each model keeps its own layout. Useful actions include:
 
-- **Presets** and **controls**: start, pause, ±1 min, ±15 s, clear pauses.
+- **Presets** and **controls**: start, pause, ±1 min, ±15 s, clear pauses. *Arm presets* turns Arm presets on and off (lit while on); the default layouts have it where *Type message* used to be (the MK.2's last key, the end of the XL's row 3; *Type message* is still in the palette).
 - **Countdown keys**: show the remaining time on the deck. *Min / Hr* and *Sec / Min* work as a pair: `01` `30` for 90 seconds, `1h` `25m` for 85 minutes, and `+00` `45` in overtime. *Timer* shows the whole time on one key.
 - **Display toggles**: bar, clock and messages.
 - **Messages**: drag a *Message* action onto a key, and its text field opens in the editor. Pressing the key shows that message on the presenter screen; pressing it again clears it. The key lights up while its message is showing. *Clear message* removes your message (in run sheet mode the item's name comes back), and *Type message* opens the on-screen message box. *Quiet* turns quiet mode on and off (lit while on). The XL comes with two examples (*Please wrap up*, *Time for questions*).
@@ -271,25 +271,6 @@ A countdown that floats on top of everything on another computer, for example ov
 
 The overlay turns orange under a minute and red when time is up, and greys out while paused. While it floats and this page or the overlay has the keyboard, both show a blinking red ⌨ (with *Warning: timer still owns the keyboard* beside it for a few seconds): click PowerPoint before using the clicker. The progress shade follows the timer's bar switch (**B**), and with its messages switch (**M**) on, the message strip shows the timer's own notices (*Wrap up – last minute*, *Time's up*, *Paused*, or your own words from **notice words**) whenever no message is up. The overlay's own **Message** and **Progress shade** boxes turn them off on that screen only. It can't control the timer. The computer stays paired: next time just open `overlay.html` (it remembers), even after the timer was closed. **Unpair this computer** forgets it; a **New code** on the timer unpairs every device. The code works once, from any network (it can be read out over the phone); the proximity check is what makes sure the right computer gets in. The floating window works best in Chrome or Edge; other browsers get a simpler video overlay.
 
-### Assist station: when did the speaker really start?
-
-A second computer that listens to the room and keeps a time-stamped transcript, so you can put the timer's start where the speaker actually began (the walk to the lectern, the applause and the thank-yous don't count against them).
-
-1. On the other computer, open `assist.html` next to the timer (e.g. `alpha.timed-show.com/assist.html`) in Chrome or Edge.
-2. Pair it like an overlay: **share** → **Pair a computer** on the timer, type the 6-digit code on the station, then type the station's 3-digit number into the timer's share panel.
-3. On the station, click **Ask to move start times**, and **Allow** it in the timer's share panel. (Until then it only watches. **Stop moving starts** in the device list takes it back.)
-4. Choose the **Microphone** (a feed from the sound desk is best) and click **Start listening** (allow the microphone). Each phrase appears with the time it was said and how long after the timer's start that was. When the speaker gets going, click the line where they began, then **Move it**, or drag the **⏱** start marker onto that line. **▶** on a line plays it back, and **▶ Hear the start** plays the moment the timer started, so you can check by ear.
-
-**A move shifts the whole timer** by default: start and end together, so the speaker still gets their full time. Choose **only the start** to correct the elapsed time and leave the end where it is. On the presenter's screen the countdown never jumps by seconds: a change under 30 seconds is eased in (the countdown runs a little fast or slow until it's right, as with ↑/↓); a bigger one snaps the minutes at once and eases the rest.
-
-**In run sheet mode the run sheet decides** (the switch is off): if the next item starts by itself at its time (its auto tick), only the start moves and the end stays; otherwise the whole timer moves and the start times written on later rows move with it. The transcript also shows what the run sheet knows happened, where it happened: each item's actual start, as *⏱ 15:45 Mr Smith +16:40* (planned time, name, how late or early) at the end of the line being spoken then. If it's in the wrong place, drag the live item's marker onto the right line. Every move shows on the timer as *Start moved 0:42 later by …* with **Undo** (the station has its own Undo too), and the run sheet records the moved start as the item's actual start. Lines more than 15 minutes from the start can't move it.
-
-The transcript stays on the station, and like the sound it's a loop: the last 15 minutes (it survives a reload; **Clear** empties it, **Save transcript** downloads what's there as text). The timer is only told how far to move the start. While listening, the station keeps the last 15 minutes of sound for playing back.
-
-**Pictures:** choose a camera under **Pictures**: a webcam on a wide shot of the stage (the lectern and the screen), a capture card fed from the vision mixer (name captions and stings), or a shared screen or window (not on the computer running the presentation: it slows it down). While listening, the station takes pictures four times a second and, once the transcript has caught up, keeps one every 10 seconds and one at each end of every pause of more than 2 seconds between words; the rest are thrown away. Pauses show as their own rows (*7 s without speech*) with their pictures, so a speaker who's announced by a music sting and a caption, with no words, is still easy to find; click a picture to see it big. Like the transcript, the pictures stay on the station and are kept for 15 minutes.
-
-**Transcribing:** by default it's done **on this computer** by Whisper, a speech model that runs in the browser: nothing you record leaves the station, and each line's time is exactly where it is in the recording. It's quickest with a graphics chip (Chrome or Edge use it through WebGPU; without one it uses the processor, slower: choose the **tiny** model). The model is downloaded the first time (**base**, the default, is about 200 MB with a graphics chip; **tiny** 120 MB, **small** 590 MB) and kept by the browser after that, so do it before the show, on a good connection. The other choice, **with the browser's speech service**, needs no download but sends the audio to Google or Microsoft, and its times are when the words came back (allow a second or so).
-
 ### Even Realities G2 glasses (beta)
 
 The timer on a pair of [Even Realities G2](https://www.evenrealities.com/) smart glasses, through the **Timed Show** app for the Even app (an Even Hub plugin). It works with timers at **beta.timed-show.com**. It's in beta testing: to get it, [contact the developer](https://github.com/jonathan-annett/timer-beta/issues/new?title=Even%20G2%20beta%20tester) to be added to the Even Hub testers (you'll be asked privately for the email address your Even app uses: don't post it in the issue, which is public). You'll get an invitation email; accept it, then install from the Even app → **Me** → **Beta tester**.
@@ -354,3 +335,12 @@ No build step: it's plain HTML, CSS and JavaScript. See [`CLAUDE.md`](CLAUDE.md)
 ## Licence
 
 MIT. Original timer by Jonathan Annett.
+
+### Third-party code
+
+- **jsQR** 1.4.0 by Cosmo Wolfe (`jsQR.js`): Apache License 2.0, see `jsQR-LICENSE.txt`. Scans QR codes on the phone.
+- **qrcodejs** 1.0.0 by Sangmin Shim (davidshimjs) (`qrcode.min.js`): MIT, see `qrcode-LICENSE.txt`. Draws the share panel's QR codes.
+- **FileSaver.js** by Eli Grey (`FileSaver.js`): MIT, see `FileSaver-LICENSE.txt`.
+- **w3color.js** by w3schools.com (`w3color.js`): colour names for the timer's colour settings, kept with its credit line.
+- **Stream Deck protocol:** the USB device IDs and report layouts in `streamdeck.js` follow Julian Waller's [node-elgato-stream-deck](https://github.com/Julusian/node-elgato-stream-deck) (MIT).
+- **Assist station** (alpha only): [transformers.js](https://github.com/huggingface/transformers.js) (Apache License 2.0) and OpenAI's Whisper models (MIT), loaded by the browser from jsDelivr and Hugging Face, not served from here.

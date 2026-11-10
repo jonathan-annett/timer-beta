@@ -27,7 +27,7 @@ errs=[]
 ARGS=["--no-proxy-server","--disable-features=WebRtcHideLocalIpsWithMdns,LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets"]
 with sync_playwright() as p:
     b=p.chromium.launch(args=ARGS)
-    c=b.new_context(ignore_https_errors=True, viewport={"width":1280,"height":800})
+    c=b.new_context(ignore_https_errors=True, viewport={"width":1280,"height":800}); c.add_init_script("window.TimerFeatures = { assist: true }")   # the assist station: an alpha-only trial (features.js)
     c.add_init_script("""if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';localStorage.whatsnew_seen='2099-01-01';
       localStorage.runsheet=JSON.stringify({title:'Demo',perItem:20,items:[{id:'a',name:'Welcome',start:null,duration:600},{id:'b',name:'Keynote',start:null,duration:1800}]});
       localStorage.runsheet_state=JSON.stringify({active:true,index:-1,history:[],log:[]})}""")
@@ -41,7 +41,7 @@ with sync_playwright() as p:
     t.click("#phone-panel .pp-pair"); t.wait_for_timeout(800)
     code=t.text_content("#phone-panel .pp-digits").replace(" ","")
 
-    a_ctx=b.new_context(ignore_https_errors=True, viewport={"width":1100,"height":900}); a_ctx.route("**/*",h)
+    a_ctx=b.new_context(ignore_https_errors=True, viewport={"width":1100,"height":900}); a_ctx.route("**/*",h); a_ctx.add_init_script("window.TimerFeatures = { assist: true }")   # the assist station: an alpha-only trial (features.js)
     a=a_ctx.new_page(); a.on("pageerror", lambda e: errs.append("assist: "+str(e)))
     a.goto(BASE+"assist.html?remote="+SERVER); a.wait_for_timeout(800)
     a.fill("#code", code); a.wait_for_timeout(3000)

@@ -37,6 +37,10 @@
 (function () {
   'use strict';
   if (location.hostname) document.title = location.hostname + ' - Assist station';
+  if (window.TimerFeatures && !TimerFeatures.assist) {        // an alpha-only trial (features.js)
+    document.querySelector('main').innerHTML = '<h1>Assist station</h1><p class="sub">The assist station isn’t available on this site.</p>';
+    return;
+  }
 
   const $ = id => document.getElementById(id);
   const store = {

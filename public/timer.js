@@ -925,6 +925,7 @@ custom_message.addEventListener('focus', function(){
 	presetArm = !!on;
 	if (presetArm) localStorage.setItem("preset_arm", "1"); else localStorage.removeItem("preset_arm");
 	if (presetArm) setHtmlClass("presetarm"); else clearHtmlClass("presetarm");
+	if (timerAPI) timerAPI.send({ setVariableValues: { preset_arm: presetArm } });	// the deck's Arm presets key
 	presetArmTitle();
   }
   function presetArmTitle() {

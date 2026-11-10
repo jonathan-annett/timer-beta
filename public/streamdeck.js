@@ -2,6 +2,8 @@
  * streamdeck.js
  * Stream Deck WebHID integration for Presentation Timer
  * Supports: Mini (6), MK.II (15), XL (32)
+ * USB device IDs and report layouts follow Julian Waller's node-elgato-stream-deck
+ * (https://github.com/Julusian/node-elgato-stream-deck, MIT).
  * MIT Licensed
  */
 
@@ -52,6 +54,7 @@
     preset_90:        { label: '90 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 5400000 }) },
     preset_120:       { label: '2 hours',   group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 7200000 }) },
     preset_180:       { label: '3 hours',   group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 10800000 }) },
+    toggle_preset_arm: { label: 'Arm\npresets', group: 'Presets', toggleState: 'preset_arm', cmd: () => _sendCmd({ cmd: 'presetarm' }) },   // lit while presets only arm the timer
     start_restart:    { label: 'Start',     group: 'Controls',  cmd: () => _sendCmd({ cmd: 'keys', keys: [' '] }) },
     pause_resume: {
       label: 'Pause', altLabel: 'Resume',
@@ -104,12 +107,12 @@
     mk2: [
       'preset_10','preset_20','preset_30','preset_45','preset_60',
       'start_restart','pause_resume','add_1min','sub_1min','undo_pause',
-      'toggle_bar','toggle_time','toggle_messages','toggle_presenter','custom_msg',
+      'toggle_bar','toggle_time','toggle_messages','toggle_presenter','toggle_preset_arm',
     ],
     xl: [
       'preset_10','preset_20','preset_30','preset_45','preset_60','preset_90','preset_120','preset_180',
       'message','message','message_clear','rs_prev','rs_next','rs_status','countdown_major','countdown_minor',
-      'start_restart','pause_resume','add_1min','sub_1min','add_15sec','sub_15sec','undo_pause','custom_msg',
+      'start_restart','pause_resume','add_1min','sub_1min','add_15sec','sub_15sec','undo_pause','toggle_preset_arm',
       'toggle_bar','toggle_time','toggle_messages','toggle_presenter','catch_up','brightness_cycle','video_stop','video_rewind',
     ],
   };
@@ -127,7 +130,7 @@
   // whole deck ~10x a second.
   let deckState = {
     expired: false, impending: false, adjusting_up: false, adjusting_down: false,
-    pausing: false, showbar: false, showtimenow: false, showmessages: false, quiet: false,
+    pausing: false, showbar: false, showtimenow: false, showmessages: false, quiet: false, preset_arm: false,
     video_cued: false, video_playing: false,    // from the bus's video_status
   };
 

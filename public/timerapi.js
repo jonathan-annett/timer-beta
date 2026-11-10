@@ -1,4 +1,4 @@
-/* global timerAPI,presetArm,armTimer,onKey_Pause,onKey_UndoPause,catchUpNow,announceCustomMessage,captureTimerState,restoreTimerState,restoreMessages,setOperatorMessage,setItemMessage,setQuiet,quiet*/
+/* global timerAPI,presetArm,armTimer,setPresetArm,onKey_Pause,onKey_UndoPause,catchUpNow,announceCustomMessage,captureTimerState,restoreTimerState,restoreMessages,setOperatorMessage,setItemMessage,setQuiet,quiet*/
 
 function processTimerApiMessage(msg) {
     const { error,cmd, code } = msg ;
@@ -166,6 +166,12 @@ function processTimerApiMessage(msg) {
         }
 
         // Quiet mode: only the countdown on the presenter screens. {on: true|false}; no `on` toggles
+        // Arm presets on / off ({on}; no on toggles): the button bar's Presets badge, the deck's Arm presets key
+        case "presetarm": {
+            setPresetArm(typeof msg.on === "boolean" ? msg.on : !presetArm);
+            break;
+        }
+
         case "quiet": {
             setQuiet(typeof msg.on === "boolean" ? msg.on : !quiet);
             break;
@@ -255,6 +261,7 @@ function processTimerApiMessage(msg) {
                         showtimenow: localStorage.getItem('showtimenow') || '0',
                         showbar: localStorage.getItem('showbar') || '0',
                         showmessages: localStorage.getItem('showmessages') || '0',
+                        preset_arm: presetArm,
                         barpct: String(Math.floor(Number(localStorage.getItem('barpct')) || 0)),
                         htmlclass: document.documentElement.className,
                         paused: secToStr(pausedMsec / 1000),
