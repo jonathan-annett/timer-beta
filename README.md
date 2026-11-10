@@ -68,6 +68,7 @@ At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. O
 |---|---|
 | **R** | Open / close the presenter window |
 | **F** | Fullscreen on / off |
+| **Esc** | Cancels a duration being typed, or closes an open panel; otherwise fades out whatever is playing over 3 seconds: a walk-up sting, and a video, which then ends as if it had finished (a dropped video unloads and its countdown and message clear; a run sheet video goes back to its start, ready). In Chrome's full screen a tap does this too, and holding Esc leaves full screen. What's playing (a sting, a video or the line-up tone) also shows in a yellow bar with **Fade out** and **Stop**: on the timer's screen (above the run sheet editor when it's docked) and in the run sheet editor's own window. Esc in the editor fades too |
 | **P** | Toggle presenter mode in this window (hides controls) |
 | **S** | Single-screen mode: presenter view, fullscreen, in this window |
 | **B** | Progress bar on / off |
@@ -77,8 +78,8 @@ At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. O
 | **Q** | Quiet mode: only the countdown on the presenter's screens (no message, notice, time of day or progress bar) until **Q** again or the next run sheet item. Your own screen keeps them, dimmed, under a *QUIET* badge |
 | **O** | Floating countdown overlay that stays on top of other apps (e.g. over PowerPoint's Presenter View): the same overlay as *Countdown overlay on another computer* below, with its shape, message and progress shade set in a small box under the buttons (it fades after 30 seconds; **Hide** puts it away). **O** again closes it. Keeps running with the timer minimized, so a Stream Deck can drive everything; the timer's keys also work while the overlay window or the presenter window has focus (Chrome/Edge). Opening the overlay needs the timer window itself (browsers only let the window you're typing in open a floating window): **O** in the presenter window closes it, but to open it press **O** on the timer. While the timer or the overlay has the keyboard, both show a blinking red ⌨ (with *Warning: timer still owns the keyboard* beside it for a few seconds; hover over the timer's for the message again), so you know to click back into PowerPoint before using the clicker or the keyboard. Opening it needs the key press or a click on the **overlay** button. |
 | **?** or **F1** | This guide, shown over the timer (main screen only, not in presenter or single-screen mode). The *help* link at the bottom does the same |
-| **E** | Run sheet editor (opens in its own window) |
-| **Page Down / Page Up** | Run sheet mode: next item / back (Space is next too, here and in the run sheet editor, unless you're typing). Otherwise, in PowerPoint mode, Page Down restarts the timer |
+| **E** | Run sheet editor: opens or closes it along the bottom of the screen (or opens its own window, if you chose that) |
+| **Page Down / Page Up** | Run sheet mode: next item / back (on a Mac: Fn+↓ / Fn+↑). **Space** is next and **delete** (Backspace) is back too, here and in the run sheet editor, unless you're typing (a time on the timer, or a box in the editor, which turns navy while you type in one). Otherwise, in PowerPoint mode, Page Down restarts the timer |
 | **^** | PowerPoint mode: a clicker's **Page Down** restarts the timer |
 | **D** | Stream Deck layout editor |
 | **Ctrl+S** | Edit the timer's styles (CSS); **Ctrl+S** again saves. Only the rules you add or change are saved, so updates to the timer still come through. **Ctrl+Shift+S** resets them |
@@ -99,7 +100,7 @@ Changing the clock doesn't disturb a running countdown: only the times of day mo
 
 Load the show's running order and step through it with a presentation clicker, the Stream Deck, or the keyboard.
 
-1. Press **E** (or click **run sheet**) to open the editor. (**Shift+click** on **run sheet** turns run sheet mode on or off without opening it; the button is lit while run sheet mode is on.) It opens in its own window, so you can drag it to another screen. Its **?** button (or **F1**) shows this guide.
+1. Press **E** (or click **run sheet**) to open the editor. (**Shift+click** on **run sheet** turns run sheet mode on or off without opening it; the button is lit while run sheet mode is on.) It opens along the bottom of the timer's screen: drag the bar along its top to make it taller or shorter, and **✕** (or **E** again, with the timer clicked) closes it. To work on another screen, click **⧉ Own window**: it opens in a window of its own, and the run sheet button opens it there from then on, until you click **⇲ Dock** in that window to put it back. The timer remembers which you chose, whether it was open and its height, over a reload. Its **?** button (or **F1**) shows this guide. (While you're typing in the editor, the keyboard is the editor's: click the countdown to give the timer its keys back.)
 2. Paste your running order into **Add items** and click **Replace sheet**. Any of these work:
    - Rows copied from Excel or Google Sheets, with start times, names and/or durations in any order, with or without a header row.
    - A CSV file (**Open CSV…**).
@@ -253,12 +254,14 @@ The QR code contains a secret key: anyone with the link can control the timer, s
 
 ### Bitfocus Companion
 
-[Bitfocus Companion](https://bitfocus.io/companion) (Stream Deck and other control surfaces, on any computer) can run the timer through a connection module in `companion/`. It joins the timer like a phone does, so Companion can be on another computer, or on the same one alongside the timer's own Stream Deck support. Companion gets every timer command as an action (start a countdown of any length with a message, pause, nudge, catch up, messages, display switches, run sheet Next/Back, video, keystrokes, raw API commands) and every value the timer publishes as a variable, with feedbacks for paused, under a minute, time up, message showing, behind schedule and so on. Companion can also drive the timer from its own data: a duration or message in a *Start a countdown* action can be a variable or expression from another connection.
+[Bitfocus Companion](https://bitfocus.io/companion) (Stream Deck and other control surfaces, on any computer) can run the timer through a connection module. It joins the timer like a phone does, so Companion can be on another computer, or on the same one alongside the timer's own Stream Deck support. Companion gets every timer command as an action (start a countdown of any length with a message, pause, nudge, catch up, messages, display switches, run sheet Next/Back, video, keystrokes, raw API commands) and every value the timer publishes as a variable, with feedbacks for paused, under a minute, time up, message showing, behind schedule and so on. Companion can also drive the timer from its own data: a duration or message in a *Start a countdown* action can be a variable or expression from another connection.
 
 1. In the timer, click **share** and choose **Companion**. Copy the link shown.
 2. In Companion, add a **Presentation Timer** connection and paste the link into its settings.
 
-It connects within a second or two. The first time, Companion's status shows a 3-digit number to type into the share panel (the proximity check); it's remembered afterwards. The module's own help (in Companion) lists the actions, variables, feedbacks and presets. It isn't in Companion's module store yet: build it from `companion/companion-module-sophtwhere-presentationtimer` (`npm ci && npm run build`) and point Companion's **Developer modules path** at the `companion/` folder, or `npm run package` for a `.tgz` to import. It is written for Companion 5.1 and should work from 4.3 on.
+It connects within a second or two. The first time, Companion's status shows a 3-digit number to type into the share panel (the proximity check); it's remembered afterwards. The module's own help (in Companion) lists the actions, variables, feedbacks and presets.
+
+**Installing the module:** it isn't in Companion's module store yet. Download the latest `.tgz` from [its releases page](https://github.com/jonathan-annett/companion-module-sophtwhere-presentationtimer/releases) and in Companion choose **Modules → Import module package**. It checks for a newer release once a day and says so in Companion's log, its `module_update` variable and a feedback; install the new `.tgz` the same way. Its source is [its own repository](https://github.com/jonathan-annett/companion-module-sophtwhere-presentationtimer). It is written for Companion 5.1 and should work from 4.3 on.
 
 ### Countdown overlay on another computer
 

@@ -1,5 +1,8 @@
 // Drives TimerLink (dist/link.js) against a local timer page. argv: link, [pin]
-import { TimerLink, parseLink } from '../../companion/companion-module-sophtwhere-presentationtimer/dist/link.js'
+// The module is its own repository (github.com/jonathan-annett/companion-module-sophtwhere-presentationtimer),
+// checked out beside timer-beta and built (yarn build); COMPANION_MODULE points elsewhere.
+const dir = process.env.COMPANION_MODULE || new URL('../../../companion-module-sophtwhere-presentationtimer/', import.meta.url).pathname
+const { TimerLink, parseLink } = await import(dir.replace(/\/?$/, '/') + 'dist/link.js')
 const [, , text, mode] = process.argv
 const p = parseLink(text)
 console.log('parsed:', JSON.stringify(p))

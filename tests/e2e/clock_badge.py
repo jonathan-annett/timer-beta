@@ -107,7 +107,7 @@ with sync_playwright() as p:
     box = t.locator("#clock-panel .cp-apply").bounding_box()   # a person's press: the button is held down for a moment
     t.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     t.mouse.down(); t.wait_for_timeout(500); t.mouse.up()
-    check("manual: set time", abs(offset() - 5400000) < 1500, offset())
+    check("manual: set time", abs(offset() - 5400000) < 2500, offset())   # whole seconds typed, plus the half-second press
     check("manual: correction shown", corr()[:6] in ("+1:30:", "+1:29:"), corr())
     t.wait_for_timeout(300)
     t.screenshot(path=OUTDIR + "/clock_manual.png")

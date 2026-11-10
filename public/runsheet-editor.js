@@ -31,6 +31,7 @@
   // the editor is view only (Next, Back, Pause and Restart still work). editState: 'no', 'asked', 'yes',
   // 'refused' or 'stopped' (the last two: the operator's answer, shown until asked again).
   const TOUCH_UI = REMOTE && new URLSearchParams(location.search).has('touch');   // in the phone remote
+  const DOCKED = !REMOTE && window.parent !== window;                               // in the timer's screen (runsheet-dock.js)
   let editState = REMOTE ? 'no' : 'yes';
   let canEdit = !REMOTE;
   let lastSheet = '';                                // remote: the sheet as the timer has it (to undo refused edits)
@@ -118,13 +119,11 @@
         link = { online: !!m.online, lan: !!m.lan };
         renderLive();
       } else if (m.t === 'rs-vprog') {
-        const deck = m.kind === 'deck' || m.kind === 'holding';
-        (deck ? deckSending : sending).set(m.id, m.pct);
-        const cell = document.querySelector(`#rs-table tr[data-id="${m.id}"] td.${deck ? 'deck' : 'vid'} .vbusy`);
-        if (cell) cell.textContent = deck ? `sending… ${m.pct}%` : `sending video… ${m.pct}%`;
+        sending.set(m.id, m.pct);
+        const cell = document.querySelector(`#rs-table tr[data-id="${m.id}"] td.vid .vbusy`);
+        if (cell) cell.textContent = `sending video… ${m.pct}%`;
       } else if (m.t === 'rs-vend') {
-        if (m.kind === 'deck' || m.kind === 'holding') { deckSending.delete(m.id); deckBusy.delete(m.id); }
-        else { sending.delete(m.id); busy.delete(m.id); }
+        sending.delete(m.id); busy.delete(m.id);
         if (m.error) alert(m.error);
         renderAll();
       }
@@ -259,7 +258,7 @@
         `<td class="num">${it.isEnd ? 'End' : i + 1}</td>` +
         `<td class="start"><input type="checkbox" class="hard" tabindex="-1" aria-label="Start automatically at this time"><input data-field="start" aria-label="Start time"></td>` +
         `<td class="name"><input data-field="name" aria-label="Item name"></td>` +
-        `<td class="vid"></td><td class="deck"></td>` +
+        `<td class="vid"></td>` +
         `<td class="dur"><input data-field="duration" aria-label="Duration"></td>` +
         `<td class="ends">${it.isEnd ? '' : '<input data-field="end" aria-label="End time">'}</td><td class="status"></td>` +
         `<td class="acts">` +
@@ -276,7 +275,7 @@
       name.value = src.name || '';
       dur.value = src.duration != null ? C.formatDuration(src.duration) : '';
       name.placeholder = 'Item name';
-      if (!it.isEnd) { renderVideoCell(tr.querySelector('td.vid'), src); renderDeckCell(tr.querySelector('td.deck'), src); }
+      if (!it.isEnd) renderVideoCell(tr.querySelector('td.vid'), src);
       dur.placeholder = it.isEnd ? 'finish' :
         C.formatDuration(it.eff) + (it.durSource === 'times' ? ' (from times)' : it.durSource === 'default' ? ' (default)' : '');
       tbody.appendChild(tr);
@@ -366,7 +365,7 @@
         inp.readOnly = ro || scaling || !canEdit;
         inp.title = scaling ? 'Apply or cancel the scaling first' : ro ? (role === 'now' ? 'Running now: it started when it started' : 'Already run: kept as it happened') : (inp.classList.contains('invalid') ? inp.title : '');
       });
-      tr.querySelectorAll('td.vid button, td.vid select, td.deck button').forEach(b => { b.disabled = role === 'done' || it.hidden || scaling; });
+      tr.querySelectorAll('td.vid button, td.vid select').forEach(b => { b.disabled = role === 'done' || it.hidden || scaling; });
       // The hard-start tick: the first item's works before the show (it's the auto start, in standby);
       // the others only once the show is under way, for items still to come. Otherwise dimmed.
       const hard = tr.querySelector('input.hard');
@@ -490,6 +489,11 @@
     auto.hidden = at == null;
     if (at != null) { auto.querySelector('span').textContent = 'Auto start at ' + clockOf(at); auto.querySelector('input').checked = !!live.auto; }
     auto.querySelector('input').disabled = !canEdit;
+    // What's playing (a video in the player, a sting, the tone): the timer's playing bar, here too (Fade
+    // out, Stop). Not when docked: the timer's own bar sits on top of the editor then
+    const pl = live.playing, plEl = $('playing');
+    plEl.hidden = !pl || DOCKED;
+    if (pl) { plEl.querySelector('.pl-icon').textContent = pl.kind === 'video' ? '🎬' : pl.kind === 'tone' ? '🔊' : '🎵'; plEl.querySelector('.pl-name').textContent = pl.name; }
     $('conn').classList.toggle('show', !controllerAlive());
     if (REMOTE) $('conn').textContent = 'Not connected to the timer right now: reconnecting… Changes made now may not reach it.';
   }
@@ -528,8 +532,21 @@
       td.innerHTML = `<span class="vbusy">${REMOTE ? `sending video… ${sending.get(item.id) || 0}%` : 'copying video…'}</span>`;
       return;
     }
+    if (item.sting && STINGS) {
+      const st = item.sting;
+      td.innerHTML = `<span class="vicon">${st.media === 'video' ? '🎞' : '🎵'}</span> <span class="vdur"></span>` +
+        (st.key ? '' : ' <span class="sweb" title="Not kept in the timer’s browser (yet): it plays from its link, so it needs the internet">⚠</span>') +
+        `<button class="vdel vtrim${StingClip.region(st) ? ' on' : ''}" data-act="strim" tabindex="-1" title="${StingClip.region(st) ? 'Plays part of the track: change it' : 'Choose the part to play, with fades'}">✂</button>` +
+        `<button class="vdel" data-act="sdel" tabindex="-1" title="Remove the walk-up sting">✕</button>`;
+      td.title = 'Walk-up sting: ' + st.name + (st.src === 'stock' ? ' (stock)' : st.src === 'link' ? '\n' + st.url : '') + '\nPlays as the item starts; the item keeps its own time.';
+      const len = StingClip.length(st, st.duration);
+      td.querySelector('.vdur').textContent = len ? C.formatDuration(Math.max(1, Math.round(len))) : '';
+      return;
+    }
     if (!item.video) {
-      td.innerHTML = `<button class="vadd" data-act="vadd" tabindex="-1" title="Play a video for this item (or drop a video file on the row)">+ video</button>`;
+      td.innerHTML = `<button class="vadd" data-act="vadd" tabindex="-1" title="Play a video for this item: the item runs as long as the video (or drop a video file on the row)">+ video</button>` +
+        (STINGS ? `<button class="vadd sadd" data-act="sadd" tabindex="-1" title="A walk-up sting: music or a video that plays as the item starts, while the item keeps its own time (or drop an audio file on the row)">+ sting</button>` : '');
+      td.title = '';
       return;
     }
     const v = item.video;
@@ -573,6 +590,7 @@
       const it = sheet.items.find(x => x.id === id);          // the sheet may have been reloaded meanwhile
       if (!it) { window.videoStore.remove(key); return; }
       if (it.video) window.videoStore.remove(it.video.key).catch(() => {});
+      if (it.sting) { if (it.sting.key) window.videoStore.remove(it.sting.key).catch(() => {}); delete it.sting; }   // a video or a sting, not both
       const secs = duration ? Math.max(1, Math.floor(duration + 0.25)) : null;
       it.video = { key, name: noExt(file.name), size: file.size, duration: secs };
       if (!it.videoIdle) it.videoIdle = 'show';
@@ -612,99 +630,539 @@
     saveSheet();
   }
 
-  // ─── Slides (PowerPoint decks and holding slides) ──────────────────────────
-  // A deck on an item opens on the PowerPoint computers when Next reaches it; a holding slide (an
-  // image, e.g. the event logo) becomes their wallpaper then, so it shows whenever no deck is up
-  // (pptx-hub.js sends both ahead of time). Kept in the browser like videos: item.deck / item.holding
-  // {key, name, size}, keys 'rsdeck:' / 'rsimg:<item id>:<time>'; name is the file name.
-  const DECK_RE = /\.(pptx|ppsx|pptm|ppsm|ppt|pps|potx)$/i;
-  const IMG_RE = /\.(png|jpe?g|bmp)$/i;
-  const PPTX = !!(window.TimerFeatures && TimerFeatures.pptx);   // alpha-only trial (features.js): no Slides column otherwise
-  const isDeck = f => !!f && DECK_RE.test(f.name || '');
-  const isHolding = f => !!f && IMG_RE.test(f.name || '');
-  const deckBusy = new Set();
-  const deckSending = new Map();
-  function renderDeckCell(td, item) {
-    if (deckBusy.has(item.id)) {
-      td.innerHTML = `<span class="vbusy">${REMOTE ? `sending… ${deckSending.get(item.id) || 0}%` : 'copying…'}</span>`;
-      return;
-    }
-    const d = item.deck, h = item.holding;
-    if (!d && !h) {
-      td.innerHTML = `<button class="dadd" data-act="dadd" tabindex="-1" title="A PowerPoint deck to open on the PowerPoint computers when this item starts, or an image (PNG/JPG) as the holding slide shown between decks (or drop the file on the row)">+ slides</button>`;
-      td.title = '';
-      return;
-    }
-    const both = d && h;
-    td.innerHTML =
-      (d ? `<span class="vicon">📊</span>${both ? '' : ' <span class="dname"></span>'}<button class="ddel" data-act="ddel" tabindex="-1" title="Remove the deck">✕</button>` : '') +
-      (h ? `<span class="vicon" title="Holding slide">🖼</span>${both ? '' : ' <span class="dname hname"></span>'}<button class="ddel" data-act="hdel" tabindex="-1" title="Remove the holding slide">✕</button>` : '') +
-      (both ? '' : `<button class="dadd dmore" data-act="dadd" tabindex="-1" title="${d ? 'Add a holding slide (an image)' : 'Add a PowerPoint deck'}">+</button>`);
-    td.title = [d ? 'Slides: ' + d.name : '', h ? 'Holding slide (wallpaper when no deck is up): ' + h.name : ''].filter(Boolean).join('\n');
-    const n = td.querySelector('.dname');
-    if (n) n.textContent = noExt((d || h).name);
+  // ─── Walk-up stings (a trial: TimerFeatures.stings) ─────────────────────────
+  // Music or a video that plays as the item starts (sting-player.js, on the timer's computer); the
+  // item keeps its own time, unlike a video. item.sting {src: 'file'|'link'|'stock', media:
+  // 'audio'|'video', name, duration, key?, url?, size?}: a file is kept in the browser like videos
+  // ('rssting:'); a link or stock sting is copied there by the timer (runsheet.js keepStings).
+  const STINGS = !!(window.TimerFeatures && TimerFeatures.stings);
+  const isMedia = f => !!f && /^(audio|video)\//.test(f.type || '');
+  const mediaOf = name => /\.(mp4|m4v|webm|mov|ogv)(\?|#|$)/i.test(name || '') ? 'video' : 'audio';
+  let stockList = null;
+  // A clip's fields (sting-clip.js): only the ones it has
+  // and its level (lufs: its loudness as it plays; volume: a trim, < 1), which travel with it
+  const CLIP_KEYS = ['start', 'end', 'fadeIn', 'fadeOut', 'loop', 'lufs', 'volume'];
+  const partFields = x => { const r = StingClip.region(x), o = {}; if (r) for (const k of CLIP_KEYS) if (r[k] != null && r[k] !== 0) o[k] = r[k]; return o; };
+  const clipFields = x => {
+    const o = partFields(x);
+    if (Number.isFinite(x.lufs)) o.lufs = x.lufs;
+    if (Number.isFinite(x.volume) && x.volume > 0 && x.volume < 1) o.volume = x.volume;
+    return o;
+  };
+  const stingIdOf = x => x.url + '#' + JSON.stringify(partFields(x));   // the same track, cut the same way (its level aside)
+  function stockStings() {
+    if (!stockList) stockList = fetch('stock-stings.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : { stings: [] }).then(j => {
+      const base = new URL('stock-stings.json', location.href);
+      return (Array.isArray(j && j.stings) ? j.stings : []).map(x => {
+        try {
+          const url = new URL(String(x.url || ''), base).href;
+          return /^https:/.test(url) && x.name ? Object.assign({ name: String(x.name).slice(0, 200), url, media: x.media === 'video' ? 'video' : x.media === 'audio' ? 'audio' : mediaOf(url), duration: Number.isFinite(x.duration) ? Math.round(x.duration) : null }, clipFields(x), x.hideOriginal === true ? { hideOriginal: true } : {}) : null;
+        } catch (_) { return null; }
+      }).filter(Boolean);
+    }).catch(() => []);
+    return stockList;
   }
-  async function attachDeck(id, file) {
-    if (!PPTX) return;
+  function setSting(id, sting) {
+    const it = sheet.items.find(x => x.id === id);
+    if (!it) return;
+    if (!REMOTE && it.sting && it.sting.key && it.sting.key !== sting.key && window.videoStore) window.videoStore.remove(it.sting.key).catch(() => {});
+    it.sting = sting;
+    if (!it.name) it.name = sting.name;
+    saveSheet();
+  }
+  // Who else on this sheet uses a stock or link sting (some presenters want "their" sting to themselves)
+  function stingUsers(s, exceptId) {
+    const want = stingIdOf(s);
+    return sheet.items.filter(x => x.id !== exceptId && !x.hidden && x.sting && x.sting.url && stingIdOf(x.sting) === want).map(x => x.name || 'an unnamed item');
+  }
+  const HIDE_USED = 'sting_hide_used';           // this computer's choice: hide stock stings already on the sheet
+  const hideUsed = () => { try { return localStorage.getItem(HIDE_USED) === '1'; } catch (_) { return false; } };
+  async function againOk(name, users) {
+    if (!users.length) return true;
+    return ask(`<b>${esc(name)}</b> is already used for ${esc(users.join(', '))}. Use it again here?`,
+      [{ label: 'Use it again', value: true, kind: 'primary' }, { label: 'Cancel', value: false, cancel: true }]);
+  }
+  // Custom file → Choose a folder…: its audio and video files (subfolders too) in a list. Chrome and
+  // Edge keep the folder (its handle in videoStore, FOLDER_KEY; the remote editor only for this
+  // session: it doesn't touch this computer's storage) and list it again next time (after a click,
+  // if the browser wants to ask again); other browsers pick it with a folder input, kept until the
+  // editor closes. The file chosen is stored with the item like a browsed one (attachSting).
+  const FOLDER_KEY = 'stingfolder:handle', FOLDER_MAX = 500;
+  const MEDIA_EXT = /\.(mp3|m4a|aac|wav|aif|aiff|flac|ogg|oga|opus|weba|mp4|m4v|webm|mov|ogv)$/i;
+  let folder = null;                             // {name, files: [{path, file | handle}]}
+  const byPath = (a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' });
+  async function listDir(dir, prefix, out, depth) {
+    for await (const [name, h] of dir.entries()) {
+      if (out.length >= FOLDER_MAX) return;
+      if (name.startsWith('.')) continue;
+      if (h.kind === 'file' && MEDIA_EXT.test(name)) out.push({ path: prefix + name, handle: h });
+      else if (h.kind === 'directory' && depth < 3) await listDir(h, prefix + name + '/', out, depth + 1);
+    }
+  }
+  async function folderOf(dir) { const files = []; await listDir(dir, '', files, 0); return { name: dir.name, files: files.sort(byPath) }; }
+  async function savedFolder() {                 // the folder kept from before: {handle, ok} (ok: no need to ask)
+    if (REMOTE || !window.videoStore) return null;
+    try {
+      const h = await window.videoStore.get(FOLDER_KEY);
+      return h && h.kind === 'directory' ? { handle: h, ok: (await h.queryPermission({ mode: 'read' })) === 'granted' } : null;
+    } catch (_) { return null; }
+  }
+  const folderInput = document.createElement('input');   // (browsers without showDirectoryPicker)
+  folderInput.type = 'file'; folderInput.webkitdirectory = true; folderInput.multiple = true; folderInput.hidden = true;
+  document.body.appendChild(folderInput);
+  let onFolder = null;                           // the open dialog's: a folder was chosen
+  folderInput.addEventListener('change', () => {
+    const all = [...folderInput.files]; folderInput.value = '';
+    if (!all.length) return;
+    const root = (all[0].webkitRelativePath || '').split('/')[0] || 'folder';
+    const files = all.filter(f => MEDIA_EXT.test(f.name) && !/(^|\/)\./.test(f.webkitRelativePath || f.name)).slice(0, FOLDER_MAX)
+      .map(f => ({ path: (f.webkitRelativePath || f.name).split('/').slice(1).join('/') || f.name, file: f }));
+    folder = { name: root, files: files.sort(byPath) };
+    if (onFolder) onFolder();
+  });
+  window.__stingFolder = f => { folder = f; if (onFolder) onFolder(); };   // (tests: {name, files: [{path, file}]})
+
+  let preview = null;                            // the stock sting being previewed in the dialog
+  function stopPreview() {
+    if (!preview) return;
+    preview.stop(); preview = null;
+    for (const bid of ['sting-prev', 'sting-mprev', 'sting-fprev']) { const b = document.getElementById(bid); if (b) { b.textContent = '▶'; b.title = 'Hear it'; } }
+  }
+  // + sting: three tabs along the top. Walk-up sting = the stock list (and the site's clips);
+  // Custom file = a file from this computer, or one from a folder's list; Edited sting = my clips (the sting library, which
+  // opens as a panel over the editor). One Use button for whichever tab is showing.
+  const okList = (list, stock) => Promise.all(list.map(async e => !!(await StingLibrary.source(e, stock))));
+  async function stingDialog(id) {
+    if (!canEdit) return refused();
+    const stock = await stockStings();
+    let mine = window.StingLibrary ? StingLibrary.read() : [];
+    let mineOk = window.StingLibrary ? await okList(mine, stock) : [];
+    const wrap = document.createElement('div');
+    wrap.className = 'ask sting-dlg';
+    wrap.innerHTML = '<div class="ask-box" role="dialog" aria-modal="true">' +
+      '<div class="sting-tabs"><button class="sting-tab" data-mode="stock">Walk-up sting</button><button class="sting-tab" data-mode="custom">Custom file</button><button class="sting-tab" data-mode="edited">Edited sting</button></div>' +
+      '<p class="sting-note">Plays as this item starts, on the timer’s computer. The item keeps its own time.</p>' +
+      '<div class="sting-pane" data-mode="stock">' +
+        (stock.length ? '<span class="sting-row"><select id="sting-stock"></select><button type="button" id="sting-prev" title="Hear it">▶</button><button type="button" id="sting-sedit" title="Make a clip of it: just the part you want, with fades (Save and use: kept in your sting library and put on this item)">✂</button></span>' +
+          '<label class="sting-check"><input type="checkbox" id="sting-hideused"> Hide stings already on this run sheet</label>' +
+          '<p class="sting-note" id="sting-none" hidden>Every stock sting is already on this run sheet.</p>' : '<p class="sting-note">This site has no stock stings.</p>') +
+      '</div>' +
+      '<div class="sting-pane" data-mode="custom">' +
+        '<p class="sting-note">Music or a video of your own, from this computer: one file (or drop it on the item’s row), or pick from a folder of them.</p>' +
+        '<span class="sting-row sting-btnrow"><button type="button" id="sting-browse">Browse for a file…</button><button type="button" id="sting-folderpick">Choose a folder…</button></span>' +
+        '<button type="button" id="sting-reopen" hidden></button>' +
+        '<div id="sting-folderbox" hidden><p class="sting-note" id="sting-foldername"></p>' +
+          '<span class="sting-row" id="sting-folderrow"><select id="sting-folder"></select><button type="button" id="sting-fprev" title="Hear it">▶</button><button type="button" id="sting-fedit" title="Make a clip of it: just the part you want, with fades (Save and use: kept in your sting library and put on this item)">✂</button></span></div>' +
+      '</div>' +
+      '<div class="sting-pane" data-mode="edited">' +
+        '<span class="sting-row" id="sting-minerow"><select id="sting-mine"></select><button type="button" id="sting-mprev" title="Hear it">▶</button><button type="button" id="sting-medit" title="Change this clip (Save and use: kept in your sting library and put on this item)">✂</button></span>' +
+        '<p class="sting-note" id="sting-mnone">No clips yet. In the sting library, choose just the part of a track you want, with fades: of a stock sting or a file of your own.</p>' +
+        '<button type="button" id="sting-lib">Open the sting library…</button>' +
+      '</div>' +
+      '<div class="ask-btns"><button class="primary sting-use">Use</button><button class="sting-cancel">Cancel</button></div></div>';
+    document.body.appendChild(wrap);
+    const $d = sel => wrap.querySelector(sel);
+    const sel = $d('#sting-stock'), folderSel = $d('#sting-folder'), mineSel = $d('#sting-mine'), hideBox = $d('#sting-hideused'), prevBtn = $d('#sting-prev'), useBtn = $d('.sting-use');
+    let mode = 'stock';
+
+    function fill() {                              // the stock list: whole tracks a better clip replaces left out
+      if (!sel) return;
+      const keep = sel.value, hide = hideBox.checked;
+      const replaced = window.StingLibrary ? StingLibrary.hidden(stock, mine) : new Set();
+      sel.innerHTML = stock.map((x, i) => {
+        if (replaced.has(i)) return '';
+        const users = stingUsers(x, id);
+        if (hide && users.length) return '';
+        const len = StingClip.length(x, x.duration);
+        return `<option value="${i}">${esc(x.name)}${len ? ' · ' + C.formatDuration(Math.max(1, Math.round(len))) : ''}${x.media === 'video' ? ' (video)' : ''}${users.length ? ' · in use: ' + esc(users.join(', ')) : ''}</option>`;
+      }).join('');
+      if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+      $d('#sting-none').hidden = sel.options.length > 0;
+      prevBtn.disabled = $d('#sting-sedit').disabled = !sel.options.length;
+    }
+    function fillMine() {
+      const keep = mineSel.value;
+      mineSel.innerHTML = mine.map((e, i) => {
+        const l = StingClip.length(e, e.duration);
+        return `<option value="${i}"${mineOk[i] ? '' : ' disabled'}>${esc(e.name)}${l ? ' · ' + C.formatDuration(Math.max(1, Math.round(l))) : ''}${mineOk[i] ? '' : ' (its file isn’t on this computer)'}</option>`;
+      }).join('');
+      if (keep && mineOk[Number(keep)]) mineSel.value = keep; else { const first = mineOk.indexOf(true); if (first >= 0) mineSel.value = String(first); }
+      $d('#sting-minerow').style.display = mine.length ? '' : 'none';
+      $d('#sting-mnone').style.display = mine.length ? 'none' : '';
+    }
+    function fillFolder() {
+      const box = $d('#sting-folderbox');
+      box.hidden = !folder;
+      if (!folder) return;
+      const keep = folderSel.value;
+      folderSel.innerHTML = folder.files.map((f, i) => `<option value="${i}">${esc(noExt(f.path))}</option>`).join('');
+      if ([...folderSel.options].some(o => o.value === keep)) folderSel.value = keep;
+      $d('#sting-foldername').textContent = folder.files.length ? `In “${folder.name}”${folder.files.length >= FOLDER_MAX ? ' (the first ' + FOLDER_MAX + ')' : ''}:` : `No audio or video files in “${folder.name}”.`;
+      $d('#sting-folderrow').style.display = folder.files.length ? '' : 'none';
+      $d('#sting-reopen').hidden = true;
+      $d('#sting-folderpick').textContent = 'Choose another folder…';
+    }
+    const folderFile = async () => { const f = folder && folder.files[Number(folderSel.value)]; return f ? f.file || f.handle.getFile() : null; };
+    function setMode(m) {
+      mode = m;
+      stopPreview();
+      wrap.querySelectorAll('.sting-tab').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+      wrap.querySelectorAll('.sting-pane').forEach(p => { p.style.display = p.dataset.mode === m ? '' : 'none'; });
+      useBtn.textContent = m === 'stock' ? 'Use this sting' : m === 'custom' ? 'Use this file' : 'Use this clip';
+      useBtn.disabled = m === 'stock' ? !(sel && sel.options.length) : m === 'custom' ? !(folder && folder.files.length) : !mineOk.some(Boolean);
+    }
+    async function libraryChanged() {
+      if (!window.StingLibrary) return;
+      const now = StingLibrary.read();
+      if (JSON.stringify(now) === JSON.stringify(mine)) return;
+      mine = now; mineOk = await okList(mine, stock);
+      fillMine(); fill(); setMode(mode);
+    }
+
+    if (sel) {
+      hideBox.checked = hideUsed();
+      hideBox.addEventListener('change', () => { try { localStorage.setItem(HIDE_USED, hideBox.checked ? '1' : '0'); } catch (_) { /* private mode */ } stopPreview(); fill(); setMode(mode); });
+      sel.addEventListener('change', stopPreview);
+      prevBtn.addEventListener('click', () => {
+        if (preview) return stopPreview();
+        const x = stock[Number(sel.value)];
+        if (!x) return;
+        if (StingClip.region(x)) preview = StingClip.preview(x.url, x);   // a clip: just its part, with its fades
+        else {
+          const el = document.createElement(x.media === 'video' ? 'video' : 'audio');   // (a video: its sound only)
+          el.src = x.url; el.onended = stopPreview; el.play().catch(() => stopPreview());
+          preview = { stop() { el.pause(); el.removeAttribute('src'); el.load(); } };
+        }
+        prevBtn.textContent = '■'; prevBtn.title = 'Stop';
+      });
+    }
+    mineSel.addEventListener('change', stopPreview);
+    $d('#sting-mprev').addEventListener('click', async () => {
+      if (preview) return stopPreview();
+      const e = mine[Number(mineSel.value)];
+      const src = e && await StingLibrary.source(e, stock);
+      if (!src) return;
+      preview = StingClip.preview(src, e);
+      $d('#sting-mprev').textContent = '■';
+    });
+    folderSel.addEventListener('change', stopPreview);
+    $d('#sting-fprev').addEventListener('click', async () => {
+      if (preview) return stopPreview();
+      let file; try { file = await folderFile(); } catch (_) { file = null; }
+      if (!file) return;
+      const url = URL.createObjectURL(file), el = document.createElement(/^video\//.test(file.type) ? 'video' : 'audio');   // (a video: its sound only)
+      el.src = url; el.onended = stopPreview; el.play().catch(() => stopPreview());
+      preview = { stop() { el.pause(); el.removeAttribute('src'); el.load(); URL.revokeObjectURL(url); } };
+      $d('#sting-fprev').textContent = '■'; $d('#sting-fprev').title = 'Stop';
+    });
+    onFolder = () => { stopPreview(); fillFolder(); setMode(mode); };
+    $d('#sting-folderpick').addEventListener('click', async () => {
+      stopPreview();
+      if (!window.showDirectoryPicker) return folderInput.click();
+      let dir; try { dir = await window.showDirectoryPicker({ id: 'stings', mode: 'read' }); } catch (_) { return; }   // (cancelled)
+      folder = await folderOf(dir);
+      if (!REMOTE && window.videoStore) window.videoStore.put(FOLDER_KEY, dir).catch(() => {});
+      onFolder();
+    });
+    if (!folder) savedFolder().then(async sf => {   // the folder from last time: listed at once, or after a click if the browser asks
+      if (!sf || folder || !wrap.isConnected) return;
+      if (sf.ok) { try { folder = await folderOf(sf.handle); onFolder(); } catch (_) { /* gone */ } return; }
+      const b = $d('#sting-reopen');
+      b.textContent = `Show the files in “${sf.handle.name}” again`; b.hidden = false;
+      b.onclick = async () => { try { if ((await sf.handle.requestPermission({ mode: 'read' })) === 'granted') { folder = await folderOf(sf.handle); onFolder(); } } catch (_) { b.hidden = true; } };
+    });
+    fill(); fillMine(); fillFolder();
+    setMode(stock.length ? 'stock' : 'custom');
+
+    return new Promise(resolve => {
+      const onStore = ev => { if (ev.key === 'sting_library') libraryChanged(); };
+      window.addEventListener('storage', onStore);
+      window.addEventListener('focus', libraryChanged);   // (and on coming back from another tab)
+      const close = () => {
+        stopPreview();
+        onFolder = null;
+        document.removeEventListener('keydown', onKey, true);
+        window.removeEventListener('storage', onStore);
+        window.removeEventListener('focus', libraryChanged);
+        wrap.remove();
+        resolve();
+      };
+      function onKey(e) {
+        if (document.querySelector('.sting-libwrap, .sc-wrap')) return;   // the library or the clip editor has the keys
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+        else if (e.key === 'Enter' && !e.target.closest('button')) { e.preventDefault(); e.stopPropagation(); if (!useBtn.disabled) useBtn.click(); }
+        else if (e.key === 'PageDown' || e.key === 'PageUp') e.stopPropagation();   // not Next/Back behind it
+      }
+      document.addEventListener('keydown', onKey, true);
+      wrap.querySelectorAll('.sting-tab').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+      $d('.sting-cancel').addEventListener('click', close);
+      $d('#sting-browse').addEventListener('click', () => { pickFor = id; stingPicker.click(); close(); });   // (the picker needs this click)
+      $d('#sting-lib').addEventListener('click', async () => { stopPreview(); await openLibrary(); await libraryChanged(); setMode('edited'); });
+      // A clip from the library on this item: a file clip brings its file, a stock or link clip its link
+      async function useMine(e) {
+        const clip = clipFields(e);
+        if (e.file) {
+          const blob = await StingLibrary.source(e, stock);
+          if (!blob) { alert('That clip’s file isn’t on this computer.'); return; }
+          attachSting(id, new File([blob], e.file, { type: blob.type || (e.media === 'video' ? 'video/mp4' : 'audio/mpeg') }), { name: e.name, clip, lib: e.name });
+          return;
+        }
+        const url = await StingLibrary.source(e, stock), base = e.stock ? stock.find(x => x.name === e.stock) : null;
+        const st = Object.assign({ src: e.stock ? 'stock' : 'link', media: e.media, name: e.name, url, duration: e.duration != null ? Math.round(e.duration) : base && base.duration, lib: e.name }, clip);
+        if (!(await againOk(e.name, stingUsers(st, id)))) return;
+        setSting(id, st);
+      }
+      // ✂ beside each list: straight into the clip editor, as from the sting library. Save and use keeps
+      // the clip in the library (index: the clip changed; null: a new one) and puts it on this item;
+      // Cancel comes back here with nothing saved. keep: a file to store with a new clip (only once saved).
+      async function editAndUse(entry, src, index, keep) {
+        stopPreview();
+        const r = await StingClip.open({ src, name: entry.name, region: entry, media: entry.media, original: entry.stock || null,
+          hideOriginal: index == null ? true : entry.hideOriginal === true, saveLabel: 'Save and use' });
+        if (!r) return;
+        try { if (keep) await StingLibrary.keepFile(keep); } catch (err) { alert('Couldn’t keep the file in this browser: ' + (err && err.message || err)); return; }
+        const e = StingLibrary.fromEdit(entry, Object.assign({}, r, { name: StingLibrary.freeName(r.name, index) }));
+        if (!e) return;
+        const list = StingLibrary.read();
+        if (index == null) list.push(e); else list[index] = e;
+        StingLibrary.write(list);
+        close();
+        await useMine(e);
+      }
+      if (sel) $d('#sting-sedit').addEventListener('click', () => {
+        const x = stock[Number(sel.value)];
+        if (x) editAndUse(Object.assign({ name: x.name, stock: x.name, media: x.media || 'audio', duration: x.duration }, clipFields(x)), x.url, null);
+      });
+      $d('#sting-medit').addEventListener('click', async () => {
+        const i = Number(mineSel.value), e = mine[i];
+        const src = e && mineOk[i] && await StingLibrary.source(e, stock);
+        if (src) editAndUse(e, src, i);
+      });
+      $d('#sting-fedit').addEventListener('click', async () => {
+        let file; try { file = await folderFile(); } catch (_) { file = null; }
+        if (!file) { alert('That file can’t be read any more: choose the folder again.'); return; }
+        editAndUse({ name: noExt(file.name), file: file.name, size: file.size, media: /^video\//.test(file.type) ? 'video' : 'audio' }, file, null, file);
+      });
+      useBtn.addEventListener('click', async () => {
+        if (mode === 'stock') {
+          const x = sel && stock[Number(sel.value)];
+          if (!x || !sel.options.length) return;
+          close();
+          if (!(await againOk(x.name, stingUsers(x, id)))) return;
+          setSting(id, Object.assign({ src: 'stock', media: x.media, name: x.name, url: x.url, duration: x.duration }, clipFields(x)));
+        } else if (mode === 'custom') {
+          let file; try { file = await folderFile(); } catch (_) { file = null; }
+          if (!file) { alert('That file can’t be read any more: choose the folder again.'); return; }
+          close();
+          attachSting(id, file);                     // stored with the item, like a browsed file
+        } else {
+          const i = Number(mineSel.value), e = mine[i];
+          if (!e || !mineOk[i]) return;
+          close();
+          await useMine(e);
+        }
+      });
+    });
+  }
+  // The sting library as a panel over the editor (sting-library.js mount); resolves when it's closed
+  function openLibrary() {
+    return new Promise(resolve => {
+      const wrap = document.createElement('div');
+      wrap.className = 'ask sting-libwrap';
+      wrap.innerHTML = '<div class="ask-box sting-libbox"><div class="sting-libtop"><b>Sting library</b><span class="sting-note">Clips: just the part of a track you want, with fades, kept on this computer.</span><button class="sting-libdone">Done</button></div><div class="sting-libbody"></div></div>';
+      document.body.appendChild(wrap);
+      const lib = StingLibrary.mount(wrap.querySelector('.sting-libbody'));
+      const close = () => { lib.stop(); document.removeEventListener('keydown', onKey, true); wrap.remove(); resolve(); };
+      function onKey(e) {
+        if (document.querySelector('.sc-wrap')) return;            // the clip editor has the keys
+        if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); }
+        else if (e.key === 'PageDown' || e.key === 'PageUp') e.stopPropagation();
+      }
+      document.addEventListener('keydown', onKey, true);
+      wrap.querySelector('.sting-libdone').addEventListener('click', close);
+    });
+  }
+  window.__stingPreview = () => !!preview;   // (tests)
+
+  // ─── Sting levels (Options; sting-clip.js levelling) ──────────────────────
+  // Stings play turned down (never up) to a level: the house level (−23 LUFS unless changed here), or
+  // this show's, which Level this show… finds: every sting on the sheet measured as it plays (stored on
+  // it as lufs), and the quietest one's loudness, so it plays as it is and the rest come down to it.
+  // ▶ Line-up tone: 1 kHz at that level from the timer, for the mixer. On the timer's computer only
+  // (it needs the files; the levels are its own), except the tone, which a remote editor can play too.
+  let toneOn = false;
+  function renderLevels() {
+    if (!STINGS) return;
+    const sh = StingClip.showLevel();
+    if (!REMOTE) {
+      if (document.activeElement !== $('opt-house')) $('opt-house').value = StingClip.houseLevel();
+      $('lvl-show').textContent = sh ? `This show: ${sh.lufs.toFixed(1)} LUFS, the quietest of ${sh.n} sting${sh.n === 1 ? '' : 's'} (levelled ${clockOf(sh.at)}). Stings play down to it.`
+        : `Stings play down to the house level. Level this show to use the quietest sting’s level instead, for more signal.`;
+      $('lvl-house').hidden = !sh;
+    }
+    $('lvl-tone').textContent = toneOn ? '■ Stop the tone' : '▶ Line-up tone';
+  }
+  function toggleTone(on) { toneOn = on == null ? !toneOn : on; send('tone', { on: toneOn }); renderLevels(); }
+  async function stingSource(s) {
+    if (s.key && window.videoStore) { try { const b = await window.videoStore.get(s.key); if (b) return b; } catch (_) { /* not here */ } }
+    return s.url || null;
+  }
+  async function levelShow() {
+    const items = sheet.items.filter(it => !it.hidden && it.sting);
+    if (!items.length) { await ask('There are no walk-up stings on this run sheet to level.', [{ label: 'OK', value: true, kind: 'primary' }]); return; }
+    const wrap = document.createElement('div');
+    wrap.className = 'ask lvl-dlg';
+    wrap.innerHTML = '<div class="ask-box" role="dialog" aria-modal="true"><div class="ask-text"><b>Levelling this show’s stings</b></div>' +
+      '<table class="lvl-table"><tbody>' + items.map(it => `<tr data-id="${esc(it.id)}"><td>${esc(it.name || '')}</td><td>${esc(it.sting.name)}</td><td class="lvl-r">waiting</td></tr>`).join('') + '</tbody></table>' +
+      '<p class="lvl-sum"></p><div class="ask-btns"><button class="lvl-tone2" disabled>▶ Line-up tone</button><button class="primary lvl-close">Close</button></div></div>';
+    document.body.appendChild(wrap);
+    let open = true;
+    const close = () => { open = false; document.removeEventListener('keydown', onKey, true); wrap.remove(); };
+    function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } else if (e.key === 'PageDown' || e.key === 'PageUp') e.stopPropagation(); }
+    document.addEventListener('keydown', onKey, true);
+    wrap.querySelector('.lvl-close').addEventListener('click', close);
+    const cell = id => wrap.querySelector(`tr[data-id="${id}"] .lvl-r`);
+    const found = {};
+    for (const it of items) {
+      if (!open) return;
+      const s = it.sting, c = cell(it.id);
+      c.textContent = 'measuring…';
+      if (s.duration > StingClip.LIMITS.source) { c.textContent = 'too long to measure'; continue; }
+      try {
+        const src = await stingSource(s);
+        if (!src) { c.textContent = 'its file isn’t here'; continue; }
+        const l = StingClip.loudness(StingClip.render(await StingClip.decode(src), s));
+        found[it.id] = l;
+        c.textContent = l == null ? 'silent' : l.toFixed(1) + ' LUFS';
+      } catch (_) { c.textContent = s.media === 'video' ? 'no sound to measure (or unreadable)' : 'couldn’t be read'; }
+    }
+    if (!open) return;
+    // Keep each measurement on its sting (the timer levels with it)
+    let changed = false;
+    for (const [id, l] of Object.entries(found)) {
+      const it = sheet.items.find(x => x.id === id);
+      if (it && it.sting && l != null && it.sting.lufs !== l) { it.sting.lufs = l; changed = true; }
+    }
+    if (changed) saveSheet();
+    const vals = Object.values(found).filter(l => l != null);
+    const sum = wrap.querySelector('.lvl-sum');
+    if (!vals.length) { sum.textContent = 'Nothing could be measured.'; return; }
+    const low = Math.max(StingClip.LEVEL.min, Math.min(StingClip.LEVEL.max, Math.min(...vals)));
+    try { localStorage.setItem(StingClip.SHOW_KEY, JSON.stringify({ lufs: low, n: vals.length, at: Date.now(), title: sheet.title || '' })); } catch (_) { /* private mode */ }
+    for (const [id, l] of Object.entries(found)) if (l != null) {   // the change it plays at: down to the level, and its trim
+      const it = sheet.items.find(x => x.id === id), d = Math.min(0, low - l) + 20 * Math.log10(StingClip.trim(it && it.sting));
+      cell(id).textContent = l.toFixed(1) + ' LUFS · ' + (d < -0.05 ? d.toFixed(1) + ' dB' : 'as it is');
+    }
+    sum.innerHTML = `This show’s level: <b>${low.toFixed(1)} LUFS</b>, the quietest sting’s. It plays as it is; the others are turned down to match. Play the line-up tone and set the mixer’s input so it reads your nominal level: every sting then lands there.`;
+    const tb = wrap.querySelector('.lvl-tone2');
+    tb.disabled = false;
+    const label = () => { tb.textContent = toneOn ? '■ Stop the tone' : '▶ Line-up tone'; };
+    tb.addEventListener('click', () => { toggleTone(); label(); });
+    label();
+    renderLevels();
+  }
+  if (STINGS) {
+    if (REMOTE) $('lvl-local').hidden = true;
+    else {
+      $('opt-house').addEventListener('change', e => {
+        const v = Math.round(Number(e.target.value));
+        try { if (v >= StingClip.LEVEL.min && v <= StingClip.LEVEL.max) localStorage.setItem(StingClip.TARGET_KEY, String(v)); else localStorage.removeItem(StingClip.TARGET_KEY); } catch (_) { /* private mode */ }
+        renderLevels();
+      });
+      $('lvl-scan').addEventListener('click', levelShow);
+      $('lvl-house').addEventListener('click', () => { try { localStorage.removeItem(StingClip.SHOW_KEY); } catch (_) { /* private mode */ } renderLevels(); });
+      window.addEventListener('storage', e => { if (e.key === StingClip.SHOW_KEY || e.key === StingClip.TARGET_KEY) renderLevels(); });
+    }
+    $('lvl-tone').addEventListener('click', () => toggleTone());
+    renderLevels();
+  } else $('lvl-box').hidden = true;
+  async function attachSting(id, file, extra) {   // extra: {name, clip, lib} (a library clip)
     const item = sheet.items.find(it => it.id === id);
     if (!item || !file) return;
-    const kind = isDeck(file) ? 'deck' : isHolding(file) ? 'holding' : null;
-    if (!kind) { alert('That isn’t a PowerPoint file (.pptx, .ppsx, .ppt …) or an image for a holding slide (.png, .jpg).'); return; }
+    if (!isMedia(file)) { alert('That isn’t an audio or video file.'); return; }
     if (!canEdit) return refused();
-    if (REMOTE) return sendDeck(id, file, kind);
-    if (!window.videoStore) { alert('Slides can’t be stored in this browser.'); return; }
-    deckBusy.add(id); renderAll();
+    if (item.video) { alert('This item has a video. Remove it first: an item has a video or a walk-up sting, not both.'); return; }
+    const media = file.type.startsWith('video/') ? 'video' : 'audio';
+    if (REMOTE) {
+      if (!link.online) { alert('Not connected to the timer right now.'); return; }
+      if (!link.lan) { alert('A sting file can only be sent to the timer over a direct link on the same network (the badge at the top shows ⚡ LAN direct). A stock sting or a link works from anywhere.'); return; }
+      if (busy.size) { alert('Wait for the file being sent to finish first.'); return; }
+      busy.add(id); sending.set(id, 0); renderAll();
+      const duration = await probeDuration(file);
+      toParent({ t: 'rs-video', kind: 'sting', id, file, name: noExt(file.name), duration, label: extra && extra.name, clip: extra && extra.clip, lib: extra && extra.lib });
+      return;
+    }
+    if (!window.videoStore) { alert('Stings can’t be stored in this browser.'); return; }
+    busy.add(id); renderAll();
     try {
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-      const key = (kind === 'deck' ? 'rsdeck:' : 'rsimg:') + id + ':' + Date.now();
+      const duration = await probeDuration(file);
+      const key = 'rssting:' + id + ':' + Date.now();
       await window.videoStore.put(key, file);
-      const it = sheet.items.find(x => x.id === id);
-      if (!it) { window.videoStore.remove(key); return; }
-      if (it[kind]) window.videoStore.remove(it[kind].key).catch(() => {});
-      it[kind] = { key, name: String(file.name).slice(0, 200), size: file.size };
-      if (!it.name && kind === 'deck') it.name = noExt(file.name);
-      saveSheet();
+      if (!sheet.items.find(x => x.id === id)) { window.videoStore.remove(key); return; }
+      setSting(id, Object.assign({ src: 'file', media, name: String((extra && extra.name) || noExt(file.name)).slice(0, 200), size: file.size, duration: duration ? Math.round(duration) : null, key }, extra && extra.clip, extra && extra.lib ? { lib: extra.lib } : {}));
     } catch (err) {
-      alert('Couldn’t store the file in this browser: ' + (err && err.message || err));
+      alert('Couldn’t store the sting in this browser: ' + (err && err.message || err));
     } finally {
-      deckBusy.delete(id);
+      busy.delete(id);
       renderAll();
     }
   }
-  // Remote mode: like videos, straight to the timer's computer over the local network only
-  function sendDeck(id, file, kind) {
-    if (!link.online) { alert('Not connected to the timer right now.'); return; }
-    if (!link.lan) {
-      alert('Slides can only be sent to the timer over a direct link on the same network, and this computer is connected through the server.\n\n' +
-        'Use the same Wi-Fi or network as the timer’s computer (the badge at the top shows ⚡ LAN direct), or add the slides on the timer’s computer.');
-      return;
+  // ✂: choose the part of the track to play (sting-clip.js), with fades. The file isn't cut.
+  async function trimSting(id) {
+    if (!canEdit) return refused();
+    const it = sheet.items.find(x => x.id === id);
+    if (!it || !it.sting) return;
+    const s = it.sting;
+    let src = null;
+    if (s.key && !REMOTE && window.videoStore) { try { src = await window.videoStore.get(s.key); } catch (_) { /* not here */ } }
+    if (!src && s.url) src = s.url;
+    if (!src) { alert('This sting’s file is kept on the timer’s computer: trim it there.'); return; }
+    const r = await StingClip.open({ src, name: s.name, region: s, media: s.media });
+    if (!r) return;
+    const now = sheet.items.find(x => x.id === id);
+    if (!now || !now.sting) return;
+    const st = Object.assign({}, now.sting, { name: r.name });
+    for (const k of CLIP_KEYS) { if (r[k] == null) delete st[k]; else st[k] = r[k]; }
+    if (st.duration == null && r.sourceLength) st.duration = Math.round(r.sourceLength);   // (the whole track's length)
+    // From the sting library: the same change there too, if they like (a better cut, a new name)
+    const list = st.lib && window.StingLibrary ? StingLibrary.read() : [], li = list.findIndex(x => x.name === st.lib);
+    if (li >= 0) {
+      const both = await ask(`This sting came from <b>${esc(st.lib)}</b> in your sting library. Update the library too?`,
+        [{ label: 'Update the library', value: true, kind: 'primary' }, { label: 'Just this item', value: false, cancel: true }]);
+      if (both) {
+        const e = Object.assign({}, list[li], { name: r.name });
+        for (const k of CLIP_KEYS) { if (r[k] == null) delete e[k]; else e[k] = r[k]; }
+        const clean = StingLibrary.clean(e);
+        if (clean) { list[li] = clean; StingLibrary.write(list); st.lib = clean.name; }
+      }
     }
-    if (busy.size || deckBusy.size) { alert('Wait for the file being sent to finish first.'); return; }
-    deckBusy.add(id); deckSending.set(id, 0); renderAll();
-    toParent({ t: 'rs-video', kind, id, file, name: String(file.name).slice(0, 200) });
-  }
-  function removeDeck(id, kind) {
-    const item = sheet.items.find(it => it.id === id);
-    if (!item || !item[kind]) return;
-    if (!confirm(kind === 'deck' ? `Remove the slides “${item.deck.name}” from this item?` : `Remove the holding slide “${item.holding.name}” from this item?`)) return;
-    if (!REMOTE) window.videoStore && window.videoStore.remove(item[kind].key).catch(() => {});
-    delete item[kind];
+    now.sting = st;
     saveSheet();
   }
-  const deckPicker = document.createElement('input');
-  deckPicker.type = 'file'; deckPicker.accept = '.pptx,.ppsx,.pptm,.ppsm,.ppt,.pps,.potx,.png,.jpg,.jpeg,.bmp'; deckPicker.hidden = true;
-  document.body.appendChild(deckPicker);
-  deckPicker.addEventListener('change', () => { const f = deckPicker.files[0]; deckPicker.value = ''; if (f && pickFor) attachDeck(pickFor, f); });
+  function removeSting(id) {
+    const item = sheet.items.find(it => it.id === id);
+    if (!item || !item.sting) return;
+    if (!confirm(`Remove the walk-up sting "${item.sting.name}" from this item?`)) return;
+    if (!REMOTE && item.sting.key && window.videoStore) window.videoStore.remove(item.sting.key).catch(() => {});
+    delete item.sting;
+    saveSheet();
+  }
+  const stingPicker = document.createElement('input');
+  stingPicker.type = 'file'; stingPicker.accept = 'audio/*,video/*'; stingPicker.hidden = true;
+  document.body.appendChild(stingPicker);
+  stingPicker.addEventListener('change', () => { const f = stingPicker.files[0]; stingPicker.value = ''; if (f && pickFor) attachSting(pickFor, f); });
 
-  // Videos and slides no longer used by the sheet (rows deleted, sheet replaced) are removed from the browser
+  // Videos and stings no longer used by the sheet (rows deleted, sheet replaced) are removed from the browser
+  // (as are slides from before the PowerPoint computers were dropped: rsdeck:, rsimg:)
   function cleanUpVideos() {
     if (REMOTE || !window.videoStore) return;
     const used = new Set(sheet.items.filter(it => it.video).map(it => it.video.key));
-    sheet.items.forEach(it => { if (it.deck) used.add(it.deck.key); if (it.holding) used.add(it.holding.key); });
+    sheet.items.forEach(it => { if (it.sting && it.sting.key) used.add(it.sting.key); });
     // Videos in the timer's Recent videos list stay until they drop off it (video-library.js)
     try { (JSON.parse(localStorage.getItem('video_history') || '[]') || []).forEach(e => { if (e && e.key) used.add(e.key); }); } catch (_) { /* ignore */ }
     window.videoStore.keys().then(keys => keys.forEach(k => {
-      if (/^rs(video|deck|img):/.test(String(k)) && !used.has(k)) window.videoStore.remove(k).catch(() => {});
+      if (/^rs(video|deck|img|sting):/.test(String(k)) && !used.has(k)) window.videoStore.remove(k).catch(() => {});
     })).catch(() => {});
   }
 
@@ -730,10 +1188,11 @@
     tbodyEl.querySelectorAll('tr.vdrop').forEach(r => r.classList.remove('vdrop'));
     if (!tr || tr.classList.contains('endrow') || tr.classList.contains('locked')) return;
     const list = Array.from(e.dataTransfer.files || []);
-    const f = list.find(x => x.type.startsWith('video/')) || (PPTX && (list.find(isDeck) || list.find(isHolding)));
+    const f = list.find(x => x.type.startsWith('video/')) || (STINGS && list.find(x => x.type.startsWith('audio/')));
     if (!f) return;
     e.preventDefault();
-    if (f.type.startsWith('video/')) attachVideo(tr.dataset.id, f); else attachDeck(tr.dataset.id, f);
+    if (f.type.startsWith('video/')) attachVideo(tr.dataset.id, f);
+    else attachSting(tr.dataset.id, f);   // music: a walk-up sting
   });
   // Before-play setting
   tbodyEl.addEventListener('change', e => {
@@ -1157,14 +1616,14 @@
       case 'vdel':
         removeVideo(id);
         break;
-      case 'dadd':
-        pickFor = id; deckPicker.click();
+      case 'sadd':
+        stingDialog(id);
         break;
-      case 'ddel':
-        removeDeck(id, 'deck');
+      case 'sdel':
+        removeSting(id);
         break;
-      case 'hdel':
-        removeDeck(id, 'holding');
+      case 'strim':
+        trimSting(id);
         break;
       case 'go':
         send('goto', { id });
@@ -1184,7 +1643,6 @@
         if (rowRole(i) === 'done') { sheet.items[i].hidden = true; saveSheet(); break; }
         if (id === state.currentId && !state.finished && !confirm('This item is running now. Delete it anyway?')) return;
         if (sheet.items[i].video && !confirm(`This item has a video ("${sheet.items[i].video.name}"). Delete the item and its video?`)) return;
-        if ((sheet.items[i].deck || sheet.items[i].holding) && !confirm(`This item has slides ("${(sheet.items[i].deck || sheet.items[i].holding).name}"). Delete the item and its slides?`)) return;
         sheet.items.splice(i, 1);
         saveSheet();
         cleanUpVideos();
@@ -1298,9 +1756,16 @@
   // ─── Transport ────────────────────────────────────────────────────────────
 
   $('btn-next').addEventListener('click', () => send('next'));
+  $('btn-fadeout').addEventListener('click', e => { e.currentTarget.blur(); send('fadeout'); });
+  $('btn-plstop').addEventListener('click', e => { e.currentTarget.blur(); send('fadeout', { msecs: 300 }); });
+  // Esc, when nothing here wants it (a dialog, the help, typing in a box): what's playing fades out
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || e.defaultPrevented || e.metaKey || !live.playing || typingIn(e.target)) return;
+    if (document.querySelector('.ask, .sc-wrap, .sting-libwrap, #help:not([hidden])')) return;
+    e.preventDefault();
+    if (!e.repeat) send('fadeout');
+  });
   $('btn-back').addEventListener('click', () => send('back'));
-  // Close every slide show on the PowerPoint computers: the holding slide shows
-  $('btn-pptxclose').addEventListener('click', () => send('pptxclose'));
   $('btn-reset').addEventListener('click', () => {
     if (confirm('Reset the show? This clears the log and goes back to before the first item. In run sheet mode the timer then stands by with the first item, paused, until it starts.')) send('reset');
   });
@@ -1383,19 +1848,25 @@
     if (e.repeat) return;
     send(e.key === 'PageDown' ? 'next' : 'back');
   });
-  // In run sheet mode Space is Next here too, as on the timer, unless something is being typed (a text
-  // box, a list) or a question is open. A focused button (Reset show… just clicked, say) doesn't get it:
-  // Space would press it again. Checkboxes neither: they're not typing.
+  // In run sheet mode Space is Next and delete (Backspace) is Back here too, as on the timer, unless
+  // something is being typed (a text box, a list) or a question is open. A focused button (Reset show…
+  // just clicked, say) doesn't get Space: it would press it again. Checkboxes neither: they're not typing.
   const typingIn = t => t && (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' ||
     (t.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|reset|range|color|file)$/.test(t.type)))
-  const spaceIsNext = e => e.key === ' ' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !!state.active &&
+  const nextBackKey = e => (e.key === ' ' || e.key === 'Backspace') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !!state.active &&
     !typingIn(e.target) && !document.querySelector('.ask')
   document.addEventListener('keydown', e => {
-    if (!spaceIsNext(e)) return;
+    if (!nextBackKey(e)) return;
     e.preventDefault();
-    if (!e.repeat) send('next');
+    if (!e.repeat) send(e.key === ' ' ? 'next' : 'back');
   });
-  document.addEventListener('keyup', e => { if (spaceIsNext(e)) e.preventDefault(); });   // buttons act on Space's keyup
+  document.addEventListener('keyup', e => { if (nextBackKey(e)) e.preventDefault(); });   // buttons act on Space's keyup
+  // While a text box has the keyboard (Space and delete type there) the whole surface turns navy,
+  // so it's plain that they aren't Next and Back (html.typing)
+  const markTyping = () => document.documentElement.classList.toggle('typing', document.hasFocus() && !!typingIn(document.activeElement));
+  document.addEventListener('focusin', markTyping);
+  document.addEventListener('focusout', () => setTimeout(markTyping, 0));
+  addEventListener('focus', markTyping); addEventListener('blur', markTyping);
 
   // ─── Help (README overlay, see help-overlay.js; ? / F1 also open it) ───────
 
@@ -1419,6 +1890,17 @@
     }
     renderEditBar();
     toParent({ t: 'rs-ready' });
+  }
+  // In its own window, opened by the timer: ⇲ Dock puts it back along the bottom of the timer's
+  // screen (runsheet-dock.js), where it opens from then on
+  let opener = null;
+  try { opener = !REMOTE && window.parent === window && window.opener && !window.opener.closed && window.opener.runsheetDock ? window.opener : null; } catch (_) { /* another site */ }
+  if (opener) {
+    const b = document.createElement('button');
+    b.id = 'btn-dock'; b.textContent = '⇲ Dock';
+    b.title = 'Put the run sheet editor back along the bottom of the timer’s screen (it opens there from then on)';
+    b.addEventListener('click', () => { send('dock'); setTimeout(() => window.close(), 150); });
+    $('btn-help').before(b);
   }
   renderAll();
   setInterval(renderLive, 2000);

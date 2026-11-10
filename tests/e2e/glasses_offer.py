@@ -29,7 +29,7 @@ ARGS=["--no-proxy-server","--disable-features=WebRtcHideLocalIpsWithMdns,LocalNe
 with sync_playwright() as p:
     b=p.chromium.launch(args=ARGS)
     c=b.new_context(ignore_https_errors=True, viewport={"width":1280,"height":800})
-    c.add_init_script("""window.TimerFeatures = { pptx: false, glasses: true };
+    c.add_init_script("""window.TimerFeatures = { glasses: true };
       if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';localStorage.whatsnew_seen='2099-01-01'}""")
     c.route("**/*",h)
     t=c.new_page(); t.on("pageerror", lambda e: errs.append("timer: "+str(e)))

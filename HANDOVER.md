@@ -18,9 +18,8 @@ In active development; used at real events.
 | `remote-server.js` | Standalone pairing server (wss, port 8443) for shared devices; `deploy/` has its systemd unit |
 | `tests/e2e/` | Playwright (Python) end-to-end scripts, `run_all.sh`, `server.sh`; see its `README.md` |
 | `tools/` | `stamp-versions.mjs` (cache-busting `?v=` stamps, run before each commit), `serve-local.mjs` (local HTTPS preview) |
-| `companion/` | Bitfocus Companion module (TypeScript, own npm project, `npm test`) |
 | `glasses/` | Even Realities G2 app (TypeScript + Vite, own npm project) |
-| `docs/` | `powerpoint.md` (PowerPoint machines), `glasses-g2-plan.md` |
+| `docs/` | `glasses-g2-plan.md`, user guides for the alpha trials (`stings.md`, `playout.md`, `assist.md`) |
 | `README.md` | User guide, also shown in the app's help overlay |
 
 Branches: `alpha` = development, `main` = released.
@@ -37,8 +36,8 @@ Branches: `alpha` = development, `main` = released.
   20 minutes (not timed precisely). Prints `ok` / `FAIL` per script, logs in `$E2E_OUT` (default `/tmp/timer-e2e`). Green = every
   line `ok`. The scripts print what they saw rather than asserting everything: read a test's log when its
   feature changed. Known flaky: `assist_audio` (timing-sensitive in a full run; passes alone).
-  Companion module: `cd companion/companion-module-sophtwhere-presentationtimer && npm ci && npm test`.
-  `glasses_pair.py` needs `glasses/dist` and `companion_link.py` the module's `dist/` (both built by `npm run test:setup`).
+  Companion module: its own repo (github.com/jonathan-annett/companion-module-sophtwhere-presentationtimer), checked out beside this one: `yarn install && yarn test`.
+  `glasses_pair.py` needs `glasses/dist` and `companion_link.py` the module's `dist/` in `../companion-module-sophtwhere-presentationtimer` (both built by `npm run test:setup`).
 
 ## How it deploys
 `public/` (+ `README.md`) is a static site for any HTTPS host. The hosted copies are built and deployed
@@ -54,7 +53,7 @@ payment or operations material in this repo.
 
 ## Gotchas
 - The e2e tests serve `public/` by intercepting `https://timer.sophtwhere.com/beta/`; no web server needed.
-- Hardware no server can test: Stream Deck (WebHID), the G2 glasses, the PowerPoint player (Windows),
+- Hardware no server can test: Stream Deck (WebHID), the G2 glasses,
   real phones (iOS Safari). These are checked by the owner by hand.
 - `tests/e2e/_*.py` are helpers, skipped by `run_all.sh`; `_move_to_new_site.py` is a one-off manual
   check that needs the `legacy-beta` branch checked out at `../timer-legacy`.

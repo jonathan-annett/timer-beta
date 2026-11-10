@@ -2,17 +2,17 @@ import os as _os  # paths: the repo's public/ folder; screenshots go to $E2E_OUT
 HERE = _os.path.dirname(_os.path.abspath(__file__))
 PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
-# Which site gets which trial feature (features.js): PowerPoint and the assist station on alpha only;
+# Which site gets which trial feature (features.js): PowerPoint, the assist station and stings on alpha only;
 # the share panel's Glasses box on alpha and on beta's two addresses (the glasses' server); none of
 # them anywhere else (the VPS copy, other hosts).
 import os, mimetypes, sys
 from playwright.sync_api import sync_playwright
 EXPECT = {
-    "alpha.timed-show.com":      {"pptx": True,  "glasses": True,  "assist": True},
-    "beta.timed-show.com":       {"pptx": False, "glasses": True,  "assist": False},
-    "timer-beta.sophtwhere.com": {"pptx": False, "glasses": True,  "assist": False},
-    "timer.sophtwhere.com":      {"pptx": False, "glasses": False, "assist": False},
-    "example.com":               {"pptx": False, "glasses": False, "assist": False},
+    "alpha.timed-show.com":      {"glasses": True,  "assist": True,  "stings": True,  "playout": True},
+    "beta.timed-show.com":       {"glasses": True,  "assist": False, "stings": False, "playout": False},
+    "timer-beta.sophtwhere.com": {"glasses": True,  "assist": False, "stings": False, "playout": False},
+    "timer.sophtwhere.com":      {"glasses": False, "assist": False, "stings": False, "playout": False},
+    "example.com":               {"glasses": False, "assist": False, "stings": False, "playout": False},
 }
 def h(route, req):
     path = req.url.split("://", 1)[1].split("/", 1)[1].split("?")[0].split("#")[0] if "/" in req.url.split("://", 1)[1] else ""
@@ -27,7 +27,7 @@ with sync_playwright() as p:
     t = c.new_page()
     for host, want in EXPECT.items():
         t.goto("https://%s/runsheet.html" % host)   # a page that loads features.js and nothing that needs a server
-        got = t.evaluate("({pptx: !!TimerFeatures.pptx, glasses: !!TimerFeatures.glasses, assist: !!TimerFeatures.assist})")
+        got = t.evaluate("({glasses: !!TimerFeatures.glasses, assist: !!TimerFeatures.assist, stings: !!TimerFeatures.stings, playout: !!TimerFeatures.playout})")
         ok = got == want
         print(("ok   " if ok else "FAIL ") + host + ": " + str(got))
         if not ok: errs.append(host)

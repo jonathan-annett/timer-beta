@@ -15,10 +15,13 @@ echo "== Python venv + Playwright + Chromium"
 "$E2E/.venv/bin/pip" install --quiet playwright
 "$E2E/.venv/bin/python" -m playwright install chromium
 
-echo "== Companion module"
-cd "$ROOT/companion/companion-module-sophtwhere-presentationtimer"
-npm ci
-npm run build
+echo "== Companion module (its own repository, beside this one)"
+MOD="${COMPANION_MODULE:-$ROOT/../companion-module-sophtwhere-presentationtimer}"
+[ -d "$MOD" ] || git clone https://github.com/jonathan-annett/companion-module-sophtwhere-presentationtimer.git "$MOD"
+cd "$MOD"
+corepack enable 2>/dev/null || true
+yarn install
+yarn build
 
 echo "== Glasses app"
 cd "$ROOT/glasses"

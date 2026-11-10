@@ -1,0 +1,14 @@
+{
+  "about": "Stock walk-up stings offered in the run sheet editor (+ sting). Each: name, url (https, or relative to this file), media (audio | video), duration (seconds). On the hosted site, stings/<file> is served by the Worker from its R2 bucket. A server elsewhere must send Access-Control-Allow-Origin so the timer can keep a copy for offline use.",
+  "stings": [
+    { "name": "Walk-up 1", "url": "stings/walkup1.mp3", "media": "audio", "duration": 170 },
+    { "name": "Walk-up 2", "url": "stings/walkup2.mp3", "media": "audio", "duration": 125 },
+    { "name": "Walk-up 3", "url": "stings/walkup3.mp3", "media": "audio", "duration": 138 },
+    { "name": "Walk-up 4", "url": "stings/walkup4.mp3", "media": "audio", "duration": 240 },
+    { "name": "Walk-up 5", "url": "stings/walkup5.mp3", "media": "audio", "duration": 209 },
+    { "name": "Walk-up 6", "url": "stings/walkup6.mp3", "media": "audio", "duration": 184 },
+    { "name": "Walk-up 7", "url": "stings/walkup7.mp3", "media": "audio", "duration": 160 },
+    { "name": "Walk-up 8", "url": "stings/walkup8.mp3", "media": "audio", "duration": 88 },
+    { "name": "Walk-up 9", "url": "stings/walkup9.mp3", "media": "audio", "duration": 25 }
+  ]
+}

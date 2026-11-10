@@ -26,6 +26,7 @@
   if (typeof RunsheetCore === 'undefined') return;
 
   const C = RunsheetCore;
+  const STINGS = !!(window.TimerFeatures && TimerFeatures.stings);   // walk-up stings: an alpha-only trial (features.js, sting-player.js)
   const SHEET_KEY = 'runsheet', STATE_KEY = 'runsheet_state', CMD_KEY = 'runsheet_cmd', LIVE_KEY = 'runsheet_live';
   const ON_TIME_SEC = 30;        // within this many seconds counts as "on time"
   const MAX_HISTORY = 200;
@@ -111,15 +112,15 @@
     api({ cmd: 'itemmessage', text: it.name });
     api({ cmd: 'custommessage', text: '' });
     api({ cmd: 'quiet', on: false });
-    if (it.video) playItemVideo(it);              // the player restarts the timer at the video's length
+    // A walk-up sting plays on into the items after it (an introduction over it, then the speaker's
+    // countdown) until another sting or a video item starts (the owner's call), or the operator fades it
+    if (it.video) { stopStings(); playItemVideo(it); }   // the player restarts the timer at the video's length
     else stopRunsheetVideo();                     // moving on from a video item stops its video
-    // Slides: every PowerPoint machine sets the item's holding slide as its wallpaper and opens its
-    // deck. An item without a deck leaves the last one on screen.
-    if ((it.deck || it.holding) && window.pptxHub) window.pptxHub.start(it);
+    if (STINGS && it.sting && !it.video) playSting(it);   // a walk-up sting: plays over the start, the item keeps its time (it stops the last one)
   }
 
   // The editor's Restart: the countdown again from the current item's full time (or the default
-  // duration outside the run sheet). Only the timer: no log entry, message, video or slides.
+  // duration outside the run sheet). Only the timer: no log entry, message or video.
   // The item gets its full time from now (a long introduction, a late walk-on), so its start in
   // the log moves to now and everything after it runs that much later (see lateness()).
   function restartCountdown() {
@@ -220,9 +221,11 @@
   function back() {
     if (!isActive()) return false;
     if (debounced()) return false;
+    const undone = state.currentId;
     const h = state.history.pop();
     if (!h) { flash('Nothing to go back to'); return false; }
     stopRunsheetVideo();                          // undoing a video item stops it (it's then cued again)
+    stopStings(undone);                           // and its walk-up sting stops at once (one from an earlier item plays on)
     if (h.timer) api({ cmd: 'restore', state: h.timer });
     if (h.timer && h.timer.standby && h.index < 0) { state.standby = true; sendStandby(); }   // back to before the show: standing by again
     state.index = h.index; state.currentId = h.currentId; state.finished = h.finished;
@@ -232,9 +235,6 @@
     // Back onto an item that was hidden after it ran: it's live again, so it shows again
     const back = !state.finished && state.index >= 0 ? sheet.items.find(x => x.id === state.currentId) : null;
     if (back && back.hidden) { delete back.hidden; writeSheet(); }
-    // Back onto an item with slides shows them again (if another deck is up)
-    const it = !state.finished && state.index >= 0 ? norm.items[state.index] : null;
-    if (it && window.pptxHub) window.pptxHub.current(it);
     commit();
     return true;
   }
@@ -487,6 +487,7 @@
     if (!state.active && state.standby) { state.standby = false; api({ cmd: 'standby', on: false }); }
     if (was && !state.active) {
       stopRunsheetVideo();
+      stopStings();
       api({ cmd: 'itemmessage', text: '' });
       if (state.ownDefault > 0) api({ cmd: 'default', msecs: state.ownDefault });
       state.ownDefault = null;
@@ -498,10 +499,10 @@
   }
 
   function commit() {
+    keepStings();
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
     render();
     preloadNext();
-    if (window.pptxHub) window.pptxHub.changed();   // decks to send ahead, current and next first
   }
 
   // ─── Videos ───────────────────────────────────────────────────────────────
@@ -547,19 +548,64 @@
   function stopRunsheetVideo() {
     const p = vp();
     const st = p && p.state();
-    if (st && st.playing && st.playing.tag) p.stop({ quiet: true });
+    if (st && st.playing && st.playing.tag && !st.playing.sting) p.stop({ quiet: true });   // (a sting plays on: stopStings)
+  }
+
+  // ─── Walk-up stings (sting-player.js) ──────────────────────────────────────
+  function playSting(it) {
+    const sp = window.stingPlayer;
+    if (!sp) return;
+    sp.play(it).then(r => {
+      if (r === 'no-player') flash(`"${it.name}" has a video sting: click "video" to open the player window`);
+      else if (r === 'missing') flash(`The walk-up sting for "${it.name}" isn't stored in this browser. Add it again in the run sheet editor.`);
+    });
+  }
+  function stopStings(itemId) { if (STINGS && window.stingPlayer) window.stingPlayer.stop(itemId); }   // itemId: only that item's
+
+  // Link and stock stings are copied into this browser, so the show doesn't need the internet.
+  // Their server has to allow it (CORS); if it doesn't, the sting plays from its link while online.
+  const stingFetches = new Set();
+  function keepStings() {
+    if (!STINGS || !window.videoStore) return;
+    for (const it of sheet.items) {
+      const s = it.sting;
+      if (!s || s.key || !s.url || stingFetches.has(s.url)) continue;
+      const url = s.url;
+      stingFetches.add(url);
+      fetch(url, { mode: 'cors' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); }).then(async blob => {
+        const key = 'rssting:' + it.id + ':' + Date.now();
+        await window.videoStore.put(key, blob);
+        sheet = readJSON(SHEET_KEY, sheet);                // the editor may have saved meanwhile
+        const now = sheet.items.find(x => x.id === it.id);
+        if (!now || !now.sting || now.sting.url !== url || now.sting.key) { window.videoStore.remove(key).catch(() => {}); return; }
+        now.sting.key = key;
+        if (!now.sting.size) now.sting.size = blob.size;
+        writeSheet();
+        stingFetches.delete(url);                          // (kept: if a later save loses the key, it's fetched again)
+        commit();
+      }).catch(err => console.warn('Walk-up sting not kept in this browser (it plays from its link):', url, err));
+    }
   }
 
   // Cue the next item's video, or drop a run sheet video that's cued but no longer next.
   // Never replaces a dropped (ad hoc) video that's waiting to play.
   let preloadFor = null;
   function preloadNext() {
+    const nj = !isActive() || state.finished ? -1 : nextIndex(state.index);
+    const nit = nj >= 0 ? norm.items[nj] : null;
+    const sting = STINGS && nit && nit.sting && !nit.video ? nit.sting : null;
+    if (sting && sting.media !== 'video' && window.stingPlayer) window.stingPlayer.preload(nit);
     const p = vp();
     if (!p || !p.isOpen() || !isActive() || pendingPlay) return;
-    const nj = state.finished ? -1 : nextIndex(state.index);
-    const it = nj >= 0 ? norm.items[nj] : null;
+    const it = nit;
     const st = p.state();
     if (st.cued && !st.cued.tag) return;                        // a dropped video is cued
+    if (sting && sting.media === 'video') {                    // the next item's video sting, cued in the player
+      if ((st.cued && st.cued.tag === 'sting:' + it.id) || preloadFor === it.id) return;
+      preloadFor = it.id;
+      window.stingPlayer.preload(it).finally(() => { preloadFor = null; });
+      return;
+    }
     if (!it || !it.video) {
       if (st.cued && st.cued.tag && st.cued.tag !== state.currentId) p.unloadCued();
       preloadFor = null;
@@ -594,6 +640,15 @@
     commit();
   }
 
+  // What's playing, for the editor's ■ Fade out (and its Esc): a video in the player, a sting, the tone
+  function playingNow() {
+    const vs = vp() && vp().state(), ss = window.stingPlayer && window.stingPlayer.state();
+    if (vs && vs.playing && !vs.playing.sting) return { kind: 'video', name: vs.playing.name };
+    if (ss && ss.video) return { kind: 'sting', name: ss.video.name };
+    if (ss && ss.audio) return { kind: ss.audio.id === 'tone' ? 'tone' : 'sting', name: ss.audio.name };
+    return null;
+  }
+
   function onCommand() {
     const raw = localStorage.getItem(CMD_KEY);
     if (!raw) return;
@@ -605,13 +660,15 @@
       case 'goto':   goTo(c.id); break;
       case 'reset':  resetShow(); break;
       case 'active': setActive(c.on); break;
-      case 'pptxclose': if (window.pptxHub) window.pptxHub.close(); break;   // the editor's Close slides
       case 'pause':  api({ cmd: 'pause' }); break;                           // toggles
       case 'restart': restartCountdown(); break;
       case 'curdur': curDuration(c.id, c.duration == null ? null : Number(c.duration)); break;
       case 'curend': curEnd(c.id, Number(c.endClock), c.nextId || null); break;
       case 'livename': liveName(c.id, c.name); break;
       case 'autostart': setAutostart(c.on); break;
+      case 'dock': if (window.runsheetDock) window.runsheetDock.dock(); break;   // the editor window's ⇲ Dock
+      case 'tone': api({ cmd: 'tone', on: typeof c.on === 'boolean' ? c.on : undefined }); break;      // the editor's line-up tone
+      case 'fadeout': api({ cmd: 'fadeout', msecs: Number.isFinite(c.msecs) ? c.msecs : undefined }); break;   // the editor's playing bar (and Esc): whatever is playing
     }
   }
 
@@ -784,7 +841,7 @@
       if (status) {
         // A hard start whose time came while items before it hadn't run (hardStartTick): said until it starts
         const missed = [...hardMiss].map(id => norm.items[idxOf(id)]).filter(Boolean).map(it => `⚠ ${it.name} was due at ${clockOf(plannedStartMs(idxOf(it.id)))}`).join(' · ');
-        status.textContent = flashText || [missed, sheet.title, pos, info.text, videoHint(), window.pptxHub ? window.pptxHub.hint() : ''].filter(Boolean).join(' · ');
+        status.textContent = flashText || [missed, sheet.title, pos, info.text, videoHint()].filter(Boolean).join(' · ');
         dash.classList.remove('rs-behind', 'rs-ahead', 'rs-ontime', 'rs-flash');
         dash.classList.add(flashText ? 'rs-flash' : missed ? 'rs-behind' : 'rs-' + (info.kind === 'none' ? 'ontime' : info.kind));
       }
@@ -864,7 +921,7 @@
     const autoP0 = autostartOffer();
     const live = JSON.stringify({ text: info.text, kind: info.kind, late: info.late == null ? null : Math.round(info.late),
       auto: firstAuto(), autoAt: autoP0, standby: !!state.standby, hardMiss: [...hardMiss],
-      curId: ts ? state.currentId : null, curEnd: ts ? Math.round(timerEndMs(ts) / 1000) * 1000 : null });
+      curId: ts ? state.currentId : null, curEnd: ts ? Math.round(timerEndMs(ts) / 1000) * 1000 : null, playing: playingNow() });
     if (live !== lastLive) { lastLive = live; localStorage.setItem(LIVE_KEY, live); }
   }
 
@@ -883,9 +940,15 @@
     if (e.key === 'PageDown') next(); else back();
   }, true);
 
-  function openEditor() {
+  // The editor: docked along the bottom of this screen (runsheet-dock.js; the default), or in its
+  // own window if that's what the operator chose last (the dock's ⧉; the window's ⇲ Dock comes back)
+  function openWindow() {
     const w = window.open('runsheet.html', 'runsheet_editor_window', 'width=1100,height=780');
     if (w) w.focus();
+    return w;
+  }
+  function openEditor() {
+    if (!(window.runsheetDock && window.runsheetDock.toggle())) openWindow();
     return false;
   }
 
@@ -900,7 +963,7 @@
 
   // sheetChanged(): the sheet in localStorage was rewritten by this window (the remote editor,
   // remote-control.js); the storage event that the editor window's writes give doesn't fire then.
-  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, isActive, sheetChanged: onSheetChanged, flash, restart: restartCountdown,
+  window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, openWindow, isActive, sheetChanged: onSheetChanged, flash, restart: restartCountdown,
     curDuration, curEnd, liveName, standbyStart, setAutostart, startShifted, shiftPolicy };
   // The dashboard's "Auto start at …" box; blurred after a click so Space goes back to the timer
   if ($('rs_auto')) $('rs_auto').addEventListener('change', e => { setAutostart(e.target.checked); e.target.blur(); });
@@ -920,7 +983,7 @@
 
   function init() {
     trackButtonBar();
-    // The run sheet button opens the editor; Shift+click turns run sheet mode on or off instead
+    // The run sheet button opens (or closes) the editor; Shift+click turns run sheet mode on or off instead
     // (timer.css lights the button while it's on: html.runsheet)
     document.getElementById('btnrunsheet')?.addEventListener('click', ev => { if (ev.shiftKey) { if (!state.active && !norm.items.length) flash("The run sheet is empty: open it (click, or E) to add items"); else setActive(!state.active); } else openEditor(); });
     // When the player window opens (or anything about it changes), cue the next video if needed

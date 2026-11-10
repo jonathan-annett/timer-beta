@@ -14,19 +14,23 @@
  * the videoplay / videostop / videorewind commands):
  *   open()      open the player window (needs a click or key press)
  *   isOpen()
- *   load(url, {name, idle, controls, message, revoke, tag, onEnd, history})   cue a video
+ *   load(url, {name, idle, controls, message, revoke, tag, onEnd, history, sting, region, volume})   cue a video
  *   loadFile(file, handle)  cue a file the operator dropped or browsed for (handle: a
  *               FileSystemFileHandle or a promise of one, kept so the history can reopen it)
- *   play()      play the cued video; the timer counts down its length
+ *   play({volume})  play the cued video; the timer counts down its length (volume: a sting's level, now)
  *   stop({quiet})  stop what's playing (or unload what's cued); unless quiet, clear the
  *               message and the timer
  *   rewind()    the playing video back to the start, cued, timer paused at its length
  *   unloadCued()  drop the cued video only
  *   setIdle('show'|'hide')  before play: first frame, or black
+ *   fadeOut(ms)  fade the playing sting out, then unload it
+ *   finish(ms)  fade the playing video (not a sting) out, then end it as if it had played to its end (Esc)
  *   state()     {status: 'empty'|'cued'|'playing', name, idle, duration, playing:{tag,name}, cued:{tag,name,idle}}
  *   onChange(fn)
  * onEnd: 'unload' (dropped videos: stop and clear) or 'recue' (run sheet: back to before-play,
  * timer 0:00, message kept; the operator presses Next when ready).
+ * sting: a run sheet item's walk-up sting (sting-player.js): plays without touching the timer or the
+ * message (the item sets those), isn't listed in Recent videos, and unloads quietly when it ends.
  *
  * history: what video-library.js needs to list the video once it has played
  * ({kind:'file', file, handle} | {kind:'link', url} | {kind:'runsheet', key} | {kind:'recall', id}).
@@ -69,7 +73,7 @@
       name: s ? s.name : '',
       idle: cued ? cued.idle : storedIdle(),
       duration: el && isFinite(el.duration) ? el.duration : null,
-      playing: playing ? { tag: playing.tag || null, name: playing.name } : null,
+      playing: playing ? { tag: playing.tag || null, name: playing.name, sting: !!playing.sting } : null,
       cued: cued ? { tag: cued.tag || null, name: cued.name, idle: cued.idle } : null,
     };
   }
@@ -197,10 +201,14 @@
       tag: opts.tag || null,
       onEnd: opts.onEnd === 'recue' ? 'recue' : 'unload',
       history: opts.history || null,
+      sting: !!opts.sting,
+      region: opts.sting && opts.region ? opts.region : null,   // a sting's clip: {start, end, fadeIn, fadeOut} (sting-clip.js)
+      volume: opts.sting && opts.volume > 0 && opts.volume <= 1 ? opts.volume : 1,   // a sting's level (sting-clip.js gainFor)
     };
     el.pause();
     el.src = url;
     el.currentTime = 0;
+    if (cued.region && cued.region.start) { const c = cued; whenReady(el, () => { if (c.el === el && cued === c) el.currentTime = c.region.start; }); }   // a clip: cued at its start
     arrange();
     notify();
     return true;
@@ -214,13 +222,33 @@
     el.addEventListener('loadedmetadata', fn, { once: true });
   }
 
-  function play() {
+  function play(opts) {
     if (!cued || !isOpen()) return false;
+    if (cued.sting && opts && opts.volume > 0 && opts.volume <= 1) cued.volume = opts.volume;   // a sting's level as it starts (it may have changed since it was cued)
     if (playing) { release(playing); playing = null; }
     playing = cued; cued = null;
     const s = playing;
     s.rewound = false;
     arrange();
+    if (s.sting) {                          // a walk-up sting: the item already set the timer and the message
+      const r = s.region || {};
+      if (r.start && Math.abs(s.el.currentTime - r.start) > 0.25) s.el.currentTime = r.start;
+      s.el.volume = r.fadeIn ? 0 : s.volume;
+      const p = s.el.play();
+      // A clip: fade in, and fade out at its end (on the player window's own timers: it's on show)
+      if (r.fadeIn || r.end != null) {
+        const t = win.setInterval(() => {
+          if (playing !== s) { win.clearInterval(t); return; }
+          if (r.fadeIn && s.el.volume < s.volume) s.el.volume = Math.min(s.volume, s.el.volume + s.volume * 50 / r.fadeIn);
+          if (r.end != null && s.el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { win.clearInterval(t); fadeOut(r.fadeOut || 30); }
+        }, 50);
+      }
+      if (p && p.catch) p.catch(err => {
+        if (err && err.name === 'NotAllowedError') toast('The browser stopped the sting playing with sound. Click once in the player window, then press Next again.');
+      });
+      notify();
+      return true;
+    }
     whenReady(s.el, () => {
       if (playing !== s) return;
       const remaining = Math.max(0, s.el.duration - s.el.currentTime);
@@ -290,9 +318,45 @@
     return true;
   }
 
+  // A walk-up sting fades out (Next), then unloads; nothing else is touched. Runs on the player
+  // window's own timers: it's on show, so not slowed like a background tab.
+  function fadeOut(ms) {
+    const s = playing;
+    if (!s || !s.sting || !isOpen()) return false;
+    const steps = Math.max(1, Math.round((ms || 1000) / 50)), from = s.el.volume;
+    let n = 0;
+    const t = win.setInterval(() => {
+      n++;
+      if (playing !== s) { win.clearInterval(t); return; }
+      s.el.volume = Math.max(0, from * (1 - n / steps));
+      if (n >= steps) { win.clearInterval(t); release(s); playing = null; arrange(); notify(); }
+    }, 50);
+    return true;
+  }
+
+  // Esc (the fadeout command): a graceful exit. The playing video (not a sting: fadeOut above) fades
+  // out, picture and sound, then ends as if it had played to its end (onEnded): a dropped video
+  // unloads and clears the message and timer, a run sheet video goes back to before-play.
+  function finish(ms) {
+    const s = playing;
+    if (!s || s.sting || s.ending || !isOpen()) return false;
+    s.ending = true;
+    const steps = Math.max(1, Math.round((ms || 3000) / 50)), v0 = s.el.volume;
+    let n = 0;
+    const t = win.setInterval(() => {
+      n++;
+      if (playing !== s) { win.clearInterval(t); s.ending = false; s.el.volume = v0; return; }
+      const k = Math.max(0, 1 - n / steps);
+      s.el.volume = v0 * k; s.el.style.opacity = String(k);
+      if (n >= steps) { win.clearInterval(t); s.el.pause(); s.el.volume = v0; s.ending = false; onEnded(s.el); }
+    }, 50);
+    return true;
+  }
+
   function onEnded(el) {
     const s = playing;
     if (!s || s.el !== el) return;
+    if (s.sting) { release(s); playing = null; arrange(); notify(); return; }   // done: nothing else changes
     if (s.onEnd === 'recue') {
       // Run sheet: stay on the item. Back to before-play (unless the next video is already
       // cued, which then shows instead); the timer shows 0:00, the message stays.
@@ -414,7 +478,7 @@ html.reduced #video-controls, html.reduced #video-toast { display: none; }`;
   }
 
   // Dropped videos: all the controls. Run sheet videos: stop and rewind while one plays, and play
-  // once it's been rewound or has ended; nothing for the next item's video waiting in the player
+  // once it's been rewound or has ended (a walk-up sting: stop only); nothing for the next item's video waiting in the player
   // (Next plays that one, and ▶ or ■ here would act on it out of turn).
   function renderControls() {
     const s = playing || cued;
@@ -423,15 +487,15 @@ html.reduced #video-controls, html.reduced #video-toast { display: none; }`;
     const el = controlsEl();
     el.hidden = !show;
     if (!show) return;
-    el.querySelector('.vc-name').textContent = messageFor(s);
+    el.querySelector('.vc-name').textContent = s.sting ? 'Sting: ' + s.name : messageFor(s);
     el.querySelector('.vc-name').title = s.name;
     el.querySelector('.vc-play').hidden = !!playing;
-    el.querySelector('.vc-rewind').hidden = !playing;
+    el.querySelector('.vc-rewind').hidden = !playing || !!s.sting;   // a sting: only stop (rewind would set the timer to its length)
     el.querySelector('.vc-idle').hidden = !!playing || !s.controls;   // run sheet: set per item in the sheet
     el.querySelector('.vc-idle').textContent = 'Before play: ' + (cued && cued.idle === 'hide' ? 'black' : 'first frame');
   }
 
   // The "video" button (opens this window and the video panel) is in video-library.js
 
-  window.videoPlayer = { open, isOpen, load, loadDrop, loadFile, noExt, play, stop, rewind, unloadCued, setIdle, state, toast, onChange: fn => listeners.push(fn) };
+  window.videoPlayer = { open, isOpen, load, loadDrop, loadFile, noExt, play, stop, rewind, unloadCued, setIdle, fadeOut, finish, state, toast, onChange: fn => listeners.push(fn) };
 })();

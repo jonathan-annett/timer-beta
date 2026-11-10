@@ -1,6 +1,0 @@
-node_modules/
-dist/
-pkg/
-pkg.tgz
-.yarn/
-*.tgz
