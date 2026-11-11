@@ -172,9 +172,11 @@ In the editor you can drag actions from the palette onto keys, set per-key label
 
 **A virtual deck on this computer:** **Use as virtual deck…** in the editor opens the deck being edited in a window of its own, for a touch screen beside the timer or to try a layout: while the editor is open it shows (and runs) your unsaved changes, so you can test before you Save; after that it's simply an on-screen deck. Its menu at the top switches between XL, MK.2 and Mini. **⋯ → Show on a phone** shows a QR code: scan it with a phone, type the number the phone shows into the box that appears, and the phone opens as that deck (sharing is turned on for it).
 
+**Key images** (in the editor, with a deck connected): if the keys look rotated or mirrored on your deck, step through the choices until the labels read correctly; it's remembered for that kind of deck. (Please tell us which one your deck needed.)
+
 **Disconnect** releases the deck and stops it reconnecting until you click Connect again. **Forget deck** removes the browser's permission entirely.
 
-> Key images are tested against a simulated deck. If they appear rotated on a real Mini, please open an issue.
+> Key images are checked on real MK.2, XL and Mini decks; the original (v1) deck's are a best guess (use **Key images** if they look wrong).
 
 ---
 

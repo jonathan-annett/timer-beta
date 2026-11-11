@@ -40,7 +40,7 @@
       <script src="clock-panel.js?v=d8aa3fac" defer></script>
       <script src="video-library.js?v=bfdbb3f7" defer></script>
       <script src="deck-face.js?v=c546849b" defer></script>
-      <script src="streamdeck.js?v=6a0e0122" defer></script>
+      <script src="streamdeck.js?v=9ef5f3dd" defer></script>
       <script src="back-guard.js?v=1ffc51f1" defer></script>
       <script src="touchcontrols.js?v=a4339318" defer></script>
       <script src="runsheet-core.js?v=bbefdbe8" defer></script>
@@ -225,6 +225,12 @@
                 <select id="deck-brightness">
                   <option value="100">100%</option><option value="75">75%</option>
                   <option value="50">50%</option><option value="25">25%</option><option value="10">10%</option>
+                </select>
+              </label>
+              <label class="deck-brightness-label" id="deck-orient-label" title="If the keys look rotated or mirrored on your deck, step through these until the labels read correctly (kept for this kind of deck)">Key images
+                <select id="deck-orient">
+                  <option value="0|0">As drawn</option><option value="90|0">Rotate 90°</option><option value="180|0">Rotate 180°</option><option value="270|0">Rotate 270°</option>
+                  <option value="0|1">Mirrored</option><option value="90|1">Mirrored, 90°</option><option value="180|1">Mirrored, 180°</option><option value="270|1">Mirrored, 270°</option>
                 </select>
               </label>
               <button id="deck-export-btn">Export JSON</button>

@@ -34,12 +34,12 @@
     { productId: 0x008f, model: 'xl',   protocol: 'gen2', name: 'Stream Deck XL' },
   ].map(d => ({ vendorId: 0x0fd9, ...d }));
 
-  // Key image orientation. gen2 (MK.2/XL) is rotated 180°. The gen1 values are
-  // best guesses — if images appear rotated or mirrored on a Mini / original,
-  // adjust here (degrees clockwise, plus optional horizontal mirror).
+  // Key image orientation (degrees clockwise, after an optional horizontal mirror). gen2 (MK.2/XL) is
+  // rotated 180°; the Mini's is from the owner's deck; the original v1's is still a guess. The deck
+  // editor's Key images menu overrides it per kind on one computer (orientation()), for a deck that differs.
   const ORIENTATION = {
     gen2: { rotate: 180, mirror: false },
-    mini: { rotate: 90,  mirror: false },   // UNVERIFIED on hardware
+    mini: { rotate: 270, mirror: true },    // the owner's Mini (Nov 2026): rotate 90° showed it flipped top to bottom
     gen1: { rotate: 180, mirror: false },   // original v1 — UNVERIFIED on hardware
   };
 
@@ -471,6 +471,7 @@
     device = hid;
     device.addEventListener('inputreport', onKeyEvent);
     _showDeckStatus('Connected: ' + deviceInfo.name, 'ok');
+    renderOrientChoice();
     applyBrightness();
     scheduleRedrawAll();
     console.log('StreamDeck: connected', modelKey);
@@ -483,6 +484,7 @@
       device.removeEventListener('inputreport', onKeyEvent);
       device = null; deviceInfo = null;
       _showDeckStatus('Unplugged — plug it back in, or click Connect', 'idle');
+      renderOrientChoice();
     }
   }
 
@@ -496,6 +498,7 @@
     await blankKeys();
     hid.removeEventListener('inputreport', onKeyEvent);
     device = null; deviceInfo = null;
+    renderOrientChoice();
     try { await hid.close(); } catch (_) {}
     pausedDevice = hid;
     _showDeckStatus('Disconnected — click Connect to use it again', 'idle');
@@ -768,10 +771,28 @@
     return canvas;
   }
 
+  // Which orientation a connected deck uses: the built-in guess for its kind, unless the operator chose
+  // one in the editor (Key images: kept per kind, streamdeck_orientation_<kind>), for decks the guesses
+  // got wrong (the Mini's was never checked on hardware)
+  const orientKind = () => (!deviceInfo ? null : deviceInfo.protocol === 'gen2' ? 'gen2' : modelKey === 'mini' ? 'mini' : 'gen1');
+  function orientation(kind = orientKind()) {
+    try {
+      const v = JSON.parse(localStorage.getItem('streamdeck_orientation_' + kind) || 'null');
+      if (v && [0, 90, 180, 270].includes(v.rotate)) return { rotate: v.rotate, mirror: !!v.mirror };
+    } catch (_) { /* none */ }
+    return ORIENTATION[kind] || ORIENTATION.gen2;
+  }
+  function renderOrientChoice() {
+    const sel = document.getElementById('deck-orient'), kind = orientKind();
+    if (!sel) return;
+    sel.disabled = !kind;
+    sel.parentElement.title = kind ? 'If the keys look rotated or mirrored on your deck, step through these until the labels read correctly (kept for this kind of deck)' : 'Connect a deck first';
+    if (kind) { const o = orientation(kind); sel.value = o.rotate + '|' + (o.mirror ? 1 : 0); }
+  }
+
   // Rotate/mirror the key image into the orientation the device expects.
   function orient(src) {
-    const o = deviceInfo.protocol === 'gen2' ? ORIENTATION.gen2
-            : modelKey === 'mini' ? ORIENTATION.mini : ORIENTATION.gen1;
+    const o = orientation();
     const size = src.width;
     const c = document.createElement('canvas'); c.width = c.height = size;
     const ctx = c.getContext('2d');
@@ -878,6 +899,7 @@
 
     const sel = document.getElementById('deck-model-select');
     if (sel) sel.value = editorModelKey;
+    renderOrientChoice();
 
     renderEditorGrid();
     renderEditorPalette();
@@ -1116,6 +1138,14 @@
     document.getElementById('deck-save-btn')?.addEventListener('click', saveEditorChanges);
     document.getElementById('deck-reset-btn')?.addEventListener('click', resetToDefaults);
     document.getElementById('deck-export-btn')?.addEventListener('click', exportLayout);
+    document.getElementById('deck-orient')?.addEventListener('change', e => {
+      const kind = orientKind();
+      if (!kind) return;
+      const [rotate, mirror] = e.target.value.split('|').map(Number);
+      try { localStorage.setItem('streamdeck_orientation_' + kind, JSON.stringify({ rotate, mirror: !!mirror })); } catch (_) { /* private mode */ }
+      e.target.blur();
+      scheduleRedrawAll();
+    });
     const bsel = document.getElementById('deck-brightness');
     if (bsel) {
       if (!BRIGHTNESS_LEVELS.includes(brightness)) bsel.add(new Option(brightness + '%', String(brightness)));
