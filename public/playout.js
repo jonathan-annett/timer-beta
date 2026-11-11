@@ -601,7 +601,10 @@
     }
     if (c.media === 'video') { opts.push(['none', 'No sound']); if (c.out === 'none') val = 'none'; }
     if (opts.length < 2) return '';                    // (choosing sound cards needs Chrome or Edge)
-    return `<select class="cout${val ? ' own' : ''}" data-act="out" title="Where this cue plays">` +
+    // Locked while it plays (the owner, 12 Nov 2026): a change applies from its next play, so the menu
+    // mustn't look as if it moved it; and it shows the card in use
+    const busy = playing.has(c.id);
+    return `<select class="cout${val ? ' own' : ''}${busy ? ' busy' : ''}" data-act="out"${busy ? ' disabled' : ''} title="${busy ? 'In use: it stays on this output until it ends' : 'Where this cue plays'}">` +
       opts.map(([v, t]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(t)}</option>`).join('') + '</select>';
   }
   function render() {
