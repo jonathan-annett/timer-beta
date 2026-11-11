@@ -1047,6 +1047,8 @@ html.portrait #key_hints { display: none; }
   letter-spacing: 1px;
 }
 
+#deck-key-duration-note { color: #6fa8dc; min-height: 1em; }
+.deck-key-options input.invalid { border-color: #c44 !important; }
 .deck-key-options label {
   display: flex;
   flex-direction: column;

@@ -13,7 +13,7 @@
       <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
       <link rel="manifest" href="manifest.json">
       <title>Presentation Timer</title>
-      <link rel="stylesheet" href="timer.css?v=2a1de527" id="style_1">
+      <link rel="stylesheet" href="timer.css?v=3313a450" id="style_1">
       <link rel="stylesheet" href="help-overlay.css?v=ab22e694">
   </head>
   <body>
@@ -40,7 +40,7 @@
       <script src="clock-panel.js?v=d8aa3fac" defer></script>
       <script src="video-library.js?v=bfdbb3f7" defer></script>
       <script src="deck-face.js?v=c546849b" defer></script>
-      <script src="streamdeck.js?v=9936000a" defer></script>
+      <script src="streamdeck.js?v=105f3aa7" defer></script>
       <script src="back-guard.js?v=1ffc51f1" defer></script>
       <script src="touchcontrols.js?v=a4339318" defer></script>
       <script src="runsheet-core.js?v=bbefdbe8" defer></script>
@@ -248,6 +248,7 @@
                 <div class="deck-key-options-title">Selected key options</div>
                 <label id="deck-key-message-row" style="display:none">Message shown to the presenter
                   <textarea id="deck-key-message" rows="3" placeholder="e.g. Please wrap up"></textarea></label>
+                <label id="deck-key-duration-row" style="display:none">Duration (minutes, h:mm or h:mm:ss)<input type="text" id="deck-key-duration" autocomplete="off" spellcheck="false"><span id="deck-key-duration-note"></span></label>
                 <label>Label override<input type="text" id="deck-key-label" placeholder="(use default)"></label>
                 <label>Text colour<input type="color" id="deck-key-fg" value="#ffffff"></label>
                 <label>Background<input type="color" id="deck-key-bg" value="#1a1a2e"></label>
