@@ -468,8 +468,10 @@
     }
     renderPlace();
   }
+  const videoOn = () => [...playing.values()].some(p => p.video);
   function toExternal() {
     if (!extHost()) {
+      if (videoOn()) return;                           // (set up with nothing playing: renderPlace)
       const w = window.open('', EXT, 'popup,width=960,height=540');
       if (!w) return status('The browser blocked the window: allow pop-ups for this site, then try again.', 'warn');
       ext = w;
@@ -477,12 +479,16 @@
     }
     moveVideo('external');
   }
+  // Off while a video plays out there (Play here instead), and while one plays here with no window yet
+  // (the owner: the monitor is set up deliberately, with nothing playing; once it's open, a playing
+  // video may move to it)
   function renderPlace() {
-    const external = place === 'external', busy = external && [...playing.values()].some(p => p.video);
+    const external = place === 'external', on = videoOn(), setup = !external && on && !extHost();
     const b = $('ext');
     b.textContent = external ? 'Play here instead' : 'To external monitor';
-    b.disabled = busy;
-    b.title = busy ? 'Not while a video plays on the external monitor'
+    b.disabled = (external && on) || setup;
+    b.title = external && on ? 'Not while a video plays on the external monitor'
+      : setup ? 'Set up the external monitor with no video playing: stop it first (once the window is open, a playing video can move to it)'
       : external ? 'Videos play in the Output box here again (the floating window stays open, black)'
       : 'Videos play in a floating window: drag it to another screen and make it full screen there';
     $('full').disabled = external;

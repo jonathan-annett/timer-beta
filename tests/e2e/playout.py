@@ -237,6 +237,10 @@ with sync_playwright() as p:
 
     # To external monitor: a floating window for the audience's screen; video cues play there
     vstate = lambda: po.evaluate("window.__playout.video()")
+    po.click('#items li[data-cue="%s"] button[data-act=fire]' % ids["b"][0]); po.wait_for_timeout(500)
+    check("no window yet: To external monitor is off while a video plays here (set up with nothing playing)", po.is_disabled("#ext"), po.get_attribute("#ext", "title"))
+    po.click('#items li[data-cue="%s"] button[data-act=stop]' % ids["b"][0]); po.wait_for_timeout(300)
+    check("… on once it stops", not po.is_disabled("#ext"))
     with po.expect_popup() as xp: po.click("#ext")
     xw = xp.value; po.wait_for_timeout(300)
     check("To external monitor: a floating window, with the video element in it", vstate()["where"] == "external" and xw.evaluate("!!document.querySelector('#xstage video')"), vstate())
