@@ -122,7 +122,7 @@
     #keys { display: grid; grid-template-columns: repeat(var(--cols, 8), var(--key, 40px)); grid-auto-rows: var(--key, 40px);
       column-gap: var(--col-gap, 6px); row-gap: var(--row-gap, 6px); justify-content: center; align-content: center; }
     #keys canvas { width: var(--key, 40px); height: var(--key, 40px); border-radius: 14%; display: block;
-      transition: transform .06s; touch-action: manipulation; }
+      transition: transform .06s; touch-action: none; }   /* none, as .pressable: with manipulation the slightest drag became a pan, cancelling the tap */
     #keys { filter: brightness(var(--deck-bl, 1)); transition: filter .3s; }   /* the deck's backlight (remote-phone.js) */
     #keys canvas.down { transform: scale(0.9); }
     #keys canvas.idle { cursor: default; }
@@ -415,6 +415,6 @@
   <script src="remote-peer.js?v=fd06de67"></script>
   <script src="notices.js?v=7f9aa52c"></script>
   <script src="remote-clock.js?v=4358371f"></script>
-  <script src="remote-phone.js?v=cc46b4a6"></script>
+  <script src="remote-phone.js?v=aae9de6c"></script>
 </body>
 </html>

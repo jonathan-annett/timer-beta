@@ -345,9 +345,10 @@
     let active = null, downAt = 0, lastPointer = 0;
     el.classList.add('pressable');
     const end = () => { active = null; lastPointer = performance.now(); el.classList.remove('down'); };   // the click after it is skipped
+    // Inside the element, with a margin: a pressed key is drawn smaller (.down), and a finger rolls a little
     const inside = e => {
-      const r = el.getBoundingClientRect();
-      return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      const r = el.getBoundingClientRect(), m = Math.max(8, 0.1 * Math.max(r.width, r.height));
+      return e.clientX >= r.left - m && e.clientX <= r.right + m && e.clientY >= r.top - m && e.clientY <= r.bottom + m;
     };
     const wouldFire = e => inside(e) || performance.now() - downAt <= CANCEL_MS;
     const fire = () => {

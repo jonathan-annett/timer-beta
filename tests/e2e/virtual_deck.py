@@ -72,6 +72,14 @@ with sync_playwright() as p:
     check("the phone opens as a Stream Deck MK.2 (15 keys)", ph.evaluate("document.body.classList.contains('deckview')") and pn() == 15, pn())
     ph.locator("#keys canvas").nth(1).tap(); t.wait_for_timeout(1500)
     check("… and its keys work (20 min)", remain() in ("19:59", "19:58", "20:00"), remain())
+    check("… its keys never turn a finger movement into a pan (touch-action: none)", ph.evaluate("getComputedStyle(document.querySelector('#keys canvas')).touchAction") == "none", ph.evaluate("getComputedStyle(document.querySelector('#keys canvas')).touchAction"))
+    # a tap that drags a little inside the key still counts (a real touch: start, move 10 px, end)
+    bb = ph.locator("#keys canvas").nth(2).bounding_box(); x, y = bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2
+    cdp = pc.new_cdp_session(ph)
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+    for k in range(1, 6): cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": [{"x": x + 2 * k, "y": y + 2 * k}]}); ph.wait_for_timeout(60)
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []}); t.wait_for_timeout(1500)
+    check("… a tap that drags 10 px inside the key still presses it (30 min)", remain() in ("29:59", "29:58", "30:00"), remain())
     ph.screenshot(path=OUTDIR + "/virtual_deck_phone_mk2.png")
     ph.click("#viewbtn") if ph.locator("#viewbtn").count() else None
     ph.wait_for_timeout(300)
