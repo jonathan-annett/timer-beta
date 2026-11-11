@@ -91,10 +91,20 @@
   // the keypad (like clicking outside a dialog). While picking, every key read goes through pickPress.
   let keypad = false, keypadIdle = 0, picking = false;
   let entry = '', entryTyped = '';                 // the time being typed on the timer (bus entry, entry_typed)
+  // Whether the deck typed it (its last change came while a keypad key was being sent: announceEntry runs in
+  // the same call). The keypad left idle drops a time the deck typed and left, as Cancel would, so it can't
+  // linger unseen on the timer (under the docked run sheet, say) and turn the next Space or Start into it;
+  // one typed on the keyboard is someone else's and stays. Any change to it restarts the idle time.
+  let entryByDeck = false, kpSending = false;
   let defaultMs = null, pauseTotalMs = 0;          // the default duration and every pause so far (bus default_ms, pause_total_ms)
   const kpDigit = d => ({ label: d, kp: 'digit', group: 'Keypad', cmd: () => kpKeys(d) });
-  function kpKeys(k) { _sendCmd({ cmd: 'keys', keys: [k] }); bumpKeypad(); }
-  function bumpKeypad() { clearTimeout(keypadIdle); if (keypad) keypadIdle = setTimeout(() => setKeypad(false), KEYPAD_IDLE_MS); }
+  function kpKeys(k) { kpSending = true; try { _sendCmd({ cmd: 'keys', keys: [k] }); } finally { kpSending = false; } bumpKeypad(); }
+  const idleMs = () => window.__keypadIdleMs || KEYPAD_IDLE_MS;   // (tests shorten it)
+  function bumpKeypad() { clearTimeout(keypadIdle); if (keypad) keypadIdle = setTimeout(keypadIdleOut, idleMs()); }
+  function keypadIdleOut() {
+    if (entry && entryByDeck) _sendCmd({ cmd: 'keys', keys: ['Escape'] });
+    setKeypad(false);
+  }
   function setKeypad(on, m = modelKey) {
     if (on && !KEYPAD[m] && !KEYPAD[modelKey]) return;   // (a Mini: no room)
     if (keypad === !!on && !picking) { bumpKeypad(); return; }
@@ -152,8 +162,11 @@
     // The MK.2's top right (no room for both): Cancel until something is typed, then ⌫, back to Cancel once
     // the last character is gone, as on the keyboard (entry_typed decides)
     kp_cancelback: { label: 'Cancel', kp: 'cancelback', group: 'Keypad', cmd: () => { if (entryTyped) { kpKeys('Backspace'); return; } if (entry) kpKeys('Escape'); setKeypad(false); } },
-    kp_default:{ label: 'Set\ndefault', kp: 'default', group: 'Keypad', cmd: () => { if (entry) kpKeys('Enter'); setKeypad(false); } },
-    kp_start:  { label: 'Start', kp: 'start', group: 'Keypad', cmd: () => { kpKeys(' '); setKeypad(false); } },   // the typed time (or the default, as Space does)
+    // Start and Set default act only on a typed time: with nothing typed they do nothing (drawn dim; Cancel
+    // leaves). A typed time can vanish under the deck's operator (someone's Next starts the next item, which
+    // clears it), and Start then restarted the current countdown instead of the time they'd typed.
+    kp_default:{ label: 'Set\ndefault', kp: 'default', group: 'Keypad', cmd: () => { if (!entry) return bumpKeypad(); kpKeys('Enter'); setKeypad(false); } },
+    kp_start:  { label: 'Start', kp: 'start', group: 'Keypad', cmd: () => { if (!entry) return bumpKeypad(); kpKeys(' '); setKeypad(false); } },   // the typed time (a Space, so never Next)
     kp_pv_h:   { label: '', kp: 'pv', pv: 'h', group: 'Keypad', cmd: null },     // the XL's preview of the typed time
     kp_pv_m:   { label: '', kp: 'pv', pv: 'm', group: 'Keypad', cmd: null },
     kp_pv_s:   { label: '', kp: 'pv', pv: 's', group: 'Keypad', cmd: null },
@@ -332,6 +345,8 @@
           if (typeof v.default_ms === 'number' && v.default_ms !== defaultMs) { defaultMs = v.default_ms; liveChanged = true; }
           if (typeof v.entry === 'string' && (v.entry !== entry || (v.entry_typed || '') !== entryTyped)) {
             entry = v.entry; entryTyped = v.entry_typed || ''; liveChanged = true;
+            entryByDeck = kpSending;
+            if (keypad) bumpKeypad();
             if (keypad && device) (activeLayout(modelKey) || []).forEach((a, i) => { const k = (ACTIONS[a] || {}).kp; if (k === 'pv' || k === 'start' || k === 'default' || k === 'cancelback') scheduleRedrawKey(i); });
           }
           if (liveChanged && device && !changed) scheduleCountdownKeys();   // Start + time, Pause + time
@@ -702,8 +717,8 @@
       case 'digit': case 'big': return { bg: '#202024', fg: '#ffffff', big: { text: action.label, scale: 0.5 } };
       case 'cancel': return { bg: '#3a0d0d', fg: '#ff8a8a', label: 'Cancel' };
       case 'cancelback': return entryTyped ? { bg: '#202024', fg: '#ffffff', big: { text: '⌫', scale: 0.5 } } : { bg: '#3a0d0d', fg: '#ff8a8a', label: 'Cancel' };
-      case 'default': return { bg: '#0b2a4a', fg: '#9fd0ff', label: entry ? 'Default\n' + entry : 'Set\ndefault' };
-      case 'start': return { bg: '#0e3a12', fg: '#8dff8d', label: entry ? 'Start\n' + entry : 'Start' };
+      case 'default': return entry ? { bg: '#0b2a4a', fg: '#9fd0ff', label: 'Default\n' + entry } : { bg: '#141414', fg: '#555555', label: 'Set\ndefault' };
+      case 'start': return entry ? { bg: '#0e3a12', fg: '#8dff8d', label: 'Start\n' + entry } : { bg: '#141414', fg: '#555555', label: 'Start' };
       case 'save': return entry ? { bg: '#3a2a00', fg: '#ffcc33', label: 'Update\npreset' } : { bg: '#141414', fg: '#555555', label: 'Update\npreset' };
       case 'pv': {
         const cap = { h: 'HOURS', m: 'MIN', s: 'SEC', typed: 'TYPED' }[action.pv];

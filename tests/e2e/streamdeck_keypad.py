@@ -61,9 +61,47 @@ with sync_playwright() as p:
     press(0); press("4"); press("5"); press("cancel"); t.wait_for_timeout(300)
     check("Cancel: the typed time is dropped, the timer runs on", not t.evaluate("document.documentElement.classList.contains('editing')") and remain().startswith("1:24"), remain())
     check("… back to its own layout", faces()[0].get("big", {}).get("text") == "🔢")
-    t.evaluate("window.__esc = 0; document.addEventListener('keydown', e => { if (e.key === 'Escape') window.__esc++; }, true)")
+    # (the deck sends keys with the keys command, not as key events: count the Escapes it sends)
+    t.evaluate("window.__esc = 0; (o => { window.processTimerApiMessage = m => { if (m && m.cmd === 'keys' && m.keys.includes('Escape')) window.__esc++; return o(m); }; })(processTimerApiMessage)")
     press(0); press("cancel")
     check("Cancel with nothing typed: no Esc sent (it would fade out what's playing)", t.evaluate("window.__esc") == 0 and faces()[0].get("big", {}).get("text") == "🔢")
+    press(0); press("4"); press("cancel")
+    check("… with something typed it is sent (the spy sees it)", t.evaluate("window.__esc") == 1, t.evaluate("window.__esc"))
+
+    # Left idle: a time the deck typed is dropped with the keypad (unseen under the docked run sheet it would
+    # turn the next Space or Start into it); one typed on the keyboard is someone else's and stays; any
+    # typing restarts the wait
+    t.evaluate("window.__keypadIdleMs = 1500; window.__esc = 0")
+    editing = lambda: t.evaluate("document.documentElement.classList.contains('editing')")
+    kp_on = lambda: faces()[0].get("big", {}).get("text") != "🔢"
+    press(0); press("4"); press("5")
+    check("idle: the deck types 45", kp_on() and editing())
+    t.wait_for_timeout(2200)
+    check("… left alone: the keypad goes, and the typed time with it", not kp_on() and not editing() and t.evaluate("window.__esc") == 1, (kp_on(), editing(), t.evaluate("window.__esc")))
+    press(0); t.wait_for_timeout(200)
+    t.click("body", position={"x": 640, "y": 300}); t.keyboard.press("3"); t.keyboard.press("0"); t.wait_for_timeout(200)
+    check("the keypad open, a time typed on the keyboard (30)", kp_on() and editing())
+    t.wait_for_timeout(2200)
+    check("… left alone: the keypad goes, the keyboard's time stays", not kp_on() and editing() and t.evaluate("window.__esc") == 1, (kp_on(), editing()))
+    t.keyboard.press("Escape"); t.wait_for_timeout(200)
+    press(0); press("2"); t.wait_for_timeout(1000)
+    t.keyboard.press("5"); t.wait_for_timeout(1000)
+    check("any typing restarts the wait (1 s after the keyboard's 5, 2 s after the deck's 2: still open)", kp_on() and editing())
+    t.wait_for_timeout(1500)
+    check("… then it goes, the last change the keyboard's: 25 stays", not kp_on() and editing() and t.evaluate("window.__esc") == 1, (kp_on(), editing(), t.evaluate("window.__esc")))   # (still only the first case's)
+    t.keyboard.press("Escape"); t.evaluate("window.__keypadIdleMs = 0"); t.wait_for_timeout(200)
+
+    # Start and Set default with nothing typed do nothing (dim): a typed time can vanish under the deck's
+    # operator (someone's Next clears it), and Start used to restart the current countdown instead
+    press(0); press("4"); press("5"); t.wait_for_timeout(200)
+    t.click("body", position={"x": 640, "y": 300}); t.keyboard.press("Escape"); t.wait_for_timeout(200)   # (the typed time gone from under the deck)
+    before = t.evaluate("localStorage.startedAt")
+    f = faces()
+    check("nothing typed: Start and Set default drawn dim", f[K["start"]]["fg"] == "#555555" and f[K["default"]]["fg"] == "#555555", (f[K["start"]], f[K["default"]]))
+    press("start"); press("default"); t.wait_for_timeout(300)
+    check("… pressed: nothing restarts, nothing changes, the keypad stays", t.evaluate("localStorage.startedAt") == before and kp_on() and t.evaluate("localStorage.defaultDuration") == "300000", (t.evaluate("localStorage.startedAt") == before, kp_on()))
+    press("cancel"); t.wait_for_timeout(200)
+    check("… Cancel leaves", not kp_on())
 
     press(0); press("4"); press("5"); f = faces()
     check("Set default carries the typed time too", f[K["default"]].get("label") == "Default\n45:00", f[K["default"]].get("label"))
