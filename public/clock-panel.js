@@ -3,6 +3,9 @@
  * The controller's clock badge and its panel. The badge says what the clock is running on: internet
  * time (green), this computer's clock (yellow) or a correction set by hand (blue). Clicking it opens
  * the panel to choose; clicking it again closes it. The clock itself is timeProvider (inettime.js).
+ * Offline (no network, or the timer's server out of reach) it turns red whatever the clock, reading
+ * "offline · clock synced 14:02": green read as "online" with a laptop off its wifi (Nov 2026), so
+ * pairing a phone failed with the badge looking fine.
  * MIT Licensed
  */
 (function () {
@@ -28,6 +31,7 @@
 #clock-badge.cb-internet { --cb: #3ecf5a; }
 #clock-badge.cb-local, #clock-badge.cb-checking { --cb: #ffcc33; }
 #clock-badge.cb-manual { --cb: #4aa8ff; }
+#clock-badge.cb-offline { --cb: #ff4d4d; color: #ffb3b3; border-color: #7a2a2a; }
 #clock-badge.cb-busy::before { animation: cb-pulse 1s ease-in-out infinite alternate; }
 @keyframes cb-pulse { to { opacity: .25; } }
 #clock-panel { position: fixed; top: calc(var(--buttons-bottom, 48px) + 36px); right: 16px; width: 320px; z-index: 2147481000;
@@ -44,6 +48,9 @@
 #clock-panel .cp-read span:nth-child(odd) { color: #888; }
 #clock-panel .cp-read span:nth-child(even) { text-align: right; font-variant-numeric: tabular-nums; }
 #clock-panel .cp-read .cp-now { color: #fff; font-weight: bold; }
+#clock-panel .cp-read .cp-net.off { color: #ff8a8a; }
+#clock-panel .cp-netnote { font-size: 12px; color: #ff8a8a; margin: -4px 0 10px; }
+#clock-panel .cp-netnote[hidden] { display: none; }
 #clock-panel button.cp-btn { padding: 6px 4px; font: 12px "Helvetica Neue", Arial, sans-serif; background: #222; border: 1px solid #444; color: #ccc; border-radius: 4px; cursor: pointer; }
 #clock-panel button.cp-btn:hover:not(:disabled) { background: #333; color: #fff; }
 #clock-panel button.cp-btn:disabled { color: #666; cursor: default; }
@@ -60,6 +67,7 @@ html.reduced #clock-badge, html.reduced #clock-panel { display: none; }`;
 
   const pad = n => String(n).padStart(2, '0');
   const clock = d => pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  const hm = d => pad(d.getHours()) + ':' + pad(d.getMinutes());
 
   function correction(ms) {
     if (!ms) return 'none';
@@ -99,7 +107,9 @@ html.reduced #clock-badge, html.reduced #clock-panel { display: none; }`;
         <span>This computer</span><span class="cp-local"></span>
         <span>Correction</span><span class="cp-corr"></span>
         <span>Timer clock</span><span class="cp-now"></span>
+        <span>Connection</span><span class="cp-net"></span>
       </div>
+      <div class="cp-netnote" hidden></div>
       <button class="cp-btn cp-sync">Sync now</button>
       <div class="cp-manual" hidden>
         <div class="cp-set"><input type="time" step="1" aria-label="The right time"><button class="cp-btn cp-apply">Set time</button></div>
@@ -148,12 +158,73 @@ html.reduced #clock-badge, html.reduced #clock-panel { display: none; }`;
     return ['Running on this computer’s own clock.', false];
   }
 
+  // ─── Online or not ───────────────────────────────────────────────────────
+  // What pairing needs: the timer's server (remote_server, else RemotePeer.defaultServer(), as
+  // remote-control.js). The browser's offline event says so at once (a dropped wifi); while the page is
+  // shown, a websocket opened to the server every minute also catches a network with no way out. A
+  // failed check is tried again 5 s later before it counts. Back online, internet time that couldn't
+  // be had is fetched again.
+  const PROBE_MS = 60000, RETRY_MS = 5000, PROBE_TIMEOUT = 4000;
+  const net = { online: null, why: '' };            // online: null = not known yet; why: 'network' | 'server'
+  let probing = false, probeTimer = 0;
+  const server = () => localStorage.getItem('remote_server') || RemotePeer.defaultServer();
+  const host = () => { try { return new URL(server()).hostname; } catch (_) { return 'the server'; } };
+  function reach() {                                // true if the server takes a websocket, null if there's nothing to try
+    return new Promise(done => {
+      if (typeof RemotePeer === 'undefined') return done(null);
+      let ws, timer = 0;
+      const end = ok => {
+        clearTimeout(timer);
+        if (ws) { ws.onopen = ws.onerror = ws.onclose = null; try { ws.close(); } catch (_) { /* gone */ } }
+        done(ok);
+      };
+      try { ws = new WebSocket(RemotePeer.socketUrl(server(), { time: 1 })); } catch (_) { return done(false); }
+      timer = setTimeout(() => end(false), PROBE_TIMEOUT);
+      ws.onopen = () => end(true);
+      ws.onerror = ws.onclose = () => end(false);
+    });
+  }
+  function setNet(on, why) {
+    const was = net.online;
+    net.online = on; net.why = on ? '' : why;
+    const t = timeProvider;
+    if (on && was === false && t.mode === 'internet' && t.state !== 'internet' && !t.busy) t.syncNow();
+    render();
+  }
+  async function probe(again) {
+    clearTimeout(probeTimer);
+    if (!navigator.onLine) return setNet(false, 'network');   // the online event brings it back
+    if (probing) return;
+    probing = true;
+    const ok = await reach();
+    probing = false;
+    if (ok === null) return;
+    if (ok) setNet(true);
+    else if (!again && net.online !== false) { probeTimer = setTimeout(() => probe(true), RETRY_MS); return; }
+    else setNet(false, navigator.onLine ? 'server' : 'network');
+    if (!document.hidden) probeTimer = setTimeout(probe, PROBE_MS);
+  }
+  addEventListener('offline', () => { clearTimeout(probeTimer); setNet(false, 'network'); });
+  addEventListener('online', () => probe());
+  document.addEventListener('visibilitychange', () => { if (document.hidden) clearTimeout(probeTimer); else probe(); });
+  function offlineText(t) {
+    const what = net.why === 'network' ? 'This computer is offline (no network).' : 'Can’t reach ' + host() + ', the timer’s server.';
+    const clockNote = t.state === 'internet' && t.syncedAt ? ' The clock is fine: it keeps the internet time it got at ' + hm(new Date(t.syncedAt + t.error)) + '.' : '';
+    return what + ' The timer carries on, but phones, displays and Companion can’t connect until it’s back.' + clockNote;
+  }
+
   function render() {
-    const t = timeProvider, [label, title] = LABELS[t.state];
-    badge.textContent = 'clock: ' + label;
-    badge.title = title + '. Click for settings';
-    badge.className = 'cb-' + t.state + (t.busy ? ' cb-busy' : '');
+    const t = timeProvider, [label, title] = LABELS[t.state], off = net.online === false;
+    const synced = t.state === 'internet' && t.syncedAt ? hm(new Date(t.syncedAt + t.error)) : '';
+    badge.textContent = off ? 'offline · ' + (synced ? 'clock synced ' + synced : 'clock: ' + label) : 'clock: ' + label;
+    badge.title = (off ? offlineText(t) + ' ' : title + '. ') + 'Click for settings';
+    badge.className = 'cb-' + t.state + (t.busy ? ' cb-busy' : '') + (off ? ' cb-offline' : '');
     if (!panel) return;
+    const cn = $('.cp-net');
+    cn.textContent = net.online === null ? 'checking…' : off ? (net.why === 'network' ? 'offline' : 'can’t reach ' + host()) : 'online (' + host() + ')';
+    cn.classList.toggle('off', off);
+    $('.cp-netnote').hidden = !off;
+    $('.cp-netnote').textContent = off ? offlineText(t) : '';
     const shown = t.state === 'checking' ? 'internet' : t.state;
     panel.querySelectorAll('input[type=radio]').forEach(r => {
       r.checked = r.value === shown;
@@ -196,10 +267,13 @@ html.reduced #clock-badge, html.reduced #clock-panel { display: none; }`;
     render();
     ticker = setInterval(tick, 250);
     if (timeProvider.state !== 'internet' && !timeProvider.busy) timeProvider.check();
+    probe();
   }
 
   document.addEventListener('clock-state', render);
   render();
+  if (!navigator.onLine) setNet(false, 'network');
+  setTimeout(probe, 1500);                          // after the deferred scripts (RemotePeer)
 
-  window.clockPanel = { toggle, close };
+  window.clockPanel = { toggle, close, get online() { return net.online; }, probe };
 })();

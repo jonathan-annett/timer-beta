@@ -24,6 +24,19 @@ An item has a video or a sting, not both.
 
 A run sheet editor on another computer can add stock and link stings from anywhere, and send a sting file to the timer over the same network (like a video).
 
+## Random stings: one for every speaker
+
+The run sheet editor's **Random stings** panel gives every item long enough to be a speaker a walk-up sting picked at random, never the same track twice on the sheet:
+
+- **From**: tick **Stock stings**, **The folder** (the one chosen in + sting's *Custom file*, or **Choose…** here) and **My clips** (your sting library). With My clips ticked, your edit of a track stands in for the track; unticked, tracks play as supplied. A track counts once however it's cut, so two speakers never get the same music.
+- **Items of at least** *n* **min** (2 unless you change it; 0 = every item) decides which items get one.
+- **Stings** *of any length* / *no longer than* / *at least* *n* **s**: to leave out (or keep to) very short walk-ups. It goes by the length as it plays (a clip's part, not the whole track).
+- **🎲 Roll stings** gives a sting to each of those items that doesn't have one of its own, and picks again for the ones it picked before. Stings you chose yourself (with + sting, a dropped file, or edited with ✂) and items with a video are left alone. If the pool runs out, it says how many went without.
+- **🎲 on a row** picks another for that item (even one you chose: you asked). A die that's lit means the sting was picked at random.
+- **Remove rolled stings** takes off the ones picked at random; yours stay.
+
+During the show, items that have run and the one running now are never changed. Only audio stings are picked (a video walk-up needs the player window). A run sheet editor on another computer picks only from stock stings and edits of them (a file would have to be sent across).
+
 ## Clips: just the part you want
 
 A guest brings a song and wants five seconds of it. Click **✂** on an item's sting in the run sheet editor: the track's waveform opens, the whole track on top and a close-up of the part below. Drag across the whole track to pick the part, then fine-tune the edges: drag a white line (the pointer turns into ↔ over one), type the times (m:ss.ss; ↑ ↓ step 0.01 s, Shift 0.1 s), or press ← → (Shift for a second, Alt for a hundredth). Set a fade in and a fade out in milliseconds (↑ ↓ or the box's arrows: 10 ms, Shift 100 ms). **▶ Play the part** plays it with its fades; **▶ First 2 s** its opening; **▶ Last 2 s** the 2 seconds before the fade out begins, then the fade; **▶ From 2 s before** the lead-in. While you work on an edge (First / Last 2 s, dragging, typing or nudging it) the close-up keeps a standard scale: 6 seconds across, the start 1 second in from the left, or the end 1 second in from the right; **Show the whole part** goes back to all of it. **Whole track** undoes it. The file isn't cut: the sting just remembers the part, and the timer cuts it in memory when it loads, so Next starts it at once and exactly.
@@ -50,6 +63,19 @@ Stings come from everywhere, mastered at very different loudness. The timer even
 Video stings level the same way: their soundtrack is measured, and the player window plays them at that level (a video with no sound shows *no sound to measure*).
 
 A sting that hasn't been measured (added since the show was levelled, and not saved in the clip editor) plays at its own level: level the show again.
+
+## Sound outputs: the show on the PA, previews on headphones
+
+In Chrome and Edge, the run sheet editor's *Options* → *Sound outputs* chooses two sound cards (kept on this computer; the sting library page has the same choice at its foot):
+
+- **Show**: what the audience hears. Stings, video stings, videos and the line-up tone, from the timer.
+- **Previews and editing**: the ▶ buttons in **+ sting**, the clip editor and the sting library. Bluetooth headphones, say.
+
+Each plays only on its own output, so you can audition and edit stings on headphones while the show's stings play out on the PA: someone pressing Next on the Stream Deck doesn't stop your preview, and your preview doesn't reach the room. Choosing the show's output also keeps the stings there when headphones connect (a Mac makes them its default output as they do).
+
+The browser lists sound cards by name only once the site may use the microphone, so the first time click **Name the sound cards…** and allow it (choose to allow it on every visit; nothing is recorded).
+
+If a chosen output isn't connected, nothing plays there rather than on another output: with the **show** output missing, stings and the tone don't play and videos play silently, and a red warning on the timer's screen says so; with the **preview** output missing (headphones off), previews don't play, so one can never land on the PA. Plug it back in and everything carries on by itself. Leave either on *This computer's default output* for the old behaviour.
 
 In the library file a clip's level is `"lufs"` (its measured loudness) and `"volume"` (the trim, 0–1).
 

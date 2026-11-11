@@ -49,9 +49,12 @@
 
     header { display: flex; align-items: center; gap: 1rem; padding: 0.714rem 1.143rem; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
     #title { font-size: 1.286rem; font-weight: bold; max-width: 30rem; flex: 0 1 22rem; min-width: 8rem; width: 0; }
+    html.docked #title { display: none; }          /* docked: on the dock's bar instead (runsheet-dock.js) */
     .mode { display: flex; align-items: center; gap: 0.571rem; color: var(--dim); white-space: nowrap; cursor: pointer; }
     .mode input { width: 1.1rem; height: 1.1rem; margin: 0; }
-    #live { margin-left: auto; font-weight: bold; color: var(--dim); white-space: nowrap; }
+    /* The status takes the space left on the line (a basis of 0, so it never wraps what follows it: ? and the
+       time of day went to a second line as it grew, and Back and Next jumped), shortened with … (all of it in the tooltip) */
+    #live { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: right; font-weight: bold; color: var(--dim); white-space: nowrap; }
     #live.behind { color: var(--behind); } #live.ahead { color: var(--ahead); } #live.ontime { color: #ccc; }
     #conn { color: var(--warn); font-size: 0.929rem; display: none; width: 100%; }
     #conn.show { display: block; }
@@ -118,6 +121,15 @@
     #rs-table td.vid .sadd { margin-left: 0.15rem; }
     #rs-table td.vid .sweb { color: #e0b030; cursor: help; }
     #rs-table td.vid .vtrim.on { color: #7fc0ff; }
+    #rs-table td.vid .vroll { opacity: 0.4; }                            /* (an emoji: colour can't light it) */
+    #rs-table tr:hover td.vid .vroll { opacity: 0.75; }
+    #rs-table td.vid .vroll.on { opacity: 1; }                            /* picked at random */
+    #rollpanel select { font: inherit; padding: 0.15rem 0.3rem; background: #1a1a1a; color: var(--text); border: 1px solid var(--line2); border-radius: 0.3rem; }
+    #rollpanel .hint-inline { color: var(--dim); font-size: 0.857rem; }
+    #rollpanel .roll-folder { display: flex; align-items: center; gap: 0.571rem; flex-wrap: wrap; }
+    #rollpanel #roll-folderpick { padding: 0.07rem 0.5rem; font-size: 0.857rem; }
+    #rollpanel label.check { margin-top: 0.286rem; }
+    #rollpanel #roll-msg.bad { color: #ffb86b; }
     .sting-note { color: var(--dim); margin: 0.4rem 0 0.8rem; }
     .sting-field { display: block; margin: 0.5rem 0; color: var(--dim); }
     .sting-row { display: flex; gap: 0.4rem; margin-top: 0.25rem; }
@@ -135,7 +147,7 @@
     .ask .sting-libbox { width: min(64rem, 94vw); max-width: none; max-height: 88vh; overflow: auto; }
     .sting-libtop { display: flex; gap: 0.8rem; align-items: baseline; margin-bottom: 0.6rem; }
     .sting-libtop .sting-note { flex: 1; margin: 0; }
-    .sting-row select { flex: 1; margin-top: 0 !important; }
+    .sting-row select { flex: 1; min-width: 0; margin-top: 0 !important; }   /* (min-width 0: a long file name mustn't push ▶ ✂ out of the dialog) */
     .sting-row button { flex: none; padding: 0.2rem 0.7rem; }
     .sting-btnrow button { padding: 0.35rem 0.8rem; }
     #sting-reopen, #sting-folderbox { margin-top: 0.6rem; }
@@ -243,7 +255,7 @@
       html.touchui header #title { flex-basis: 0; }
       html.touchui #btn-done { order: -2; }
       #clock { min-width: 7rem; }
-      #live { margin-left: 0; flex-basis: 100%; white-space: normal; }
+      #live { margin-left: 0; flex-basis: 100%; white-space: normal; text-align: left; }
       #remote-tag { white-space: normal; }
       .transport { padding: 0.5rem 0.75rem; gap: 0.5rem; }
       .transport .hint { display: none; }
@@ -354,6 +366,20 @@
           </div>
         </details>
 
+        <details id="rollpanel">
+          <summary>Random stings</summary>
+          <div class="panel">
+            <p class="hint">A walk-up sting picked at random for each item long enough to be a speaker, none used twice. Stings you chose yourself, and videos, are left alone; 🎲 on a row picks another for that item.</p>
+            <label class="check"><input type="checkbox" id="roll-stock"><span>Stock stings</span></label>
+            <div class="roll-folder"><label class="check"><input type="checkbox" id="roll-folder"><span>The folder <span id="roll-foldername"></span></span></label><button type="button" id="roll-folderpick">Choose…</button></div>
+            <label class="check"><input type="checkbox" id="roll-mine"><span>My clips <span class="hint-inline">(your edits stand in for the tracks they came from)</span></span></label>
+            <div class="row"><label class="inline">Items of at least <input type="number" id="roll-min" min="0" max="600" step="0.5"> min</label></div>
+            <div class="row"><label class="inline">Stings <select id="roll-lenop"><option value="">of any length</option><option value="max">no longer than</option><option value="min">at least</option></select> <input type="number" id="roll-len" min="1" max="3600" step="1"> s</label></div>
+            <div class="row"><button id="roll-all" class="primary">🎲 Roll stings</button><button id="roll-clear">Remove rolled stings</button></div>
+            <p class="hint" id="roll-msg"></p>
+          </div>
+        </details>
+
         <details id="logpanel" open>
           <summary>Show log</summary>
           <div class="panel">
@@ -382,6 +408,12 @@
               <div class="row"><button id="lvl-tone" title="1 kHz from the timer at the level stings play at: set the mixer's input to your nominal level">▶ Line-up tone</button></div>
               <p class="hint">Stings are only ever turned down, so the mixer may need a little more gain than for a full-level track: the tone shows how much.</p>
             </div>
+            <div id="ao-box">
+              <hr class="sep">
+              <b>Sound outputs</b>
+              <div id="ao-pick"></div>
+              <p class="hint">Preview on headphones while stings play out on the show's sound card: each plays only on its own. If one isn't connected, nothing plays there instead of falling back to another output (a warning says so).</p>
+            </div>
           </div>
         </details>
       </aside>
@@ -390,10 +422,11 @@
 
   <script src="markdown-lite.js?v=938fee93"></script>
   <script src="help-overlay.js?v=8a5dbd9d"></script>
-  <script src="sting-library.js?v=40db3e21"></script>
-  <script src="sting-clip.js?v=e4d8d696"></script>
+  <script src="sting-library.js?v=2cb7cc28"></script>
+  <script src="audio-out.js?v=6558e786" data-role="preview"></script>
+  <script src="sting-clip.js?v=132c2727"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="runsheet-core.js?v=bbefdbe8"></script>
-  <script src="runsheet-editor.js?v=f0b369f7"></script>
+  <script src="runsheet-editor.js?v=3288f6a8"></script>
 </body>
 </html>

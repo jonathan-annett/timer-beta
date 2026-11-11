@@ -135,6 +135,13 @@ with sync_playwright() as p:
     fopts = e.evaluate("[...document.querySelectorAll('#sting-folder option')].map(o => o.textContent)")
     check("Choose a folder…: its audio and video files in a list (subfolders too, sorted, nothing else)", fopts == ["b-short", "more/a-clip"], fopts)
     e.screenshot(path=OUTDIR + "/sting_folder.png")
+    inside = e.evaluate("""(() => {                                // a very long file name: ▶ ✂ stay in the dialog
+      const sel = document.getElementById('sting-folder'), o = document.createElement('option');
+      o.textContent = 'An extremely long walk-up track name from a music folder, remastered, extended mix (2026)'; sel.appendChild(o);
+      const box = document.querySelector('.sting-dlg .ask-box').getBoundingClientRect();
+      const ok = ['sting-fprev', 'sting-fedit'].every(id => document.getElementById(id).getBoundingClientRect().right <= box.right);
+      o.remove(); return ok; })()""")
+    check("… a long file name doesn't push ▶ ✂ out of the dialog", inside)
     e.click("#sting-fprev"); e.wait_for_timeout(500)
     check("… ▶ plays the one chosen", e.evaluate("window.__stingPreview()"))
     e.click(".sting-use"); e.wait_for_timeout(1200)

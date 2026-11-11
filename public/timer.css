@@ -879,7 +879,7 @@ html.portrait #key_hints { display: none; }
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.85);
-  z-index: 10002;
+  z-index: 2147481200;   /* over the docked run sheet (2147480000), the panels, clock badge and playing bar; under the help, clip editor and keys badge */
   display: flex;
   align-items: center;
   justify-content: center;

@@ -107,6 +107,7 @@
         if (start && Math.abs(el.currentTime - start) > 0.25) el.currentTime = start;
         el.volume = r.fadeIn ? 0 : g;
         el.onended = finish;
+        if (window.AudioOut) await AudioOut.media(el);
         await el.play();
         if (r.fadeIn) stopRamp = rampEl(el, g, r.fadeIn);
         if (r.end != null) stopEnd = tick(50, () => {            // the end of the part: fade out there
@@ -151,9 +152,11 @@
     update();
   }
 
+  const outMissing = () => window.AudioOut && !AudioOut.ok() && (AudioOut.warn(), true);   // the show output isn't there (audio-out.js)
   async function play(item) {
     const s = item && item.sting;
     if (!s) return false;
+    if (outMissing()) return 'no-output';
     if (s.media === 'video') return playVideo(item);
     audioFade(FADE_MS);
     if (window.videoPlayer) window.videoPlayer.fadeOut(FADE_MS);
@@ -215,7 +218,7 @@
   function tone(on, lufs) {
     const isTone = cur && cur.id === 'tone';
     if (on === false || (on == null && isTone)) { if (isTone) stop('tone'); return false; }
-    if (!window.StingClip) return false;
+    if (!window.StingClip || outMissing()) return false;
     const level = Number.isFinite(lufs) ? lufs : StingClip.target();
     audioFade(FADE_MS);
     const a = bufferVoice({ id: 'tone', loop: true, sting: { name: '1 kHz line-up tone · ' + level.toFixed(1) + ' LUFS' } }, StingClip.toneBuffer(level));
