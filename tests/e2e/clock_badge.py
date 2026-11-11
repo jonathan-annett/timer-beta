@@ -4,7 +4,8 @@ PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
 # The clock badge and panel (clock-panel.js, inettime.js): no time server → local, yellow, Internet
 # disabled; Sync now when one answers → internet, green; manual corrections; and a change of clock
-# leaves a running countdown, the run sheet's log and the presenter window in step.
+# leaves a running countdown, the run sheet's log and the presenter window in step. No pairing server here,
+# so the badge also says it can't reach it (red); the network going and coming back is clock_online.py.
 import json, mimetypes, os, sys, time
 from datetime import datetime, timedelta, timezone
 from playwright.sync_api import sync_playwright
@@ -43,7 +44,8 @@ with sync_playwright() as p:
     t.goto(BASE + "timer.html")
     t.wait_for_function("!timeProvider.busy && timeProvider.state !== 'checking'")
 
-    badge = lambda: t.evaluate("(b => [b.className, b.textContent])(document.getElementById('clock-badge'))")
+    # (this test has no pairing server, so the badge may also say it can't reach it: the clock part only)
+    badge = lambda: t.evaluate("(b => [b.className.replace(' cb-offline', ''), b.textContent.replace(/^offline · clock synced .*$/, 'clock: internet').replace(/^offline · /, '')])(document.getElementById('clock-badge'))")
     radio = lambda v, prop: t.evaluate("([v,p]) => document.querySelector('#clock-panel input[value='+v+']')[p]", [v, prop])
     hidden = lambda: t.evaluate("document.getElementById('clock-panel').hidden")
     remain = lambda: t.evaluate("Number(localStorage.seekEndsAt) - timeProvider.now()")
@@ -86,6 +88,9 @@ with sync_playwright() as p:
     t.screenshot(path=OUTDIR + "/clock_internet.png")
 
     presenter = c.new_page(); presenter.goto(BASE + "timer.html?presenter"); presenter.wait_for_timeout(500)
+    t.wait_for_function("clockPanel.online === false", timeout=15000)
+    off = t.evaluate("(b => [b.className, b.textContent, b.title])(document.getElementById('clock-badge'))")
+    check("no pairing server: the badge turns red, offline, with when the clock was synced", "cb-offline" in off[0] and off[1].startswith("offline · clock synced ") and "Can’t reach localhost" in off[2], off)
     check("presenter window has no badge", presenter.evaluate("!document.getElementById('clock-badge')"))
 
     before = remain()

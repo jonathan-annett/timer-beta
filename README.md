@@ -86,7 +86,7 @@ At normal zoom the buttons fit in one row on screens 1280 pixels wide or more. O
 
 ### Clock accuracy
 
-The **clock** badge under the button bar says what the timer's clock is running on: **internet** (green, checked against a time server when the page opened), **local** (yellow, this computer's own clock) or **manual** (blue, corrected by you). Click it to choose, and click it again to close the panel.
+The **clock** badge under the button bar says what the timer's clock is running on: **internet** (green, checked against a time server when the page opened), **local** (yellow, this computer's own clock) or **manual** (blue, corrected by you). Click it to choose, and click it again to close the panel. If the computer goes offline (or can't reach the timer's server) the badge turns **red** and says so, e.g. *offline · clock synced 14:02*: the timer and its clock carry on, but phones, displays and Companion can't connect until it's back. Back online, it's green again (and fetches internet time if it couldn't before).
 
 - **Internet** can only be picked when a time server answers. If none does, the timer runs on local and the badge turns yellow. **Sync now** tries again and goes back to internet if it works (**Shift+T** does the same).
 - **Local** uses this computer's clock with no correction (**Shift+L**).
