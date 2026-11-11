@@ -391,12 +391,14 @@
       apiFromCompanion(e, m);
     } else if (e.role !== 'control' && e.role !== 'admin' && e.role !== 'companion') {
       return;                                  // view-only display: nothing else is accepted
-    } else if (m.t === 'deck') {               // phone switched its virtual Stream Deck XL on/off
+    } else if (m.t === 'deck') {               // phone switched its virtual Stream Deck on/off (model: mini, mk2 or xl; older phones: the XL)
       e.deck = !!m.on; e.faces = [];
+      e.deckModel = ['mini', 'mk2', 'xl'].includes(m.model) ? m.model : 'xl';
       pushTo(e, false);
     } else if (m.t === 'key') {                // virtual deck key pressed: index only, never a command
-      const i = num(m.i, 0, 31);
-      if (e.deck && i !== null && i === Math.floor(i) && window.StreamDeck) window.StreamDeck.press(i, 'xl');
+      const model = e.deckModel || 'xl', keys = window.StreamDeck && window.StreamDeck.model(model) ? window.StreamDeck.model(model).keyCount : 32;
+      const i = num(m.i, 0, keys - 1);
+      if (e.deck && i !== null && i === Math.floor(i) && window.StreamDeck) window.StreamDeck.press(i, model);
     } else if (m.t === 'kbd') {                // a key typed on the remote's keyboard: allow-listed (RemotePeer.remoteKeyOk)
       remoteKey(m);
     } else if (m.t === 'cmd' && Object.prototype.hasOwnProperty.call(ALLOWED, m.cmd)) {
@@ -983,14 +985,16 @@
   let deckFaces = null;
   function pushDeck(e) {
     if (!window.StreamDeck) { if (!e.faces.none) { e.faces = { none: true }; e.peer.send({ t: 'deck', none: true }); } return; }
-    if (!deckFaces) deckFaces = window.StreamDeck.faces('xl').map(f => [f, JSON.stringify(f)]);
+    const model = e.deckModel || 'xl', g = window.StreamDeck.model(model);
+    if (!deckFaces) deckFaces = {};                    // per model, worked out once per push
+    if (!deckFaces[model]) deckFaces[model] = window.StreamDeck.faces(model).map(f => [f, JSON.stringify(f)]);
     const k = {};
     let any = false;
     const full = !e.faces.length;
-    deckFaces.forEach(([f, json], i) => { if (e.faces[i] !== json) { k[i] = f; e.faces[i] = json; any = true; } });
+    deckFaces[model].forEach(([f, json], i) => { if (e.faces[i] !== json) { k[i] = f; e.faces[i] = json; any = true; } });
     const bl = window.StreamDeck.brightness;           // the backlight: the virtual deck dims with the real one
     const blNew = full || e.blSent !== bl;
-    if (any || blNew) { e.blSent = bl; e.peer.send({ t: 'deck', full, cols: 8, rows: 4, k, bl }); }
+    if (any || blNew) { e.blSent = bl; e.peer.send({ t: 'deck', full, model, cols: g.cols, rows: g.rows, k, bl }); }
   }
 
   // The anchor as of now: a running countdown makes no new anchors (that's the point), so the last
@@ -1634,7 +1638,17 @@
     return false;
   });
 
-  window.remoteControl = { open: openPanel, toggle: togglePanel, enable, disable, takeBack, get shared() { return shared(); }, refresh: () => renderPanel(), get peers() { return peers; }, get state() { return state; } };
+  // linkFor(mode, extra): a phone link (extra fields added, e.g. {m: 'deck', dm: 'mini'} = straight to that
+  // deck size); approve(id, number): the proximity check from elsewhere (the pop-up virtual deck's Show on a phone)
+  function linkFor(mode, extra) {
+    const u = new URL(phoneLink(mode));
+    const h = new URLSearchParams(u.hash.slice(1));
+    for (const [k, v] of Object.entries(extra || {})) if (/^[a-z]{1,3}$/.test(k) && /^[\w-]{1,20}$/.test(String(v))) h.set(k, v);
+    u.hash = h.toString();
+    return u.toString();
+  }
+  function approveFrom(id, entered) { const e = peers.get(id); if (e) { approvePeer(e, String(entered || '').trim()); renderPanel(); } }
+  window.remoteControl = { open: openPanel, toggle: togglePanel, enable, disable, takeBack, linkFor, approve: approveFrom, get enabled() { return enabled; }, get shared() { return shared(); }, refresh: () => renderPanel(), get peers() { return peers; }, get state() { return state; } };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

@@ -1129,6 +1129,12 @@
       document.getElementById('deck-key-options').style.display = 'none';
       renderEditorGrid();
     });
+    // Use as virtual deck…: the pop-up deck (deck.html) for the model being edited, in its own window
+    document.getElementById('deck-virtual-btn')?.addEventListener('click', () => {
+      const g = MODELS[editorModelKey] || MODELS.xl, key = 110;
+      const w = window.open('deck.html?model=' + editorModelKey, 'timer_virtual_deck', 'width=' + (g.cols * key + 40) + ',height=' + (g.rows * key + 90));
+      if (w) w.focus();
+    });
     document.getElementById('deck-key-clear')?.addEventListener('click', () => {
       if (selectedKeyIndex !== null) {
         editorLayouts[editorModelKey][selectedKeyIndex] = 'empty';
@@ -1215,26 +1221,42 @@
   const changeListeners = [];
   function notifyChange() { changeListeners.forEach(fn => { try { fn(); } catch (_) { /* ignore */ } }); }
 
+  // The pop-up virtual deck (deck.html, from the editor's Use as virtual deck…) asks with {editing}: while
+  // the editor is open, its keys are the editor's unsaved settings (layout, labels, presets, messages), so
+  // they can be tried before Save; it swaps them in for the call (everything that reads them is synchronous)
+  const editorShown = () => { const el = document.getElementById('deck-editor'); return !!el && getComputedStyle(el).display !== 'none'; };
+  function withEditing(opts, fn) {
+    if (!(opts && opts.editing && editorShown())) return fn();
+    const L = layouts, O = keyOverrides;
+    layouts = editorLayouts; keyOverrides = editorOverrides;
+    try { return fn(); } finally { layouts = L; keyOverrides = O; }
+  }
+  const LOCAL_NO_PRESS = new Set(['toggle_presenter', 'empty']);   // the pop-up: Type message works (it's this computer)
+
   window.StreamDeck = {
     model: m => MODELS[m],
-    // Every key's face, with `a` (its action) and `press` (whether pressing does anything)
-    faces(m = 'xl') {
+    editing: () => editorShown(),
+    // Every key's face, with `a` (its action) and `press` (whether pressing does anything); opts {editing, local}
+    faces(m = 'xl', opts) { return withEditing(opts, () => this._faces(m, opts)); },
+    _faces(m, opts) {
       const model = MODELS[m], layout = activeLayout(m) || [];
       if (!model) return [];
       return Array.from({ length: model.keyCount }, (_, i) => {
         const a = layout[i] || 'empty', act = ACTIONS[a] || ACTIONS.empty;
         const f = faceFor(m, i, a);
         f.a = a;
-        f.press = picking || a === 'custom_msg' || (!!act.cmd && !PHONE_NO_PRESS.has(a));   // (picking a preset: any key, to cancel)
+        f.press = picking || a === 'custom_msg' || (!!act.cmd && !(opts && opts.local ? LOCAL_NO_PRESS : PHONE_NO_PRESS).has(a));   // (picking a preset: any key, to cancel)
         return f;
       });
     },
-    press(index, m = 'xl') {
-      if (picking) { pickPress(index, m); return true; }
-      const a = (activeLayout(m) || [])[index], act = ACTIONS[a];
-      if (!act || !act.cmd || PHONE_NO_PRESS.has(a)) return false;
-      act.cmd(index, m);
-      return true;
+    press(index, m = 'xl', opts) {
+      return withEditing(opts, () => {
+        if (picking) { pickPress(index, m); return true; }
+        const a = (activeLayout(m) || [])[index], act = ACTIONS[a];
+        if (!act || !act.cmd || (opts && opts.local ? LOCAL_NO_PRESS : PHONE_NO_PRESS).has(a)) return false;
+        act.cmd(index, m);
+        return true;
+      });
     },
     onChange(fn) { changeListeners.push(fn); },
     get brightness() { return brightness; },   // the backlight %, for the phone's virtual deck

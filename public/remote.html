@@ -119,7 +119,7 @@
     body.deckview.side .top button, body.deckview.side #link-badge { padding: 0.35em 0; width: 2.2em; text-align: center; }
     body.deckview.side #deck { top: 0; left: calc(var(--strip) + env(safe-area-inset-left));
       padding: max(1.5vmin, env(safe-area-inset-top)) max(1.5vmin, env(safe-area-inset-right)) max(1.5vmin, env(safe-area-inset-bottom)) 0; }
-    #keys { display: grid; grid-template-columns: repeat(8, var(--key, 40px)); grid-auto-rows: var(--key, 40px);
+    #keys { display: grid; grid-template-columns: repeat(var(--cols, 8), var(--key, 40px)); grid-auto-rows: var(--key, 40px);
       column-gap: var(--col-gap, 6px); row-gap: var(--row-gap, 6px); justify-content: center; align-content: center; }
     #keys canvas { width: var(--key, 40px); height: var(--key, 40px); border-radius: 14%; display: block;
       transition: transform .06s; touch-action: manipulation; }
@@ -411,9 +411,10 @@
   <script src="back-guard.js?v=1ffc51f1"></script>
   <script src="help-overlay.js?v=8a5dbd9d"></script>
   <script src="deck-face.js?v=c546849b"></script>
+  <script src="virtual-deck.js?v=69d4ac2d"></script>
   <script src="remote-peer.js?v=fd06de67"></script>
   <script src="notices.js?v=7f9aa52c"></script>
   <script src="remote-clock.js?v=4358371f"></script>
-  <script src="remote-phone.js?v=52891b86"></script>
+  <script src="remote-phone.js?v=cc46b4a6"></script>
 </body>
 </html>

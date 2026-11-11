@@ -93,7 +93,7 @@
       onModeChange: showMode,
     });
     peer.send({ t: 'hello', token: store.get(tokenKey()) || undefined, clock: 1 });   // via the server until the LAN link is up
-    if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true });
+    if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true, model: deckModel });
     if (editorMode()) peer.send({ t: 'rs-sub', on: true });
   }
 
@@ -180,7 +180,7 @@
       if (typeof m.token === 'string') store.set(tokenKey(), m.token);
       pinCode = null;
       box.hidden = true;
-      if (peer) { peer.send({ t: 'hello', token: store.get(tokenKey()) || undefined, clock: 1 }); if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true }); if (editorMode()) peer.send({ t: 'rs-sub', on: true }); }
+      if (peer) { peer.send({ t: 'hello', token: store.get(tokenKey()) || undefined, clock: 1 }); if (view === 'deck' && role !== 'view') peer.send({ t: 'deck', on: true, model: deckModel }); if (editorMode()) peer.send({ t: 'rs-sub', on: true }); }
     } else if (m.t === 'pin-rejected' || m.t === 'revoked') {
       pinCode = null;
       $('pincode').textContent = '';
@@ -428,26 +428,21 @@
     $('presets').appendChild(b);
   }
 
-  // ─── Virtual Stream Deck XL ──────────────────────────────────────────────
-  // The timer sends each key's face (colours and text, from its XL layout) and only the keys
-  // that change; we draw them with the same code as the real deck (deck-face.js). A press
-  // sends just the key's number; the timer runs that key's action.
+  // ─── Virtual Stream Deck (Mini, MK.2 or XL) ───────────────────────────────
+  // The timer sends each key's face (colours and text, from its layout for the model this phone
+  // chose) and only the keys that change; virtual-deck.js draws them with the same code as the real
+  // deck (deck-face.js). A press sends just the key's number; the timer runs that key's action.
+  // The model is this phone's choice (remote_deck_model: a small phone as a Mini, say).
 
-  const faces = [];
-  const canvases = [];
-  const SHOW_ONLY = new Set(['countdown', 'countdown_major', 'countdown_minor', 'rs_status', 'empty']);   // display keys
-  let keyCss = 40;
-  function buildKeys() {
-    const box = $('keys');
-    for (let i = 0; i < 32; i++) {
-      const c = document.createElement('canvas');
-      c.className = 'idle';
-      c.addEventListener('pointerdown', e => e.preventDefault());
-      pressable(c, () => pressKey(i), { can: () => !!(faces[i] && faces[i].press) });
-      box.appendChild(c);
-      canvases.push(c);
-    }
-  }
+  const DECK_MODELS = { xl: 'Stream Deck XL', mk2: 'Stream Deck MK.2', mini: 'Stream Deck Mini' };
+  // (a link may say which: dm=mini, from the timer's pop-up deck's Show on a phone)
+  let deckModel = (m => (DECK_MODELS[m] ? m : 'xl'))(h.dm || (() => { try { return localStorage.getItem('remote_deck_model'); } catch (_) { return null; } })());   // (store is declared further down)
+  if (DECK_MODELS[h.dm]) { try { localStorage.setItem('remote_deck_model', h.dm); } catch (_) { /* private mode */ } }
+  const vdeck = VirtualDeck.create($('keys'), {
+    bind: (c, i) => pressable(c, () => pressKey(i), { can: () => !!(vdeck.faces[i] && vdeck.faces[i].press) }),
+  });
+  vdeck.setModel(deckModel);
+  const faces = vdeck.faces;
 
   // Size the keys to fill the screen: as big as fit (square, like the real deck), with the
   // spare space shared out between them. Landscape moves the top bar into a narrow strip
@@ -455,48 +450,40 @@
   function layoutDeck() {
     if (view !== 'deck') return;
     const root = document.documentElement, body = document.body;
-    const side = innerWidth > innerHeight * 1.15;
+    const g = VirtualDeck.MODELS[deckModel];
+    const side = innerWidth > innerHeight * 1.15 && g.cols / g.rows > 1.2;
     body.classList.toggle('side', side);
     if (!side) root.style.setProperty('--top-h', Math.ceil(document.querySelector('.top').getBoundingClientRect().bottom) + 'px');
-    $('deckhint').textContent = side || innerWidth > 560 ? '' : 'Turn your phone sideways for bigger keys';
+    $('deckhint').textContent = side || innerWidth > 560 || deckModel === 'mini' ? '' : 'Turn your phone sideways for bigger keys';
 
     const deck = $('deck'), cs = getComputedStyle(deck);
     const hint = $('deckhint').textContent ? $('deckhint').getBoundingClientRect().height + 16 : 0;
     const W = deck.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
     const H = deck.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - hint;
-    const MIN_GAP = 0.08, MAX_GAP = side ? 0.6 : 0.2;          // gaps as a fraction of a key
-    keyCss = Math.max(20, Math.floor(Math.min(W / (8 + 7 * MIN_GAP), H / (4 + 3 * MIN_GAP))));
-    const colGap = Math.min((W - 8 * keyCss) / 7, keyCss * MAX_GAP);
-    const rowGap = Math.min((H - 4 * keyCss) / 3, keyCss * MAX_GAP);
-    root.style.setProperty('--key', keyCss + 'px');
-    root.style.setProperty('--col-gap', Math.max(0, Math.floor(colGap)) + 'px');
-    root.style.setProperty('--row-gap', Math.max(0, Math.floor(rowGap)) + 'px');
-    canvases.forEach((_, i) => drawKey(i));
+    vdeck.layout(W, H, side ? 0.6 : 0.2);
   }
   window.addEventListener('orientationchange', () => setTimeout(layout, 250));   // some phones report the new size late
 
-  function drawKey(i) {
-    const c = canvases[i], f = faces[i];
-    if (!c) return;
-    const px = Math.round(keyCss * (window.devicePixelRatio || 1));
-    if (c.width !== px) { c.width = c.height = px; }
-    const ctx = c.getContext('2d');
-    if (!f) { ctx.fillStyle = '#0d0d0d'; ctx.fillRect(0, 0, px, px); return; }
-    DeckFace.paint(ctx, f, px);
-    c.classList.toggle('idle', !f.press);
-    c.classList.toggle('off', !f.press && !SHOW_ONLY.has(f.a));
-  }
-
   function onDeck(m) {
     if (m.none) { $('deckhint').textContent = 'The timer has no Stream Deck support loaded.'; return; }
+    // The model's grid (an older timer sends only the XL's, without a model)
+    const model = m.model && VirtualDeck.MODELS[m.model] ? m.model : m.cols === 8 ? 'xl' : deckModel;
+    if (model !== vdeck.model) { vdeck.setModel(model); layoutDeck(); }
     // The deck's backlight (Backlight key, or the timer's deck editor): dimmed like an LCD backlight,
     // never quite black (10% on the real deck is dim but readable)
-    if (typeof m.bl === 'number' && m.bl >= 1 && m.bl <= 100) $('keys').style.setProperty('--deck-bl', (0.2 + 0.8 * m.bl / 100).toFixed(3));
+    vdeck.setBacklight(m.bl);
     if (!m.k || typeof m.k !== 'object') return;
     for (const [i, f] of Object.entries(m.k)) {
       const n = Number(i);
-      if (n >= 0 && n < 32 && f && typeof f === 'object') { faces[n] = f; if (view === 'deck') drawKey(n); }
+      if (n >= 0 && n < vdeck.count && f && typeof f === 'object') { if (view === 'deck') vdeck.setFace(n, f); else faces[n] = f; }
     }
+  }
+  function setDeckModel(m) {
+    if (!DECK_MODELS[m]) return;
+    deckModel = m;
+    store.set('remote_deck_model', m);
+    vdeck.setModel(m);
+    if (peer && role !== 'view' && view === 'deck') peer.send({ t: 'deck', on: true, model: m });
   }
 
   function pressKey(i) {
@@ -527,7 +514,7 @@
 
   const VIEWS = {
     simple:    { label: 'Simple controls',   desc: 'Start, pause, ±1 min, presets, messages' },
-    deck:      { label: 'Stream Deck XL',    desc: 'The timer’s XL key layout' },
+    deck:      { label: 'Stream Deck',       desc: 'The timer’s key layout for a deck size' },
     countdown: { label: 'Countdown display', desc: 'Big countdown and message, no controls' },
     runsheet:  { label: 'Run sheet display', desc: 'Now, next and the schedule, no controls' },   // on a desktop controller: the editor (see applyRole)
     admin:     { label: 'Admin: set up another computer', desc: 'Scan another computer’s QR code to make it a remote or display of this timer' },
@@ -562,7 +549,7 @@
     updatePresenterMode();
     updateEditorMode();
     layout();
-    if (peer && role !== 'view') peer.send({ t: 'deck', on: v === 'deck' });
+    if (peer && role !== 'view') peer.send({ t: 'deck', on: v === 'deck', model: deckModel });
     if (v === 'admin' && fromUser) startScan();      // picked from the menu: a tap, so the camera may start
   }
 
@@ -584,6 +571,17 @@
     const list = $('viewlist');
     list.innerHTML = '';
     for (const k of allowedViews()) {
+      if (k === 'deck') {                            // one entry per deck size: a small phone can be a Mini
+        for (const [m, name] of Object.entries(DECK_MODELS)) {
+          const btn = document.createElement('button');
+          const g = VirtualDeck.MODELS[m];
+          btn.className = view === 'deck' && deckModel === m ? 'on' : '';
+          btn.innerHTML = `${name}<small>The timer’s ${name.replace('Stream Deck ', '')} key layout (${g.cols * g.rows} keys)</small>`;
+          btn.addEventListener('click', () => { $('viewmenu').hidden = true; setDeckModel(m); setView('deck', true); });
+          list.appendChild(btn);
+        }
+        continue;
+      }
       const btn = document.createElement('button');
       btn.className = k === view ? 'on' : '';
       btn.innerHTML = `${VIEWS[k].label}<small>${VIEWS[k].desc}</small>`;
@@ -1222,7 +1220,6 @@
   }));
   showFsButton();
 
-  buildKeys();
   applyRole();
 
   // ─── Boot ────────────────────────────────────────────────────────────────
