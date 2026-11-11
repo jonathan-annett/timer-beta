@@ -77,7 +77,7 @@
   // time comes back on the bus (entry, entry_typed): on the XL's preview keys, and on Start and Set default.
   // Not on the Mini (no room). Every page's deck and the phone's virtual XL show it while it's on.
   const KEYPAD = {
-    mk2: ['kp_1', 'kp_2', 'kp_3', 'kp_colon', 'kp_cancel',
+    mk2: ['kp_1', 'kp_2', 'kp_3', 'kp_colon', 'kp_cancelback',
           'kp_4', 'kp_5', 'kp_6', 'kp_0', 'kp_default',
           'kp_7', 'kp_8', 'kp_9', 'kp_dot', 'kp_start'],
     xl:  ['kp_1', 'kp_2', 'kp_3', 'kp_colon', 'empty', 'empty', 'empty', 'kp_cancel',
@@ -149,6 +149,9 @@
     kp_back:   { label: '⌫', kp: 'big', group: 'Keypad', cmd: () => kpKeys('Backspace') },
     // Cancel / Set default with nothing typed just leave (Esc would fade out what's playing; Enter with nothing typed does nothing useful)
     kp_cancel: { label: 'Cancel', kp: 'cancel', group: 'Keypad', cmd: () => { if (entry) kpKeys('Escape'); setKeypad(false); } },
+    // The MK.2's top right (no room for both): Cancel until something is typed, then ⌫, back to Cancel once
+    // the last character is gone, as on the keyboard (entry_typed decides)
+    kp_cancelback: { label: 'Cancel', kp: 'cancelback', group: 'Keypad', cmd: () => { if (entryTyped) { kpKeys('Backspace'); return; } if (entry) kpKeys('Escape'); setKeypad(false); } },
     kp_default:{ label: 'Set\ndefault', kp: 'default', group: 'Keypad', cmd: () => { if (entry) kpKeys('Enter'); setKeypad(false); } },
     kp_start:  { label: 'Start', kp: 'start', group: 'Keypad', cmd: () => { kpKeys(' '); setKeypad(false); } },   // the typed time (or the default, as Space does)
     kp_pv_h:   { label: '', kp: 'pv', pv: 'h', group: 'Keypad', cmd: null },     // the XL's preview of the typed time
@@ -328,7 +331,7 @@
           if (typeof v.default_ms === 'number' && v.default_ms !== defaultMs) { defaultMs = v.default_ms; liveChanged = true; }
           if (typeof v.entry === 'string' && (v.entry !== entry || (v.entry_typed || '') !== entryTyped)) {
             entry = v.entry; entryTyped = v.entry_typed || ''; liveChanged = true;
-            if (keypad && device) (activeLayout(modelKey) || []).forEach((a, i) => { const k = (ACTIONS[a] || {}).kp; if (k === 'pv' || k === 'start' || k === 'default') scheduleRedrawKey(i); });
+            if (keypad && device) (activeLayout(modelKey) || []).forEach((a, i) => { const k = (ACTIONS[a] || {}).kp; if (k === 'pv' || k === 'start' || k === 'default' || k === 'cancelback') scheduleRedrawKey(i); });
           }
           if (liveChanged && device && !changed) scheduleCountdownKeys();   // Start + time, Pause + time
           if (typeof v.remain === 'string' && v.remain !== remainText) {
@@ -697,6 +700,7 @@
     switch (action.kp) {
       case 'digit': case 'big': return { bg: '#202024', fg: '#ffffff', big: { text: action.label, scale: 0.5 } };
       case 'cancel': return { bg: '#3a0d0d', fg: '#ff8a8a', label: 'Cancel' };
+      case 'cancelback': return entryTyped ? { bg: '#202024', fg: '#ffffff', big: { text: '⌫', scale: 0.5 } } : { bg: '#3a0d0d', fg: '#ff8a8a', label: 'Cancel' };
       case 'default': return { bg: '#0b2a4a', fg: '#9fd0ff', label: entry ? 'Default\n' + entry : 'Set\ndefault' };
       case 'start': return { bg: '#0e3a12', fg: '#8dff8d', label: entry ? 'Start\n' + entry : 'Start' };
       case 'save': return entry ? { bg: '#3a2a00', fg: '#ffcc33', label: 'Update\npreset' } : { bg: '#141414', fg: '#555555', label: 'Update\npreset' };
