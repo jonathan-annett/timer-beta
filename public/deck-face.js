@@ -9,6 +9,8 @@
  *     big:   {text, scale}       one large line (countdown keys)
  *     wrap:  {text, maxLines}    word-wrapped text (message keys; '\n' forces lines)
  *     rs:    {cap, body, status} run sheet key: small caption + content
+ *     rows:  [{text, scale, alpha, color}, …]  stacked lines, each fitted to the key (Start + time,
+ *            Pause + time: countdown / Pause / pauses); scale = font height as a fraction of the key
  *     label: 'Line 1\nLine 2'    ordinary key label
  *     bar:   colour   thin state bar along the bottom (optional) }
  * Sizes scale with the key, so a 96 px deck key and a 300 px phone key look alike.
@@ -60,6 +62,18 @@
     if (f.big) {
       fitFont(ctx, f.big.text, size * 0.86, Math.round(size * f.big.scale));
       ctx.fillText(f.big.text, size / 2, size / 2 + 1);
+    }
+
+    if (f.rows) {
+      const n = f.rows.length, step = size * 0.29;
+      f.rows.forEach((r, i) => {
+        if (!r || !r.text) return;
+        fitFont(ctx, r.text, size * 0.88, Math.round(size * (r.scale || 0.18)));
+        ctx.globalAlpha = r.alpha == null ? 1 : r.alpha;
+        if (r.color) ctx.fillStyle = r.color;
+        ctx.fillText(r.text, size / 2, size / 2 + (i - (n - 1) / 2) * step + 1);
+        ctx.globalAlpha = 1; ctx.fillStyle = f.fg || '#fff';
+      });
     }
 
     if (f.wrap) {

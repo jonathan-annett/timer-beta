@@ -36,10 +36,13 @@
     #share h3 { margin: 0 0 6px; color: #fff; font-size: 15px; }
     #share p { margin: 6px 0; color: #aaa; line-height: 1.4; }
     #qr { background: #fff; padding: 10px; border-radius: 6px; display: inline-block; margin: 6px 0; line-height: 0; }
-    #ask { margin-top: 8px; }
-    #ask input { font: 20px/1 "Helvetica Neue", Arial, sans-serif; width: 4.2em; text-align: center; letter-spacing: .15em; background: #0b0b0b; color: #fff; border: 1px solid #4aa8ff; border-radius: 5px; padding: 4px; }
+    #s-wait { margin-top: 8px; }
+    #askpin { font: 20px/1 "Helvetica Neue", Arial, sans-serif; width: 4.2em; text-align: center; letter-spacing: .15em; background: #0b0b0b; color: #fff; border: 1px solid #4aa8ff; border-radius: 5px; padding: 4px; }
     #share button { font: inherit; color: #ddd; background: #222; border: 1px solid #444; border-radius: 5px; padding: 5px 12px; cursor: pointer; margin-top: 8px; }
-    #sharemsg { min-height: 1.2em; color: #8dff8d; }
+    #share #donemsg { color: #8dff8d; }
+    #share #donemsg.bad { color: #ff8a8a; }
+    #share .foot { margin-top: 10px; border-top: 1px solid #262626; padding-top: 4px; }
+    #share #newcode { color: #ff8a8a; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -52,14 +55,13 @@
   <div id="menu" hidden><button id="m-share">Show on a phone…</button></div>
   <div id="share" hidden><div class="box">
     <h3>This deck on a phone</h3>
-    <p>Scan with the phone’s camera. It opens as a <span id="sharesize"></span>, controlling this timer.</p>
-    <div id="qr"></div>
-    <div id="ask" hidden><p id="askwho"></p><input id="askpin" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="###"></div>
-    <p id="sharemsg"></p>
-    <button id="shareclose">Done</button>
+    <div id="s-qr"><p>Scan with the phone’s camera. It opens as a <span id="sharesize"></span>, controlling this timer. The code goes as soon as a phone picks it up.</p><div id="qr"></div></div>
+    <div id="s-wait" hidden><p id="waitwho"></p><input id="askpin" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="###"><br><button id="refuse" title="Not yours? Disconnect it">Refuse</button></div>
+    <div id="s-done" hidden><p id="donemsg"></p><button id="revoke" hidden title="Disconnect it and forget it: it would need its number typed again">Revoke</button> <button id="again">Show the code again</button></div>
+    <div class="foot"><button id="newcode" title="A new code: every phone, display and Companion connection is signed out, and the code shown before stops working">New code (signs out every device)</button> <button id="shareclose">Done</button></div>
   </div></div>
   <div id="deck"><div id="keys"></div></div>
-  <script src="deck-face.js?v=c546849b"></script>
+  <script src="deck-face.js?v=44d7ad4a"></script>
   <script src="virtual-deck.js?v=69d4ac2d"></script>
   <script>
   (function () {
@@ -93,54 +95,77 @@
     $('model').addEventListener('change', e => setModel(e.target.value));
 
     // ⋯ → Show on a phone: a QR code of a control link that opens the phone in the deck view at this size
-    // (remoteControl.linkFor, sharing turned on if it was off), and the phone's 3-digit number typed here
-    // (remoteControl.approve) as well as in the timer's share panel.
+    // (remoteControl.linkFor; sharing turned on if it was off). The code is taken off the screen as soon as a
+    // phone connects (so someone passing can't pick it up too); its 3-digit number is typed here
+    // (remoteControl.approve; the timer's share panel works too) or it's Refused; once in, Revoke throws it
+    // out again. New code signs out every device (the code shown before stops working).
     const NAMES = { xl: 'Stream Deck XL', mk2: 'Stream Deck MK.2', mini: 'Stream Deck Mini' };
     const rc = () => { try { return window.opener && !window.opener.closed ? window.opener.remoteControl : null; } catch (_) { return null; } };
     $('more').addEventListener('click', () => { $('menu').hidden = !$('menu').hidden; });
     document.addEventListener('click', e => { if (!e.target.closest('#menu, #more')) $('menu').hidden = true; });
-    let asking = null, shareTimer = 0;
+    let stage = null, before = new Set(), who = null, whoToken = null, typed = false, shareTimer = 0;
+    const nameOf = e => (e && (e.name || e.suggest)) || 'A phone';
     function drawQR(text) {
       const box = $('qr');
       box.innerHTML = '';
-      const go = () => { try { new QRCode(box, { text, width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M }); box.title = text; } catch (_) { box.textContent = text; } };
+      const go = () => { if (stage !== 'qr') return; try { new QRCode(box, { text, width: 240, height: 240, correctLevel: QRCode.CorrectLevel.M }); box.title = text; } catch (_) { box.textContent = text; } };
       if (window.QRCode) return go();
       const sc = document.createElement('script'); sc.src = 'qrcode.min.js'; sc.onload = go; sc.onerror = () => { box.textContent = text; }; document.head.appendChild(sc);
     }
+    function show(st) { stage = st; $('s-qr').hidden = st !== 'qr'; $('s-wait').hidden = st !== 'wait'; $('s-done').hidden = st !== 'done'; if (st !== 'qr') { $('qr').innerHTML = ''; $('qr').title = ''; } }
+    function finish(text, bad, token) { $('donemsg').textContent = text; $('donemsg').className = bad ? 'bad' : ''; whoToken = token || null; $('revoke').hidden = !token; show('done'); }
+    function showCode() {
+      const r = rc();
+      if (!r) return finish('The timer window is closed.', true);
+      if (!r.enabled) r.enable();
+      before = new Set(r.peers.keys()); who = null; typed = false;
+      $('sharesize').textContent = NAMES[model];
+      show('qr');
+      drawQR(r.linkFor('control', { m: 'deck', dm: model }));
+    }
     function sharePoll() {
       const r = rc();
-      if (!r) { $('sharemsg').textContent = 'The timer window is closed.'; return; }
-      const waiting = [...r.peers.values()].find(e => !e.approved && !e.rejected && e.pin);
-      if (waiting && (!asking || asking.id !== waiting.id)) {
-        asking = waiting;
-        $('askwho').textContent = (waiting.suggest || 'A phone') + ' shows a number: type it here.';
-        $('ask').hidden = false; $('askpin').value = ''; $('askpin').focus();
+      if (!r) { if (stage !== 'done') finish('The timer window is closed.', true); return; }
+      if (stage === 'qr') {                            // a phone picked the code up: off the screen with it
+        const e = [...r.peers.values()].find(x => !before.has(x.id) && !x.rejected);
+        if (e) { who = e.id; $('askpin').value = ''; show('wait'); }
       }
-      if (asking && !waiting) {
-        const e = r.peers.get(asking.id);
-        $('ask').hidden = true;
-        $('sharemsg').textContent = e && e.approved ? 'Connected: ' + (e.suggest || 'the phone') + '.' : '';
-        asking = null;
+      if (stage === 'wait') {
+        const e = r.peers.get(who);
+        if (!e || e.rejected) return finish(!e ? nameOf(e) + ' went away before it was let in.' : typed ? 'That wasn’t its number: ' + nameOf(e) + ' was disconnected.' : 'Refused: ' + nameOf(e) + ' was disconnected.', true);
+        if (e.approved) return finish('Connected: ' + nameOf(e) + '.', false, e.token);
+        $('waitwho').textContent = e.pin ? nameOf(e) + ' is connecting: type the number it shows.' : nameOf(e) + ' is connecting…';
+        $('askpin').hidden = !e.pin;
+        if (e.pin && document.activeElement !== $('askpin')) $('askpin').focus();
       }
     }
     $('m-share').addEventListener('click', () => {
       $('menu').hidden = true;
-      const r = rc();
-      if (!r) return;
-      if (!r.enabled) r.enable();
-      $('sharesize').textContent = NAMES[model];
-      $('sharemsg').textContent = '';
-      drawQR(r.linkFor('control', { m: 'deck', dm: model }));
       $('share').hidden = false;
-      clearInterval(shareTimer); shareTimer = setInterval(sharePoll, 400);
+      showCode();
+      clearInterval(shareTimer); shareTimer = setInterval(sharePoll, 300);
     });
     $('askpin').addEventListener('input', e => {
       const v = e.target.value.replace(/\D/g, '').slice(0, 4);
       e.target.value = v;
-      const r = rc();
-      if (r && asking && v.length === String(asking.pin).length) r.approve(asking.id, v);
+      const r = rc(), p = r && who && r.peers.get(who);
+      if (p && p.pin && v.length === String(p.pin).length) { typed = true; r.approve(who, v); sharePoll(); }
     });
-    $('shareclose').addEventListener('click', () => { $('share').hidden = true; clearInterval(shareTimer); asking = null; });
+    $('refuse').addEventListener('click', () => { const r = rc(); if (r && who) r.refuse(who); sharePoll(); });
+    $('revoke').addEventListener('click', () => {
+      const r = rc();
+      if (!r || !whoToken) return;
+      r.revoke(whoToken);
+      finish('Revoked: it was disconnected and forgotten (it would need its number typed again).', true);
+    });
+    $('again').addEventListener('click', showCode);
+    $('newcode').addEventListener('click', () => {
+      const r = rc();
+      if (!r || !confirm('Make a new code? Every phone, display and Companion connection is signed out, and the code shown before stops working.')) return;
+      r.newCode();
+      if (stage === 'qr') showCode(); else finish('New code: every device was signed out.', true);
+    });
+    $('shareclose').addEventListener('click', () => { $('share').hidden = true; clearInterval(shareTimer); stage = null; $('qr').innerHTML = ''; });
     window.addEventListener('resize', fit);
     if (location.hostname) document.title = location.hostname + ' - Virtual Stream Deck';
     setModel(model);

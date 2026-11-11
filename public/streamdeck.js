@@ -91,6 +91,7 @@
   // the keypad (like clicking outside a dialog). While picking, every key read goes through pickPress.
   let keypad = false, keypadIdle = 0, picking = false;
   let entry = '', entryTyped = '';                 // the time being typed on the timer (bus entry, entry_typed)
+  let defaultMs = null, pauseTotalMs = 0;          // the default duration and every pause so far (bus default_ms, pause_total_ms)
   const kpDigit = d => ({ label: d, kp: 'digit', group: 'Keypad', cmd: () => kpKeys(d) });
   function kpKeys(k) { _sendCmd({ cmd: 'keys', keys: [k] }); bumpKeypad(); }
   function bumpKeypad() { clearTimeout(keypadIdle); if (keypad) keypadIdle = setTimeout(() => setKeypad(false), KEYPAD_IDLE_MS); }
@@ -157,6 +158,11 @@
     kp_save:   { label: 'Update\npreset', kp: 'save', group: 'Keypad', cmd: () => startPick() },   // the XL: save the typed time to a preset key
     toggle_preset_arm: { label: 'Arm\npresets', group: 'Presets', toggleState: 'preset_arm', cmd: () => _sendCmd({ cmd: 'presetarm' }) },   // lit while presets only arm the timer
     start_restart:    { label: 'Start',     group: 'Controls',  cmd: () => _sendCmd({ cmd: 'keys', keys: [' '] }) },
+    // Start and Pause with the times on the key (the owner's design, for the Mini; any deck): Start over the
+    // default duration ("1h 30m", the typed time while one is typed); the countdown over Pause / Resume over
+    // the pauses ("(1:23)" counting while paused, "(+1:34)" dimmed after). See liveRows().
+    start_info:       { label: 'Start\n+ time', group: 'Controls', live: true, cmd: () => _sendCmd({ cmd: 'keys', keys: [' '] }) },
+    pause_info:       { label: 'Pause\n+ time', group: 'Controls', live: true, toggleState: 'pausing', cmd: () => _sendCmd({ cmd: 'pause' }) },
     pause_resume: {
       label: 'Pause', altLabel: 'Resume',
       group: 'Controls',
@@ -204,7 +210,7 @@
   // ─── Default layouts per model ────────────────────────────────────────────
 
   const DEFAULT_LAYOUTS = {   // the owner's layouts (Nov 2026: Keypad on the MK.2 and XL)
-    mini: ['preset_30','undo_pause','pause_resume','sub_1min','add_1min','start_restart'],
+    mini: ['preset_30','undo_pause','pause_info','sub_1min','add_1min','start_info'],
     mk2: [
       'preset_10','preset_20','preset_30','preset_45','keypad',
       'add_1min','sub_1min','undo_pause','pause_resume','countdown',
@@ -223,6 +229,7 @@
   const PAST_DEFAULTS = {
     mini: [
       'start_restart,pause_resume,undo_pause,add_1min,sub_1min,preset_30',
+      'preset_30,undo_pause,pause_resume,sub_1min,add_1min,start_restart',
     ],
     mk2: [
       'preset_10,preset_20,preset_30,preset_45,preset_60,start_restart,pause_resume,add_1min,sub_1min,undo_pause,toggle_bar,toggle_time,toggle_messages,toggle_presenter,toggle_preset_arm',
@@ -316,10 +323,14 @@
             currentMessage = opMsg;
             if (device && !changed) scheduleMessageKeys();
           }
+          let liveChanged = false;
+          if (typeof v.pause_total_ms === 'number' && v.pause_total_ms !== pauseTotalMs) { pauseTotalMs = v.pause_total_ms; liveChanged = true; }
+          if (typeof v.default_ms === 'number' && v.default_ms !== defaultMs) { defaultMs = v.default_ms; liveChanged = true; }
           if (typeof v.entry === 'string' && (v.entry !== entry || (v.entry_typed || '') !== entryTyped)) {
-            entry = v.entry; entryTyped = v.entry_typed || '';
+            entry = v.entry; entryTyped = v.entry_typed || ''; liveChanged = true;
             if (keypad && device) (activeLayout(modelKey) || []).forEach((a, i) => { const k = (ACTIONS[a] || {}).kp; if (k === 'pv' || k === 'start' || k === 'default') scheduleRedrawKey(i); });
           }
+          if (liveChanged && device && !changed) scheduleCountdownKeys();   // Start + time, Pause + time
           if (typeof v.remain === 'string' && v.remain !== remainText) {
             remainText = v.remain;
             remainSec = parseRemain(v.remain);
@@ -655,10 +666,27 @@
     if (!layout) return;
     layout.forEach((actionKey, i) => {
       const a = ACTIONS[actionKey];
-      if (!a || !a.display) return;
-      const text = countdownText(a.display);
+      if (!a || !(a.display || a.live)) return;
+      const text = a.display ? countdownText(a.display) : JSON.stringify(liveRows(actionKey));
       if (countdownCache.get(i) !== text) scheduleRedrawKey(i);
     });
+  }
+
+  // Start + time / Pause + time: their three rows (deck-face.js rows), redrawn when the text changes
+  const clockText = ms => { const t = Math.round(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, x = t % 60; return h ? h + ':' + pad2(m) + ':' + pad2(x) : m + ':' + pad2(x); };
+  function durationShort(ms) {
+    if (ms == null) return '';
+    const t = Math.round(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, x = t % 60;
+    if (h) return h + 'h' + (m || x ? ' ' + m + 'm' : '') + (x ? ' ' + x + 's' : '');
+    return x ? m + ':' + pad2(x) : m + ' min';
+  }
+  function liveRows(actionKey) {
+    if (actionKey === 'start_info') return [{ text: 'Start', scale: 0.24 }, null,
+      entry ? { text: entry, scale: 0.21, color: '#ffcc33' } : { text: durationShort(defaultMs), scale: 0.21 }];
+    const paused = deckState.pausing;
+    return [{ text: countdownText('full'), scale: 0.3 }, { text: paused ? 'Resume' : 'Pause', scale: 0.2 },
+      paused ? { text: '(' + clockText(pauseTotalMs) + ')', scale: 0.18 }
+        : pauseTotalMs > 0 ? { text: '(+' + clockText(pauseTotalMs) + ')', scale: 0.18, alpha: 0.5 } : null];
   }
 
   // What a key looks like, as data (colours and text). DeckFace.paint (deck-face.js) draws it;
@@ -700,7 +728,7 @@
     if (isToggled) { bg = '#0f3460'; fg = '#e94560'; }
     if (deckState.expired) { bg = '#2d0000'; fg = '#ff4444'; }
     else if (deckState.impending && actionKey !== 'empty') { bg = '#2d1a00'; fg = '#ff9900'; }
-    if (actionKey === 'pause_resume' && deckState.pausing) { bg = '#2d1a00'; fg = '#ff9900'; }
+    if ((actionKey === 'pause_resume' || actionKey === 'pause_info') && deckState.pausing) { bg = '#2d1a00'; fg = '#ff9900'; }
     if (action.isMessage) {
       const text = messageFor(index, m);
       if (text && currentMessage === text) { bg = override.bg || '#0b3d5c'; fg = override.fg || '#7fd4ff'; }
@@ -749,7 +777,8 @@
       f.rs = { cap, body, status: action.rsKey === 'status' };
     }
 
-    const rawLabel = (action.display || action.isMessage || (action.rsKey && rs.active)) ? '' :
+    if (action.live) f.rows = liveRows(actionKey);
+    const rawLabel = (action.display || action.isMessage || action.live || (action.rsKey && rs.active)) ? '' :
       actionKey === 'brightness_cycle' ? (override.label || 'Backlight') + '\n' + brightness + '%' :
       override.label ||
       (action.presetMs && override.msecs ? durationLabel(override.msecs) : '') ||
@@ -765,6 +794,7 @@
   function renderKey(index, actionKey, size) {
     const f = faceFor(modelKey, index, actionKey);
     if (f.big) countdownCache.set(index, f.big.text);
+    if (f.rows) countdownCache.set(index, JSON.stringify(f.rows));
     const canvas = document.createElement('canvas');
     canvas.width = size; canvas.height = size;
     DeckFace.paint(canvas.getContext('2d'), f, size);

@@ -1648,7 +1648,11 @@
     return u.toString();
   }
   function approveFrom(id, entered) { const e = peers.get(id); if (e) { approvePeer(e, String(entered || '').trim()); renderPanel(); } }
-  window.remoteControl = { open: openPanel, toggle: togglePanel, enable, disable, takeBack, linkFor, approve: approveFrom, get enabled() { return enabled; }, get shared() { return shared(); }, refresh: () => renderPanel(), get peers() { return peers; }, get state() { return state; } };
+  // …and refuse(id) (a device waiting for its number), revoke(token) (an approved one: told, disconnected,
+  // forgotten), newCode() (every device out, a new code: New code without the confirm, which the caller asks)
+  function refuseFrom(id) { const e = peers.get(id); if (e && !e.approved) { rejectPeer(e); renderPanel(); } }
+  function newCodeFrom() { pairing(true); restart(); renderPanel(true); }
+  window.remoteControl = { open: openPanel, toggle: togglePanel, enable, disable, takeBack, linkFor, approve: approveFrom, refuse: refuseFrom, revoke: revokeDevice, newCode: newCodeFrom, get enabled() { return enabled; }, get shared() { return shared(); }, refresh: () => renderPanel(), get peers() { return peers; }, get state() { return state; } };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

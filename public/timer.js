@@ -2052,6 +2052,20 @@ add milliseconds to the start time
 			timerAPI.send({ setVariableValues: { htmlclass: lastClassSent } });
 		}
 		announceEntry(force);
+		announcePauseTotal(force);
+	}
+	// For deck keys that show them (streamdeck.js Start + time, Pause + time): every pause so far,
+	// counting while paused (pause_total_ms, to the second), and the default duration (default_ms).
+	// Only on change; the tick sends them, so a pause counts up even while nothing else changes.
+	var lastPauseSent = null;
+	function announcePauseTotal(force) {
+		if (!timerAPI) return;
+		const total = Math.floor((pauseAcum + (pausedAt !== undefined ? Math.max(0, timeProvider.now() - pausedAt) : 0)) / 1000) * 1000;
+		const sig = total + "|" + defaultDuration;
+		if (force || sig !== lastPauseSent) {
+			lastPauseSent = sig;
+			timerAPI.send({ setVariableValues: { pause_total_ms: total, default_ms: defaultDuration } });
+		}
 	}
 	// A time being typed (html.editing), for the Stream Deck's keypad: entry = the duration it makes
 	// (secToStr, "1:25:00"), entry_typed = what was typed ("1:25"); both '' when nothing is. Only on change.
