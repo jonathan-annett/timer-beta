@@ -22,13 +22,16 @@
  * happens to the site or the network. Cues play as the timer's walk-up stings do: a clip from memory
  * (cut, faded, looped, levelled: only ever turned down, to this computer's house level), anything else
  * streamed. Sound outputs (audio-out.js, data-role="both"): cues go to Show, previews and editing to
- * Previews.
+ * Previews. A cue may have its own output (the owner, 12 Nov 2026: a sound card for a creative reason,
+ * or a video's picture without its sound while an audio cue replaces it): out = {id, label} | 'none'
+ * (videos only), absent = Show. Cues on the same trigger all play: audio together, but one video at a
+ * time (the one later in the list stays on screen).
  *
  * Cues are kept by item id (an item's id survives Replace sheet and a CSV round trip: runsheet-core.js
  * matchRows), not by timer room, so they outlive a new share code and wait for their items to come back.
  * localStorage: playout_saved_link, playout_server, playout_token_<room>, playout_follow ('0' = off),
  * playout_cues ({itemId: [{id, name, media, src, trigger, at, duration, lib?, start?, end?, fadeIn?,
- * fadeOut?, loop?, lufs?, volume?}]}; before Nov 2026 playout_cues_<room>, merged in once); the files
+ * fadeOut?, loop?, lufs?, volume?, out?}]}; before Nov 2026 playout_cues_<room>, merged in once); the files
  * are in IndexedDB (video-store.js) as 'pocue:<cue id>'.
  * MIT Licensed
  */
@@ -287,12 +290,16 @@
     if (!buffers.has(k)) buffers.set(k, fileOf(c).then(b => b ? StingClip.decode(b) : null).then(buf => buf && StingClip.render(buf, c)).catch(err => { console.warn('Playout: couldn’t cut “' + c.name + '” in memory, streaming it instead', err); return null; }));
     return buffers.get(k);
   }
-  // The clips of the item on now and the next one, ready (and no others kept)
+  // Where a cue plays: its own sound card (audio-out.js output(): checked from now on), Show, or null = a
+  // video without its sound
+  const outKey = c => c.out === 'none' && c.media === 'video' ? null
+    : c.out && c.out.id && window.AudioOut ? AudioOut.output(c.out) : SHOW;
+  // The clips of the item on now and the next one, ready (and no others kept), and their outputs checked
   function prepare() {
     const i = show.items.findIndex(x => x.id === show.cur);
     const ids = i >= 0 ? [show.items[i], show.items[i + 1]] : [show.items[0]];
     const want = new Set();
-    for (const it of ids) for (const c of (it && cues[it.id]) || []) if (inMemory(c)) { want.add(clipKey(c)); bufferOf(c); }
+    for (const it of ids) for (const c of (it && cues[it.id]) || []) { outKey(c); if (inMemory(c)) { want.add(clipKey(c)); bufferOf(c); } }
     for (const k of [...buffers.keys()]) if (!want.has(k)) buffers.delete(k);
   }
   function tickEvery(ms, fn) {                         // (a worker's tick: keeps time in a background window)
@@ -307,11 +314,11 @@
     const stop = tickEvery(50, () => { n++; el.volume = Math.max(0, Math.min(1, from + (to - from) * n / steps)); if (n >= steps) { stop(); if (done) done(); } });
     return stop;
   }
-  function bufferVoice(c, buf, onEnd) {
+  function bufferVoice(c, buf, onEnd, out) {
     let p = null;
     return {
       play() {
-        p = StingClip.play(buf, { role: SHOW });
+        p = StingClip.play(buf, { role: out });
         if (p.refused) { p = null; return false; }
         p.gain.gain.value = StingClip.gainFor(c);
         p.ended.then(onEnd);
@@ -322,7 +329,8 @@
       release() {},
     };
   }
-  function elementVoice(c, el, url, onEnd) {
+  // (over: stopped, or another cue took the element, while play() waited: it then leaves it alone)
+  function elementVoice(c, el, url, onEnd, out) {
     const r = StingClip.region(c) || {}, start = r.start || 0;
     let stopEnd = null, stopRamp = null, over = false;
     el.src = url;
@@ -330,12 +338,15 @@
     const v = {
       async play() {
         if (start) await new Promise(res => { if (el.readyState >= 1) res(); else { el.addEventListener('loadedmetadata', res, { once: true }); el.addEventListener('error', res, { once: true }); } });   // (unreadable: play() says so)
+        if (over) return false;
         if (start) el.currentTime = start;
-        const g = StingClip.gainFor(c);
+        const g = out ? StingClip.gainFor(c) : 0;      // (no sound: a video's picture only)
         el.volume = r.fadeIn ? 0 : g;
         el.onended = finish;
-        if (window.AudioOut) await AudioOut.media(el, SHOW);
+        if (window.AudioOut && out) await AudioOut.media(el, out);
+        if (over) return false;
         await el.play();
+        if (over) return false;
         if (r.fadeIn) stopRamp = rampEl(el, g, r.fadeIn);
         if (r.end != null) stopEnd = tickEvery(50, () => {   // the end of the part: faded out there
           if (el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { stopEnd(); stopEnd = null; v.fade(r.fadeOut || 30); }
@@ -350,7 +361,11 @@
   }
   const playing = new Map();                           // cue id → {voice, video}
   async function play(c) {
-    if (c.media !== 'video' && window.AudioOut && !AudioOut.ok(SHOW)) { AudioOut.warn(SHOW); return; }   // (a video plays muted: audio-out.js)
+    const out = outKey(c);
+    if (out && window.AudioOut && !AudioOut.ok(out)) {   // its output isn't there: an audio cue doesn't play,
+      AudioOut.warn(out);                                // a video plays without its sound (audio-out.js mutes it)
+      if (c.media !== 'video') return;
+    }
     const memory = inMemory(c) ? await bufferOf(c) : null;
     const blob = memory ? null : await fileOf(c);
     if (!memory && !blob) { status('The file for “' + c.name + '” isn’t in this browser any more. Add the cue again.', 'warn'); return; }
@@ -358,13 +373,14 @@
     if (c.media === 'video') for (const [id, q] of playing) if (q.video) stopCue(id);   // one video on the output at a time
     const p = { video: c.media === 'video' };
     const onEnd = () => { if (playing.get(c.id) === p) stopCue(c.id); };
-    p.voice = memory ? bufferVoice(c, memory, onEnd) : elementVoice(c, p.video ? $('vid') : new Audio(), URL.createObjectURL(blob), onEnd);
+    p.voice = memory ? bufferVoice(c, memory, onEnd, out) : elementVoice(c, p.video ? $('vid') : new Audio(), URL.createObjectURL(blob), onEnd, out);
     playing.set(c.id, p);
     if (p.video) $('stage').querySelector('.idle').hidden = true;
     render();
     let ok = false;
-    try { ok = await p.voice.play(); } catch (err) { status('The browser didn’t let “' + c.name + '” play: click anywhere on this page once.', 'warn'); }
-    if (!ok) stopCue(c.id);
+    try { ok = await p.voice.play(); }
+    catch (err) { if (playing.get(c.id) === p) status('The browser didn’t let “' + c.name + '” play: click anywhere on this page once.', 'warn'); }
+    if (!ok && playing.get(c.id) === p) stopCue(c.id);   // (not when another cue took over meanwhile: no false alarm)
   }
   function stopCue(id) {
     const p = playing.get(id);
@@ -454,13 +470,36 @@
 
   // ─── Page ─────────────────────────────────────────────────────────────────
   const lenText = c => { const l = StingClip.length(c, c.duration); return l ? mmss(Math.max(1, l)) : ''; };
+  // A cue's output menu: Show, this computer's sound cards (named once the browser may: AudioOut.ask),
+  // and for a video No sound
+  let outList = [];
+  const refreshOuts = () => { if (window.AudioOut) AudioOut.devices().then(l => { outList = l; render(); }); };
+  document.addEventListener('audio-out', refreshOuts);
+  function outMenu(c) {
+    const ao = window.AudioOut && AudioOut.supported, opts = [['', '→ Show']];
+    let val = '';
+    if (ao) {
+      outList.forEach((d, i) => opts.push([d.id, '→ ' + (d.label || 'Sound card ' + (i + 1))]));
+      if (c.out && c.out.id) {
+        const named = c.out.label ? outList.filter(d => d.label === c.out.label) : [];
+        const d = outList.find(x => x.id === c.out.id) || (named.length === 1 ? named[0] : null);   // (as audio-out.js finds it)
+        if (d) val = d.id;
+        else { opts.push([c.out.id, '→ ' + (c.out.label || 'Its sound card') + ' (not connected)']); val = c.out.id; }
+      }
+      if (!outList.some(d => d.label)) opts.push(['?', 'Name the sound cards…']);
+    }
+    if (c.media === 'video') { opts.push(['none', 'No sound']); if (c.out === 'none') val = 'none'; }
+    if (opts.length < 2) return '';                    // (choosing sound cards needs Chrome or Edge)
+    return `<select class="cout${val ? ' own' : ''}" data-act="out" title="Where this cue plays">` +
+      opts.map(([v, t]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(t)}</option>`).join('') + '</select>';
+  }
   function render() {
     document.body.classList.toggle('manual', !following());
     const items = show.items;
     $('rshint').textContent = !show.on ? 'The timer isn’t in run sheet mode' : show.fin ? 'The show has finished' : '';
     const curIdx = items.findIndex(x => x.id === show.cur);
-    const open = document.activeElement && document.activeElement.closest('form.addcue');
-    if (open) return;                                  // don't rebuild under someone adding a cue
+    const open = document.activeElement && document.activeElement.closest('form.addcue, #items select.cout');
+    if (open) return;                                  // don't rebuild under someone adding a cue or choosing an output
     $('items').innerHTML = items.map((it, i) => {
       const list = cues[it.id] || [];
       return `<li data-id="${esc(it.id)}" class="${i === curIdx ? 'now' : curIdx >= 0 && i < curIdx ? 'done' : ''}">` +
@@ -469,7 +508,7 @@
         (list.length ? '<ul class="cues">' + list.map(c => `<li data-cue="${esc(c.id)}" class="${i === curIdx && fired.has(c.id) ? 'fired' : ''}${playing.has(c.id) ? ' playing' : ''}">` +
           `<button class="small" data-act="${playing.has(c.id) ? 'stop' : 'fire'}" title="${playing.has(c.id) ? 'Stop' : 'Play it now (on this computer)'}">${playing.has(c.id) ? '■' : '▶'}</button>` +
           `<span class="when">${esc(whenText(c))}</span><span class="fname">${c.media === 'video' ? '🎞' : '🎵'} ${esc(c.name)}</span>` +
-          `<span class="clen">${StingClip.region(c) ? '✂ ' : ''}${lenText(c)}</span>` +
+          `<span class="clen">${StingClip.region(c) ? '✂ ' : ''}${lenText(c)}</span>` + outMenu(c) +
           `<button class="small" data-act="edit" title="Choose the part to play, fades, a loop and its level (the file isn’t cut)">✂</button>` +
           `<button class="small" data-act="del" title="Remove this cue">✕</button></li>`).join('') + '</ul>' : '') +
         '</li>';
@@ -495,6 +534,22 @@
     else if (b.dataset.act === 'del' && c) { if (confirm('Remove the cue “' + c.name + '”?')) removeCue(itemId, c.id); }
     else if (b.dataset.act === 'add') addForm(li);
   });
+  // A cue's output (from its next play)
+  $('items').addEventListener('change', e => {
+    const s = e.target.closest('select.cout');
+    if (!s) return;
+    const itemId = s.closest('li[data-id]').dataset.id, cueId = s.closest('li[data-cue]').dataset.cue;
+    const c = (cues[itemId] || []).find(x => x.id === cueId), v = s.value;
+    s.blur();
+    if (!c) return render();
+    if (v === '?') { render(); AudioOut.ask(); return; }   // (the list comes back by the 'audio-out' event)
+    if (!v) delete c.out;
+    else if (v === 'none') c.out = 'none';
+    else { const d = outList.find(x => x.id === v); c.out = { id: v, label: d ? d.label : (c.out && c.out.label) || '' }; }
+    saveCues();
+    render();
+  });
+  $('items').addEventListener('focusout', e => { if (e.target.matches('select.cout')) setTimeout(render, 0); });
   // + cue: when (a trigger, and its time), then what: the + sting dialog (sting-picker.js)
   const cueFile = $('cuefile');                        // Browse for a file… (needs the dialog's click)
   let browseFor = null;
@@ -545,7 +600,7 @@
     if (e.key === 'f' || e.key === 'F') toggleFull();
     else if (e.key === 'Escape' && !document.fullscreenElement && playing.size) { e.preventDefault(); fadeAll(FADE_MS); }   // (in full screen, Esc leaves it)
   });
-  if (window.AudioOut) AudioOut.picker($('ao-pick'), ['show', 'preview']);
+  if (window.AudioOut) { AudioOut.picker($('ao-pick'), ['show', 'preview']); refreshOuts(); }
   $('unpair').addEventListener('click', () => {
     if (!confirm('Unpair this computer from the timer? Its cues stay here.')) return;
     store.del(SAVED_LINK);

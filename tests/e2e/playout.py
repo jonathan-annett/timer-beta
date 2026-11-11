@@ -12,8 +12,11 @@ SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing 
 # next), to the Show output while previews go to Previews (audio-out.js data-role="both"). Follow the
 # timer off: nothing plays by itself, ▶ still does. Back stops what's playing; Esc fades it. A playout
 # computer that (re)connects in the middle of an item doesn't replay its start cue. Cues are kept by item
-# id (the old per-room lists merged in); cues for items not on the sheet are listed to remove. Off, the
-# page says so.
+# id (the old per-room lists merged in); cues for items not on the sheet are listed to remove. A cue may
+# have its own output (one of Chromium's fake sound cards here), or for a video No sound (its picture,
+# with an audio cue starting beside it); cues on the same trigger all play, one video at a time (the
+# later one, with no false alarm about the other); a cue whose sound card is gone doesn't play and says
+# so. Off, the page says so.
 import io, json, math, mimetypes, os, struct, sys, wave
 from playwright.sync_api import sync_playwright
 BASE = "https://timer.sophtwhere.com/beta/"
@@ -47,7 +50,11 @@ def check(name, ok, got=None):
     print(("ok   " if ok else "FAIL ") + name + ("" if ok else "  got: %r" % (got,)))
     if not ok: errs.append(name)
 
-ARGS = ["--no-proxy-server", "--autoplay-policy=no-user-gesture-required", "--disable-features=WebRtcHideLocalIpsWithMdns,LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets"]
+ARGS = ["--no-proxy-server", "--autoplay-policy=no-user-gesture-required", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--disable-features=WebRtcHideLocalIpsWithMdns,LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets"]
+OUT2 = "Fake Audio Output 2"   # one of Chromium's fake sound cards
+UNPLUG = """name => { const real = navigator.mediaDevices.__real || (navigator.mediaDevices.__real = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices));
+  navigator.mediaDevices.enumerateDevices = async () => (await real()).filter(d => !name || d.label !== name);
+  navigator.mediaDevices.dispatchEvent(new Event('devicechange')); }"""
 OLD = {"zz": [{"id": "old1", "name": "From another show", "media": "audio", "trigger": "start", "at": 0}]}   # kept per room before Nov 2026
 with sync_playwright() as p:
     b = p.chromium.launch(args=ARGS)
@@ -75,7 +82,7 @@ with sync_playwright() as p:
     t.click("#phone-panel .pp-pair"); t.wait_for_timeout(800)
     code = t.text_content("#phone-panel .pp-digits").replace(" ", "")
 
-    pc = b.new_context(ignore_https_errors=True, viewport={"width": 1100, "height": 900}); pc.route("**/*", h)
+    pc = b.new_context(ignore_https_errors=True, viewport={"width": 1100, "height": 900}, permissions=["microphone"]); pc.route("**/*", h)
     pc.add_init_script("window.TimerFeatures = { playout: true }; if (!localStorage.__s) { localStorage.__s = 1; localStorage.playout_cues_OLDROOM = %s; }" % json.dumps(json.dumps(OLD)))
     po = pc.new_page(); po.on("pageerror", lambda e: errs.append("playout: " + str(e)))
     po.goto(BASE + "playout.html?remote=" + SERVER); po.wait_for_timeout(800)
@@ -103,6 +110,8 @@ with sync_playwright() as p:
     add_file("a", "start", None, wav)
     add_file("a", "elapsed", "0:02", wav)
     add_file("b", "start", None, vid)
+    add_file("b", "start", None, vid)              # a second video at the same moment
+    add_file("b", "start", None, wav)              # and an audio cue beside them
     add_file("c", "end", None, wav)
     # a stock clip (Walk-up sting tab): its ▶ plays to the preview output; Use copies it into this browser
     choose("d", "start", None)
@@ -112,7 +121,7 @@ with sync_playwright() as p:
     check("the dialog's preview plays to the preview output", "context:preview" in roles and "context:show" not in roles, roles)
     po.click(".sting-dlg .sting-use"); po.wait_for_timeout(1200)
     cues = po.evaluate("window.__playout.cues()")
-    check("cues kept on the playout computer", {k: [x["trigger"] for x in v] for k, v in cues.items() if k != "zz"} == {"a": ["start", "elapsed"], "b": ["start"], "c": ["end"], "d": ["start"]}, cues)
+    check("cues kept on the playout computer", {k: [x["trigger"] for x in v] for k, v in cues.items() if k != "zz"} == {"a": ["start", "elapsed"], "b": ["start", "start", "start"], "c": ["end"], "d": ["start"]}, cues)
     d = cues["d"][0]
     check("a stock clip: copied here with its part", (d["src"], d["start"], d["end"], d["fadeOut"], d["duration"]) == ("stock", 2, 6, 300, 12), d)
     check("… its file in this browser", po.evaluate("window.videoStore.get('pocue:%s').then(b => !!b && b.size > 1000)" % d["id"]))
@@ -120,6 +129,14 @@ with sync_playwright() as p:
     check("… and its loudness measured (levelling)", isinstance(po.evaluate("window.__playout.cues().d[0].lufs"), (int, float)), po.evaluate("window.__playout.cues().d[0]"))
     ids = {k: [x["id"] for x in v] for k, v in cues.items()}
     playing = lambda: po.evaluate("window.__playout.playing()")
+
+    # a cue's own output: the second video without its sound, the audio cue on a sound card of its own
+    out = lambda cid: '#items li[data-cue="%s"] select.cout' % cid
+    po.select_option(out(ids["b"][1]), label="No sound"); po.wait_for_timeout(300)
+    po.select_option(out(ids["b"][2]), label="→ " + OUT2); po.wait_for_timeout(300)
+    bc = po.evaluate("window.__playout.cues().b")
+    check("a cue's output: kept with the cue (No sound, a sound card)", bc[0].get("out") is None and bc[1].get("out") == "none" and (bc[2].get("out") or {}).get("label") == OUT2, [x.get("out") for x in bc])
+    check("… No sound offered for videos only", po.evaluate("[...document.querySelectorAll('%s option')].some(o => o.value === 'none')" % out(ids["b"][2]).replace('"', '\\"')) is False)
 
     # ✂ on a file cue: the clip editor; saved, the cue plays just that part
     po.click('#items li[data-cue="%s"] button[data-act=edit]' % ids["a"][1]); po.wait_for_timeout(1200)
@@ -159,7 +176,19 @@ with sync_playwright() as p:
     check("Back stops what's playing", playing() == [], playing())
 
     # time's up
-    t.wait_for_timeout(500); t.evaluate("window.runsheet.next()"); t.wait_for_timeout(800)
+    t.wait_for_timeout(500); t.evaluate("window.runsheet.next()"); t.wait_for_timeout(1500)
+    pl = playing()
+    check("two videos and an audio cue at one start: the audio plays, and the later video", ids["b"][2] in pl and ids["b"][1] in pl and ids["b"][0] not in pl, pl)
+    check("… no false alarm about the video it replaced", "didn’t let" not in po.text_content("#status"), po.text_content("#status"))
+    check("… that video without its sound", po.evaluate("document.getElementById('vid').volume") == 0, po.evaluate("document.getElementById('vid').volume"))
+    roles = po.evaluate("AudioOut.sinks().then(s => s.filter(x => x.kind === 'audio' && x.role.startsWith('out:')).map(x => x.label))")
+    check("… the audio cue on its own sound card", OUT2 in roles, roles)
+    po.click('#items li[data-cue="%s"] button[data-act=stop]' % ids["b"][2]); po.wait_for_timeout(300)
+    po.evaluate(UNPLUG, OUT2); po.wait_for_timeout(500)
+    check("its sound card unplugged: the menu says so", "not connected" in po.evaluate("document.querySelector('%s').selectedOptions[0].textContent" % out(ids["b"][2]).replace('"', '\\"')))
+    po.click('#items li[data-cue="%s"] button[data-act=fire]' % ids["b"][2]); po.wait_for_timeout(500)
+    check("… ▶ doesn't play it (never to another output), and says why", ids["b"][2] not in playing() and po.is_visible("#ao-toast") and "a cue’s own output" in po.text_content("#ao-toast"), [playing(), po.text_content("#ao-toast") if po.is_visible("#ao-toast") else None])
+    po.evaluate(UNPLUG, ""); po.wait_for_timeout(500)
     t.evaluate("window.runsheet.next()"); t.wait_for_timeout(1000)
     check("the short item is live", po.evaluate("window.__playout.show().cur") == "c", po.evaluate("window.__playout.show().cur"))
     t.wait_for_timeout(3000)

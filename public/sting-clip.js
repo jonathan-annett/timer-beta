@@ -42,7 +42,7 @@ var StingClip = (function () {
   'use strict';
 
   // A context per output (audio-out.js): the page's own, unless a role is given (a playout computer's
-  // cues: 'show'; its previews and editing: the page's, 'preview')
+  // cues: 'show' or a cue's own output; its previews and editing: the page's, 'preview')
   const ctxs = {};
   const audio = role => {
     const k = role || '';

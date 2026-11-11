@@ -22,8 +22,10 @@
  * than leaving the sound on the default output.
  *
  * A playout computer's page has both (data-role="both"): its cues play to Show, and everything that
- * doesn't name a role (the + sting dialog's previews, the clip editor, the library) to Previews.
+ * doesn't name a role (the + sting dialog's previews, the clip editor, the library) to Previews. A cue
+ * may have a sound card of its own (output(): kept with the cue, found and checked like the others).
  *   AudioOut.supported, AudioOut.role (what's routed unsaid), AudioOut.roles (this page's outputs)
+ *   AudioOut.output({id, label}) → a key that works as a role below: a cue's own output
  *   AudioOut.get(role) → {id, label} | null;  AudioOut.set(role, {id, label} | null)
  *   AudioOut.devices() → [{id, label}] (none until the browser will say: ask())
  *   AudioOut.ask() → devices()        the microphone permission, for the names
@@ -48,7 +50,7 @@ var AudioOut = (function () {
   // cues ask for 'show'.
   const roles = pageRole === 'both' ? ['show', 'preview'] : [pageRole === 'preview' ? 'preview' : 'show'];
   const role = pageRole === 'both' ? 'preview' : roles[0];
-  if (pageRole === 'both') WHAT.show = 'Show: the cues (audio, and videos’ sound)';
+  if (pageRole === 'both') WHAT.show = 'Show: the cues (audio, and videos’ sound), unless a cue has an output of its own';
   const md = navigator.mediaDevices;
   const supported = !!(window.isSecureContext && md && md.enumerateDevices && window.AudioContext && window.WeakRef
     && 'setSinkId' in AudioContext.prototype && 'setSinkId' in HTMLMediaElement.prototype);
@@ -109,8 +111,18 @@ var AudioOut = (function () {
   const outs = {};
   for (const r of roles) outs[r] = { role: r, state: 'default', sinkId: '', sinkLabel: '', turn: 0, ctxs: new Set(), els: new Set() };
   const outOf = r => outs[r] || outs[role];
+  // A playout cue's own sound card: kept with the cue, not in localStorage; its key works as a role (an
+  // unknown key gets the page's own output, Previews on a page with both, never the show's)
+  function output(dev) {
+    const k = 'out:' + dev.id;
+    if (!outs[k]) {
+      outs[k] = { role: k, choice: { id: dev.id, label: String(dev.label || '') }, state: 'checking', sinkId: null, sinkLabel: '', turn: 0, ctxs: new Set(), els: new Set() };
+      check(k);
+    }
+    return k;
+  }
   async function check(r) {
-    const o = outOf(r), t = ++o.turn, c = get(o.role);
+    const o = outOf(r), t = ++o.turn, c = o.choice || get(o.role);
     if (!supported || !c) return settle(o, t, 'default', '');
     if (o.state === 'default') settle(o, t, 'checking', null);
     let where = await find(c);
@@ -120,7 +132,7 @@ var AudioOut = (function () {
     if (typeof where === 'object') settle(o, t, 'ok', where.id, where.label || c.label);
     else settle(o, t, where, null);
   }
-  const checkAll = () => Promise.all(roles.map(check));
+  const checkAll = () => Promise.all(Object.keys(outs).map(check));
   function settle(o, t, s, id, label) {
     if (t !== o.turn) return;
     const was = o.state + '|' + o.sinkId;
@@ -148,7 +160,9 @@ var AudioOut = (function () {
     }
     if (el.__aoMuted) { el.muted = false; el.__aoMuted = false; }
   }
-  // r: 'show' or 'preview' on a page with both (else, and unsaid, the page's own); once routed, stays with it
+  // r: 'show', 'preview' or a cue's output() on a page with both (else, and unsaid, the page's own). A
+  // context stays with its output; an element unsaid stays where it was routed, and moves when told (a
+  // playout computer's one video element, cue by cue)
   function attach(ctx, r) {
     if (!supported || !ctx || ctx.__aoRef) return;
     const o = outOf(r);
@@ -157,8 +171,11 @@ var AudioOut = (function () {
   }
   function media(el, r) {
     if (!supported || !el) return Promise.resolve();
-    const o = el.__aoOut || (el.__aoOut = outOf(r));
-    if (!el.__aoRef) { el.__aoRef = true; o.els.add(new WeakRef(el)); }
+    const o = r == null && el.__aoOut ? el.__aoOut : outOf(r);
+    if (el.__aoOut !== o) {
+      if (el.__aoOut) el.__aoOut.els.delete(el.__aoRef);
+      el.__aoOut = o; el.__aoRef = new WeakRef(el); o.els.add(el.__aoRef);
+    }
     return routeEl(el, o);
   }
   const ok = r => { const s = outOf(r).state; return s !== 'missing' && s !== 'hidden'; };
@@ -209,10 +226,12 @@ html.reduced #ao-warn { display: none; }
   }
 
   function why(r) {
-    const o = outOf(r), c = get(o.role), name = c && c.label ? '“' + c.label + '”' : 'The chosen sound card';
+    const o = outOf(r), c = o.choice || get(o.role), name = c && c.label ? '“' + c.label + '”' : 'The chosen sound card';
+    const which = o.choice ? 'a cue’s own output' : 'the ' + (o.role === 'show' ? 'show' : 'preview') + ' output';
     if (o.state === 'hidden') {
-      return name + ' (the ' + (o.role === 'show' ? 'show' : 'preview') + ' output) can’t be used until the browser may use a microphone: it only lets a page pick a sound card then. Nothing is recorded.';
+      return name + ' (' + which + ') can’t be used until the browser may use a microphone: it only lets a page pick a sound card then. Nothing is recorded.';
     }
+    if (o.choice) return name + ' (' + which + ') isn’t connected, so the cue doesn’t play (a video plays without its sound) until it’s back. Or choose another output on the cue.';
     return o.role === 'show'
       ? name + ' (the show output) isn’t connected: ' + (pageRole === 'both' ? 'cues won’t play' : 'stings won’t play and videos are silent') + ' until it’s back. Or choose another output in ' + (pageRole === 'both' ? 'Sound outputs.' : 'the run sheet editor’s Options.')
       : name + ' (the preview output) isn’t connected, so previews don’t play: otherwise they’d go to this computer’s default output, which may be the show’s. Connect it, or choose another output in ' + (pageRole === 'both' ? 'Sound outputs.' : 'Options.');
@@ -312,5 +331,5 @@ html.reduced #ao-warn { display: none; }
     }
   }
 
-  return { supported, role, roles, get, set, devices, ask, attach, media, ok, warn, picker, sinks, state: r => outOf(r).state };
+  return { supported, role, roles, get, set, devices, ask, output, attach, media, ok, warn, picker, sinks, state: r => outOf(r).state };
 })();

@@ -14,11 +14,13 @@ Whatever you choose is copied into this computer's browser: cues play from here,
 
 **✂ on a cue** opens the clip editor: just the part to play, fades, a loop and a trim. The file isn't cut. Cues are levelled like the timer's walk-up stings: turned down (never up) to this computer's house level.
 
-**During the show:** each cue plays once each time its item runs, and plays on into the next items until it ends or you stop it. **Back** on the timer stops whatever is playing here. A playout computer that connects (or reloads) in the middle of an item doesn't replay a cue whose moment has passed, except a start cue within 2 seconds of the start. Time cues count running time: a pause holds them.
+**During the show:** each cue plays once each time its item runs, and plays on into the next items until it ends or you stop it. **Back** on the timer stops whatever is playing here. A playout computer that connects (or reloads) in the middle of an item doesn't replay a cue whose moment has passed, except a start cue within 2 seconds of the start. Time cues count running time: a pause holds them. Several cues at the same moment all play: audio cues together, video cues one at a time (the one lower in the item's list stays on screen).
 
 **Manual control:** ▶ on any cue plays it now, for testing or by hand. Turn off **Follow the timer** to take over completely: nothing plays by itself, ▶ still works. **Fade out** (or **Esc**) fades everything out over 3 seconds; **■ Stop all** stops it at once.
 
 **Output:** video cues play in the **Output** box (one at a time). **Full screen (F)** fills a screen with it, for a capture card or a projector. **Sound outputs** (Chrome and Edge) picks the sound card the cues play on and another for the ▶ previews and the clip editor, so you can listen on headphones during the show; if the show's card is unplugged, audio cues don't play (videos play silent) and a warning says so.
+
+**A cue's own output:** the menu on each cue (**→ Show** unless changed) sends that cue to another sound card on this computer, for a cue that needs a channel of its own. A video can have **No sound**: its picture only, so an audio cue starting beside it replaces its soundtrack (the two start together but aren't locked to each other: fine for music, not for lip sync). If a cue's card isn't connected when it's due, it doesn't play (a video plays without its sound) and a note says why; it never goes to another output instead.
 
 **Cues belong to items, not to the pairing:** they stay on this computer when the timer makes a new share code, and an item keeps its cues when the run sheet is revised with **Replace sheet** (rows are matched to the items already there) or edited as a CSV file (its **Id** column). Cues for items that aren't on the timer's run sheet are kept for when they come back; **Remove them** under the list deletes them.
 
