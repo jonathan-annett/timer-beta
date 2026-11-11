@@ -256,6 +256,49 @@ with sync_playwright() as p:
     check("the window closed by hand: the video comes back here", vstate()["where"] == "here" and po.text_content("#ext") == "To external monitor", [vstate(), po.text_content("#ext")])
     po.click("#stopall"); po.wait_for_timeout(200)
 
+    # AIFF (Chrome and Edge can't play or decode it): made a WAV as it's chosen, the samples untouched
+    def ext80(rate):                               # an 80-bit extended float, as AIFF keeps its sample rate
+        e = math.floor(math.log2(rate)); return struct.pack(">HQ", e + 16383, int(rate * 2 ** (63 - e)))
+    def aiff(ch, rate, bits, frames, kind=None):
+        val = lambda c, i: 0.5 * math.sin(2 * math.pi * 440 * i / rate) if c == 0 else -0.25
+        vals = [val(c, i) for i in range(frames) for c in range(ch)]
+        if kind == "fl32": data = struct.pack(">%df" % len(vals), *vals)
+        else:
+            full = 2 ** (bits - 1)
+            ints = [max(-full, min(full - 1, round(v * full))) for v in vals]
+            data = b"".join(x.to_bytes(bits // 8, "little" if kind == "sowt" else "big", signed=True) for x in ints)
+        comm = struct.pack(">hIh", ch, frames, bits) + ext80(rate) + (kind.encode() + b"\x00\x00" if kind else b"")
+        chunk = lambda cid, body: cid + struct.pack(">I", len(body)) + body + (b"\x00" if len(body) % 2 else b"")
+        form = (b"AIFC" if kind else b"AIFF") + chunk(b"COMM", comm) + chunk(b"SSND", struct.pack(">II", 0, 0) + data)
+        return b"FORM" + struct.pack(">I", len(form)) + form
+    def converted(raw, rate):
+        return po.evaluate("""async ([b64, rate]) => {
+          const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+          try {
+            const f = await StingClip.playable(new File([bytes], 'take 3.aiff', { type: 'audio/aiff' })), ab = await f.arrayBuffer();
+            const buf = await new OfflineAudioContext(2, 1, rate).decodeAudioData(ab.slice(0));
+            const a = buf.getChannelData(0), b = buf.getChannelData(buf.numberOfChannels - 1);
+            return { name: f.name, type: f.type, rate: new DataView(ab).getUint32(24, true), ch: buf.numberOfChannels, len: buf.length, a: [a[1], a[100], a[1234]], b: b[777] };
+          } catch (e) { return { error: String(e && e.message || e) }; }
+        }""", [base64.b64encode(raw).decode(), rate])
+    want = lambda rate: [0.5 * math.sin(2 * math.pi * 440 * i / rate) for i in (1, 100, 1234)]
+    for label, ch, rate, bits, kind, tol in [("24-bit 48 kHz AIFF", 2, 48000, 24, None, 1e-5), ("16-bit AIFF-C (sowt)", 2, 44100, 16, "sowt", 1e-4),
+                                              ("32-bit float AIFF-C", 2, 48000, 32, "fl32", 1e-6), ("8-bit mono AIFF", 1, 22050, 8, None, 1e-2)]:
+        r = converted(aiff(ch, rate, bits, 4000, kind), rate)
+        ok = "error" not in r and (r["name"], r["type"], r["rate"], r["ch"], r["len"]) == ("take 3.wav", "audio/wav", rate, ch, 4000) \
+            and all(abs(x - y) < tol for x, y in zip(r["a"], want(rate))) and (ch == 1 or abs(r["b"] + 0.25) < tol)
+        check("AIFF: a %s becomes a WAV with the same samples" % label, ok, r)
+    r = converted(aiff(2, 48000, 16, 100, "ulaw"), 48000)
+    check("… a compressed AIFF-C is refused, saying why", "compression" in r.get("error", ""), r)
+    aif = os.path.join(OUTDIR, "po_tone24.aiff"); open(aif, "wb").write(aiff(2, 48000, 24, 96000))
+    add_file("d", "start", None, aif)
+    nd = po.evaluate("window.__playout.cues().d.at(-1)")
+    check("an AIFF chosen as a cue: added (as WAV), with its length", nd["name"] == "po_tone24" and nd["media"] == "audio" and abs((nd.get("duration") or 0) - 2) < 0.05, nd)
+    check("… kept in this browser as a WAV", po.evaluate("window.videoStore.get('pocue:%s').then(b => b.type)" % nd["id"]) == "audio/wav")
+    po.click('#items li[data-cue="%s"] button[data-act=fire]' % nd["id"]); po.wait_for_timeout(500)
+    check("… and it plays", nd["id"] in playing(), playing())
+    po.click("#stopall")
+
     # off: the page says so
     oc = b.new_context(ignore_https_errors=True); oc.route("**/*", h)
     o = oc.new_page(); o.goto(BASE + "playout.html"); o.wait_for_timeout(500)

@@ -777,6 +777,7 @@
   async function attachSting(id, file, extra) {   // extra: {name, clip, lib} (a library clip)
     const item = sheet.items.find(it => it.id === id);
     if (!item || !file) return;
+    try { file = await StingClip.playable(file); } catch (err) { alert(err && err.message || err); return; }   // (an AIFF as WAV)
     if (!isMedia(file)) { alert('That isn’t an audio or video file.'); return; }
     if (!canEdit) return refused();
     if (item.video) { alert('This item has a video. Remove it first: an item has a video or a walk-up sting, not both.'); return; }
@@ -806,6 +807,7 @@
   // A file kept in this browser for item id ('rssting:'): the sting for it (not put on the item yet)
   async function keepStingFile(id, file, extra) {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    file = await StingClip.playable(file);             // (an AIFF as WAV; anything else as it is)
     const duration = await probeDuration(file);
     const key = 'rssting:' + id + ':' + Date.now() + ':' + Math.random().toString(36).slice(2, 6);
     await window.videoStore.put(key, file);
@@ -911,7 +913,10 @@
     for (const song of shuffle([...songs.keys()])) {
       if (used.has(song) || song === avoid) continue;
       for (const c of shuffle(songs.get(song).slice())) {
-        if (c.len === undefined) c.len = await probeDuration(c.file);
+        if (c.len === undefined && c.file) {           // (a folder file: an AIFF as WAV, only once picked)
+          try { c.file = await StingClip.playable(c.file); } catch (_) { c.len = null; continue; }
+          c.len = await probeDuration(c.file);
+        }
         if (fitsLen(c.len, o)) return { song, c };
       }
     }
@@ -1075,7 +1080,7 @@
     tbodyEl.querySelectorAll('tr.vdrop').forEach(r => r.classList.remove('vdrop'));
     if (!tr || tr.classList.contains('endrow') || tr.classList.contains('locked')) return;
     const list = Array.from(e.dataTransfer.files || []);
-    const f = list.find(x => x.type.startsWith('video/')) || (STINGS && list.find(x => x.type.startsWith('audio/')));
+    const f = list.find(x => x.type.startsWith('video/')) || (STINGS && list.find(x => x.type.startsWith('audio/') || /\.aif[fc]?$/i.test(x.name)));   // (an AIFF may come with no type)
     if (!f) return;
     e.preventDefault();
     if (f.type.startsWith('video/')) attachVideo(tr.dataset.id, f);

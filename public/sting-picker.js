@@ -259,7 +259,15 @@ var StingPicker = (function () {
       $d('#sting-reopen').hidden = true;
       $d('#sting-folderpick').textContent = 'Choose another folder…';
     }
-    const folderFile = async () => { const f = folder && folder.files[Number(folderSel.value)]; return f ? f.file || f.handle.getFile() : null; };
+    // The chosen file, as it can play (StingClip.playable: an AIFF as WAV): converted when chosen, not when
+    // listed (a folder may hold hundreds), and kept on its entry for the next ▶; false = said why it can't
+    const folderFile = async () => {
+      const f = folder && folder.files[Number(folderSel.value)];
+      if (!f) return null;
+      const raw = f.file || await f.handle.getFile(), k = raw.size + ':' + raw.lastModified;
+      if (f.pk !== k) { f.pk = k; f.pf = StingClip.playable(raw); }
+      try { return await f.pf; } catch (err) { f.pk = null; alert(err && err.message || err); return false; }
+    };
     function setMode(m) {
       mode = m;
       stopPreview();
@@ -385,6 +393,7 @@ var StingPicker = (function () {
       });
       $d('#sting-fedit').addEventListener('click', async () => {
         let file; try { file = await folderFile(); } catch (_) { file = null; }
+        if (file === false) return;
         if (!file) { alert('That file can’t be read any more: choose the folder again.'); return; }
         editAndUse({ name: noExt(file.name), file: file.name, size: file.size, media: /^video\//.test(file.type) ? 'video' : 'audio' }, file, null, file);
       });
@@ -395,6 +404,7 @@ var StingPicker = (function () {
           close({ sting: Object.assign({ src: 'stock', media: x.media, name: x.name, url: x.url, duration: x.duration }, clipFields(x)) });
         } else if (mode === 'custom') {
           let file; try { file = await folderFile(); } catch (_) { file = null; }
+          if (file === false) return;
           if (!file) { alert('That file can’t be read any more: choose the folder again.'); return; }
           close({ file });
         } else {

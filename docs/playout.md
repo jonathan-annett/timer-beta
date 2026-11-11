@@ -10,7 +10,7 @@ For bigger shows with several operators: an audio operator with the walk-up stin
 2. Pair it like an overlay: **share** → **Pair a computer** on the timer, type the 6-digit code on the playout computer, then type the number it shows into the timer's share panel.
 3. The timer's run sheet appears. Click **+ cue** on an item and choose when: **At the start**, **When time's up**, **After** m:ss, or **With** m:ss **left**. Then **Choose the sound or video…** opens the same dialog as the run sheet editor's **+ sting**: a stock walk-up sting, a file or a folder of your own (**Custom file**), or one of your clips (**Edited sting**, the sting library). **✂** there makes a clip first.
 
-Whatever you choose is copied into this computer's browser: cues play from here, whatever happens to the site or the network.
+Whatever you choose is copied into this computer's browser: cues play from here, whatever happens to the site or the network. An AIFF file is copied in as a WAV with exactly the same sound (Chrome and Edge can't play AIFF).
 
 **✂ on a cue** opens the clip editor: just the part to play, fades, a loop and a trim. The file isn't cut. Cues are levelled like the timer's walk-up stings: turned down (never up) to this computer's house level.
 

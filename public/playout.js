@@ -533,10 +533,12 @@
     let blob, cue;
     status('Adding the cue…');
     if (ch.file) {
-      if (!/^(audio|video)\//.test(ch.file.type)) { alert('Choose an audio or video file.'); return showMode(); }
+      let f;
+      try { f = await StingClip.playable(ch.file); } catch (err) { alert(err && err.message || err); return showMode(); }   // (an AIFF as WAV)
+      if (!/^(audio|video)\//.test(f.type)) { alert('Choose an audio or video file.'); return showMode(); }
       const x = ch.extra || {};
-      blob = ch.file;
-      cue = Object.assign({ name: String(x.name || noExt(ch.file.name)).slice(0, 200), media: ch.file.type.startsWith('video/') ? 'video' : 'audio', src: 'file' }, x.clip, x.lib ? { lib: x.lib } : {});
+      blob = f;
+      cue = Object.assign({ name: String(x.name || noExt(f.name)).slice(0, 200), media: f.type.startsWith('video/') ? 'video' : 'audio', src: 'file' }, x.clip, x.lib ? { lib: x.lib } : {});
     } else {
       const s = ch.sting;
       try { const r = await fetch(s.url); if (!r.ok) throw new Error('HTTP ' + r.status); blob = await r.blob(); }
