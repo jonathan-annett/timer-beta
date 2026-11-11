@@ -199,6 +199,7 @@
     message_clear:    { label: 'Clear\nmessage', group: 'Messages', cmd: () => _sendCmd({ cmd: 'custommessage', text: '' }) },
     // Run sheet (see runsheet.js). Next shows the upcoming item's name; Schedule shows ahead/behind.
     rs_prev:          { label: '◀ Back',    group: 'Run sheet', rsKey: 'prev',   cmd: () => _sendCmd({ cmd: 'runsheetprev' }) },
+    rs_now:           { label: 'Now',       group: 'Run sheet', rsKey: 'now',    cmd: null },   // the item running now, and its time (rs_current, rs_current_time)
     rs_next:          { label: 'Next ▶',    group: 'Run sheet', rsKey: 'next',   cmd: () => _sendCmd({ cmd: 'runsheetnext' }) },
     rs_status:        { label: 'Schedule',  group: 'Run sheet', rsKey: 'status', cmd: null },
     custom_msg:       { label: 'Type\nmessage', group: 'Messages', cmd: () => _sendCmd({ cmd: 'keys', keys: ['c'] }) },
@@ -313,7 +314,7 @@
           if (changed && device) scheduleRedrawAll();
           if ('rs_active' in v) {
             const nrs = {
-              active: v.rs_active === '1', next: v.rs_next || '', canBack: v.rs_can_back === '1',
+              active: v.rs_active === '1', next: v.rs_next || '', canBack: v.rs_can_back === '1', back: v.rs_back || '', now: v.rs_current || '', nowTime: v.rs_current_time || '',
               status: v.rs_status || '', late: v.rs_late === '' || v.rs_late == null ? null : Number(v.rs_late),
             };
             if (JSON.stringify(nrs) !== JSON.stringify(rs)) {
@@ -757,9 +758,10 @@
       else { bg = override.bg || '#0b3d5c'; fg = override.fg || '#7fd4ff'; }
     }
     if (action.rsKey) {
-      const on = rs.active && (action.rsKey === 'prev' ? rs.canBack : action.rsKey === 'next' ? !!rs.next : true);
+      const on = rs.active && (action.rsKey === 'prev' ? rs.canBack : action.rsKey === 'next' ? !!rs.next : action.rsKey === 'now' ? !!rs.now : true);
       if (!on) { bg = '#0d0d0d'; fg = '#444444'; }
       else if (action.rsKey === 'next') { bg = override.bg || '#0e3a12'; fg = override.fg || '#8dff8d'; }
+      else if (action.rsKey === 'now') { bg = override.bg || '#0b2a4a'; fg = override.fg || '#9fd0ff'; }
       else if (action.rsKey === 'prev') { bg = override.bg || '#1a1a2e'; fg = override.fg || '#ffffff'; }
       else if (rs.late != null && rs.late >= 30)  { bg = '#3a0d0d'; fg = '#ff7777'; }
       else if (rs.late != null && rs.late <= -30) { bg = '#0d2e0d'; fg = '#77ff77'; }
@@ -776,9 +778,10 @@
     }
     if (action.rsKey && rs.active) {
       // Small caption on top, content below
-      const cap = action.rsKey === 'next' ? 'NEXT ▶' : action.rsKey === 'prev' ? '◀ BACK' : 'SCHEDULE';
-      const body = action.rsKey === 'next' ? rs.next : action.rsKey === 'status' ? (rs.status || '—') : '';
+      const cap = action.rsKey === 'next' ? 'NEXT ▶' : action.rsKey === 'prev' ? '◀ BACK' : action.rsKey === 'now' ? 'NOW' : 'SCHEDULE';
+      const body = action.rsKey === 'next' ? rs.next : action.rsKey === 'prev' ? (rs.canBack ? rs.back : '') : action.rsKey === 'now' ? (rs.now || '—') : action.rsKey === 'status' ? (rs.status || '—') : '';
       f.rs = { cap, body, status: action.rsKey === 'status' };
+      if (action.rsKey === 'now' && rs.now && rs.nowTime) f.rs.foot = rs.nowTime;
     }
 
     if (action.live) f.rows = liveRows(actionKey);

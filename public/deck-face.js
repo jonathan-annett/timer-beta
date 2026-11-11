@@ -8,7 +8,7 @@
  *     base:  colour   fill behind a countdown (optional)
  *     big:   {text, scale}       one large line (countdown keys)
  *     wrap:  {text, maxLines}    word-wrapped text (message keys; '\n' forces lines)
- *     rs:    {cap, body, status} run sheet key: small caption + content
+ *     rs:    {cap, body, status, foot} run sheet key: small caption + content (+ a small line at the foot)
  *     rows:  [{text, scale, alpha, color}, …]  stacked lines, each fitted to the key (Start + time,
  *            Pause + time: countdown / Pause / pauses); scale = font height as a fraction of the key
  *     label: 'Line 1\nLine 2'    ordinary key label
@@ -97,9 +97,13 @@
         } else {
           const px = textPx(size);
           ctx.font = `bold ${px}px ${FONT}`;
-          const lines = wrapLines(ctx, f.rs.body, size * 0.9, 3), lineH = px * 1.2;
-          const top = size * 0.58 - ((lines.length - 1) * lineH) / 2;
+          const lines = wrapLines(ctx, f.rs.body, size * 0.9, f.rs.foot ? 2 : 3), lineH = px * 1.2;
+          const top = (f.rs.foot ? size * 0.5 : size * 0.58) - ((lines.length - 1) * lineH) / 2;
           lines.forEach((l, i) => ctx.fillText(l, size / 2, top + i * lineH));
+          if (f.rs.foot) {
+            fitFont(ctx, f.rs.foot, size * 0.9, Math.round(size * 0.13));
+            ctx.globalAlpha = 0.8; ctx.fillText(f.rs.foot, size / 2, size * 0.84); ctx.globalAlpha = 1;
+          }
         }
       }
     }

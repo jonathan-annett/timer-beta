@@ -20,7 +20,7 @@ var VirtualDeck = (function () {
   'use strict';
   const MODELS = { mini: { cols: 3, rows: 2 }, mk2: { cols: 5, rows: 3 }, xl: { cols: 8, rows: 4 } };
   // Display keys (they don't do anything, but aren't "off" either)
-  const SHOW_ONLY = new Set(['countdown', 'countdown_major', 'countdown_minor', 'rs_status', 'empty', 'kp_pv_h', 'kp_pv_m', 'kp_pv_s', 'kp_pv_typed']);
+  const SHOW_ONLY = new Set(['countdown', 'countdown_major', 'countdown_minor', 'rs_now', 'rs_status', 'empty', 'kp_pv_h', 'kp_pv_m', 'kp_pv_s', 'kp_pv_typed']);
 
   function plainPress(c, go) {                         // down on press, act on release over the key
     c.addEventListener('pointerdown', e => { c.classList.add('down'); try { c.setPointerCapture(e.pointerId); } catch (_) { /* gone */ } });

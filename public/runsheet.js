@@ -895,9 +895,14 @@
     const vars = {
       rs_active: isActive() ? '1' : '0',
       rs_current: !state.finished && cur ? cur.name : '',
+      // its time, as the dashboard's NOW row: "10 min · 21:11" (its duration · when it actually started), for the deck's Now key
+      rs_current_time: !state.finished && cur ? (lg => C.formatDuration(cur.eff) + (lg && lg.id === cur.id ? ' · ' + clockOf(lg.actual) : ''))(state.log[state.log.length - 1]) : '',
       rs_next: !isActive() || state.finished ? '' : nj >= 0 ? norm.items[nj].name
              : (norm.endIdx >= 0 ? norm.items[norm.endIdx].name + ' (end)' : 'End of show'),
       rs_can_back: state.history.length > 0 ? '1' : '0',
+      // where Back goes (the last history entry): an item's name, or before the show; for the deck's Back key
+      rs_back: (h => !h || !isActive() ? '' : h.finished ? 'Show finished' : h.index < 0 ? 'Before the show'
+               : ((sheet.items.find(x => x.id === h.currentId) || state.log.find(e => e.id === h.currentId) || {}).name || '—'))(state.history[state.history.length - 1]),
       rs_status: info.short,
       rs_late: info.late == null ? '' : String(Math.round(info.late)),
       rs_title: isActive() ? (sheet.title || '') : '',

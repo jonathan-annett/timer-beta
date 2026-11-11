@@ -4,7 +4,8 @@ PUBLIC = _os.path.normpath(_os.path.join(HERE, '..', '..', 'public'))
 OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exist_ok=True)
 # Start + time and Pause + time (streamdeck.js start_info, pause_info; the Mini's defaults): Start over
 # the default duration (or the time being typed); the countdown over Pause / Resume over the pauses,
-# counting while paused and dimmed after. Through StreamDeck.faces / press, as the virtual decks use it.
+# counting while paused and dimmed after; and the run sheet's Now key (the item running now and its time).
+# Through StreamDeck.faces / press, as the virtual decks use it.
 import json, mimetypes, os, sys
 from playwright.sync_api import sync_playwright
 BASE = "https://timer.sophtwhere.com/beta/"
@@ -62,6 +63,36 @@ with sync_playwright() as p:
     t.locator("#g").screenshot(path=OUTDIR + "/live_keys_mini_running.png")
     pal = t.evaluate("(() => { document.getElementById('g').remove(); document.dispatchEvent(new KeyboardEvent('keydown', {key: 'd', bubbles: true})); return [...document.querySelectorAll('#deck-palette .deck-palette-chip')].map(c => c.dataset.action); })()")
     check("both are in the palette (for any deck)", "start_info" in pal and "pause_info" in pal)
+
+    # the run sheet's Now key: the item running now and its time (as the dashboard's NOW row)
+    c2 = b.new_context(ignore_https_errors=True, viewport={"width": 1280, "height": 800}); c2.route("**/*", h)
+    sheet = {"title": "Show", "perItem": 20, "items": [{"id": "a", "name": "Keynote: the future of everything", "start": None, "duration": 600}, {"id": "b", "name": "Panel", "start": None, "duration": 300}]}
+    lay = ["rs_prev", "rs_now", "rs_next", "rs_status"] + ["empty"] * 28
+    c2.add_init_script("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';localStorage.whatsnew_seen='2099-01-01';localStorage.runsheet=%s;localStorage.runsheet_state=JSON.stringify({active:true,index:-1,history:[],log:[]});localStorage.streamdeck_layout_xl=%s}" % (json.dumps(json.dumps(sheet)), json.dumps(json.dumps(lay))))
+    r = c2.new_page(); r.on("pageerror", lambda e: errs.append("timer2: " + str(e)))
+    r.goto(BASE + "timer.html"); r.wait_for_timeout(1500)
+    now = lambda: r.evaluate("StreamDeck.faces('xl')[1]")
+    back = lambda: r.evaluate("StreamDeck.faces('xl')[0]")
+    f = now()
+    check("Now key before the show: — and dimmed", f["rs"]["body"] == "—" and f["fg"] == "#444444", (f["rs"], f["fg"]))
+    check("Back before the show: dimmed, just its caption", back()["fg"] == "#444444" and not back()["rs"]["body"], back())
+    r.evaluate("window.runsheet.next()"); r.wait_for_timeout(1500)
+    check("Back on the first item: where it goes, Before the show", back()["rs"]["cap"] == "◀ BACK" and back()["rs"]["body"] == "Before the show", back()["rs"])
+    f = now(); hm = r.evaluate("(d => String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'))(new Date())")
+    check("… after Next: NOW, the item's name, its time (duration · started)", f["rs"]["cap"] == "NOW" and f["rs"]["body"].startswith("Keynote") and f["rs"].get("foot") in ("10 min · " + hm, "10 min · " + hm) and f["bg"] == "#0b2a4a", f["rs"])
+    r.evaluate("""(() => { const g = document.createElement('div'); g.id='g'; g.style.cssText='position:fixed;left:10px;top:10px;z-index:2147483647;display:grid;grid-template-columns:repeat(4,96px);gap:6px;padding:10px;background:#333';
+      StreamDeck.faces('xl').slice(0, 4).forEach(f => { const c = document.createElement('canvas'); c.width = c.height = 96; DeckFace.paint(c.getContext('2d'), f, 96); g.appendChild(c); }); document.body.appendChild(g); })()""")
+    r.locator("#g").screenshot(path=OUTDIR + "/rs_now_key.png")
+    r.evaluate("window.runsheet.next()"); r.wait_for_timeout(1200)
+    check("… and follows the show (Next: Panel)", now()["rs"]["body"] == "Panel", now()["rs"])
+    check("Back then names the item it goes back to (as Next does)", back()["rs"]["body"].startswith("Keynote"), back()["rs"])
+    r.evaluate("""(() => { const g = document.createElement('div'); g.id='g2'; g.style.cssText='position:fixed;left:10px;top:10px;z-index:2147483647;display:grid;grid-template-columns:repeat(4,96px);gap:6px;padding:10px;background:#333';
+      StreamDeck.faces('xl').slice(0, 4).forEach(f => { const c = document.createElement('canvas'); c.width = c.height = 96; DeckFace.paint(c.getContext('2d'), f, 96); g.appendChild(c); }); document.body.appendChild(g); })()""")
+    r.locator("#g2").screenshot(path=OUTDIR + "/rs_back_key.png"); r.evaluate("document.getElementById('g2').remove()")
+    r.evaluate("window.runsheet.back()"); r.wait_for_timeout(1200)
+    check("… and after Back, Before the show again", back()["rs"]["body"] == "Before the show" and now()["rs"]["body"].startswith("Keynote"), (back()["rs"], now()["rs"]))
+    pal = r.evaluate("(() => { document.getElementById('g').remove(); document.dispatchEvent(new KeyboardEvent('keydown', {key: 'd', bubbles: true})); return [...document.querySelectorAll('#deck-palette .deck-palette-chip')].map(c => c.dataset.action); })()")
+    check("Now is in the palette (Run sheet)", "rs_now" in pal)
     b.close()
 
 print("errors:", errs)
