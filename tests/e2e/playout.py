@@ -233,6 +233,29 @@ with sync_playwright() as p:
     po.click("#stopall"); po.check("#follow"); po.wait_for_timeout(200)
     check("follow on: no ▶ Start item", not po.is_visible('#items button[data-act=run]'))
 
+    # To external monitor: a floating window for the audience's screen; video cues play there
+    vstate = lambda: po.evaluate("window.__playout.video()")
+    with po.expect_popup() as xp: po.click("#ext")
+    xw = xp.value; po.wait_for_timeout(300)
+    check("To external monitor: a floating window, with the video element in it", vstate()["where"] == "external" and xw.evaluate("!!document.querySelector('#xstage video')"), vstate())
+    check("… here: External playback activated, Play here instead, no full screen", po.is_visible("#stage .extnote") and po.text_content("#ext") == "Play here instead" and po.is_disabled("#full"), po.text_content("#ext"))
+    po.click('#items li[data-cue="%s"] button[data-act=fire]' % ids["b"][0]); po.wait_for_timeout(800)
+    check("a video cue plays in the floating window", vstate()["where"] == "external" and not vstate()["paused"] and vstate()["src"], vstate())
+    check("… Play here instead is off while it plays there", po.is_disabled("#ext"))
+    po.click('#items li[data-cue="%s"] button[data-act=stop]' % ids["b"][0]); po.wait_for_timeout(300)
+    check("… on again once it stops", not po.is_disabled("#ext"))
+    po.click("#ext"); po.wait_for_timeout(300)
+    check("Play here instead: back in the Output box, the window left open and black", vstate()["where"] == "here" and not xw.is_closed() and xw.evaluate("!document.querySelector('#xstage video')") and po.text_content("#ext") == "To external monitor", vstate())
+    po.click('#items li[data-cue="%s"] button[data-act=fire]' % ids["b"][0]); po.wait_for_timeout(1300)
+    t1 = vstate()["t"]
+    po.click("#ext"); po.wait_for_timeout(300)
+    v = vstate()
+    check("a video playing here moves to the window and carries on (not restarted)", v["where"] == "external" and not v["paused"] and v["t"] >= t1, [t1, v])
+    check("… the same window again (found by name)", len(pc.pages) == 2, [x.url for x in pc.pages])
+    xw.close(); po.wait_for_timeout(500)
+    check("the window closed by hand: the video comes back here", vstate()["where"] == "here" and po.text_content("#ext") == "To external monitor", [vstate(), po.text_content("#ext")])
+    po.click("#stopall"); po.wait_for_timeout(200)
+
     # off: the page says so
     oc = b.new_context(ignore_https_errors=True); oc.route("**/*", h)
     o = oc.new_page(); o.goto(BASE + "playout.html"); o.wait_for_timeout(500)

@@ -259,6 +259,7 @@
   }
   function tick() {
     if (local) tickLocal();
+    if (place === 'external' && (!ext || ext.closed)) extGone();   // (closed without a pagehide)
     if (!show.cur || show.fin) return renderLocal();
     const cd = countdown();
     for (const c of curCues()) {
@@ -393,6 +394,7 @@
     return v;
   }
   const playing = new Map();                           // cue id → {voice, video}
+  const vid = $('vid');                                // video cues' element: in the Output box, or the floating window
   async function play(c) {
     const out = outKey(c);
     if (out && window.AudioOut && !AudioOut.ok(out)) {   // its output isn't there: an audio cue doesn't play,
@@ -406,13 +408,13 @@
     if (c.media === 'video') for (const [id, q] of playing) if (q.video) stopCue(id);   // one video on the output at a time
     const p = { video: c.media === 'video' };
     const onEnd = () => { if (playing.get(c.id) === p) stopCue(c.id); };
-    p.voice = memory ? bufferVoice(c, memory, onEnd, out) : elementVoice(c, p.video ? $('vid') : new Audio(), URL.createObjectURL(blob), onEnd, out);
+    p.voice = memory ? bufferVoice(c, memory, onEnd, out) : elementVoice(c, p.video ? vid : new Audio(), URL.createObjectURL(blob), onEnd, out);
     playing.set(c.id, p);
     if (p.video) $('stage').querySelector('.idle').hidden = true;
     render();
     let ok = false;
     try { ok = await p.voice.play(); }
-    catch (err) { if (playing.get(c.id) === p) status('The browser didn’t let “' + c.name + '” play: click anywhere on this page once.', 'warn'); }
+    catch (err) { if (playing.get(c.id) === p) status('The browser didn’t let “' + c.name + '” play: click anywhere on ' + (p.video && place === 'external' ? 'the floating window' : 'this page') + ' once.', 'warn'); }
     if (!ok && playing.get(c.id) === p) stopCue(c.id);   // (not when another cue took over meanwhile: no false alarm)
   }
   function stopCue(id) {
@@ -424,6 +426,70 @@
     render();
   }
   function stopAll() { for (const id of [...playing.keys()]) stopCue(id); }
+  // ─── Where videos play: here (the Output box; F = full screen) or a floating window ───
+  // To external monitor opens a pop-up (the owner's design, 12 Nov 2026) to drag to the audience's screen
+  // and make full screen (double-click or F there), and moves the video element into it; Play here
+  // instead moves it back, leaving the window open and black (not while a video plays there). Moving the
+  // element makes Chromium load it again from 0, so a playing video is paused, moved and put back where it
+  // was: a break of a few frames (~15 ms measured), not a restart. Closed by hand, the video comes back
+  // here. The window outlives a reload of this page (blacked out): the button finds it again by name.
+  const stageEl = $('stage'), EXT = 'playout_external', ME = Math.random().toString(36).slice(2);
+  const EXT_CSS = 'html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }' +
+    ' #xstage { position: fixed; inset: 0; } #xstage video { width: 100%; height: 100%; object-fit: contain; }' +
+    ' #xhint { position: fixed; left: 0; right: 0; bottom: 12px; margin: 0; text-align: center; font: 14px/1.4 "Helvetica Neue", Arial, sans-serif; color: #777; }' +
+    ' html:fullscreen #xhint { display: none; } html:fullscreen { cursor: none; }';
+  let ext = null, place = 'here';
+  const extHost = () => (ext && !ext.closed && ext.__po === ME ? ext.document.getElementById('xstage') : null);
+  function setupExternal(w) {                          // (again after a reload of this page: its listeners went with it)
+    const d = w.document;
+    d.title = (location.hostname ? location.hostname + ' - ' : '') + 'Playout output';
+    d.head.innerHTML = '<style>' + EXT_CSS + '</style>';
+    d.body.innerHTML = '<div id="xstage"></div><p id="xhint">Drag this window to the audience’s screen, then double-click it (or press F) for full screen.</p>';
+    const full = () => { if (d.fullscreenElement) d.exitFullscreen(); else d.documentElement.requestFullscreen().catch(() => {}); };
+    d.addEventListener('dblclick', full);
+    d.addEventListener('keydown', e => { if ((e.key === 'f' || e.key === 'F') && !e.metaKey && !e.ctrlKey) full(); });
+    w.addEventListener('pagehide', () => { if (ext === w) extGone(); });
+    w.__po = ME;
+  }
+  function extGone() { ext = null; if (place === 'external') moveVideo('here'); }
+  function moveVideo(where) {
+    const host = where === 'external' ? extHost() : stageEl;
+    if (!host) return;
+    place = where;
+    if (vid.parentNode !== host) {
+      const was = vid.getAttribute('src') && !vid.paused, t = vid.currentTime, t0 = performance.now();
+      if (was) vid.pause();
+      host.appendChild(vid);
+      if (was) {
+        const go = () => { vid.currentTime = t + (performance.now() - t0) / 1000; vid.play().catch(() => status('The browser didn’t let the video carry on: click anywhere on ' + (place === 'external' ? 'the floating window' : 'this page') + ' once.', 'warn')); };
+        if (vid.readyState >= 1) go(); else vid.addEventListener('loadedmetadata', go, { once: true });
+      }
+      if (window.AudioOut && vid.__aoOut) AudioOut.media(vid);   // (routed again, as its new window knows the card)
+    }
+    renderPlace();
+  }
+  function toExternal() {
+    if (!extHost()) {
+      const w = window.open('', EXT, 'popup,width=960,height=540');
+      if (!w) return status('The browser blocked the window: allow pop-ups for this site, then try again.', 'warn');
+      ext = w;
+      if (w.__po !== ME) setupExternal(w);
+    }
+    moveVideo('external');
+  }
+  function renderPlace() {
+    const external = place === 'external', busy = external && [...playing.values()].some(p => p.video);
+    const b = $('ext');
+    b.textContent = external ? 'Play here instead' : 'To external monitor';
+    b.disabled = busy;
+    b.title = busy ? 'Not while a video plays on the external monitor'
+      : external ? 'Videos play in the Output box here again (the floating window stays open, black)'
+      : 'Videos play in a floating window: drag it to another screen and make it full screen there';
+    $('full').disabled = external;
+    stageEl.classList.toggle('external', external);
+  }
+  addEventListener('pagehide', () => { const h = extHost(); if (h) h.replaceChildren(); });   // (left open, black)
+
   // ✎: when a cue plays (its trigger and time); the sound stays
   function retimeCue(itemId, c, trigger, at) {
     const now = findCue(c.id);
@@ -538,6 +604,7 @@
   }
   function render() {
     document.body.classList.toggle('manual', !following());
+    renderPlace();
     const items = show.items;
     $('rshint').textContent = !show.on ? 'The timer isn’t in run sheet mode' : show.fin ? 'The show has finished' : '';
     const curIdx = items.findIndex(x => x.id === show.cur);
@@ -660,8 +727,9 @@
   $('follow').addEventListener('change', e => { store.set(FOLLOW, e.target.checked ? '1' : '0'); if (e.target.checked) { local = null; primeTimeCues(); } render(); });
   $('stopall').addEventListener('click', () => { stopAll(); endLocal(); });
   $('fadeall').addEventListener('click', e => { e.currentTarget.blur(); fadeAll(FADE_MS); });
-  const toggleFull = () => { if (document.fullscreenElement) document.exitFullscreen(); else $('stage').requestFullscreen().catch(() => {}); };
+  const toggleFull = () => { if (document.fullscreenElement) document.exitFullscreen(); else if (place === 'here') $('stage').requestFullscreen().catch(() => {}); };
   $('full').addEventListener('click', toggleFull);
+  $('ext').addEventListener('click', e => { e.currentTarget.blur(); if (place === 'external') moveVideo('here'); else toExternal(); });
   document.addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.target.closest('input, select, textarea')) return;
     if (document.querySelector('.sting-dlg, .sting-libwrap, .sc-wrap')) return;   // (a dialog has the keys)
@@ -678,7 +746,8 @@
 
   // Test hooks: what's playing, and the cues
   window.__playout = { playing: () => [...playing.keys()], cues: () => cues, show: () => show, fired: () => [...fired], ready: () => [...buffers.keys()],
-    local: () => local && { item: local.item, fired: [...local.fired] } };
+    local: () => local && { item: local.item, fired: [...local.fired] },
+    video: () => ({ where: vid.ownerDocument === document ? 'here' : 'external', paused: vid.paused, t: vid.currentTime, src: !!vid.getAttribute('src') }) };
 
   if (link.r && link.v) start(); else showEnter();
 })();

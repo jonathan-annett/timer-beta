@@ -70,6 +70,10 @@
     #stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
     #stage:fullscreen { border: 0; border-radius: 0; }
     #stage .idle { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #333; font-size: 13px; }
+    #stage .extnote { position: absolute; inset: 0; display: none; flex-direction: column; gap: 6px; align-items: center; justify-content: center; padding: 0 12%; text-align: center; color: var(--dim); font-size: 13px; }
+    #stage .extnote b { color: var(--accent); font-size: 15px; }
+    #stage.external .extnote { display: flex; }   /* videos play in the floating window (To external monitor) */
+    #stage.external .idle { display: none; }
   </style>
 </head>
 <body>
@@ -107,8 +111,8 @@
         <input type="file" id="cuefile" accept="audio/*,video/*" hidden>
       </div>
       <div class="card">
-        <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>Output</b><button id="full" class="small">Full screen (F)</button></div>
-        <div id="stage"><div class="idle">Video cues play here</div><video id="vid" playsinline></video></div>
+        <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>Output</b><span class="row"><button id="ext" class="small">To external monitor</button><button id="full" class="small">Full screen (F)</button></span></div>
+        <div id="stage"><div class="idle">Video cues play here</div><div class="extnote"><b>External playback activated</b><span>Videos play in the floating window: drag it to the other screen and double-click it for full screen.</span></div><video id="vid" playsinline></video></div>
       </div>
       <div class="card">
         <b>Sound outputs</b>
@@ -125,6 +129,6 @@
   <script src="sting-clip.js?v=9e57c243"></script>
   <script src="sting-library.js?v=2cb7cc28"></script>
   <script src="sting-picker.js?v=4960b61b"></script>
-  <script src="playout.js?v=66955998"></script>
+  <script src="playout.js?v=7060216a"></script>
 </body>
 </html>
