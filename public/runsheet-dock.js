@@ -33,11 +33,16 @@
 #rs-dock { position: fixed; left: 0; right: 0; bottom: 0; height: var(--rs-dock-h, 55vh); z-index: 2147480000;
   display: flex; flex-direction: column; background: #111; border-top: 1px solid #333; box-shadow: 0 -6px 18px rgba(0,0,0,.45); }
 #rs-dock[hidden] { display: none; }
-#rs-dock .rsd-bar { flex: 0 0 auto; height: 18px; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 10px; cursor: ns-resize;
+#rs-dock .rsd-bar { flex: 0 0 auto; height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 10px; cursor: ns-resize;
   background: #1b1b1b; color: #777; font: 11px "Helvetica Neue", Arial, sans-serif; user-select: none; touch-action: none; }
 #rs-dock .rsd-bar .rsd-grip { flex: 1; text-align: center; letter-spacing: 3px; color: #555; }
 #rs-dock .rsd-bar button { cursor: pointer; font: 12px "Helvetica Neue", Arial, sans-serif; line-height: 14px; color: #aaa; background: none; border: 1px solid transparent; border-radius: 4px; padding: 0 5px; }
 #rs-dock .rsd-bar button:hover { color: #fff; border-color: #444; background: #262626; }
+#rs-dock .rsd-bar .rsd-title { flex: 0 1 22em; min-width: 6em; height: 20px; box-sizing: border-box; padding: 0 6px; margin-left: 4px; cursor: text;
+  font: bold 13px "Helvetica Neue", Arial, sans-serif; color: #eee; background: transparent; border: 1px solid transparent; border-radius: 4px; }
+#rs-dock .rsd-bar .rsd-title:hover { border-color: #444; }
+#rs-dock .rsd-bar .rsd-title:focus { outline: none; border-color: #4aa8ff; background: #161b22; }
+#rs-dock .rsd-bar .rsd-title::placeholder { color: #666; font-weight: normal; }
 #rs-dock iframe { flex: 1; width: 100%; border: 0; background: #0f0f0f; }
 #rs-dock.dragging iframe { pointer-events: none; }
 html.reduced #rs-dock { display: none; }
@@ -59,16 +64,36 @@ html.rs-docked #sting-bar { bottom: calc(var(--rs-dock-h, 55vh) + 12px); }`;
     el = document.createElement('div');
     el.id = 'rs-dock';
     el.hidden = true;
-    el.innerHTML = '<div class="rsd-bar" title="Drag to resize"><span>Run sheet editor</span><span class="rsd-grip">⋯⋯⋯</span>' +
+    el.innerHTML = '<div class="rsd-bar" title="Drag to resize"><span>Run sheet editor</span><input class="rsd-title" placeholder="Show title" aria-label="Show title" title="The show’s title"><span class="rsd-grip">⋯⋯⋯</span>' +
       '<button class="rsd-pop" title="Open the run sheet editor in its own window instead (it opens there from now on; its ⇲ Dock button brings it back)">⧉ Own window</button>' +
       '<button class="rsd-close" title="Close the run sheet editor (the run sheet button or E opens it again)">✕</button></div>';
     document.body.appendChild(el);
     el.querySelector('.rsd-close').addEventListener('click', e => { e.currentTarget.blur(); close(); });
     el.querySelector('.rsd-pop').addEventListener('click', popOut);
+    // The show's title, here on the bar (the editor hides its own while docked, so its header has room): the
+    // editor says what it is and saves what's typed (it's the one that writes the sheet), by message
+    const title = el.querySelector('.rsd-title');
+    let typedTitle = false;
+    const toEditor = msg => { if (frame && frame.contentWindow) frame.contentWindow.postMessage(msg, location.origin); };
+    title.addEventListener('input', () => { typedTitle = true; });
+    title.addEventListener('change', () => { typedTitle = false; toEditor({ t: 'rs-dock-title', set: title.value }); });
+    for (const k of ['keydown', 'keyup', 'keypress']) title.addEventListener(k, e => {
+      if (e.metaKey) return;
+      e.stopPropagation();                         // typing here mustn't work the timer (digits, Space…)
+      if (k !== 'keydown') return;
+      if (e.key === 'Enter') title.blur();
+      else if (e.key === 'Escape') { typedTitle = false; title.value = title.dataset.was || ''; title.blur(); }
+    });
+    addEventListener('message', e => {
+      if (e.origin !== location.origin || !frame || e.source !== frame.contentWindow || !e.data || e.data.t !== 'rs-dock-title') return;
+      title.dataset.was = e.data.title || '';
+      title.readOnly = !!e.data.ro;
+      if (document.activeElement !== title && !typedTitle) title.value = title.dataset.was;
+    });
     // Drag the bar to resize
     const bar = el.querySelector('.rsd-bar');
     bar.addEventListener('pointerdown', e => {
-      if (e.target.closest('button') || e.button !== 0) return;   // (a right click: its menu would swallow the release)
+      if (e.target.closest('button, input') || e.button !== 0) return;   // (a right click: its menu would swallow the release)
       e.preventDefault();
       bar.setPointerCapture(e.pointerId);
       el.classList.add('dragging');

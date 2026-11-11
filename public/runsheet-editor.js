@@ -225,6 +225,7 @@
     scaling = previewing();
     if (scaling) { view = scaledCopy(norm); norm = C.normalise(view); }
     if (document.activeElement !== $('title')) $('title').value = sheet.title || '';
+    dockTitle();
     if (document.activeElement !== $('per-item')) $('per-item').value = sheet.perItem || 20;
     document.title = (location.hostname || 'Timer') + ' - Run sheet' + (sheet.title ? ' — ' + sheet.title : '');
     renderTable();
@@ -483,6 +484,7 @@
   function renderLive() {
     const el = $('live');
     el.textContent = state.active ? (live.text || '') : '';
+    el.title = el.textContent;                     // (shortened with … when the header is narrow)
     el.className = live.kind || '';
     // "Auto start at 22:40": before the show, when the first item has a start time still ahead
     const auto = $('autostart'), at = state.active && Number.isFinite(live.autoAt) ? live.autoAt : null;
@@ -1869,6 +1871,23 @@
   $('add-row').addEventListener('click', addItem);
 
   $('title').addEventListener('change', e => { sheet.title = e.target.value.trim(); saveSheet(); });
+  // Docked, the title is on the dock's bar (runsheet-dock.js), which has room: told what it is, sends what's typed
+  let dockSent = null;
+  function dockTitle() {
+    if (!DOCKED) return;
+    const msg = { t: 'rs-dock-title', title: sheet.title || '', ro: !canEdit };
+    if (JSON.stringify(msg) === dockSent) return;
+    dockSent = JSON.stringify(msg);
+    try { window.parent.postMessage(msg, location.origin); } catch (_) { /* gone */ }
+  }
+  if (DOCKED) {
+    document.documentElement.classList.add('docked');
+    addEventListener('message', e => {
+      if (e.origin !== location.origin || e.source !== window.parent || !e.data || e.data.t !== 'rs-dock-title' || typeof e.data.set !== 'string') return;
+      if (!canEdit) { dockSent = null; dockTitle(); return refused(); }
+      sheet.title = e.data.set.trim().slice(0, 200); saveSheet();
+    });
+  }
   $('per-item').addEventListener('change', e => {
     const v = parseFloat(e.target.value);
     if (v > 0) { sheet.perItem = v; saveSheet(); }
