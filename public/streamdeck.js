@@ -81,27 +81,55 @@
           'kp_4', 'kp_5', 'kp_6', 'kp_0', 'kp_default',
           'kp_7', 'kp_8', 'kp_9', 'kp_dot', 'kp_start'],
     xl:  ['kp_1', 'kp_2', 'kp_3', 'kp_colon', 'empty', 'empty', 'empty', 'kp_cancel',
-          'kp_4', 'kp_5', 'kp_6', 'kp_dot', 'kp_pv_h', 'kp_pv_m', 'kp_pv_s', 'empty',
+          'kp_4', 'kp_5', 'kp_6', 'kp_dot', 'kp_pv_h', 'kp_pv_m', 'kp_pv_s', 'kp_save',
           'kp_7', 'kp_8', 'kp_9', 'kp_back', 'empty', 'kp_pv_typed', 'empty', 'kp_default',
           'empty', 'kp_0', 'empty', 'empty', 'empty', 'empty', 'empty', 'kp_start'],
   };
   const KEYPAD_IDLE_MS = 60000;
-  let keypad = false, keypadIdle = 0;
+  // The XL's Update preset (kp_save): the deck shows its own layout with only the preset keys, in blue;
+  // pressing one saves the typed time to it (pickPress) and ends the keypad, any other key goes back to
+  // the keypad (like clicking outside a dialog). While picking, every key read goes through pickPress.
+  let keypad = false, keypadIdle = 0, picking = false;
   let entry = '', entryTyped = '';                 // the time being typed on the timer (bus entry, entry_typed)
   const kpDigit = d => ({ label: d, kp: 'digit', group: 'Keypad', cmd: () => kpKeys(d) });
   function kpKeys(k) { _sendCmd({ cmd: 'keys', keys: [k] }); bumpKeypad(); }
   function bumpKeypad() { clearTimeout(keypadIdle); if (keypad) keypadIdle = setTimeout(() => setKeypad(false), KEYPAD_IDLE_MS); }
   function setKeypad(on, m = modelKey) {
     if (on && !KEYPAD[m] && !KEYPAD[modelKey]) return;   // (a Mini: no room)
-    if (keypad === !!on) { bumpKeypad(); return; }
+    if (keypad === !!on && !picking) { bumpKeypad(); return; }
     keypad = !!on;
+    picking = false;
     bumpKeypad();
     countdownCache.clear();
     if (device) scheduleRedrawAll();
     notifyChange();
   }
-  // The layout a deck shows now: the keypad while it's on, else its own
-  const activeLayout = m => (keypad && KEYPAD[m] ? KEYPAD[m] : layouts[m]);
+  function redrawKeypad() { countdownCache.clear(); if (device) scheduleRedrawAll(); notifyChange(); }
+  // The typed time (bus entry: "25:00", "1:25:00") in ms
+  const entryMs = () => { const p = entry.split(':').map(Number); if (!entry || p.some(n => !Number.isFinite(n))) return null; return p.reduce((a, n) => a * 60 + n, 0) * 1000; };
+  function startPick() {
+    if (!entry) { bumpKeypad(); return; }            // nothing typed: nothing to save
+    picking = true;
+    bumpKeypad();
+    redrawKeypad();
+  }
+  function pickPress(i, m) {
+    const a = (layouts[m] || [])[i], act = ACTIONS[a] || {};
+    picking = false;
+    if (!act.presetMs) { bumpKeypad(); redrawKeypad(); return; }   // not a preset: back to the keypad
+    const ms = entryMs();
+    if (ms && ms >= 1000 && ms <= MAX_PRESET_MS) {
+      const key = m + ':' + i, ov = Object.assign({}, keyOverrides[key]);
+      if (ms === act.presetMs) delete ov.msecs; else ov.msecs = ms;
+      delete ov.label;                               // it labels itself from its new time
+      if (Object.values(ov).some(v => v !== undefined)) keyOverrides[key] = ov; else delete keyOverrides[key];
+      saveLayouts();
+    }
+    if (entry) kpKeys('Escape');                     // the typed time is used up (Esc while typing only drops it)
+    setKeypad(false);
+  }
+  // The layout a deck shows now: the keypad while it's on (its own while picking a preset), else its own
+  const activeLayout = m => (keypad && KEYPAD[m] && !picking ? KEYPAD[m] : layouts[m]);
 
   const ACTIONS = {
     preset_10:       preset('10 min', 600000),
@@ -126,6 +154,7 @@
     kp_pv_m:   { label: '', kp: 'pv', pv: 'm', group: 'Keypad', cmd: null },
     kp_pv_s:   { label: '', kp: 'pv', pv: 's', group: 'Keypad', cmd: null },
     kp_pv_typed: { label: '', kp: 'pv', pv: 'typed', group: 'Keypad', cmd: null },
+    kp_save:   { label: 'Update\npreset', kp: 'save', group: 'Keypad', cmd: () => startPick() },   // the XL: save the typed time to a preset key
     toggle_preset_arm: { label: 'Arm\npresets', group: 'Presets', toggleState: 'preset_arm', cmd: () => _sendCmd({ cmd: 'presetarm' }) },   // lit while presets only arm the timer
     start_restart:    { label: 'Start',     group: 'Controls',  cmd: () => _sendCmd({ cmd: 'keys', keys: [' '] }) },
     pause_resume: {
@@ -174,18 +203,40 @@
 
   // ─── Default layouts per model ────────────────────────────────────────────
 
-  const DEFAULT_LAYOUTS = {
-    mini: ['start_restart','pause_resume','undo_pause','add_1min','sub_1min','preset_30'],
+  const DEFAULT_LAYOUTS = {   // the owner's layouts (Nov 2026: Keypad on the MK.2 and XL)
+    mini: ['preset_30','undo_pause','pause_resume','sub_1min','add_1min','start_restart'],
     mk2: [
-      'preset_10','preset_20','preset_30','preset_45','preset_60',
-      'start_restart','pause_resume','add_1min','sub_1min','undo_pause',
-      'toggle_bar','toggle_time','toggle_messages','toggle_presenter','toggle_preset_arm',
+      'preset_10','preset_20','preset_30','preset_45','keypad',
+      'add_1min','sub_1min','undo_pause','pause_resume','countdown',
+      'toggle_bar','toggle_time','toggle_messages','toggle_preset_arm','start_restart',
     ],
     xl: [
-      'preset_10','preset_20','preset_30','preset_45','preset_60','preset_90','preset_120','preset_180',
+      'preset_10','preset_20','preset_30','preset_45','preset_60','preset_90','preset_120','keypad',
       'message','message','message_clear','rs_prev','rs_next','rs_status','countdown_major','countdown_minor',
-      'start_restart','pause_resume','add_1min','sub_1min','add_15sec','sub_15sec','undo_pause','toggle_preset_arm',
-      'toggle_bar','toggle_time','toggle_messages','toggle_presenter','catch_up','brightness_cycle','video_stop','video_rewind',
+      'sub_1min','add_1min','sub_15sec','add_15sec','catch_up','undo_pause','pause_resume','brightness_cycle',
+      'toggle_bar','toggle_time','toggle_messages','toggle_presenter','toggle_quiet','sting_fade','toggle_preset_arm','start_restart',
+    ],
+  };
+
+  // Earlier defaults: a saved layout still exactly one of these was never customised (saveLayouts used
+  // to store every model's layout on any save), so it follows the current default instead
+  const PAST_DEFAULTS = {
+    mini: [
+      'start_restart,pause_resume,undo_pause,add_1min,sub_1min,preset_30',
+    ],
+    mk2: [
+      'preset_10,preset_20,preset_30,preset_45,preset_60,start_restart,pause_resume,add_1min,sub_1min,undo_pause,toggle_bar,toggle_time,toggle_messages,toggle_presenter,toggle_preset_arm',
+      'preset_10,preset_20,preset_30,preset_45,preset_60,start_restart,pause_resume,add_1min,sub_1min,undo_pause,toggle_bar,toggle_time,toggle_messages,toggle_presenter,custom_msg',
+    ],
+    xl: [
+      'preset_10,preset_20,preset_30,preset_45,preset_60,preset_90,preset_120,preset_180,message,message,message_clear,rs_prev,rs_next,rs_status,countdown_major,countdown_minor,start_restart,pause_resume,add_1min,sub_1min,add_15sec,sub_15sec,undo_pause,toggle_preset_arm,toggle_bar,toggle_time,toggle_messages,toggle_presenter,catch_up,brightness_cycle,video_stop,video_rewind',
+      'preset_10,preset_20,preset_30,preset_45,preset_60,preset_90,preset_120,preset_180,message,message,message_clear,rs_prev,rs_next,rs_status,countdown_major,countdown_minor,start_restart,pause_resume,add_1min,sub_1min,add_15sec,sub_15sec,undo_pause,custom_msg,toggle_bar,toggle_time,toggle_messages,toggle_presenter,catch_up,brightness_cycle,video_stop,video_rewind',
+      'preset_10,preset_20,preset_30,preset_45,preset_60,preset_90,preset_120,preset_180,message,message,message_clear,rs_prev,rs_next,rs_status,countdown_major,countdown_minor,start_restart,pause_resume,add_1min,sub_1min,add_15sec,sub_15sec,undo_pause,custom_msg,toggle_bar,toggle_time,toggle_messages,toggle_presenter,catch_up,brightness_cycle,empty,empty',
+      'preset_10,preset_20,preset_30,preset_45,preset_60,preset_90,preset_120,preset_180,message,message,message_clear,empty,empty,empty,countdown_major,countdown_minor,start_restart,pause_resume,add_1min,sub_1min,add_15sec,sub_15sec,undo_pause,custom_msg,toggle_bar,toggle_time,toggle_messages,toggle_presenter,catch_up,brightness_cycle,empty,empty',
+      'preset_10,preset_20,preset_30,preset_45,preset_60,preset_90,preset_120,preset_180,message,message,message,message_clear,empty,empty,countdown_major,countdown_minor,start_restart,pause_resume,add_1min,sub_1min,add_15sec,sub_15sec,undo_pause,custom_msg,toggle_bar,toggle_time,toggle_messages,toggle_presenter,catch_up,brightness_cycle,empty,empty',
+      'preset_10,preset_20,preset_30,preset_45,preset_60,preset_90,preset_120,preset_180,empty,empty,empty,empty,empty,empty,countdown_major,countdown_minor,start_restart,pause_resume,add_1min,sub_1min,add_15sec,sub_15sec,undo_pause,custom_msg,toggle_bar,toggle_time,toggle_messages,toggle_presenter,catch_up,brightness_cycle,empty,empty',
+      'preset_10,preset_20,preset_30,preset_45,preset_60,preset_90,preset_120,preset_180,empty,empty,empty,empty,empty,empty,countdown_major,countdown_minor,start_restart,pause_resume,add_1min,sub_1min,add_15sec,sub_15sec,undo_pause,custom_msg,toggle_bar,toggle_time,toggle_messages,toggle_presenter,empty,empty,empty,empty',
+      'preset_10,preset_20,preset_30,preset_45,preset_60,preset_90,preset_120,preset_180,empty,empty,empty,empty,empty,empty,empty,empty,start_restart,pause_resume,add_1min,sub_1min,add_15sec,sub_15sec,undo_pause,custom_msg,toggle_bar,toggle_time,toggle_messages,toggle_presenter,empty,empty,empty,empty',
     ],
   };
 
@@ -294,8 +345,10 @@
   function loadLayouts() {
     for (const m of Object.keys(DEFAULT_LAYOUTS)) {
       try {
-        const saved = localStorage.getItem('streamdeck_layout_' + m);
-        layouts[m] = saved ? JSON.parse(saved) : [...DEFAULT_LAYOUTS[m]];
+        const saved = localStorage.getItem('streamdeck_layout_' + m), parsed = saved ? JSON.parse(saved) : null;
+        const untouched = !Array.isArray(parsed) || (PAST_DEFAULTS[m] || []).includes(parsed.join(','));
+        layouts[m] = untouched ? [...DEFAULT_LAYOUTS[m]] : parsed;
+        if (saved && untouched) localStorage.removeItem('streamdeck_layout_' + m);
       } catch (_) {
         layouts[m] = [...DEFAULT_LAYOUTS[m]];
       }
@@ -309,8 +362,9 @@
   }
 
   function saveLayouts() {
-    for (const m of Object.keys(layouts)) {
-      localStorage.setItem('streamdeck_layout_' + m, JSON.stringify(layouts[m]));
+    for (const m of Object.keys(layouts)) {   // only layouts that differ from the default: the rest follow it
+      if (DEFAULT_LAYOUTS[m] && layouts[m].join(',') === DEFAULT_LAYOUTS[m].join(',')) localStorage.removeItem('streamdeck_layout_' + m);
+      else localStorage.setItem('streamdeck_layout_' + m, JSON.stringify(layouts[m]));
     }
     localStorage.setItem('streamdeck_key_overrides', JSON.stringify(keyOverrides));
   }
@@ -497,6 +551,7 @@
   }
 
   function onKeyPress(index) {
+    if (picking) { pickPress(index, modelKey); return; }
     const layout = activeLayout(modelKey);
     if (!layout) return;
     const actionKey = layout[index];
@@ -613,6 +668,7 @@
       case 'cancel': return { bg: '#3a0d0d', fg: '#ff8a8a', label: 'Cancel' };
       case 'default': return { bg: '#0b2a4a', fg: '#9fd0ff', label: entry ? 'Default\n' + entry : 'Set\ndefault' };
       case 'start': return { bg: '#0e3a12', fg: '#8dff8d', label: entry ? 'Start\n' + entry : 'Start' };
+      case 'save': return entry ? { bg: '#3a2a00', fg: '#ffcc33', label: 'Update\npreset' } : { bg: '#141414', fg: '#555555', label: 'Update\npreset' };
       case 'pv': {
         const cap = { h: 'HOURS', m: 'MIN', s: 'SEC', typed: 'TYPED' }[action.pv];
         const body = !entry ? '–' : action.pv === 'typed' ? entryTyped : String(hms[{ h: 0, m: 1, s: 2 }[action.pv]] || '0');
@@ -624,6 +680,11 @@
 
   function faceFor(m, index, actionKey) {
     const action = ACTIONS[actionKey] || ACTIONS['empty'];
+    if (picking) {                                   // Update preset: only the presets, in blue
+      if (!action.presetMs) return { bg: '#000000', fg: '#000000' };
+      const ov = keyOverrides[m + ':' + index] || {};
+      return { bg: '#0b4fa8', fg: '#ffffff', label: ov.label || (ov.msecs ? durationLabel(ov.msecs) : action.label) };
+    }
     if (action.kp) return keypadFace(action);
     if (keypad && KEYPAD[m] && actionKey === 'empty') return { bg: '#000000', fg: '#000000' };   // the keypad's gaps: dark
     const override = keyOverrides[m + ':' + index] || {};
@@ -1164,11 +1225,12 @@
         const a = layout[i] || 'empty', act = ACTIONS[a] || ACTIONS.empty;
         const f = faceFor(m, i, a);
         f.a = a;
-        f.press = a === 'custom_msg' || (!!act.cmd && !PHONE_NO_PRESS.has(a));
+        f.press = picking || a === 'custom_msg' || (!!act.cmd && !PHONE_NO_PRESS.has(a));   // (picking a preset: any key, to cancel)
         return f;
       });
     },
     press(index, m = 'xl') {
+      if (picking) { pickPress(index, m); return true; }
       const a = (activeLayout(m) || [])[index], act = ACTIONS[a];
       if (!act || !act.cmd || PHONE_NO_PRESS.has(a)) return false;
       act.cmd(index, m);

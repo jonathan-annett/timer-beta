@@ -6,7 +6,8 @@ OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exis
 # StreamDeck.faces/press as the phone's virtual XL uses it; the MK.2's layout checked too). Its keys
 # type into the timer like the keyboard; the XL previews the typed time (hours, min, sec, typed) and
 # Start / Set default carry it; Start, Set default and Cancel go back to the normal layout; Cancel
-# with nothing typed doesn't send Esc (which would fade out whatever is playing).
+# with nothing typed doesn't send Esc (which would fade out whatever is playing). The XL's Update preset
+# shows only the preset keys, in blue: one pressed takes the typed time, any other key goes back to the keypad.
 import json, mimetypes, os, sys
 from playwright.sync_api import sync_playwright
 BASE = "https://timer.sophtwhere.com/beta/"
@@ -26,7 +27,7 @@ LAYOUT = ["keypad", "preset_10"] + ["empty"] * 30
 INIT = ("if(!localStorage.__s){localStorage.clear();localStorage.__s=1;localStorage.internetTimeError='0';localStorage.whatsnew_seen='2099-01-01';"
         "localStorage.defaultDuration='300000';localStorage.streamdeck_layout_xl=%s}") % json.dumps(json.dumps(LAYOUT))
 # the XL keypad's keys (streamdeck.js KEYPAD.xl)
-K = {"1": 0, "2": 1, "3": 2, ":": 3, "cancel": 7, "4": 8, "5": 9, "6": 10, ".": 11, "h": 12, "m": 13, "s": 14,
+K = {"1": 0, "2": 1, "3": 2, ":": 3, "cancel": 7, "4": 8, "5": 9, "6": 10, ".": 11, "h": 12, "m": 13, "s": 14, "save": 15,
      "7": 16, "8": 17, "9": 18, "back": 19, "typed": 21, "default": 23, "0": 25, "start": 31}
 with sync_playwright() as p:
     b = p.chromium.launch(args=["--no-proxy-server"])
@@ -69,6 +70,23 @@ with sync_playwright() as p:
     press("default"); t.wait_for_timeout(300)
     check("Set default: the default becomes 45 minutes, the timer runs on", t.evaluate("Number(localStorage.defaultDuration)") == 2700000 and remain().startswith("1:24"), (t.evaluate("localStorage.defaultDuration"), remain()))
     check("… back to its own layout", "Keypad" in (faces()[0].get("label") or ""))
+    # Update preset (the XL): only the presets, in blue; another key cancels back to the keypad; a preset takes the time
+    press(0); press("1"); press(":"); press("2"); press("5"); f = faces()
+    check("Update preset is lit once a time is typed", f[K["save"]].get("label") == "Update\npreset" and f[K["save"]].get("bg") == "#3a2a00", f[K["save"]])
+    press("save"); f = faces()
+    check("Update preset: only the preset keys, in blue; the rest blank", f[1].get("bg") == "#0b4fa8" and f[1].get("label") == "10 min" and f[0].get("bg") == "#000000" and not f[0].get("label") and all(x.get("press") for x in f), (f[0], f[1]))
+    press(5); f = faces()
+    check("… another key: back to the keypad, the typed time still there", f[0].get("big", {}).get("text") == "1" and pv(f, "typed") == "1:25", (f[0], pv(f, "typed")))
+    press("save"); press(1); f = faces()
+    check("… a preset key: it takes the time and labels itself, the deck back to normal", f[1].get("label") == "1 h 25" and "Keypad" in (f[0].get("label") or ""), (f[0].get("label"), f[1].get("label")))
+    over = t.evaluate("JSON.parse(localStorage.streamdeck_key_overrides || '{}')['xl:1']")
+    check("… kept (Save not needed: it's the deck's own action)", over == {"msecs": 5100000}, over)
+    check("… and the typed time is used up on the timer", not t.evaluate("document.documentElement.classList.contains('editing')"))
+    press(1); t.wait_for_timeout(1200)
+    check("pressing that preset now starts 1:25:00", remain() in ("1:24:59", "1:24:58", "1:25:00"), remain())
+    press(0); press("save"); f = faces()
+    check("Update preset with nothing typed does nothing", f[0].get("big", {}).get("text") == "1", f[0])
+    press("cancel")
     pal = t.evaluate("(() => { document.dispatchEvent(new KeyboardEvent('keydown', {key: 'd', bubbles: true})); return [...document.querySelectorAll('#deck-palette .deck-palette-chip')].map(c => c.dataset.action); })()")
     check("the palette offers the Keypad key, not the keypad's own keys", "keypad" in pal and not any(a.startswith("kp_") for a in pal), [a for a in pal if a.startswith("kp") or a == "keypad"])
     b.close()
