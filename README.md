@@ -183,7 +183,7 @@ In the editor you can drag actions from the palette onto keys, set per-key label
 
 ## Videos
 
-Click **video** to open the separate **player window** and the video panel. Drag the player window to the screen it should play on and press **F** for full screen. To load a video, click **Browse for a video…** in the panel, or drag a video file (or a link to one) onto the timer. Controls appear at the bottom right of the timer:
+Click **video** to open the separate **player window** and the video panel. Drag the player window to the screen it should play on and press **F** for full screen. Its sound goes to the computer's default output, or to the **show** sound card if you've chosen one in the run sheet editor's *Options* → *Sound outputs* (Chrome and Edge; see [the stings guide](docs/stings.md)). To load a video, click **Browse for a video…** in the panel, or drag a video file (or a link to one) onto the timer. Controls appear at the bottom right of the timer:
 
 | | |
 |---|---|

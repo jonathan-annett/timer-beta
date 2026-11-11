@@ -9,6 +9,8 @@
     main { max-width: 900px; margin: 0 auto; padding: 24px 16px 40px; }
     h1 { font-size: 20px; margin: 0 0 4px; color: #fff; }
     .sub { color: #888; margin: 0 0 16px; }
+    .outs { margin-top: 28px; padding-top: 12px; border-top: 1px solid #262626; max-width: 32em; }
+    .outs h2 { font-size: 15px; margin: 0; color: #fff; }
   </style>
 </head>
 <body>
@@ -16,10 +18,13 @@
     <h1>Sting library</h1>
     <p class="sub">Clips of walk-up stings: the part of a track to play, with fades, without cutting the file. Make them from the stock stings or your own tracks; they appear in the run sheet editor's <b>+ sting</b> on this computer (where the library also opens as a panel). Export the library to take it to another computer (or to give the site's owner your clips).</p>
     <div id="library"></div>
+    <section class="outs"><h2>Sound outputs</h2><div id="ao-pick"></div></section>
   </main>
+  <script>document.addEventListener('DOMContentLoaded', () => { if (window.AudioOut) AudioOut.picker(document.getElementById('ao-pick'), ['show', 'preview']); });</script>
   <script src="features.js?v=4679249b"></script>
   <script src="video-store.js?v=069f77d9"></script>
-  <script src="sting-clip.js?v=e4d8d696"></script>
-  <script src="sting-library.js?v=40db3e21"></script>
+  <script src="audio-out.js?v=6558e786" data-role="preview"></script>
+  <script src="sting-clip.js?v=132c2727"></script>
+  <script src="sting-library.js?v=2cb7cc28"></script>
 </body>
 </html>

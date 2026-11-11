@@ -51,6 +51,19 @@ Video stings level the same way: their soundtrack is measured, and the player wi
 
 A sting that hasn't been measured (added since the show was levelled, and not saved in the clip editor) plays at its own level: level the show again.
 
+## Sound outputs: the show on the PA, previews on headphones
+
+In Chrome and Edge, the run sheet editor's *Options* → *Sound outputs* chooses two sound cards (kept on this computer; the sting library page has the same choice at its foot):
+
+- **Show**: what the audience hears. Stings, video stings, videos and the line-up tone, from the timer.
+- **Previews and editing**: the ▶ buttons in **+ sting**, the clip editor and the sting library. Bluetooth headphones, say.
+
+Each plays only on its own output, so you can audition and edit stings on headphones while the show's stings play out on the PA: someone pressing Next on the Stream Deck doesn't stop your preview, and your preview doesn't reach the room. Choosing the show's output also keeps the stings there when headphones connect (a Mac makes them its default output as they do).
+
+The browser lists sound cards by name only once the site may use the microphone, so the first time click **Name the sound cards…** and allow it (choose to allow it on every visit; nothing is recorded).
+
+If a chosen output isn't connected, nothing plays there rather than on another output: with the **show** output missing, stings and the tone don't play and videos play silently, and a red warning on the timer's screen says so; with the **preview** output missing (headphones off), previews don't play, so one can never land on the PA. Plug it back in and everything carries on by itself. Leave either on *This computer's default output* for the old behaviour.
+
 In the library file a clip's level is `"lufs"` (its measured loudness) and `"volume"` (the trim, 0–1).
 
 ## The sting library

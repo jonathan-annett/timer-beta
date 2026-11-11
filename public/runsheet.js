@@ -558,6 +558,7 @@
     sp.play(it).then(r => {
       if (r === 'no-player') flash(`"${it.name}" has a video sting: click "video" to open the player window`);
       else if (r === 'missing') flash(`The walk-up sting for "${it.name}" isn't stored in this browser. Add it again in the run sheet editor.`);
+      else if (r === 'no-output') flash(`The walk-up sting for "${it.name}" didn't play: the show's sound card isn't connected`);
     });
   }
   function stopStings(itemId) { if (STINGS && window.stingPlayer) window.stingPlayer.stop(itemId); }   // itemId: only that item's

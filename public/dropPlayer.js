@@ -154,6 +154,7 @@
     win.document.close();
     els = Array.from(win.document.querySelectorAll('video'));
     els.forEach(el => { el.addEventListener('ended', () => onEnded(el)); });
+    if (window.AudioOut) els.forEach(el => AudioOut.media(el));   // the show output (audio-out.js)
     playing = cued = null;
     win.addEventListener('beforeunload', () => {
       win = null; els = [];

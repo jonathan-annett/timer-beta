@@ -148,7 +148,9 @@ StingLibrary.mount = function (root, opts) {
     stopPlay();
     const src = await L.source(e, stock);
     if (!src) return msg('That clip’s file isn’t on this computer: use Find files…', true);
-    playing = StingClip.preview(src, e); playingId = id;
+    const p = StingClip.preview(src, e);
+    if (p.refused) return;                           // (the preview output isn't there: it says so)
+    playing = p; playingId = id;
     render();
   }
 

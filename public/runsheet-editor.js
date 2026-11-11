@@ -723,6 +723,7 @@
   window.__stingFolder = f => { folder = f; if (onFolder) onFolder(); };   // (tests: {name, files: [{path, file}]})
 
   let preview = null;                            // the stock sting being previewed in the dialog
+  const outEl = el => (window.AudioOut ? AudioOut.media(el) : Promise.resolve());   // a preview element on the preview output (audio-out.js)
   function stopPreview() {
     if (!preview) return;
     preview.stop(); preview = null;
@@ -827,10 +828,11 @@
         if (preview) return stopPreview();
         const x = stock[Number(sel.value)];
         if (!x) return;
+        if (window.AudioOut && !AudioOut.ok()) return AudioOut.warn();   // the preview output isn't there
         if (StingClip.region(x)) preview = StingClip.preview(x.url, x);   // a clip: just its part, with its fades
         else {
           const el = document.createElement(x.media === 'video' ? 'video' : 'audio');   // (a video: its sound only)
-          el.src = x.url; el.onended = stopPreview; el.play().catch(() => stopPreview());
+          el.src = x.url; el.onended = stopPreview; outEl(el).then(() => el.play()).catch(() => stopPreview());
           preview = { stop() { el.pause(); el.removeAttribute('src'); el.load(); } };
         }
         prevBtn.textContent = '■'; prevBtn.title = 'Stop';
@@ -843,15 +845,17 @@
       const src = e && await StingLibrary.source(e, stock);
       if (!src) return;
       preview = StingClip.preview(src, e);
+      if (preview.refused) { preview = null; return; }
       $d('#sting-mprev').textContent = '■';
     });
     folderSel.addEventListener('change', stopPreview);
     $d('#sting-fprev').addEventListener('click', async () => {
       if (preview) return stopPreview();
+      if (window.AudioOut && !AudioOut.ok()) return AudioOut.warn();   // the preview output isn't there
       let file; try { file = await folderFile(); } catch (_) { file = null; }
       if (!file) return;
       const url = URL.createObjectURL(file), el = document.createElement(/^video\//.test(file.type) ? 'video' : 'audio');   // (a video: its sound only)
-      el.src = url; el.onended = stopPreview; el.play().catch(() => stopPreview());
+      el.src = url; el.onended = stopPreview; outEl(el).then(() => el.play()).catch(() => stopPreview());
       preview = { stop() { el.pause(); el.removeAttribute('src'); el.load(); URL.revokeObjectURL(url); } };
       $d('#sting-fprev').textContent = '■'; $d('#sting-fprev').title = 'Stop';
     });
@@ -1076,6 +1080,8 @@
     $('lvl-tone').addEventListener('click', () => toggleTone());
     renderLevels();
   } else $('lvl-box').hidden = true;
+  if (window.AudioOut) AudioOut.picker($('ao-pick'), REMOTE ? ['preview'] : ['show', 'preview']);
+  else $('ao-box').hidden = true;
   async function attachSting(id, file, extra) {   // extra: {name, clip, lib} (a library clip)
     const item = sheet.items.find(it => it.id === id);
     if (!item || !file) return;
