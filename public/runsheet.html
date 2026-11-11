@@ -118,6 +118,15 @@
     #rs-table td.vid .sadd { margin-left: 0.15rem; }
     #rs-table td.vid .sweb { color: #e0b030; cursor: help; }
     #rs-table td.vid .vtrim.on { color: #7fc0ff; }
+    #rs-table td.vid .vroll { opacity: 0.4; }                            /* (an emoji: colour can't light it) */
+    #rs-table tr:hover td.vid .vroll { opacity: 0.75; }
+    #rs-table td.vid .vroll.on { opacity: 1; }                            /* picked at random */
+    #rollpanel select { font: inherit; padding: 0.15rem 0.3rem; background: #1a1a1a; color: var(--text); border: 1px solid var(--line2); border-radius: 0.3rem; }
+    #rollpanel .hint-inline { color: var(--dim); font-size: 0.857rem; }
+    #rollpanel .roll-folder { display: flex; align-items: center; gap: 0.571rem; flex-wrap: wrap; }
+    #rollpanel #roll-folderpick { padding: 0.07rem 0.5rem; font-size: 0.857rem; }
+    #rollpanel label.check { margin-top: 0.286rem; }
+    #rollpanel #roll-msg.bad { color: #ffb86b; }
     .sting-note { color: var(--dim); margin: 0.4rem 0 0.8rem; }
     .sting-field { display: block; margin: 0.5rem 0; color: var(--dim); }
     .sting-row { display: flex; gap: 0.4rem; margin-top: 0.25rem; }
@@ -354,6 +363,20 @@
           </div>
         </details>
 
+        <details id="rollpanel">
+          <summary>Random stings</summary>
+          <div class="panel">
+            <p class="hint">A walk-up sting picked at random for each item long enough to be a speaker, none used twice. Stings you chose yourself, and videos, are left alone; 🎲 on a row picks another for that item.</p>
+            <label class="check"><input type="checkbox" id="roll-stock"><span>Stock stings</span></label>
+            <div class="roll-folder"><label class="check"><input type="checkbox" id="roll-folder"><span>The folder <span id="roll-foldername"></span></span></label><button type="button" id="roll-folderpick">Choose…</button></div>
+            <label class="check"><input type="checkbox" id="roll-mine"><span>My clips <span class="hint-inline">(your edits stand in for the tracks they came from)</span></span></label>
+            <div class="row"><label class="inline">Items of at least <input type="number" id="roll-min" min="0" max="600" step="0.5"> min</label></div>
+            <div class="row"><label class="inline">Stings <select id="roll-lenop"><option value="">of any length</option><option value="max">no longer than</option><option value="min">at least</option></select> <input type="number" id="roll-len" min="1" max="3600" step="1"> s</label></div>
+            <div class="row"><button id="roll-all" class="primary">🎲 Roll stings</button><button id="roll-clear">Remove rolled stings</button></div>
+            <p class="hint" id="roll-msg"></p>
+          </div>
+        </details>
+
         <details id="logpanel" open>
           <summary>Show log</summary>
           <div class="panel">
@@ -401,6 +424,6 @@
   <script src="sting-clip.js?v=132c2727"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="runsheet-core.js?v=bbefdbe8"></script>
-  <script src="runsheet-editor.js?v=a16fc033"></script>
+  <script src="runsheet-editor.js?v=69b68ba4"></script>
 </body>
 </html>

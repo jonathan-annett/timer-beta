@@ -699,6 +699,7 @@
           lufs: num(st.lufs, -70, 0), volume: num(st.volume, 0.0001, 0.9999) };   // its level (sting-clip.js)
         for (const k of Object.keys(r)) if (r[k] != null && r[k] !== 0) out.sting[k] = r[k];
         if (typeof st.lib === 'string' && st.lib) out.sting.lib = st.lib.slice(0, 200); else delete out.sting.lib;   // the sender's library clip it came from
+        if (st.rolled === true) out.sting.rolled = true; else delete out.sting.rolled;   // picked at random (the editor's 🎲): as sent
       }
       items.push(out);
     }

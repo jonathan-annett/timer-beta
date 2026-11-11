@@ -365,7 +365,7 @@
         inp.readOnly = ro || scaling || !canEdit;
         inp.title = scaling ? 'Apply or cancel the scaling first' : ro ? (role === 'now' ? 'Running now: it started when it started' : 'Already run: kept as it happened') : (inp.classList.contains('invalid') ? inp.title : '');
       });
-      tr.querySelectorAll('td.vid button, td.vid select').forEach(b => { b.disabled = role === 'done' || it.hidden || scaling; });
+      tr.querySelectorAll('td.vid button, td.vid select').forEach(b => { b.disabled = role === 'done' || it.hidden || scaling || (b.dataset.act === 'sroll' && role === 'now'); });
       // The hard-start tick: the first item's works before the show (it's the auto start, in standby);
       // the others only once the show is under way, for items still to come. Otherwise dimmed.
       const hard = tr.querySelector('input.hard');
@@ -536,6 +536,7 @@
       const st = item.sting;
       td.innerHTML = `<span class="vicon">${st.media === 'video' ? '🎞' : '🎵'}</span> <span class="vdur"></span>` +
         (st.key ? '' : ' <span class="sweb" title="Not kept in the timer’s browser (yet): it plays from its link, so it needs the internet">⚠</span>') +
+        `<button class="vdel vroll${st.rolled ? ' on' : ''}" data-act="sroll" tabindex="-1" title="${st.rolled ? 'Picked at random: 🎲 for another. The run sheet’s 🎲 may change it too; choose one with ✂ or + sting to keep it' : 'Another walk-up sting, at random (Random stings, on the right, says from where)'}">🎲</button>` +
         `<button class="vdel vtrim${StingClip.region(st) ? ' on' : ''}" data-act="strim" tabindex="-1" title="${StingClip.region(st) ? 'Plays part of the track: change it' : 'Choose the part to play, with fades'}">✂</button>` +
         `<button class="vdel" data-act="sdel" tabindex="-1" title="Remove the walk-up sting">✕</button>`;
       td.title = 'Walk-up sting: ' + st.name + (st.src === 'stock' ? ' (stock)' : st.src === 'link' ? '\n' + st.url : '') + '\nPlays as the item starts; the item keeps its own time.';
@@ -545,7 +546,8 @@
     }
     if (!item.video) {
       td.innerHTML = `<button class="vadd" data-act="vadd" tabindex="-1" title="Play a video for this item: the item runs as long as the video (or drop a video file on the row)">+ video</button>` +
-        (STINGS ? `<button class="vadd sadd" data-act="sadd" tabindex="-1" title="A walk-up sting: music or a video that plays as the item starts, while the item keeps its own time (or drop an audio file on the row)">+ sting</button>` : '');
+        (STINGS ? `<button class="vadd sadd" data-act="sadd" tabindex="-1" title="A walk-up sting: music or a video that plays as the item starts, while the item keeps its own time (or drop an audio file on the row)">+ sting</button>` +
+          `<button class="vadd vroll" data-act="sroll" tabindex="-1" title="A walk-up sting at random (Random stings, on the right, says from where)">🎲</button>` : '');
       td.title = '';
       return;
     }
@@ -662,11 +664,14 @@
     }).catch(() => []);
     return stockList;
   }
+  function putSting(it, sting) {                 // (no save) the file of the sting it replaces goes
+    if (!REMOTE && it.sting && it.sting.key && it.sting.key !== sting.key && window.videoStore) window.videoStore.remove(it.sting.key).catch(() => {});
+    it.sting = sting;
+  }
   function setSting(id, sting) {
     const it = sheet.items.find(x => x.id === id);
     if (!it) return;
-    if (!REMOTE && it.sting && it.sting.key && it.sting.key !== sting.key && window.videoStore) window.videoStore.remove(it.sting.key).catch(() => {});
-    it.sting = sting;
+    putSting(it, sting);
     if (!it.name) it.name = sting.name;
     saveSheet();
   }
@@ -718,9 +723,17 @@
     const files = all.filter(f => MEDIA_EXT.test(f.name) && !/(^|\/)\./.test(f.webkitRelativePath || f.name)).slice(0, FOLDER_MAX)
       .map(f => ({ path: (f.webkitRelativePath || f.name).split('/').slice(1).join('/') || f.name, file: f }));
     folder = { name: root, files: files.sort(byPath) };
-    if (onFolder) onFolder();
+    folderChanged();
   });
-  window.__stingFolder = f => { folder = f; if (onFolder) onFolder(); };   // (tests: {name, files: [{path, file}]})
+  function folderChanged() { if (onFolder) onFolder(); renderRollPanel(); }
+  async function chooseFolder() {
+    if (!window.showDirectoryPicker) return folderInput.click();
+    let dir; try { dir = await window.showDirectoryPicker({ id: 'stings', mode: 'read' }); } catch (_) { return; }   // (cancelled)
+    folder = await folderOf(dir);
+    if (!REMOTE && window.videoStore) window.videoStore.put(FOLDER_KEY, dir).catch(() => {});
+    folderChanged();
+  }
+  window.__stingFolder = f => { folder = f; folderChanged(); };   // (tests: {name, files: [{path, file}]})
 
   let preview = null;                            // the stock sting being previewed in the dialog
   const outEl = el => (window.AudioOut ? AudioOut.media(el) : Promise.resolve());   // a preview element on the preview output (audio-out.js)
@@ -860,14 +873,7 @@
       $d('#sting-fprev').textContent = '■'; $d('#sting-fprev').title = 'Stop';
     });
     onFolder = () => { stopPreview(); fillFolder(); setMode(mode); };
-    $d('#sting-folderpick').addEventListener('click', async () => {
-      stopPreview();
-      if (!window.showDirectoryPicker) return folderInput.click();
-      let dir; try { dir = await window.showDirectoryPicker({ id: 'stings', mode: 'read' }); } catch (_) { return; }   // (cancelled)
-      folder = await folderOf(dir);
-      if (!REMOTE && window.videoStore) window.videoStore.put(FOLDER_KEY, dir).catch(() => {});
-      onFolder();
-    });
+    $d('#sting-folderpick').addEventListener('click', () => { stopPreview(); chooseFolder(); });
     if (!folder) savedFolder().then(async sf => {   // the folder from last time: listed at once, or after a click if the browser asks
       if (!sf || folder || !wrap.isConnected) return;
       if (sf.ok) { try { folder = await folderOf(sf.handle); onFolder(); } catch (_) { /* gone */ } return; }
@@ -1101,18 +1107,24 @@
     if (!window.videoStore) { alert('Stings can’t be stored in this browser.'); return; }
     busy.add(id); renderAll();
     try {
-      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-      const duration = await probeDuration(file);
-      const key = 'rssting:' + id + ':' + Date.now();
-      await window.videoStore.put(key, file);
-      if (!sheet.items.find(x => x.id === id)) { window.videoStore.remove(key); return; }
-      setSting(id, Object.assign({ src: 'file', media, name: String((extra && extra.name) || noExt(file.name)).slice(0, 200), size: file.size, duration: duration ? Math.round(duration) : null, key }, extra && extra.clip, extra && extra.lib ? { lib: extra.lib } : {}));
+      const st = await keepStingFile(id, file, extra);
+      if (!sheet.items.find(x => x.id === id)) { window.videoStore.remove(st.key); return; }
+      setSting(id, st);
     } catch (err) {
       alert('Couldn’t store the sting in this browser: ' + (err && err.message || err));
     } finally {
       busy.delete(id);
       renderAll();
     }
+  }
+  // A file kept in this browser for item id ('rssting:'): the sting for it (not put on the item yet)
+  async function keepStingFile(id, file, extra) {
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    const duration = await probeDuration(file);
+    const key = 'rssting:' + id + ':' + Date.now() + ':' + Math.random().toString(36).slice(2, 6);
+    await window.videoStore.put(key, file);
+    return Object.assign({ src: 'file', media: file.type.startsWith('video/') ? 'video' : 'audio', name: String((extra && extra.name) || noExt(file.name)).slice(0, 200), size: file.size, duration: duration ? Math.round(duration) : null, key },
+      extra && extra.clip, extra && extra.lib ? { lib: extra.lib } : {});
   }
   // ✂: choose the part of the track to play (sting-clip.js), with fades. The file isn't cut.
   async function trimSting(id) {
@@ -1129,6 +1141,7 @@
     const now = sheet.items.find(x => x.id === id);
     if (!now || !now.sting) return;
     const st = Object.assign({}, now.sting, { name: r.name });
+    delete st.rolled;                              // edited: theirs now (a roll of the sheet leaves it alone)
     for (const k of CLIP_KEYS) { if (r[k] == null) delete st[k]; else st[k] = r[k]; }
     if (st.duration == null && r.sourceLength) st.duration = Math.round(r.sourceLength);   // (the whole track's length)
     // From the sting library: the same change there too, if they like (a better cut, a new name)
@@ -1158,6 +1171,194 @@
   stingPicker.type = 'file'; stingPicker.accept = 'audio/*,video/*'; stingPicker.hidden = true;
   document.body.appendChild(stingPicker);
   stingPicker.addEventListener('change', () => { const f = stingPicker.files[0]; stingPicker.value = ''; if (f && pickFor) attachSting(pickFor, f); });
+
+  // ─── Random stings (the owner's design, Nov 2026) ─────────────────────────
+  // A walk-up sting picked at random for every item long enough to be a speaker (Random stings → 🎲 Roll
+  // stings), none used twice on the sheet; 🎲 on a row picks another for that item. The pool: stock stings,
+  // the folder (+ sting's Custom file), My clips (the sting library), and a length filter (as it plays).
+  // One song, one candidate: a stock sting, its clips (the site's and mine) and a link are one song (its url),
+  // a file is known by its size (all a file sting keeps of it), so no two speakers get the same track in
+  // different cuts. With My clips ticked an edit stands in for its track; unticked, tracks play as supplied
+  // (originals hidden behind an edit come back). Audio only (a video walk-up needs the player window).
+  // Rolled stings carry rolled: true; a sting chosen by hand (+ sting, a dropped file, ✂) doesn't, and a
+  // roll of the sheet leaves it, and videos, alone, as it does rows that have run and the live item. A
+  // remote editor picks only stock and link stings (a file would have to be sent).
+  const ROLL_KEY = 'sting_roll';
+  const AUDIO_EXT = /\.(mp3|m4a|aac|wav|aif|aiff|flac|ogg|oga|opus|weba)$/i;
+  function rollOpts() {
+    const d = { stock: true, folder: false, mine: true, min: 2, lenOp: '', len: 30 };
+    try { return Object.assign(d, JSON.parse(localStorage.getItem(ROLL_KEY) || '{}')); } catch (_) { return d; }
+  }
+  const songOf = s => (s.url ? 'url:' + s.url : s.size ? 'size:' + s.size : 'name:' + s.name);
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  async function ensureFolder() {                // the folder, listed (asking again if the browser wants: needs the click)
+    if (folder || REMOTE) return folder;
+    const sf = await savedFolder();
+    if (!sf) return null;
+    try { if (!sf.ok && (await sf.handle.requestPermission({ mode: 'read' })) !== 'granted') return null; folder = await folderOf(sf.handle); } catch (_) { return null; }
+    renderRollPanel();
+    return folder;
+  }
+  // song → its versions [{kind: 'stock'|'mine'|'folder', len (s as it plays; undefined: probe it), x | e | file}]
+  async function rollPool(o, stock) {
+    const songs = new Map(), add = (song, c) => { if (!songs.has(song)) songs.set(song, []); songs.get(song).push(c); };
+    const mine = o.mine && window.StingLibrary ? StingLibrary.read() : [];
+    for (const e of mine) {
+      if (e.media === 'video' || (e.file && REMOTE)) continue;
+      const base = e.stock ? stock.find(x => x.name === e.stock) : null;
+      if (e.stock && !base) continue;
+      if (e.file && !(await StingLibrary.source(e, stock))) continue;   // (its file isn't on this computer)
+      add(e.file ? 'size:' + e.size : 'url:' + (base ? base.url : e.url), { kind: 'mine', e, len: StingClip.length(e, e.duration != null ? e.duration : base && base.duration) });
+    }
+    const edited = new Set(songs.keys());         // my edits stand in for the tracks they came from
+    if (o.stock) {
+      const hidden = window.StingLibrary ? StingLibrary.hidden(stock, mine) : new Set();
+      stock.forEach((x, i) => {
+        if (hidden.has(i) || x.media === 'video' || edited.has('url:' + x.url)) return;
+        add('url:' + x.url, { kind: 'stock', x, len: StingClip.length(x, x.duration) });
+      });
+    }
+    if (o.folder && !REMOTE && await ensureFolder()) {
+      for (const f of folder.files) {
+        if (!AUDIO_EXT.test(f.path)) continue;
+        let file; try { file = f.file || await f.handle.getFile(); } catch (_) { continue; }
+        if (!edited.has('size:' + file.size)) add('size:' + file.size, { kind: 'folder', file, len: undefined });
+      }
+    }
+    return songs;
+  }
+  const fitsLen = (len, o) => !o.lenOp || (len != null && (o.lenOp === 'max' ? len <= o.len : len >= o.len));
+  async function pickSong(songs, used, o, avoid) {   // a random song not used (nor avoid), in a version that fits
+    for (const song of shuffle([...songs.keys()])) {
+      if (used.has(song) || song === avoid) continue;
+      for (const c of shuffle(songs.get(song).slice())) {
+        if (c.len === undefined) c.len = await probeDuration(c.file);
+        if (fitsLen(c.len, o)) return { song, c };
+      }
+    }
+    return null;
+  }
+  async function stingFor(id, c, stock) {        // the sting for a version (a file is stored for item id)
+    if (c.kind === 'stock') return Object.assign({ src: 'stock', media: 'audio', name: c.x.name, url: c.x.url, duration: c.x.duration }, clipFields(c.x));
+    const e = c.e;
+    if (c.kind === 'mine' && !e.file) {
+      const base = e.stock ? stock.find(x => x.name === e.stock) : null;
+      return Object.assign({ src: e.stock ? 'stock' : 'link', media: 'audio', name: e.name, url: await StingLibrary.source(e, stock), duration: e.duration != null ? Math.round(e.duration) : base && base.duration, lib: e.name }, clipFields(e));
+    }
+    if (c.kind === 'folder') return keepStingFile(id, c.file);
+    const blob = await StingLibrary.source(e, stock);
+    return blob ? keepStingFile(id, new File([blob], e.file, { type: blob.type || 'audio/mpeg' }), { name: e.name, clip: clipFields(e), lib: e.name }) : null;
+  }
+  // Can item i have a rolled sting? (sheetRoll: and does the sheet's 🎲 roll it: long enough, not chosen by hand)
+  function rollable(i, o, sheetRoll) {
+    const it = sheet.items[i], n = norm && norm.items[i];
+    if (!it || !n || it.hidden || n.isEnd || it.video) return false;
+    const role = rowRole(i);
+    if (role === 'done' || role === 'now') return false;
+    return !sheetRoll || ((!it.sting || it.sting.rolled) && (n.eff || 0) >= o.min * 60);
+  }
+  const rollMsg = (text, bad) => { const m = $('roll-msg'); if (m) { m.textContent = text; m.classList.toggle('bad', !!bad); } };
+  const noPool = o => !o.stock && !o.mine && !(o.folder && !REMOTE);
+  let rolling = false;
+  // Picks for the items (ids), then puts them on the sheet as it is by then (an item that changed meanwhile
+  // is left alone, its stored file removed) and saves once. → {got, none}
+  async function rollItems(ids, o, sheetRoll) {
+    const stock = await stockStings(), songs = await rollPool(o, stock);
+    const targets = new Set(ids);
+    const used = new Set(sheet.items.filter(it => it.sting && !targets.has(it.id)).map(it => songOf(it.sting)));
+    const picks = [];
+    let none = 0;
+    for (const id of ids) {
+      const it = sheet.items.find(x => x.id === id), was = it && it.sting ? songOf(it.sting) : null;
+      // Another song if there is one; rolling the sheet, its own again rather than none (🎲 on a row: only another)
+      let p = await pickSong(songs, used, o, was);
+      if (!p && was && sheetRoll) p = await pickSong(songs, used, o, null);
+      if (!p) {
+        none++;
+        if (was && !used.has(was)) used.add(was);  // it keeps the one it has
+        else if (was && sheetRoll) picks.push([id, null]);   // (its song went to another item: it can't keep it too)
+        continue;
+      }
+      used.add(p.song);
+      try { const st = await stingFor(id, p.c, stock); if (st) picks.push([id, Object.assign(st, { rolled: true })]); else none++; }
+      catch (err) { console.warn('Random stings: couldn’t keep the file', err); none++; }
+    }
+    let got = 0;
+    let changed = false;
+    for (const [id, st] of picks) {
+      const i = sheet.items.findIndex(x => x.id === id), it = sheet.items[i];
+      const ok = i >= 0 && rollable(i, o, false) && (!sheetRoll || !it.sting || it.sting.rolled);
+      if (!st) { if (ok && it.sting && it.sting.rolled) { if (!REMOTE && it.sting.key && window.videoStore) window.videoStore.remove(it.sting.key).catch(() => {}); delete it.sting; changed = true; } continue; }
+      if (ok) { putSting(it, st); got++; changed = true; }
+      else if (st.key && window.videoStore) window.videoStore.remove(st.key).catch(() => {});
+    }
+    if (changed) saveSheet();
+    return { got, none };
+  }
+  async function rollAll() {
+    if (!canEdit) return refused();
+    if (rolling || scaling) return;
+    const o = rollOpts();
+    if (noPool(o)) return rollMsg('Tick where stings may come from.', true);
+    const ids = sheet.items.filter((it, i) => rollable(i, o, true)).map(it => it.id);
+    if (!ids.length) return rollMsg(`No items to give a sting: none ${o.min ? 'of ' + o.min + ' min or more ' : ''}without one of your own (or a video) still to come.`, true);
+    rolling = true; rollMsg('Rolling…');
+    try {
+      const r = await rollItems(ids, o, true);
+      const kept = sheet.items.filter((it, i) => it.sting && !it.sting.rolled && !it.hidden && rollable(i, o, false)).length;
+      rollMsg(`${r.got} item${r.got === 1 ? '' : 's'} got a sting at random` + (kept ? `; ${kept} kept the one chosen for ${kept === 1 ? 'it' : 'them'}` : '') +
+        (r.none ? `; ${r.none} didn’t: not enough stings ${o.lenOp ? 'of that length ' : ''}left unused.` : '.'), r.none > 0);
+    } finally { rolling = false; renderAll(); }
+  }
+  async function rollOne(id) {
+    if (!canEdit) return refused();
+    if (rolling || scaling) return;
+    const i = sheet.items.findIndex(x => x.id === id), o = rollOpts();
+    if (i < 0 || !rollable(i, o, false)) return;
+    if (noPool(o)) return ask('Choose where random stings come from in <b>Random stings</b> (on the right) first.', [{ label: 'OK', value: true, kind: 'primary', cancel: true }]);
+    rolling = true; busy.add(id); renderAll();
+    try {
+      const r = await rollItems([id], o, false);
+      if (!r.got) ask(`No ${sheet.items[i] && sheet.items[i].sting ? 'other ' : ''}sting to pick: every one ${o.lenOp ? 'of that length ' : ''}is already on the run sheet.`, [{ label: 'OK', value: true, kind: 'primary', cancel: true }]);
+    } finally { rolling = false; busy.delete(id); renderAll(); }
+  }
+  async function clearRolled() {
+    if (!canEdit) return refused();
+    const o = rollOpts(), its = sheet.items.filter((it, i) => it.sting && it.sting.rolled && rollable(i, o, false));
+    if (!its.length) return rollMsg('No rolled stings to remove (rows that have run keep theirs).');
+    if (!(await ask(`Remove the ${its.length} sting${its.length === 1 ? '' : 's'} picked at random? Stings you chose stay.`, [{ label: 'Remove them', value: true, kind: 'danger' }, { label: 'Cancel', value: false, cancel: true }]))) return;
+    for (const it of its) { if (!REMOTE && it.sting.key && window.videoStore) window.videoStore.remove(it.sting.key).catch(() => {}); delete it.sting; }
+    saveSheet();
+    rollMsg(`${its.length} rolled sting${its.length === 1 ? '' : 's'} removed.`);
+  }
+  async function renderRollPanel() {
+    const box = $('rollpanel');
+    if (!box) return;
+    if (!STINGS) { box.hidden = true; return; }
+    const o = rollOpts();
+    $('roll-stock').checked = o.stock; $('roll-mine').checked = o.mine; $('roll-folder').checked = o.folder && !REMOTE;
+    $('roll-folder').disabled = REMOTE;
+    $('roll-min').value = o.min; $('roll-lenop').value = o.lenOp; $('roll-len').value = o.len; $('roll-len').disabled = !o.lenOp;
+    let name = folder && folder.name;
+    if (!name && !REMOTE) { const sf = await savedFolder(); name = sf && sf.handle.name; }
+    $('roll-foldername').textContent = REMOTE ? '(only on the timer’s computer)' : name ? '“' + name + '”' : '(none chosen yet)';
+    $('roll-folderpick').hidden = REMOTE;
+    $('roll-folderpick').textContent = name ? 'Another…' : 'Choose…';
+  }
+  function saveRollOpts() {
+    const n = (v, lo, hi, d) => { const x = Number(v); return Number.isFinite(x) && x >= lo && x <= hi ? x : d; };
+    const o = { stock: $('roll-stock').checked, mine: $('roll-mine').checked, folder: $('roll-folder').checked, min: n($('roll-min').value, 0, 600, 2),
+      lenOp: ['max', 'min'].includes($('roll-lenop').value) ? $('roll-lenop').value : '', len: Math.round(n($('roll-len').value, 1, 3600, 30)) };
+    try { localStorage.setItem(ROLL_KEY, JSON.stringify(o)); } catch (_) { /* private mode */ }
+    $('roll-len').disabled = !o.lenOp;
+  }
+  if ($('rollpanel')) {
+    for (const k of ['roll-stock', 'roll-mine', 'roll-folder', 'roll-min', 'roll-lenop', 'roll-len']) $(k).addEventListener('change', saveRollOpts);
+    $('roll-all').addEventListener('click', e => { e.currentTarget.blur(); rollAll(); });
+    $('roll-clear').addEventListener('click', e => { e.currentTarget.blur(); clearRolled(); });
+    $('roll-folderpick').addEventListener('click', e => { e.currentTarget.blur(); chooseFolder(); });
+    renderRollPanel();
+  }
 
   // Videos and stings no longer used by the sheet (rows deleted, sheet replaced) are removed from the browser
   // (as are slides from before the PowerPoint computers were dropped: rsdeck:, rsimg:)
@@ -1630,6 +1831,9 @@
         break;
       case 'strim':
         trimSting(id);
+        break;
+      case 'sroll':
+        rollOne(id);
         break;
       case 'go':
         send('goto', { id });
