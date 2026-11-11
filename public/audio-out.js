@@ -21,15 +21,18 @@
  * a page that may use a microphone (ask() asks; nothing is recorded). Routing that fails silences rather
  * than leaving the sound on the default output.
  *
- *   AudioOut.supported, AudioOut.role
+ * A playout computer's page has both (data-role="both"): its cues play to Show, and everything that
+ * doesn't name a role (the + sting dialog's previews, the clip editor, the library) to Previews.
+ *   AudioOut.supported, AudioOut.role (what's routed unsaid), AudioOut.roles (this page's outputs)
  *   AudioOut.get(role) → {id, label} | null;  AudioOut.set(role, {id, label} | null)
  *   AudioOut.devices() → [{id, label}] (none until the browser will say: ask())
  *   AudioOut.ask() → devices()        the microphone permission, for the names
- *   AudioOut.attach(audioContext)     routes it (StingClip's context attaches itself)
- *   AudioOut.media(el) → Promise      routes a media element (await it before play())
- *   AudioOut.state() → 'default' | 'checking' | 'ok' | 'missing' | 'hidden'   (this page's output)
- *   AudioOut.ok() → false while this page's output can't be used: callers warn() instead of playing
- *   AudioOut.warn()                   says why nothing plays (show: the banner; preview: a note)
+ *   The rest take an optional role (on a page with both; else, and unsaid, the page's own):
+ *   AudioOut.attach(audioContext, role)  routes it (StingClip's contexts attach themselves)
+ *   AudioOut.media(el, role) → Promise   routes a media element (await it before play())
+ *   AudioOut.state(role) → 'default' | 'checking' | 'ok' | 'missing' | 'hidden'
+ *   AudioOut.ok(role) → false while that output can't be used: callers warn() instead of playing
+ *   AudioOut.warn(role)               says why nothing plays (show: the banner; preview: a note)
  *   AudioOut.picker(box, roles)       the choice (the run sheet editor's Options, the sting library)
  *   AudioOut.sinks()                  where each routed context/element plays now (tests)
  *   document event 'audio-out' whenever any of it changes
@@ -39,8 +42,13 @@ var AudioOut = (function () {
   'use strict';
   const KEYS = { show: 'audio_out_show', preview: 'audio_out_preview' };
   const WHAT = { show: 'Show: stings, videos, the line-up tone', preview: 'Previews and editing' };
-  const script = document.currentScript;
-  const role = script && script.dataset.role === 'preview' ? 'preview' : 'show';
+  const script = document.currentScript, pageRole = script && script.dataset.role;
+  // A page with both (data-role="both": a playout computer) routes to Previews whatever doesn't say
+  // (the + sting dialog, the clip editor, the library), so nothing reaches the show by mistake; its
+  // cues ask for 'show'.
+  const roles = pageRole === 'both' ? ['show', 'preview'] : [pageRole === 'preview' ? 'preview' : 'show'];
+  const role = pageRole === 'both' ? 'preview' : roles[0];
+  if (pageRole === 'both') WHAT.show = 'Show: the cues (audio, and videos’ sound)';
   const md = navigator.mediaDevices;
   const supported = !!(window.isSecureContext && md && md.enumerateDevices && window.AudioContext && window.WeakRef
     && 'setSinkId' in AudioContext.prototype && 'setSinkId' in HTMLMediaElement.prototype);
@@ -56,7 +64,7 @@ var AudioOut = (function () {
       if (dev && dev.id) localStorage.setItem(KEYS[r], JSON.stringify({ id: dev.id, label: dev.label || '' }));
       else localStorage.removeItem(KEYS[r]);
     } catch (_) { /* private mode */ }
-    if (r === role) check();                         // (other pages hear of it by storage event)
+    if (outs[r]) check(r);                           // (other pages hear of it by storage event)
     changed();
   }
 
@@ -71,7 +79,7 @@ var AudioOut = (function () {
   async function ask() {
     try { const s = await md.getUserMedia({ audio: true }); s.getTracks().forEach(t => t.stop()); }
     catch (err) { console.warn('Sound outputs: no microphone permission, so the browser won’t name the sound cards', err); }
-    await check();
+    await checkAll();
     changed();
     return devices();
   }
@@ -96,63 +104,70 @@ var AudioOut = (function () {
     return id;
   }
 
-  // ─── This page's output, and everything routed to it ─────────────────────
-  let state = 'default', sinkId = '', sinkLabel = '', turn = 0;   // sinkId: '' the default, a device id, or null = silent
-  const ctxs = new Set(), els = new Set();         // WeakRefs
-  async function check() {
-    const t = ++turn, c = get(role);
-    if (!supported || !c) return settle(t, 'default', '');
-    if (state === 'default') settle(t, 'checking', null);
+  // ─── This page's outputs, and everything routed to each ──────────────────
+  // state, and sinkId: '' the default, a device id, or null = silent; ctxs, els: WeakRefs
+  const outs = {};
+  for (const r of roles) outs[r] = { role: r, state: 'default', sinkId: '', sinkLabel: '', turn: 0, ctxs: new Set(), els: new Set() };
+  const outOf = r => outs[r] || outs[role];
+  async function check(r) {
+    const o = outOf(r), t = ++o.turn, c = get(o.role);
+    if (!supported || !c) return settle(o, t, 'default', '');
+    if (o.state === 'default') settle(o, t, 'checking', null);
     let where = await find(c);
     if (where === 'hidden') {                       // the list is hidden, but the saved id may still work
       try { await new Audio().setSinkId(c.id); where = c; } catch (_) { /* needs the permission */ }
     }
-    if (typeof where === 'object') settle(t, 'ok', where.id, where.label || c.label);
-    else settle(t, where, null);
+    if (typeof where === 'object') settle(o, t, 'ok', where.id, where.label || c.label);
+    else settle(o, t, where, null);
   }
-  function settle(t, s, id, label) {
-    if (t !== turn) return;
-    const was = state + '|' + sinkId;
-    state = s; sinkId = id; sinkLabel = label || '';
-    route();
-    if (was !== state + '|' + sinkId) changed();
+  const checkAll = () => Promise.all(roles.map(check));
+  function settle(o, t, s, id, label) {
+    if (t !== o.turn) return;
+    const was = o.state + '|' + o.sinkId;
+    o.state = s; o.sinkId = id; o.sinkLabel = label || '';
+    each(o.ctxs, c => routeCtx(c, o)); each(o.els, e => routeEl(e, o));
+    if (was !== o.state + '|' + o.sinkId) changed();
   }
   function each(set, fn) { set.forEach(ref => { const x = ref.deref(); if (x) fn(x); else set.delete(ref); }); }
-  function route() { each(ctxs, routeCtx); each(els, routeEl); }
   const silence = ctx => ctx.setSinkId({ type: 'none' }).catch(() => {});
-  function routeCtx(ctx) {
+  function routeCtx(ctx, o) {
     if (ctx.state === 'closed') return Promise.resolve();
-    const now = ctx.sinkId, silent = sinkId === null;
-    if (silent ? now && now.type === 'none' : now === sinkId) return Promise.resolve();
+    const now = ctx.sinkId, silent = o.sinkId === null;
+    if (silent ? now && now.type === 'none' : now === o.sinkId) return Promise.resolve();
     if (silent) return silence(ctx);
-    return ctx.setSinkId(sinkId).catch(err => { console.warn('Sound outputs: couldn’t route the audio, so it’s silenced', err); return silence(ctx); });
+    return ctx.setSinkId(o.sinkId).catch(err => { console.warn('Sound outputs: couldn’t route the audio, so it’s silenced', err); return silence(ctx); });
   }
   const mute = el => { if (!el.muted) { el.muted = true; el.__aoMuted = true; } };   // (unmuted only by us: never one muted otherwise)
-  async function routeEl(el) {
-    if (sinkId === null) return mute(el);
-    const t = turn, win = el.ownerDocument && el.ownerDocument.defaultView;
-    const want = win && win !== window ? await idIn(win, sinkId, sinkLabel) : sinkId;
-    if (t !== turn) return;                         // the output changed meanwhile (route() ran again)
+  async function routeEl(el, o) {
+    if (o.sinkId === null) return mute(el);
+    const t = o.turn, win = el.ownerDocument && el.ownerDocument.defaultView;
+    const want = win && win !== window ? await idIn(win, o.sinkId, o.sinkLabel) : o.sinkId;
+    if (t !== o.turn) return;                       // the output changed meanwhile (settled again)
     if (el.sinkId !== want) {
       try { await el.setSinkId(want); } catch (err) { console.warn('Sound outputs: couldn’t route the audio, so it’s muted', err); return mute(el); }
     }
     if (el.__aoMuted) { el.muted = false; el.__aoMuted = false; }
   }
-  function attach(ctx) {
+  // r: 'show' or 'preview' on a page with both (else, and unsaid, the page's own); once routed, stays with it
+  function attach(ctx, r) {
     if (!supported || !ctx || ctx.__aoRef) return;
-    ctx.__aoRef = true; ctxs.add(new WeakRef(ctx));
-    routeCtx(ctx);
+    const o = outOf(r);
+    ctx.__aoRef = true; o.ctxs.add(new WeakRef(ctx));
+    routeCtx(ctx, o);
   }
-  function media(el) {
+  function media(el, r) {
     if (!supported || !el) return Promise.resolve();
-    if (!el.__aoRef) { el.__aoRef = true; els.add(new WeakRef(el)); }
-    return routeEl(el);
+    const o = el.__aoOut || (el.__aoOut = outOf(r));
+    if (!el.__aoRef) { el.__aoRef = true; o.els.add(new WeakRef(el)); }
+    return routeEl(el, o);
   }
-  const ok = () => state !== 'missing' && state !== 'hidden';
-  async function sinks() {                         // [{kind, sink, label: the card's name | 'default' | 'none', muted}]
+  const ok = r => { const s = outOf(r).state; return s !== 'missing' && s !== 'hidden'; };
+  async function sinks() {                         // [{kind, sink, label: the card's name | 'default' | 'none', muted, role}]
     const out = [], names = async win => { try { return new Map((await win.navigator.mediaDevices.enumerateDevices()).map(d => [d.deviceId, d.label])); } catch (_) { return new Map(); } };
-    each(ctxs, c => out.push({ kind: 'context', sink: typeof c.sinkId === 'string' ? c.sinkId : 'none', win: window }));
-    each(els, e => out.push({ kind: e.tagName.toLowerCase(), sink: e.sinkId, muted: e.muted, win: e.ownerDocument.defaultView }));
+    for (const o of Object.values(outs)) {
+      each(o.ctxs, c => out.push({ kind: 'context', sink: typeof c.sinkId === 'string' ? c.sinkId : 'none', role: o.role, win: window }));
+      each(o.els, e => out.push({ kind: e.tagName.toLowerCase(), sink: e.sinkId, muted: e.muted, role: o.role, win: e.ownerDocument.defaultView }));
+    }
     for (const o of out) {
       o.label = o.sink === '' ? 'default' : o.sink === 'none' ? 'none' : (await names(o.win)).get(o.sink) || '?';
       delete o.win;
@@ -193,19 +208,19 @@ html.reduced #ao-warn { display: none; }
     const s = document.createElement('style'); s.id = 'audio-out-css'; s.textContent = CSS; document.head.appendChild(s);
   }
 
-  function why() {
-    const c = get(role), name = c && c.label ? '“' + c.label + '”' : 'The chosen sound card';
-    if (state === 'hidden') {
-      return name + ' (the ' + (role === 'show' ? 'show' : 'preview') + ' output) can’t be used until the browser may use a microphone: it only lets a page pick a sound card then. Nothing is recorded.';
+  function why(r) {
+    const o = outOf(r), c = get(o.role), name = c && c.label ? '“' + c.label + '”' : 'The chosen sound card';
+    if (o.state === 'hidden') {
+      return name + ' (the ' + (o.role === 'show' ? 'show' : 'preview') + ' output) can’t be used until the browser may use a microphone: it only lets a page pick a sound card then. Nothing is recorded.';
     }
-    return role === 'show'
-      ? name + ' (the show output) isn’t connected: stings won’t play and videos are silent until it’s back. Or choose another output in the run sheet editor’s Options.'
-      : name + ' (the preview output) isn’t connected, so previews don’t play: otherwise they’d go to this computer’s default output, which may be the show’s. Connect it, or choose another output in Options.';
+    return o.role === 'show'
+      ? name + ' (the show output) isn’t connected: ' + (pageRole === 'both' ? 'cues won’t play' : 'stings won’t play and videos are silent') + ' until it’s back. Or choose another output in ' + (pageRole === 'both' ? 'Sound outputs.' : 'the run sheet editor’s Options.')
+      : name + ' (the preview output) isn’t connected, so previews don’t play: otherwise they’d go to this computer’s default output, which may be the show’s. Connect it, or choose another output in ' + (pageRole === 'both' ? 'Sound outputs.' : 'Options.');
   }
   function render() {
-    if (role !== 'show' || !document.body) return;
+    if (!outs.show || !document.body) return;
     let w = document.getElementById('ao-warn');
-    if (ok()) { if (w) w.hidden = true; return; }
+    if (ok('show')) { if (w) w.hidden = true; return; }
     style();
     if (!w) {
       w = document.createElement('div');
@@ -214,14 +229,14 @@ html.reduced #ao-warn { display: none; }
       w.querySelector('button').addEventListener('click', e => { e.currentTarget.blur(); ask(); });
       document.body.appendChild(w);
     }
-    w.querySelector('.ao-why').textContent = why();
-    w.querySelector('button').hidden = state !== 'hidden';
+    w.querySelector('.ao-why').textContent = why('show');
+    w.querySelector('button').hidden = outs.show.state !== 'hidden';
     w.hidden = false;
   }
   let toastTimer = 0;
-  function warn() {
-    if (ok()) return;
-    if (role === 'show') {
+  function warn(r) {
+    if (ok(r)) return;
+    if (outOf(r).role === 'show') {
       render();
       const w = document.getElementById('ao-warn');
       if (w) { w.classList.remove('flash'); void w.offsetWidth; w.classList.add('flash'); }
@@ -237,8 +252,8 @@ html.reduced #ao-warn { display: none; }
       t.querySelector('.ao-x').addEventListener('click', () => { t.hidden = true; });
       document.body.appendChild(t);
     }
-    t.querySelector('.ao-why').textContent = why();
-    t.querySelector('.ao-allow').hidden = state !== 'hidden';
+    t.querySelector('.ao-why').textContent = why(r);
+    t.querySelector('.ao-allow').hidden = outOf(r).state !== 'hidden';
     t.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { t.hidden = true; }, 8000);
@@ -285,17 +300,17 @@ html.reduced #ao-warn { display: none; }
   }
 
   if (supported) {
-    md.addEventListener('devicechange', () => { check(); changed(); });
+    md.addEventListener('devicechange', () => { checkAll(); changed(); });
     addEventListener('storage', e => {
       if (e.key !== KEYS.show && e.key !== KEYS.preview) return;
-      if (e.key === KEYS[role]) check();
+      for (const r of roles) if (e.key === KEYS[r]) check(r);
       changed();
     });
-    check();
-    if (role === 'show') {
+    checkAll();
+    if (outs.show) {
       if (document.body) render(); else document.addEventListener('DOMContentLoaded', render);
     }
   }
 
-  return { supported, role, get, set, devices, ask, attach, media, ok, warn, picker, sinks, state: () => state };
+  return { supported, role, roles, get, set, devices, ask, attach, media, ok, warn, picker, sinks, state: r => outOf(r).state };
 })();

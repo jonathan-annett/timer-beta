@@ -53,6 +53,7 @@
     .cues li { display: flex; gap: 8px; align-items: center; font-size: 14px; padding: 2px 0; }
     .cues .when { color: var(--dim); min-width: 11em; }
     .cues .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cues .clen { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .cues li.fired .when::after { content: " · played"; color: var(--ok); }
     .cues li.playing .fname { color: var(--ok); }
     form.addcue { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 0 14px; font-size: 14px; }
@@ -90,16 +91,24 @@
         <div class="row" style="margin-top:10px">
           <label class="check"><input type="checkbox" id="follow" checked> Follow the timer</label>
           <span id="follow-note" class="hint">Cues play by themselves as the run sheet moves on. Off: they only play when you press ▶.</span>
+          <button id="fadeall" class="small" title="Everything playing fades out over 3 seconds">Fade out (Esc)</button>
           <button id="stopall" class="small">■ Stop all</button>
         </div>
       </div>
       <div class="card">
         <div class="row" style="justify-content:space-between"><b>Run sheet</b><span class="hint" id="rshint"></span></div>
         <ul id="items"></ul>
+        <p id="orphans" class="hint" hidden><span id="orphantext"></span> <button id="orphanx" class="small">Remove them</button></p>
+        <input type="file" id="cuefile" accept="audio/*,video/*" hidden>
       </div>
       <div class="card">
         <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>Output</b><button id="full" class="small">Full screen (F)</button></div>
         <div id="stage"><div class="idle">Video cues play here</div><video id="vid" playsinline></video></div>
+      </div>
+      <div class="card">
+        <b>Sound outputs</b>
+        <p class="hint" style="margin:4px 0 0">Cues play to the show output; the ▶ previews and the clip editor to the other, so you can listen on headphones during the show.</p>
+        <div id="ao-pick"></div>
       </div>
       <p class="hint">Paired with timer room <b id="room"></b>. <button id="unpair" class="small">Unpair this computer</button></p>
     </section>
@@ -107,6 +116,10 @@
   <script src="features.js?v=4679249b"></script>
   <script src="remote-peer.js?v=fd06de67"></script>
   <script src="video-store.js?v=069f77d9"></script>
-  <script src="playout.js?v=46e798e6"></script>
+  <script src="audio-out.js?v=cfea9998" data-role="both"></script>
+  <script src="sting-clip.js?v=cbc19b21"></script>
+  <script src="sting-library.js?v=2cb7cc28"></script>
+  <script src="sting-picker.js?v=4960b61b"></script>
+  <script src="playout.js?v=fe43d15f"></script>
 </body>
 </html>

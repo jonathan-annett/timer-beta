@@ -107,6 +107,10 @@ var RunsheetCore = (function () {
   function newId() {
     return 'i' + Date.now().toString(36) + (idCounter++).toString(36) + Math.random().toString(36).slice(2, 6);
   }
+  // An item's id is how everything else knows it (the show log, playout computers' cues), so it
+  // survives a trip through a spreadsheet (the CSV's Id column) and Replace sheet (matchRows).
+  const ID_RE = /^[\w-]{1,40}$/;
+  const isId = v => typeof v === 'string' && ID_RE.test(v);
 
   // Work out every item's planned start and effective duration.
   //   - Explicit durations win.
@@ -272,6 +276,7 @@ var RunsheetCore = (function () {
   }
 
   const HEADER = {
+    id:       /^(id|item ?id)$/i,                 // (before name: "Item id" isn't the name column)
     duration: /^(dur|duration|length|len|mins?|minutes|allocated|allowed|time ?allowed|run ?time|slot)/i,
     start:    /^(start|time|begins?|from|at|when|start ?time|sched)/i,
     name:     /^(name|item|title|session|speaker|segment|who|what|desc|description|topic|event|act|presenter|program)/i,
@@ -290,6 +295,7 @@ var RunsheetCore = (function () {
       if (secs.every(isFinite) && nonDecreasing && Math.max(...secs) >= 6 * 3600 && vals.length > 1) return 'start';
     }
     if (vals.every(v => isFinite(parseDuration(v)))) return 'duration';
+    if (vals.length > 1 && vals.every(v => /^i(?=[0-9a-z]*\d)[0-9a-z]{10,}$/.test(v))) return 'id';   // newId()'s, pasted without the header
     return 'text';
   }
 
@@ -308,11 +314,12 @@ var RunsheetCore = (function () {
   }
 
   // Text pasted from Excel / Google Sheets (tab separated), CSV, or a plain list.
-  // Returns { items, warnings, columns } — items have new ids.
+  // Returns { items, warnings, columns, fileIds } — items have new ids, except those the text gave in
+  // an Id column (valid and not repeated): fileIds is the set of those.
   function parseText(text) {
     const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n').filter(l => l.trim() !== '');
-    const warnings = [];
-    if (!lines.length) return { items: [], warnings, columns: null };
+    const warnings = [], fileIds = new Set();
+    if (!lines.length) return { items: [], warnings, columns: null, fileIds };
 
     const delim = lines.some(l => l.includes('\t')) ? '\t'
                 : lines.filter(l => l.includes(',')).length >= Math.ceil(lines.length / 2) && lines.length > 1 ? ','
@@ -321,7 +328,7 @@ var RunsheetCore = (function () {
     // Plain list (one item per line, optionally with a time and/or a duration in the text)
     if (!delim) {
       const items = lines.map(parseFreeLine).filter(r => r.name);
-      return { items: items.map(r => Object.assign({ id: newId() }, r)), warnings, columns: 'list' };
+      return { items: items.map(r => Object.assign({ id: newId() }, r)), warnings, columns: 'list', fileIds };
     }
 
     let rows = lines.map(l => parseCSVLine(l, delim));
@@ -331,7 +338,7 @@ var RunsheetCore = (function () {
     // Header row?
     let cols = null;
     const head = rows[0];
-    const headerHits = head.map(c => HEADER.duration.test(c) ? 'duration' : HEADER.start.test(c) ? 'start' : HEADER.name.test(c) ? 'name' : null);
+    const headerHits = head.map(c => HEADER.id.test(c) ? 'id' : HEADER.duration.test(c) ? 'duration' : HEADER.start.test(c) ? 'start' : HEADER.name.test(c) ? 'name' : null);
     if (headerHits.some(Boolean) && head.every(c => !isFinite(parseDuration(c)) || c === '')) {
       cols = headerHits;
       rows = rows.slice(1);
@@ -360,24 +367,72 @@ var RunsheetCore = (function () {
       if (!name && start == null && duration == null) return;
       if (Number.isNaN(start)) { warnings.push(`Row ${ri + 1}: couldn't read start time "${r[idx('start')]}".`); start = null; }
       if (Number.isNaN(duration)) { warnings.push(`Row ${ri + 1}: couldn't read duration "${r[idx('duration')]}".`); duration = null; }
-      items.push({ id: newId(), name: name || '(untitled)', start, duration });
+      const given = idx('id') >= 0 ? r[idx('id')] : '';
+      const id = isId(given) && !fileIds.has(given) ? given : newId();
+      if (id === given) fileIds.add(id);
+      items.push({ id, name: name || '(untitled)', start, duration });
     });
-    return { items, warnings, columns: cols };
+    return { items, warnings, columns: cols, fileIds };
+  }
+
+  // Replace sheet: rows that are items already on the sheet keep the item's id and its media (video,
+  // walk-up sting), so the log, playout cues and attached files follow it; times and durations come
+  // from the rows. A row the text gave an id (fileIds) matches only by id; the others by name (the
+  // first unused item of that name, in sheet order, after the id matches). current: the items that may
+  // be replaced; done: ids of items kept for the record (already run): a row with one of those is left
+  // out. Returns { items, matched, dropped }.
+  const nameKey = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  function matchRows(current, rows, fileIds, done) {
+    const byId = new Map(current.map(x => [x.id, x]));
+    const used = new Set();
+    let dropped = 0;
+    const pairs = [];
+    for (const r of rows) {
+      if (fileIds && fileIds.has(r.id)) {
+        if (done && done.has(r.id)) { dropped++; continue; }
+        const m = byId.get(r.id);
+        if (m) used.add(m.id);
+        pairs.push([r, m || null]);
+      } else pairs.push([r, undefined]);
+    }
+    for (const p of pairs) {
+      if (p[1] !== undefined) continue;
+      const k = nameKey(p[0].name);
+      const m = k ? current.find(x => !used.has(x.id) && nameKey(x.name) === k) : null;
+      if (m) used.add(m.id);
+      p[1] = m || null;
+    }
+    const taken = new Set(done || []);
+    let matched = 0;
+    const items = pairs.map(([r, m]) => {
+      if (!m) return Object.assign({}, r, { id: taken.has(r.id) ? newId() : (taken.add(r.id), r.id) });
+      matched++;
+      taken.add(m.id);
+      const media = m.video ? { video: m.video, videoIdle: m.videoIdle } : m.sting ? { sting: m.sting } : {};
+      return Object.assign({}, r, { id: m.id }, media);
+    });
+    return { items, matched, dropped };
+  }
+  // Append: rows whose id the sheet already has get new ones
+  function freshIds(existing, rows) {
+    const taken = new Set(existing.map(x => x.id));
+    return rows.map(r => Object.assign({}, r, { id: taken.has(r.id) ? newId() : (taken.add(r.id), r.id) }));
   }
 
   // ─── Export ───────────────────────────────────────────────────────────────
 
   const csvCell = v => /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
 
-  // Standardised CSV: Start, Name, Duration (derived values filled in).
+  // Standardised CSV: Start, Name, Duration (derived values filled in), Id (read back by parseText).
   function toCSV(sheet) {
     const norm = normalise(sheet);
-    const rows = [['Start', 'Name', 'Duration']];
+    const rows = [['Start', 'Name', 'Duration', 'Id']];
     for (const it of norm.items) {
       rows.push([
         norm.anchored ? formatClock(it.planned) : '',
         it.name,
         it.isEnd ? '' : formatHMS(it.eff),
+        it.id || '',
       ]);
     }
     return rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
@@ -387,7 +442,7 @@ var RunsheetCore = (function () {
     parseClock, parseDuration,
     formatClock, formatDuration, formatSpan, formatHMS,
     shiftStarts, dayDelta, project,
-    normalise, standardise, parseText, toCSV, csvCell, newId,
+    normalise, standardise, parseText, toCSV, csvCell, newId, isId, matchRows, freshIds,
   };
 })();
 

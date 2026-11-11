@@ -41,14 +41,17 @@
 var StingClip = (function () {
   'use strict';
 
-  let ctx = null;
-  const audio = () => {
-    if (ctx) return ctx;
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
-    if (window.AudioOut) AudioOut.attach(ctx);       // the page's output: show or preview (audio-out.js)
+  // A context per output (audio-out.js): the page's own, unless a role is given (a playout computer's
+  // cues: 'show'; its previews and editing: the page's, 'preview')
+  const ctxs = {};
+  const audio = role => {
+    const k = role || '';
+    if (ctxs[k]) return ctxs[k];
+    const ctx = ctxs[k] = new (window.AudioContext || window.webkitAudioContext)();
+    if (window.AudioOut) AudioOut.attach(ctx, role);
     return ctx;
   };
-  const outOk = () => !window.AudioOut || AudioOut.ok() || (AudioOut.warn(), false);
+  const outOk = role => !window.AudioOut || AudioOut.ok(role) || (AudioOut.warn(role), false);
   const num = v => (typeof v === 'number' && isFinite(v) ? v : null);
   const r2 = t => Math.round(t * 100) / 100;
   const clock = t => { t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
@@ -238,8 +241,8 @@ var StingClip = (function () {
   }
 
   function play(buf, opts) {
-    const c = audio(), loop = !!(opts && opts.loop);
-    if (!outOk()) return { gain: c.createGain(), ended: Promise.resolve(), duration: buf.duration, refused: true, time: () => 0, stop() {}, fade() {} };   // (its output isn't there)
+    const role = opts && opts.role, c = audio(role), loop = !!(opts && opts.loop);
+    if (!outOk(role)) return { gain: c.createGain(), ended: Promise.resolve(), duration: buf.duration, refused: true, time: () => 0, stop() {}, fade() {} };   // (its output isn't there)
     if (c.state === 'suspended') c.resume().catch(() => {});
     const gain = c.createGain(), node = c.createBufferSource();
     node.buffer = buf; node.loop = loop; node.connect(gain); gain.connect(c.destination);

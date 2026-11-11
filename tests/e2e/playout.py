@@ -6,9 +6,14 @@ OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exis
 SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing server (run_all.sh; wss://localhost:8787/ws = the Cloudflare Worker via wrangler dev)
 # server: a playout computer (playout.html; a trial: TimerFeatures.playout) pairs by code like the
 # overlay, gets the run sheet with its ids, and plays its own cues on this side: at an item's start,
-# after a time into it, when its time is up. The timer knows nothing of the cues. Follow the timer
-# off: nothing plays by itself, ▶ still does. Back stops what's playing. A playout computer that
-# (re)connects in the middle of an item doesn't replay its start cue. Off, the page says so.
+# after a time into it, when its time is up. The timer knows nothing of the cues. Cues are chosen with
+# the + sting dialog (sting-picker.js: a file via Browse, a stock sting copied into this browser, a clip
+# of one), cut with ✂ (the clip editor); a clip plays from memory (made ready for the item on now and the
+# next), to the Show output while previews go to Previews (audio-out.js data-role="both"). Follow the
+# timer off: nothing plays by itself, ▶ still does. Back stops what's playing; Esc fades it. A playout
+# computer that (re)connects in the middle of an item doesn't replay its start cue. Cues are kept by item
+# id (the old per-room lists merged in); cues for items not on the sheet are listed to remove. Off, the
+# page says so.
 import io, json, math, mimetypes, os, struct, sys, wave
 from playwright.sync_api import sync_playwright
 BASE = "https://timer.sophtwhere.com/beta/"
@@ -23,11 +28,16 @@ def tone(seconds, hz=440):
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
         w.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(2 * math.pi * hz * i / 16000))) for i in range(int(16000 * seconds))))
     return buf.getvalue()
+SONG = tone(12, 330)
+STOCK = {"stings": [{"name": "Stock one", "url": BASE + "media/song.wav", "media": "audio", "duration": 12},
+                    {"name": "Stock cut", "url": BASE + "media/song.wav", "media": "audio", "duration": 12, "start": 2, "end": 6, "fadeOut": 300}]}
 def h(route, req):
     u = req.url
     if u.startswith(BASE):
         name = u[len(BASE):].split("?")[0].split("#")[0]
         if name == "changelog.html": return route.fulfill(status=404, body=b"")
+        if name == "stock-stings.json": return route.fulfill(status=200, body=json.dumps(STOCK), headers={"content-type": "application/json"})
+        if name == "media/song.wav": return route.fulfill(status=200, body=SONG, headers={"content-type": "audio/wav"})
         fp = os.path.join(PUBLIC, name)
         if os.path.isfile(fp): return route.fulfill(status=200, body=open(fp, "rb").read(), headers={"content-type": mimetypes.guess_type(fp)[0] or "text/plain"})
         return route.fulfill(status=404, body=b"")
@@ -38,6 +48,7 @@ def check(name, ok, got=None):
     if not ok: errs.append(name)
 
 ARGS = ["--no-proxy-server", "--autoplay-policy=no-user-gesture-required", "--disable-features=WebRtcHideLocalIpsWithMdns,LocalNetworkAccessChecks,LocalNetworkAccessChecksWebSockets"]
+OLD = {"zz": [{"id": "old1", "name": "From another show", "media": "audio", "trigger": "start", "at": 0}]}   # kept per room before Nov 2026
 with sync_playwright() as p:
     b = p.chromium.launch(args=ARGS)
     wav = os.path.join(OUTDIR, "po_tone.wav"); open(wav, "wb").write(tone(8))
@@ -65,7 +76,7 @@ with sync_playwright() as p:
     code = t.text_content("#phone-panel .pp-digits").replace(" ", "")
 
     pc = b.new_context(ignore_https_errors=True, viewport={"width": 1100, "height": 900}); pc.route("**/*", h)
-    pc.add_init_script("window.TimerFeatures = { playout: true }")
+    pc.add_init_script("window.TimerFeatures = { playout: true }; if (!localStorage.__s) { localStorage.__s = 1; localStorage.playout_cues_OLDROOM = %s; }" % json.dumps(json.dumps(OLD)))
     po = pc.new_page(); po.on("pageerror", lambda e: errs.append("playout: " + str(e)))
     po.goto(BASE + "playout.html?remote=" + SERVER); po.wait_for_timeout(800)
     po.fill("#code", code); po.wait_for_timeout(3000)
@@ -74,29 +85,62 @@ with sync_playwright() as p:
     check("the playout computer gets the run sheet with its ids", items == ["a:Keynote", "b:Panel", "c:Quick one", "d:Close"], items)
     dev = t.evaluate("[...window.remoteControl.peers.values()].map(e => e.role + ':' + (e.client || ''))")
     check("to the timer it's a view-only device", dev == ["view:playout"], dev)
+    kept = po.evaluate("[Object.keys(window.__playout.cues()), localStorage.playout_cues_OLDROOM === undefined, JSON.parse(localStorage.playout_cues || '{}').zz?.[0]?.id]")
+    check("cues kept per room before are merged into the one list, by item id", kept == [["zz"], True, "old1"], kept)
+    check("… and listed as for items not on this run sheet", po.is_visible("#orphans") and "1 cue" in po.text_content("#orphantext"), po.text_content("#orphantext"))
 
-    def add_cue(item, trigger, at, path):
+    def choose(item, trigger, at):                 # + cue, its trigger, then the + sting dialog
         po.click('#items li[data-id="%s"] button[data-act=add]' % item)
         f = '#items li[data-id="%s"] form.addcue' % item
         po.select_option(f + " [name=trigger]", trigger)
         if at: po.fill(f + " [name=at]", at)
-        po.set_input_files(f + " [name=file]", path)
         po.click(f + " button.primary"); po.wait_for_timeout(500)
-    add_cue("a", "start", None, wav)
-    add_cue("a", "elapsed", "0:02", wav)
-    add_cue("b", "start", None, vid)
-    add_cue("c", "end", None, wav)
+    def add_file(item, trigger, at, path):
+        choose(item, trigger, at)
+        po.click(".sting-dlg .sting-tab[data-mode=custom]")
+        with po.expect_file_chooser() as fc: po.click("#sting-browse")
+        fc.value.set_files(path); po.wait_for_timeout(800)
+    add_file("a", "start", None, wav)
+    add_file("a", "elapsed", "0:02", wav)
+    add_file("b", "start", None, vid)
+    add_file("c", "end", None, wav)
+    # a stock clip (Walk-up sting tab): its ▶ plays to the preview output; Use copies it into this browser
+    choose("d", "start", None)
+    po.select_option("#sting-stock", "1"); po.click("#sting-prev"); po.wait_for_timeout(600)
+    po.screenshot(path=OUTDIR + "/playout_dialog.png")
+    roles = po.evaluate("AudioOut.sinks().then(s => s.map(x => x.kind + ':' + x.role))")
+    check("the dialog's preview plays to the preview output", "context:preview" in roles and "context:show" not in roles, roles)
+    po.click(".sting-dlg .sting-use"); po.wait_for_timeout(1200)
     cues = po.evaluate("window.__playout.cues()")
-    check("cues kept on the playout computer", {k: [x["trigger"] for x in v] for k, v in cues.items()} == {"a": ["start", "elapsed"], "b": ["start"], "c": ["end"]}, cues)
+    check("cues kept on the playout computer", {k: [x["trigger"] for x in v] for k, v in cues.items() if k != "zz"} == {"a": ["start", "elapsed"], "b": ["start"], "c": ["end"], "d": ["start"]}, cues)
+    d = cues["d"][0]
+    check("a stock clip: copied here with its part", (d["src"], d["start"], d["end"], d["fadeOut"], d["duration"]) == ("stock", 2, 6, 300, 12), d)
+    check("… its file in this browser", po.evaluate("window.videoStore.get('pocue:%s').then(b => !!b && b.size > 1000)" % d["id"]))
+    po.wait_for_timeout(1500)
+    check("… and its loudness measured (levelling)", isinstance(po.evaluate("window.__playout.cues().d[0].lufs"), (int, float)), po.evaluate("window.__playout.cues().d[0]"))
     ids = {k: [x["id"] for x in v] for k, v in cues.items()}
     playing = lambda: po.evaluate("window.__playout.playing()")
+
+    # ✂ on a file cue: the clip editor; saved, the cue plays just that part
+    po.click('#items li[data-cue="%s"] button[data-act=edit]' % ids["a"][1]); po.wait_for_timeout(1200)
+    po.fill(".sc-t[data-k=start]", "0:01.00"); po.press(".sc-t[data-k=start]", "Tab")
+    po.fill(".sc-t[data-k=end]", "4"); po.press(".sc-t[data-k=end]", "Tab")
+    po.click(".sc-save"); po.wait_for_timeout(500)
+    a1 = po.evaluate("window.__playout.cues().a[1]")
+    check("✂: the cue keeps the part (the file isn't cut)", (a1.get("start"), a1.get("end"), a1["trigger"]) == (1, 4, "elapsed"), a1)
+    check("… shown on its row", "✂" in po.text_content('#items li[data-cue="%s"] .clen' % ids["a"][1]), po.text_content('#items li[data-cue="%s"] .clen' % ids["a"][1]))
 
     t.evaluate("window.runsheet.next()"); t.wait_for_timeout(900)
     check("Next: the item's start cue plays", ids["a"][0] in playing(), playing())
     check("… not its time cue yet", ids["a"][1] not in playing(), playing())
+    check("… its clip is ready in memory", any(k.startswith(ids["a"][1] + "#") for k in po.evaluate("window.__playout.ready()")), po.evaluate("window.__playout.ready()"))
     t.wait_for_timeout(1800)
     check("after 0:02: the time cue plays", ids["a"][1] in playing(), playing())
+    roles = po.evaluate("AudioOut.sinks().then(s => s.map(x => x.kind + ':' + x.role))")
+    check("cues play to the show output", "context:show" in roles and "audio:show" in roles, roles)
     po.screenshot(path=OUTDIR + "/playout.png")
+    po.keyboard.press("Escape"); po.wait_for_timeout(3600)
+    check("Esc fades everything out", playing() == [], playing())
 
     # a reload in the middle of the item: the start cue doesn't play again
     po.reload(); po.wait_for_timeout(3500)
@@ -120,6 +164,14 @@ with sync_playwright() as p:
     check("the short item is live", po.evaluate("window.__playout.show().cur") == "c", po.evaluate("window.__playout.show().cur"))
     t.wait_for_timeout(3000)
     check("when its time is up: the end cue plays", ids["c"][0] in playing(), playing())
+    check("the next item's clip is ready", any(k.startswith(ids["d"][0] + "#") for k in po.evaluate("window.__playout.ready()")), po.evaluate("window.__playout.ready()"))
+    t.evaluate("window.runsheet.next()"); t.wait_for_timeout(700)
+    check("the stock clip plays at its item's start", ids["d"][0] in playing(), playing())
+
+    # the cues of items not on the sheet: removed on request
+    po.once("dialog", lambda dl: dl.accept())
+    po.click("#orphanx"); po.wait_for_timeout(300)
+    check("Remove them: the other show's cues go", "zz" not in po.evaluate("window.__playout.cues()") and not po.is_visible("#orphans"), po.evaluate("Object.keys(window.__playout.cues())"))
 
     # off: the page says so
     oc = b.new_context(ignore_https_errors=True); oc.route("**/*", h)

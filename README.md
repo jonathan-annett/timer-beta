@@ -107,6 +107,8 @@ Load the show's running order and step through it with a presentation clicker, t
    - One item per line, e.g. `9:00 Welcome` or `Keynote – 30 min`. Plain names work too: set **Minutes per item** (e.g. 20 per speaker).
 3. Check the table and fix anything. Durations come from the gap to the next start time when they aren't given. A last row with only a start time (e.g. `17:00 Close`) is the finish time.
 
+**Revising the running order:** **Replace sheet** again with the new version. A row that is an item already on the sheet stays that item, keeping its video or walk-up sting (and any playout computer's cues for it); its times come from the new version. Rows are matched by name (in order, so two items called *Panel* stay two), or exactly by the **Id** column that **Export CSV** adds: export, edit it in a spreadsheet (leave the Id column alone; new rows can leave it empty), and open it again. During the show, rows that have already run are left out.
+
 **During the show** (run sheet mode on):
 
 | | |
@@ -140,7 +142,7 @@ Changing the **start of the next item** is changing when the current one ends, a
 
 **Running late:** when the show is behind, the times still to come move later in all those places. Pausing the timer counts too: whatever is left on the clock still has to play out after Resume, so while it's paused the status line reads *Paused 1:20 · …* and every later time keeps moving, like the end time on the timer screen. Ahead of time, items with a start time of their own keep it; the rest move earlier. The same bar is in the run sheet editor opened from another computer.
 
-The editor's **Show log** lists planned vs actual start times and how long each item ran, and **Export log CSV** saves it. **Export CSV** saves the sheet as Start, Name, Duration with every time filled in. **Fill in times** writes the calculated times into the table. **Reset show** clears the log to run it again, and the **Run sheet mode** switch turns the whole thing off without deleting the sheet.
+The editor's **Show log** lists planned vs actual start times and how long each item ran, and **Export log CSV** saves it. **Export CSV** saves the sheet as Start, Name, Duration with every time filled in, and each item's Id (so a revised version opened with **Replace sheet** keeps its items). **Fill in times** writes the calculated times into the table. **Reset show** clears the log to run it again, and the **Run sheet mode** switch turns the whole thing off without deleting the sheet.
 
 **Standing by:** after **Reset show** (in run sheet mode) the timer stands by for the first item: its full time, dimmed and paused, with its name as the message and **Standing by.** in place of the pause notice (on the presenter's screen, phones and the overlay; on your own screen it's in the run sheet panel, and the times read *will start at* / *will end at*). **Next**, **Resume** or **Space** starts the show. If the first item has a start time, the dashboard and the editor offer **Auto start at hh:mm**: ticked, the notice counts down (*Standing by to start in 5:23…*) and the show starts by itself at that time, even with the timer window minimized. It starts only on time: if the timer wasn't open then, it waits for Next.
 
