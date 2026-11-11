@@ -742,6 +742,7 @@ custom_message.addEventListener('focus', function(){
   function updateEnteredTimeText () {
 		 renderEntryPad(enteredSec());
 		 dispNextMins.textContent = secToStr(enteredSec());
+		 if (typeof announceEntry === "function") announceEntry();   // at once, for the deck's keypad (the tick catches the rest)
   }
 
  // Custom styles (Ctrl+S) are stored as only the rules that differ from timer.css and
@@ -2049,6 +2050,19 @@ add milliseconds to the start time
 		if (force || html.className !== lastClassSent) {
 			lastClassSent = html.className;
 			timerAPI.send({ setVariableValues: { htmlclass: lastClassSent } });
+		}
+		announceEntry(force);
+	}
+	// A time being typed (html.editing), for the Stream Deck's keypad: entry = the duration it makes
+	// (secToStr, "1:25:00"), entry_typed = what was typed ("1:25"); both '' when nothing is. Only on change.
+	var lastEntrySent = null;
+	function announceEntry(force) {
+		if (!timerAPI) return;
+		const editing = html.classList.contains("editing");
+		const entry = editing ? secToStr(enteredSec()) : "", typed = editing ? (enterHoursText !== "" ? enterHoursText + ":" + enterTimeText : enterTimeText) : "";
+		if (force || entry + "|" + typed !== lastEntrySent) {
+			lastEntrySent = entry + "|" + typed;
+			timerAPI.send({ setVariableValues: { entry: entry, entry_typed: typed } });
 		}
 	}
 

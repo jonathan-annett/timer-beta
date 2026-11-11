@@ -71,6 +71,38 @@
   const typedDuration = ms => { const s = Math.round(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = s % 60;
     return sec ? h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0') : h ? h + ':' + String(m).padStart(2, '0') : String(m); };
 
+  // The keypad: the Keypad key turns the deck into a number pad until Start, Set default or Cancel (or a
+  // minute untouched). Its keys type into the timer as the keyboard does (the keys command): digits, ':'
+  // (h:mm), '.' (decimals, '..' for seconds), Backspace, Enter = set default, Space = start. The typed
+  // time comes back on the bus (entry, entry_typed): on the XL's preview keys, and on Start and Set default.
+  // Not on the Mini (no room). Every page's deck and the phone's virtual XL show it while it's on.
+  const KEYPAD = {
+    mk2: ['kp_1', 'kp_2', 'kp_3', 'kp_colon', 'kp_cancel',
+          'kp_4', 'kp_5', 'kp_6', 'kp_0', 'kp_default',
+          'kp_7', 'kp_8', 'kp_9', 'kp_dot', 'kp_start'],
+    xl:  ['kp_1', 'kp_2', 'kp_3', 'kp_colon', 'empty', 'empty', 'empty', 'kp_cancel',
+          'kp_4', 'kp_5', 'kp_6', 'kp_dot', 'kp_pv_h', 'kp_pv_m', 'kp_pv_s', 'empty',
+          'kp_7', 'kp_8', 'kp_9', 'kp_back', 'empty', 'kp_pv_typed', 'empty', 'kp_default',
+          'empty', 'kp_0', 'empty', 'empty', 'empty', 'empty', 'empty', 'kp_start'],
+  };
+  const KEYPAD_IDLE_MS = 60000;
+  let keypad = false, keypadIdle = 0;
+  let entry = '', entryTyped = '';                 // the time being typed on the timer (bus entry, entry_typed)
+  const kpDigit = d => ({ label: d, kp: 'digit', group: 'Keypad', cmd: () => kpKeys(d) });
+  function kpKeys(k) { _sendCmd({ cmd: 'keys', keys: [k] }); bumpKeypad(); }
+  function bumpKeypad() { clearTimeout(keypadIdle); if (keypad) keypadIdle = setTimeout(() => setKeypad(false), KEYPAD_IDLE_MS); }
+  function setKeypad(on, m = modelKey) {
+    if (on && !KEYPAD[m] && !KEYPAD[modelKey]) return;   // (a Mini: no room)
+    if (keypad === !!on) { bumpKeypad(); return; }
+    keypad = !!on;
+    bumpKeypad();
+    countdownCache.clear();
+    if (device) scheduleRedrawAll();
+    notifyChange();
+  }
+  // The layout a deck shows now: the keypad while it's on, else its own
+  const activeLayout = m => (keypad && KEYPAD[m] ? KEYPAD[m] : layouts[m]);
+
   const ACTIONS = {
     preset_10:       preset('10 min', 600000),
     preset_20:       preset('20 min', 1200000),
@@ -80,6 +112,20 @@
     preset_90:       preset('90 min', 5400000),
     preset_120:      preset('2 hours', 7200000),
     preset_180:      preset('3 hours', 10800000),
+    keypad:           { label: '1 2 3\nKeypad', group: 'Presets', cmd: (i, m) => setKeypad(true, m) },   // the deck becomes a number pad (KEYPAD), for typing a duration
+    kp_1: kpDigit('1'), kp_2: kpDigit('2'), kp_3: kpDigit('3'), kp_4: kpDigit('4'), kp_5: kpDigit('5'),
+    kp_6: kpDigit('6'), kp_7: kpDigit('7'), kp_8: kpDigit('8'), kp_9: kpDigit('9'), kp_0: kpDigit('0'),
+    kp_colon:  { label: ':', kp: 'big', group: 'Keypad', cmd: () => kpKeys(':') },
+    kp_dot:    { label: '.', kp: 'big', group: 'Keypad', cmd: () => kpKeys('.') },
+    kp_back:   { label: '⌫', kp: 'big', group: 'Keypad', cmd: () => kpKeys('Backspace') },
+    // Cancel / Set default with nothing typed just leave (Esc would fade out what's playing; Enter with nothing typed does nothing useful)
+    kp_cancel: { label: 'Cancel', kp: 'cancel', group: 'Keypad', cmd: () => { if (entry) kpKeys('Escape'); setKeypad(false); } },
+    kp_default:{ label: 'Set\ndefault', kp: 'default', group: 'Keypad', cmd: () => { if (entry) kpKeys('Enter'); setKeypad(false); } },
+    kp_start:  { label: 'Start', kp: 'start', group: 'Keypad', cmd: () => { kpKeys(' '); setKeypad(false); } },   // the typed time (or the default, as Space does)
+    kp_pv_h:   { label: '', kp: 'pv', pv: 'h', group: 'Keypad', cmd: null },     // the XL's preview of the typed time
+    kp_pv_m:   { label: '', kp: 'pv', pv: 'm', group: 'Keypad', cmd: null },
+    kp_pv_s:   { label: '', kp: 'pv', pv: 's', group: 'Keypad', cmd: null },
+    kp_pv_typed: { label: '', kp: 'pv', pv: 'typed', group: 'Keypad', cmd: null },
     toggle_preset_arm: { label: 'Arm\npresets', group: 'Presets', toggleState: 'preset_arm', cmd: () => _sendCmd({ cmd: 'presetarm' }) },   // lit while presets only arm the timer
     start_restart:    { label: 'Start',     group: 'Controls',  cmd: () => _sendCmd({ cmd: 'keys', keys: [' '] }) },
     pause_resume: {
@@ -218,6 +264,10 @@
           if (typeof opMsg === 'string' && opMsg !== currentMessage) {
             currentMessage = opMsg;
             if (device && !changed) scheduleMessageKeys();
+          }
+          if (typeof v.entry === 'string' && (v.entry !== entry || (v.entry_typed || '') !== entryTyped)) {
+            entry = v.entry; entryTyped = v.entry_typed || '';
+            if (keypad && device) (activeLayout(modelKey) || []).forEach((a, i) => { const k = (ACTIONS[a] || {}).kp; if (k === 'pv' || k === 'start' || k === 'default') scheduleRedrawKey(i); });
           }
           if (typeof v.remain === 'string' && v.remain !== remainText) {
             remainText = v.remain;
@@ -447,7 +497,7 @@
   }
 
   function onKeyPress(index) {
-    const layout = layouts[modelKey];
+    const layout = activeLayout(modelKey);
     if (!layout) return;
     const actionKey = layout[index];
     if (!actionKey || actionKey === 'empty') return;
@@ -490,7 +540,7 @@
       while (device && modelKey && dirtyKeys.size) {
         const batch = [...dirtyKeys]; dirtyKeys.clear();   // keys dirtied mid-flush go in the next pass
         const model = MODELS[modelKey];
-        const layout = layouts[modelKey];
+        const layout = activeLayout(modelKey);
         for (const index of batch) {
           if (!device || index >= model.keyCount) continue;
           const actionKey = layout ? layout[index] : 'empty';
@@ -514,11 +564,11 @@
   }
 
   function scheduleRsKeys() {
-    (layouts[modelKey] || []).forEach((a, i) => { if (ACTIONS[a] && ACTIONS[a].rsKey) scheduleRedrawKey(i); });
+    (activeLayout(modelKey) || []).forEach((a, i) => { if (ACTIONS[a] && ACTIONS[a].rsKey) scheduleRedrawKey(i); });
   }
 
   function scheduleMessageKeys() {
-    const layout = layouts[modelKey] || [];
+    const layout = activeLayout(modelKey) || [];
     layout.forEach((a, i) => { if (a === 'message' || a === 'message_clear') scheduleRedrawKey(i); });
   }
 
@@ -543,7 +593,7 @@
 
   // Repaint only countdown keys whose visible text actually changed.
   function scheduleCountdownKeys() {
-    const layout = layouts[modelKey];
+    const layout = activeLayout(modelKey);
     if (!layout) return;
     layout.forEach((actionKey, i) => {
       const a = ACTIONS[actionKey];
@@ -555,8 +605,27 @@
 
   // What a key looks like, as data (colours and text). DeckFace.paint (deck-face.js) draws it;
   // the phone's virtual XL gets the same objects, so both look the same.
+  function keypadFace(action) {
+    const parts = entry ? entry.split(':') : [];       // "25:00" or "1:25:00"
+    const hms = parts.length === 3 ? parts : ['0'].concat(parts);
+    switch (action.kp) {
+      case 'digit': case 'big': return { bg: '#202024', fg: '#ffffff', big: { text: action.label, scale: 0.5 } };
+      case 'cancel': return { bg: '#3a0d0d', fg: '#ff8a8a', label: 'Cancel' };
+      case 'default': return { bg: '#0b2a4a', fg: '#9fd0ff', label: entry ? 'Default\n' + entry : 'Set\ndefault' };
+      case 'start': return { bg: '#0e3a12', fg: '#8dff8d', label: entry ? 'Start\n' + entry : 'Start' };
+      case 'pv': {
+        const cap = { h: 'HOURS', m: 'MIN', s: 'SEC', typed: 'TYPED' }[action.pv];
+        const body = !entry ? '–' : action.pv === 'typed' ? entryTyped : String(hms[{ h: 0, m: 1, s: 2 }[action.pv]] || '0');
+        return { bg: '#000000', fg: entry ? '#ffcc33' : '#555555', rs: { cap, body, status: true } };
+      }
+    }
+    return { bg: '#000000', fg: '#ffffff' };
+  }
+
   function faceFor(m, index, actionKey) {
     const action = ACTIONS[actionKey] || ACTIONS['empty'];
+    if (action.kp) return keypadFace(action);
+    if (keypad && KEYPAD[m] && actionKey === 'empty') return { bg: '#000000', fg: '#000000' };   // the keypad's gaps: dark
     const override = keyOverrides[m + ':' + index] || {};
 
     // Determine colours from state
@@ -827,6 +896,7 @@
 
     const groups = {};
     for (const [key, action] of Object.entries(ACTIONS)) {
+      if (action.kp) continue;                       // the keypad's own keys: only on the keypad
       if (!groups[action.group]) groups[action.group] = [];
       groups[action.group].push({ key, action });
     }
@@ -1088,7 +1158,7 @@
     model: m => MODELS[m],
     // Every key's face, with `a` (its action) and `press` (whether pressing does anything)
     faces(m = 'xl') {
-      const model = MODELS[m], layout = layouts[m] || [];
+      const model = MODELS[m], layout = activeLayout(m) || [];
       if (!model) return [];
       return Array.from({ length: model.keyCount }, (_, i) => {
         const a = layout[i] || 'empty', act = ACTIONS[a] || ACTIONS.empty;
@@ -1099,7 +1169,7 @@
       });
     },
     press(index, m = 'xl') {
-      const a = (layouts[m] || [])[index], act = ACTIONS[a];
+      const a = (activeLayout(m) || [])[index], act = ACTIONS[a];
       if (!act || !act.cmd || PHONE_NO_PRESS.has(a)) return false;
       act.cmd(index, m);
       return true;
