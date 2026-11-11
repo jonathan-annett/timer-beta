@@ -77,6 +77,14 @@ with sync_playwright() as p:
     t.reload(); t.wait_for_timeout(1500)
     check("a reload brings it back, the same height", docked() and abs(t.locator("#rs-dock").bounding_box()["height"] - h1) < 3)
 
+    # The deck editor (D) opens over the docked run sheet, not under it
+    t.click("body", position={"x": 700, "y": 200}); t.keyboard.press("d"); t.wait_for_timeout(400)
+    db = t.locator("#rs-dock").bounding_box()
+    top = t.evaluate("([x, y]) => !!document.elementFromPoint(x, y).closest('#deck-editor')", [db["x"] + db["width"] / 2, db["y"] + db["height"] / 2])
+    check("the deck editor opens over the docked run sheet", docked() and top)
+    t.screenshot(path=OUTDIR + "/runsheet_dock_deck_editor.png")
+    t.click("#deck-editor-close"); t.wait_for_timeout(300)
+
     # E closes and opens it (with the timer focused)
     t.click("body", position={"x": 700, "y": 300}); t.keyboard.press("e"); t.wait_for_timeout(300)
     check("E closes it", not docked() and ls("runsheet_dock_open") is None)
