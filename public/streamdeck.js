@@ -45,15 +45,41 @@
 
   // ─── Action definitions ───────────────────────────────────────────────────
 
+  // Preset keys: a duration each (presetMs), which a key may change in the editor (keyOverrides[...]
+  // .msecs, labelled by itself unless given a label); dropping a preset from the palette on it puts the
+  // palette's back. The phone's virtual XL presses them the same way.
+  const MAX_PRESET_MS = 24 * 3600 * 1000;
+  const presetMsFor = (i, m, ms) => { const v = (keyOverrides[m + ':' + i] || {}).msecs; return Number.isFinite(v) && v >= 1000 && v <= MAX_PRESET_MS ? v : ms; };
+  const preset = (label, ms) => ({ label, group: 'Presets', presetMs: ms, cmd: (i, m) => _sendCmd({ cmd: 'preset', msecs: presetMsFor(i, m, ms) }) });
+  // A key's label for a duration: "25 min", "1 hour", "1 h 15"; with seconds "4:30" or "1:05:30"
+  function durationLabel(ms) {
+    const s = Math.round(ms / 1000), h = Math.floor(s / 3600), mi = Math.floor(s / 60) % 60, sec = s % 60;
+    if (h && !sec) return mi ? h + ' h ' + String(mi).padStart(2, '0') : h + (h === 1 ? ' hour' : ' hours');
+    if (h) return h + ':' + String(mi).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+    return sec ? mi + ':' + String(sec).padStart(2, '0') : mi + ' min';
+  }
+  // What's typed in the editor's Duration box: minutes ("25", "7.5"), h:mm ("1:15", as typed into the
+  // timer) or h:mm:ss; null when it isn't one (or isn't 1 s to 24 h)
+  function parseDuration(text) {
+    const t = String(text || '').trim();
+    let ms = null;
+    if (/^\d+(\.\d+)?$/.test(t)) ms = Number(t) * 60000;
+    else if (/^\d+:\d{1,2}$/.test(t)) { const [h, m] = t.split(':').map(Number); ms = m < 60 ? (h * 60 + m) * 60000 : null; }
+    else if (/^\d+:\d{1,2}:\d{1,2}$/.test(t)) { const [h, m, s] = t.split(':').map(Number); ms = m < 60 && s < 60 ? ((h * 60 + m) * 60 + s) * 1000 : null; }
+    return ms != null && ms >= 1000 && ms <= MAX_PRESET_MS ? Math.round(ms) : null;
+  }
+  const typedDuration = ms => { const s = Math.round(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = s % 60;
+    return sec ? h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0') : h ? h + ':' + String(m).padStart(2, '0') : String(m); };
+
   const ACTIONS = {
-    preset_10:        { label: '10 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 600000 }) },
-    preset_20:        { label: '20 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 1200000 }) },
-    preset_30:        { label: '30 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 1800000 }) },
-    preset_45:        { label: '45 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 2700000 }) },
-    preset_60:        { label: '1 hour',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 3600000 }) },
-    preset_90:        { label: '90 min',    group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 5400000 }) },
-    preset_120:       { label: '2 hours',   group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 7200000 }) },
-    preset_180:       { label: '3 hours',   group: 'Presets',   cmd: () => _sendCmd({ cmd: 'preset', msecs: 10800000 }) },
+    preset_10:       preset('10 min', 600000),
+    preset_20:       preset('20 min', 1200000),
+    preset_30:       preset('30 min', 1800000),
+    preset_45:       preset('45 min', 2700000),
+    preset_60:       preset('1 hour', 3600000),
+    preset_90:       preset('90 min', 5400000),
+    preset_120:      preset('2 hours', 7200000),
+    preset_180:      preset('3 hours', 10800000),
     toggle_preset_arm: { label: 'Arm\npresets', group: 'Presets', toggleState: 'preset_arm', cmd: () => _sendCmd({ cmd: 'presetarm' }) },   // lit while presets only arm the timer
     start_restart:    { label: 'Start',     group: 'Controls',  cmd: () => _sendCmd({ cmd: 'keys', keys: [' '] }) },
     pause_resume: {
@@ -593,6 +619,7 @@
     const rawLabel = (action.display || action.isMessage || (action.rsKey && rs.active)) ? '' :
       actionKey === 'brightness_cycle' ? (override.label || 'Backlight') + '\n' + brightness + '%' :
       override.label ||
+      (action.presetMs && override.msecs ? durationLabel(override.msecs) : '') ||
       (action.toggleState && deckState[action.toggleState] && action.altLabel ? action.altLabel : action.label) || '';
     if (rawLabel) f.label = rawLabel;
 
@@ -756,12 +783,18 @@
       const overrideKey = editorModelKey + ':' + i;
       const ov = editorOverrides[overrideKey] || {};
       const action = ACTIONS[actionKey] || ACTIONS['empty'];
-      cell.textContent = ov.label || (actionKey === 'message' && ov.message) || action.label || '';
+      cell.textContent = ov.label || (actionKey === 'message' && ov.message) || (action.presetMs && ov.msecs ? durationLabel(ov.msecs) : '') || action.label || '';
+      if (action.presetMs && ov.msecs) cell.title = 'Custom preset: ' + durationLabel(ov.msecs);
       cell.style.background = ov.bg || '#1a1a2e';
       cell.style.color = ov.fg || '#ffffff';
       if (actionKey === 'empty') cell.style.opacity = '0.3';
 
-      cell.addEventListener('click', () => selectKey(i));
+      cell.addEventListener('click', () => {
+        selectKey(i);
+        // The options sit under the palette: bring them into view, and a preset's Duration under the caret
+        document.getElementById('deck-key-options')?.scrollIntoView({ block: 'nearest' });
+        if ((ACTIONS[editorLayouts[editorModelKey][i]] || {}).presetMs) document.getElementById('deck-key-duration')?.focus();
+      });
       cell.addEventListener('dragover', e => { e.preventDefault(); cell.classList.add('drag-over'); });
       cell.addEventListener('dragleave', () => cell.classList.remove('drag-over'));
       cell.addEventListener('drop', e => {
@@ -770,6 +803,12 @@
         const droppedAction = e.dataTransfer.getData('action');
         if (droppedAction) {
           editorLayouts[editorModelKey][i] = droppedAction;
+          const ov = editorOverrides[overrideKey];
+          if (ov) {
+            delete ov.msecs;                                    // a custom duration belongs to the key it was set on
+            if ((ACTIONS[droppedAction] || {}).presetMs) delete ov.label;   // a preset dropped on it: the palette's preset again
+            if (!Object.values(ov).some(v => v !== undefined)) delete editorOverrides[overrideKey];
+          }
           renderEditorGrid();
           if (droppedAction === 'message') {
             selectKey(i);
@@ -831,6 +870,17 @@
     document.getElementById('deck-key-label').value = ov.label || '';
     const isMsg = (editorLayouts[editorModelKey] || [])[index] === 'message';
     document.getElementById('deck-key-message-row').style.display = isMsg ? '' : 'none';
+    // A preset: its duration (empty = the preset's own)
+    const act = ACTIONS[(editorLayouts[editorModelKey] || [])[index]] || {};
+    const durRow = document.getElementById('deck-key-duration-row'), dur = document.getElementById('deck-key-duration');
+    if (durRow && dur) {
+      durRow.style.display = act.presetMs ? '' : 'none';
+      dur.value = act.presetMs && ov.msecs ? typedDuration(ov.msecs) : '';
+      dur.placeholder = act.presetMs ? typedDuration(act.presetMs) + ' (' + durationLabel(act.presetMs) + ')' : '';
+      dur.classList.remove('invalid');
+      document.getElementById('deck-key-duration-note').textContent = act.presetMs && ov.msecs ? '= ' + durationLabel(ov.msecs) : '';
+      document.getElementById('deck-key-label').placeholder = act.presetMs ? '(from the duration)' : '(use default)';
+    }
     document.getElementById('deck-key-message').value = ov.message || '';
     document.getElementById('deck-key-fg').value = ov.fg || '#ffffff';
     document.getElementById('deck-key-bg').value = ov.bg || '#1a1a2e';
@@ -844,8 +894,19 @@
     const bg    = document.getElementById('deck-key-bg').value;
     const isMsg = (editorLayouts[editorModelKey] || [])[selectedKeyIndex] === 'message';
     const message = isMsg ? document.getElementById('deck-key-message').value.trim() : '';
-    if (label || message || fg !== '#ffffff' || bg !== '#1a1a2e') {
-      const ov = { label: label || undefined, message: message || undefined };
+    // A preset's duration: what's typed, if it's one (and not the preset's own); left as it was while it isn't
+    const act = ACTIONS[(editorLayouts[editorModelKey] || [])[selectedKeyIndex]] || {};
+    let msecs = (editorOverrides[overrideKey] || {}).msecs;
+    const durEl = document.getElementById('deck-key-duration');
+    if (act.presetMs && durEl) {
+      const typed = durEl.value.trim(), ms = parseDuration(typed);
+      durEl.classList.toggle('invalid', !!typed && ms == null);
+      if (!typed) msecs = undefined;
+      else if (ms != null) msecs = ms === act.presetMs ? undefined : ms;
+      document.getElementById('deck-key-duration-note').textContent = !typed ? '' : ms == null ? 'minutes, h:mm or h:mm:ss (up to 24 h)' : '= ' + durationLabel(ms);
+    } else msecs = undefined;
+    if (label || message || msecs || fg !== '#ffffff' || bg !== '#1a1a2e') {
+      const ov = { label: label || undefined, message: message || undefined, msecs };
       if (fg !== '#ffffff') ov.fg = fg;
       if (bg !== '#1a1a2e') ov.bg = bg;
       editorOverrides[overrideKey] = ov;
@@ -953,7 +1014,7 @@
       const t = e.target;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) e.stopPropagation();
     }));
-    ['deck-key-label','deck-key-message','deck-key-fg','deck-key-bg'].forEach(id => {
+    ['deck-key-label','deck-key-message','deck-key-duration','deck-key-fg','deck-key-bg'].forEach(id => {
       document.getElementById(id)?.addEventListener('input', applyKeyOptions);
     });
     // D key opens editor
