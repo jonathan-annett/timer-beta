@@ -141,7 +141,7 @@
     preset_90:       preset('90 min', 5400000),
     preset_120:      preset('2 hours', 7200000),
     preset_180:      preset('3 hours', 10800000),
-    keypad:           { label: '1 2 3\nKeypad', group: 'Presets', cmd: (i, m) => setKeypad(true, m) },   // the deck becomes a number pad (KEYPAD), for typing a duration
+    keypad:           { label: '🔢 Keypad', icon: '🔢', group: 'Presets', cmd: (i, m) => setKeypad(true, m) },   // the deck becomes a number pad (KEYPAD), for typing a duration
     kp_1: kpDigit('1'), kp_2: kpDigit('2'), kp_3: kpDigit('3'), kp_4: kpDigit('4'), kp_5: kpDigit('5'),
     kp_6: kpDigit('6'), kp_7: kpDigit('7'), kp_8: kpDigit('8'), kp_9: kpDigit('9'), kp_0: kpDigit('0'),
     kp_colon:  { label: ':', kp: 'big', group: 'Keypad', cmd: () => kpKeys(':') },
@@ -782,7 +782,9 @@
     }
 
     if (action.live) f.rows = liveRows(actionKey);
-    const rawLabel = (action.display || action.isMessage || action.live || (action.rsKey && rs.active)) ? '' :
+    const iconOnly = action.icon && !override.label;   // an emoji in place of a label (Keypad: 🔢), big
+    if (iconOnly) f.big = { text: action.icon, scale: 0.55 };
+    const rawLabel = (action.display || action.isMessage || action.live || iconOnly || (action.rsKey && rs.active)) ? '' :
       actionKey === 'brightness_cycle' ? (override.label || 'Backlight') + '\n' + brightness + '%' :
       override.label ||
       (action.presetMs && override.msecs ? durationLabel(override.msecs) : '') ||
