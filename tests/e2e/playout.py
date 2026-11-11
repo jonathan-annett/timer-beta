@@ -10,7 +10,8 @@ SERVER = _os.environ.get('E2E_SERVER', 'wss://localhost:8443/')   # the pairing 
 # the + sting dialog (sting-picker.js: a file via Browse, a stock sting copied into this browser, a clip
 # of one), cut with ✂ (the clip editor); a clip plays from memory (made ready for the item on now and the
 # next), to the Show output while previews go to Previews (audio-out.js data-role="both"). Follow the
-# timer off: nothing plays by itself, ▶ still does. Back stops what's playing; Esc fades it. A playout
+# timer off: nothing plays by itself, ▶ still does, ▶ Start item runs an item's cues timed from the press
+# (the timer's Back leaves them alone); ✎ changes when a cue plays. Back stops what's playing; Esc fades it. A playout
 # computer that (re)connects in the middle of an item doesn't replay its start cue. Cues are kept by item
 # id (the old per-room lists merged in); cues for items not on the sheet are listed to remove. A cue may
 # have its own output (one of Chromium's fake sound cards here), or for a video No sound (its picture,
@@ -201,6 +202,36 @@ with sync_playwright() as p:
     po.once("dialog", lambda dl: dl.accept())
     po.click("#orphanx"); po.wait_for_timeout(300)
     check("Remove them: the other show's cues go", "zz" not in po.evaluate("window.__playout.cues()") and not po.is_visible("#orphans"), po.evaluate("Object.keys(window.__playout.cues())"))
+
+    # ✎: when a cue plays, changed (the sound stays)
+    po.click("#stopall"); po.wait_for_timeout(300)
+    po.click('#items li[data-cue="%s"] button[data-act=when]' % ids["c"][0]); po.wait_for_timeout(200)
+    f = '#items li[data-cue="%s"] form.addcue' % ids["c"][0]
+    check("✎: its timing to change, starting from the cue's own", po.input_value(f + " [name=trigger]") == "end" and not po.is_visible(f + " [name=at]"), po.input_value(f + " [name=trigger]"))
+    po.select_option(f + " [name=trigger]", "elapsed"); po.fill(f + " [name=at]", "0:01"); po.click(f + " button.primary"); po.wait_for_timeout(300)
+    c0 = po.evaluate("window.__playout.cues().c[0]")
+    check("… saved: after 0:01, the same file", (c0["trigger"], c0["at"], c0["id"]) == ("elapsed", 1, ids["c"][0]), c0)
+    check("… and shown so", "After 0:01" in po.text_content('#items li[data-cue="%s"] .when' % ids["c"][0]), po.text_content('#items li[data-cue="%s"] .when' % ids["c"][0]))
+
+    # Follow off: ▶ Start item runs an item's cues here, timed from the press (rehearsals: any order)
+    po.uncheck("#follow"); po.wait_for_timeout(200)
+    check("follow off: each item with cues offers ▶ Start item", po.is_visible('#items li[data-id="c"] button[data-act=run]') and po.is_visible('#items li[data-id="a"] button[data-act=run]'))
+    po.click('#items li[data-id="c"] button[data-act=run]'); po.wait_for_timeout(400)
+    check("▶ Start item: the item runs here", (po.evaluate("window.__playout.local()") or {}).get("item") == "c" and "here" in po.text_content('#items li[data-id="c"] .ilocal'), po.evaluate("window.__playout.local()"))
+    check("… its time cue not yet", ids["c"][0] not in playing(), playing())
+    po.wait_for_timeout(1000)
+    check("… 0:01 after the press (this computer's clock), it plays", ids["c"][0] in playing(), playing())
+    po.click('#items li[data-id="a"] button[data-act=run]'); po.wait_for_timeout(500)
+    check("another item started: its start cue plays at once, the last one's plays on", ids["a"][0] in playing() and ids["c"][0] in playing(), playing())
+    check("… the run is that item's now", (po.evaluate("window.__playout.local()") or {}).get("item") == "a", po.evaluate("window.__playout.local()"))
+    po.wait_for_timeout(2000)
+    check("… its time cue 0:02 after the press", ids["a"][1] in playing(), playing())
+    t.evaluate("window.runsheet.back()"); t.wait_for_timeout(800)
+    check("follow off: Back on the timer leaves what's playing here alone", ids["a"][0] in playing(), playing())
+    po.click('#items li[data-id="a"] button[data-act=endrun]'); po.wait_for_timeout(300)
+    check("■ Stop item: its cues stop, the run ends", not any(x in playing() for x in ids["a"]) and po.evaluate("window.__playout.local()") is None, [playing(), po.evaluate("window.__playout.local()")])
+    po.click("#stopall"); po.check("#follow"); po.wait_for_timeout(200)
+    check("follow on: no ▶ Start item", not po.is_visible('#items button[data-act=run]'))
 
     # off: the page says so
     oc = b.new_context(ignore_https_errors=True); oc.route("**/*", h)

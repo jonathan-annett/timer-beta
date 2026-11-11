@@ -13,8 +13,10 @@
  * (at seconds into it, pauses not counted) or 'remaining' (with at seconds left). Each plays once per
  * run of the item. A cue whose moment passed before this computer saw it doesn't play (reconnecting
  * mid-item never replays a walk-up), except a start cue within 2 s of the start. Back stops
- * everything playing. Follow the timer off: cues only play when ▶ is pressed. A cue plays on into the
- * items after it (the owner's call: the operator stops or fades it: ■, Stop all, Esc).
+ * everything playing. Follow the timer off (rehearsals, where the order depends on who's there): the
+ * timer starts and stops nothing here; ▶ plays a cue, and ▶ Start item runs an item's cues timed from
+ * the press by this computer's clock (runLocal). A cue plays on into the items after it (the owner's
+ * call: the operator stops or fades it: ■, Stop all, Esc). ✎ on a cue changes when it plays.
  *
  * The media is chosen with the run sheet editor's + sting dialog (sting-picker.js: the site's stock
  * stings, a file or a folder of them, my clips) and cut with its clip editor (✂, sting-clip.js: the part
@@ -218,7 +220,7 @@
       age: Number.isFinite(m.now) && Number.isFinite(m.at) ? m.now - m.at : null,   // how long ago it started, as sent
     };
     showAt = performance.now();
-    if (show.run < was.run) stopAll();                 // Back: everything playing stops
+    if (show.run < was.run && following()) stopAll();  // Back: everything playing stops (not once the operator has taken over)
     const key = show.cur ? show.run + ':' + show.cur : null;
     if (key !== runSeen) {
       runSeen = key;
@@ -256,7 +258,8 @@
     for (const c of curCues()) if (test(c) && !fired.has(c.id)) { fired.add(c.id); play(c); }
   }
   function tick() {
-    if (!show.cur || show.fin) return;
+    if (local) tickLocal();
+    if (!show.cur || show.fin) return renderLocal();
     const cd = countdown();
     for (const c of curCues()) {
       if (c.trigger === 'start') continue;
@@ -265,6 +268,36 @@
       if (now && before === false) fireWhere(x => x.id === c.id);
     }
     renderNow(cd);
+  }
+
+  // ─── An item run here (Follow the timer off: ▶ Start item) ─────────────────
+  // Its cues as if the item had started at the press: start cues at once, the others timed from it by
+  // this computer's clock ('remaining' and 'end' from the item's planned length; no pauses). One at a
+  // time, like the timer's items: starting another drops this one's cues still to come (what's playing
+  // plays on). Ends when nothing more can play, on ■ Stop item or Stop all, or when Follow goes back on.
+  let local = null;                                    // {item, t0, dur (s) | null, fired, prev}
+  const localCd = () => { const e = performance.now() - local.t0; return { elapsed: e, remain: local.dur == null ? Infinity : local.dur * 1000 - e }; };
+  function runLocal(itemId) {
+    const it = show.items.find(x => x.id === itemId);
+    local = { item: itemId, t0: performance.now(), dur: it && it.d > 0 ? it.d : null, fired: new Set(), prev: new Map() };
+    for (const c of cues[itemId] || []) if (c.trigger === 'start') { local.fired.add(c.id); play(c); }
+    render();
+  }
+  function endLocal() { if (local) { local = null; render(); } }
+  function tickLocal() {
+    const cd = localCd(), list = cues[local.item] || [];
+    for (const c of list) {
+      if (c.trigger === 'start' || local.fired.has(c.id)) continue;
+      const now = condition(c, cd), before = local.prev.get(c.id);
+      local.prev.set(c.id, now);
+      if (now && before !== true) { local.fired.add(c.id); play(c); }   // (true from the press: at once)
+    }
+    if (list.every(c => local.fired.has(c.id)) && (local.dur == null || cd.remain <= 0)) endLocal();
+  }
+  // A cue added or retimed during its item: only from now on (what's already past doesn't play)
+  function retime(itemId, c) {
+    if (itemId === show.cur && c.trigger !== 'start') prevCond.set(c.id, condition(c, countdown()));
+    if (local && local.item === itemId && c.trigger !== 'start') local.prev.set(c.id, condition(c, localCd()));
   }
   (function ticker(fn, ms) {                           // a worker's tick: keeps time in a background window
     try {
@@ -391,6 +424,16 @@
     render();
   }
   function stopAll() { for (const id of [...playing.keys()]) stopCue(id); }
+  // ✎: when a cue plays (its trigger and time); the sound stays
+  function retimeCue(itemId, c, trigger, at) {
+    const now = findCue(c.id);
+    if (!now) return render();
+    now.c.trigger = trigger;
+    now.c.at = trigger === 'elapsed' || trigger === 'remaining' ? at : 0;
+    saveCues();
+    retime(itemId, now.c);
+    render();
+  }
   function fadeAll(ms) { for (const p of playing.values()) p.voice.fade(ms); }
 
   // ─── Cues (made here, kept here) ──────────────────────────────────────────
@@ -439,7 +482,7 @@
     cue = Object.assign({ id, trigger, at: at || 0 }, cue);
     (cues[itemId] = cues[itemId] || []).push(cue);
     saveCues();
-    if (itemId === show.cur) primeTimeCues();          // added during its item: only from now on
+    retime(itemId, cue);                               // added during its item: only from now on
     showMode();
     render();
     if (!Number.isFinite(cue.lufs)) measure(cue);
@@ -500,15 +543,21 @@
     const curIdx = items.findIndex(x => x.id === show.cur);
     const open = document.activeElement && document.activeElement.closest('form.addcue, #items select.cout');
     if (open) return;                                  // don't rebuild under someone adding a cue or choosing an output
+    const manual = !following();
     $('items').innerHTML = items.map((it, i) => {
-      const list = cues[it.id] || [];
-      return `<li data-id="${esc(it.id)}" class="${i === curIdx ? 'now' : curIdx >= 0 && i < curIdx ? 'done' : ''}">` +
-        `<div class="ihead"><span class="iname">${esc(it.n || '(no name)')}</span>${i === curIdx ? '<span class="itag">now</span>' : ''}` +
-        `<span class="idur">${it.e ? 'finish' : it.d ? mmss(it.d) : ''}</span>${it.e ? '' : '<button class="small" data-act="add">+ cue</button>'}</div>` +
-        (list.length ? '<ul class="cues">' + list.map(c => `<li data-cue="${esc(c.id)}" class="${i === curIdx && fired.has(c.id) ? 'fired' : ''}${playing.has(c.id) ? ' playing' : ''}">` +
+      const list = cues[it.id] || [], here = local && local.item === it.id;
+      const done = c => (i === curIdx && fired.has(c.id)) || (here && local.fired.has(c.id));
+      const runBtn = !manual || it.e || !list.length ? ''
+        : here ? '<button class="small" data-act="endrun" title="Stop this item’s cues, and the rest of them won’t play">■ Stop item</button>'
+        : `<button class="small" data-act="run" title="Its cues as if it started now: start cues at once, the others timed from now${it.d ? ' (its length: ' + mmss(it.d) + ')' : ''}">▶ Start item</button>`;
+      return `<li data-id="${esc(it.id)}" class="${i === curIdx ? 'now' : curIdx >= 0 && i < curIdx ? 'done' : ''}${here ? ' here' : ''}">` +
+        `<div class="ihead"><span class="iname">${esc(it.n || '(no name)')}</span>${i === curIdx ? '<span class="itag">now</span>' : ''}${here ? '<span class="itag ilocal"></span>' : ''}` +
+        `<span class="idur">${it.e ? 'finish' : it.d ? mmss(it.d) : ''}</span>${runBtn}${it.e ? '' : '<button class="small" data-act="add">+ cue</button>'}</div>` +
+        (list.length ? '<ul class="cues">' + list.map(c => `<li data-cue="${esc(c.id)}" class="${done(c) ? 'fired' : ''}${playing.has(c.id) ? ' playing' : ''}">` +
           `<button class="small" data-act="${playing.has(c.id) ? 'stop' : 'fire'}" title="${playing.has(c.id) ? 'Stop' : 'Play it now (on this computer)'}">${playing.has(c.id) ? '■' : '▶'}</button>` +
           `<span class="when">${esc(whenText(c))}</span><span class="fname">${c.media === 'video' ? '🎞' : '🎵'} ${esc(c.name)}</span>` +
           `<span class="clen">${StingClip.region(c) ? '✂ ' : ''}${lenText(c)}</span>` + outMenu(c) +
+          `<button class="small" data-act="when" title="Change when it plays">✎</button>` +
           `<button class="small" data-act="edit" title="Choose the part to play, fades, a loop and its level (the file isn’t cut)">✂</button>` +
           `<button class="small" data-act="del" title="Remove this cue">✕</button></li>`).join('') + '</ul>' : '') +
         '</li>';
@@ -521,6 +570,13 @@
   function renderNow(cd) {
     const it = show.items.find(x => x.id === show.cur);
     $('now').innerHTML = it && cd ? `Now: <b>${esc(it.n)}</b> · ${cd.remain >= 0 ? mmss(cd.remain / 1000) + ' left' : 'over by ' + mmss(-cd.remain / 1000)}` : '';
+    renderLocal();
+  }
+  function renderLocal() {                             // the item run here: its time, in place (each tick)
+    const el = local && document.querySelector('#items .ilocal');
+    if (!el) return;
+    const cd = localCd();
+    el.textContent = 'here · ' + (local.dur == null ? mmss(cd.elapsed / 1000) : cd.remain >= 0 ? mmss(cd.remain / 1000) + ' left' : 'over by ' + mmss(-cd.remain / 1000));
   }
   $('items').addEventListener('click', e => {
     const b = e.target.closest('button[data-act]');
@@ -531,8 +587,11 @@
     if (b.dataset.act === 'fire' && c) play(c);        // by hand: always, followed or not
     else if (b.dataset.act === 'stop' && c) stopCue(c.id);
     else if (b.dataset.act === 'edit' && c) editCue(c);
+    else if (b.dataset.act === 'when' && c) whenForm(b.closest('li[data-cue]'), c, 'Save', (trigger, at) => retimeCue(itemId, c, trigger, at));
     else if (b.dataset.act === 'del' && c) { if (confirm('Remove the cue “' + c.name + '”?')) removeCue(itemId, c.id); }
     else if (b.dataset.act === 'add') addForm(li);
+    else if (b.dataset.act === 'run') runLocal(itemId);
+    else if (b.dataset.act === 'endrun') { for (const x of cues[itemId] || []) stopCue(x.id); endLocal(); }
   });
   // A cue's output (from its next play)
   $('items').addEventListener('change', e => {
@@ -558,23 +617,32 @@
     if (f && browseFor) addCue(browseFor.item, { file: f }, browseFor.trigger, browseFor.at);
     browseFor = null;
   });
-  function addForm(li) {
-    if (li.querySelector('form.addcue')) return;
+  // When a cue plays: a trigger and its time (+ cue; ✎ on a cue, which starts from the cue's own)
+  function whenForm(host, init, label, done) {
+    if (host.querySelector(':scope > form.addcue')) return;
     const f = document.createElement('form');
     f.className = 'addcue';
-    f.innerHTML = `<select name="trigger">${Object.entries(TRIGGERS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>` +
-      '<input type="text" name="at" placeholder="m:ss" hidden aria-label="Time">' +
-      '<button class="small primary">Choose the sound or video…</button><button type="button" class="small" data-x>Cancel</button>';
-    li.appendChild(f);
+    const timed = t => t === 'elapsed' || t === 'remaining';
+    f.innerHTML = `<select name="trigger">${Object.entries(TRIGGERS).map(([k, v]) => `<option value="${k}"${k === init.trigger ? ' selected' : ''}>${v}</option>`).join('')}</select>` +
+      `<input type="text" name="at" placeholder="m:ss" aria-label="Time" value="${timed(init.trigger) ? mmss(init.at) : ''}">` +
+      `<button class="small primary">${esc(label)}</button><button type="button" class="small" data-x>Cancel</button>`;
+    host.appendChild(f);
     const trig = f.querySelector('[name=trigger]'), at = f.querySelector('[name=at]');
-    trig.addEventListener('change', () => { at.hidden = trig.value !== 'elapsed' && trig.value !== 'remaining'; if (!at.hidden) at.focus(); });
+    at.hidden = !timed(trig.value);
+    trig.addEventListener('change', () => { at.hidden = !timed(trig.value); if (!at.hidden) at.focus(); });
     f.querySelector('[data-x]').addEventListener('click', () => { f.remove(); render(); });
-    f.addEventListener('submit', async e => {
+    f.addEventListener('submit', e => {
       e.preventDefault();
       let secs = 0;
       if (!at.hidden) { secs = readSecs(at.value); if (secs == null) { alert('Type the time as m:ss (or h:mm:ss).'); return; } }
-      const want = { item: li.dataset.id, trigger: trig.value, at: secs };
       f.remove();
+      done(trig.value, secs);
+    });
+    trig.focus();                                      // (render() leaves a form with the focus alone)
+  }
+  function addForm(li) {
+    whenForm(li, { trigger: 'start', at: 0 }, 'Choose the sound or video…', async (trigger, at) => {
+      const want = { item: li.dataset.id, trigger, at };
       render();
       const ch = await StingPicker.open({
         note: whenText({ trigger: want.trigger, at: want.at }) + ': played on this computer.',
@@ -589,8 +657,8 @@
     for (const k of ids) for (const c of [...cues[k]]) removeCue(k, c.id);
   });
   $('follow').checked = following();
-  $('follow').addEventListener('change', e => { store.set(FOLLOW, e.target.checked ? '1' : '0'); if (e.target.checked) primeTimeCues(); render(); });
-  $('stopall').addEventListener('click', stopAll);
+  $('follow').addEventListener('change', e => { store.set(FOLLOW, e.target.checked ? '1' : '0'); if (e.target.checked) { local = null; primeTimeCues(); } render(); });
+  $('stopall').addEventListener('click', () => { stopAll(); endLocal(); });
   $('fadeall').addEventListener('click', e => { e.currentTarget.blur(); fadeAll(FADE_MS); });
   const toggleFull = () => { if (document.fullscreenElement) document.exitFullscreen(); else $('stage').requestFullscreen().catch(() => {}); };
   $('full').addEventListener('click', toggleFull);
@@ -609,7 +677,8 @@
   });
 
   // Test hooks: what's playing, and the cues
-  window.__playout = { playing: () => [...playing.keys()], cues: () => cues, show: () => show, fired: () => [...fired], ready: () => [...buffers.keys()] };
+  window.__playout = { playing: () => [...playing.keys()], cues: () => cues, show: () => show, fired: () => [...fired], ready: () => [...buffers.keys()],
+    local: () => local && { item: local.item, fired: [...local.fired] } };
 
   if (link.r && link.v) start(); else showEnter();
 })();
