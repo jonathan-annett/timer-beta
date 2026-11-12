@@ -87,9 +87,10 @@ var ClipWords = (function () {
     const $ = s => box.querySelector(s), key = o.key ? 'words:' + o.key : null;
     $('.cw-model').value = model();
     let lines = [], upto = 0, done = false, worker = null, stopped = false, mod = model(), shown = null;
+    let took = null;                                     // {secs, of, device}: how long the last run took, for how much sound
     const note = t => { $('.cw-note').textContent = t; };
     const store = () => window.videoStore || null;
-    function save() { if (key && store()) store().put(key, { model: mod, lines, upto, done, at: Date.now() }).catch(() => {}); }
+    function save() { if (key && store()) store().put(key, { model: mod, lines, upto, done, took, at: Date.now() }).catch(() => {}); }
     function render() {
       const words = $('.cw-find').value.toLowerCase().split(/\s+/).filter(Boolean);
       const hit = l => words.every(w => l.text.toLowerCase().includes(w));
@@ -102,7 +103,8 @@ var ClipWords = (function () {
       $('.cw-find').hidden = !lines.length;
     }
     function status() {
-      if (done) note(`${lines.length} line${lines.length === 1 ? '' : 's'} (Whisper ${mod.replace('.en', '')}). Find words, then ▶ to hear, Start / End to cut there.`);
+      const speed = took && took.secs > 0 ? `: ${clock(took.of)} transcribed in ${clock(took.secs)} (${took.of / took.secs >= 1 ? (took.of / took.secs).toFixed(1) + '× faster than' : (took.secs / took.of).toFixed(1) + '× slower than'} real time, ${took.device === 'webgpu' ? 'graphics chip' : 'processor'})` : '';
+      if (done) note(`${lines.length} line${lines.length === 1 ? '' : 's'} (Whisper ${mod.replace('.en', '')}${speed}). Find words, then ▶ to hear, Start / End to cut there.`);
       else if (upto > 0 && !worker) note(`Transcribed up to ${clock(upto)} of ${clock(o.buf.duration)}: Transcribe carries on from there.`);
     }
     async function run() {
@@ -150,6 +152,8 @@ var ClipWords = (function () {
         save();                                          // (as it goes: a page closed now keeps what's done)
         render();
       }
+      took = { secs: Math.max(0.1, (performance.now() - t0) / 1000), of: upto - from, device };   // (the model already loaded: the transcribing alone)
+      console.log(`[clip-words] ${clock(took.of)} of sound transcribed in ${took.secs.toFixed(1)} s (Whisper ${mod}, ${device})`);
       if (!stopped) done = true;
       save();
       finish();
@@ -181,6 +185,7 @@ var ClipWords = (function () {
       if (!v || !Array.isArray(v.lines) || worker) return;
       lines = v.lines.filter(l => l && Number.isFinite(l.at) && typeof l.text === 'string');
       upto = Number(v.upto) || 0; done = !!v.done; mod = MODELS[v.model] ? v.model : mod; $('.cw-model').value = mod;
+      took = v.took && Number.isFinite(v.took.secs) && Number.isFinite(v.took.of) ? v.took : null;
       $('.cw-go').textContent = done ? 'Transcribe again' : 'Transcribe';
       render(); status();
     }).catch(() => {});

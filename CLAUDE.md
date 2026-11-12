@@ -95,6 +95,7 @@ timer_build/
     ├── sting-player.js     Walk-up stings on run sheet items (window.stingPlayer; an alpha-only trial)
     ├── audio-out.js        Sound outputs (AudioOut): the show's sound card (timer page: stings, tone, video player) and the preview one (editor, library, clip editor; data-role="preview")
     ├── sting-clip.js       Sting clips: the part to play with fades (window.StingClip: region, render, play, preview, open = the waveform editor)
+    ├── clap-clip-search.html  A mockup from another session (13 Nov 2026, the owner's: "vibe" search of music with LAION CLAP, Transformers.js from jsDelivr, models from Hugging Face; standalone, not linked, alpha only so far). As supplied but for one line: its default model (Xenova/larger_clap_music) doesn't exist on Hugging Face, so that menu entry is gone (music + speech is the default)
     ├── clip-words.js       Transcribe and find words in the clip editor (window.ClipWords; a trial, TimerFeatures.transcribe, alpha): Whisper via assist-asr.js
     ├── stings.html         The sting library page: clips of stock stings and own tracks, import/export as JSON
     ├── sting-library.js    Its logic (window.StingLibrary, also used by the run sheet editor's + sting)

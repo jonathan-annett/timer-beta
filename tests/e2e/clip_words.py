@@ -66,7 +66,7 @@ with sync_playwright() as p:
     lines = pg.evaluate("[...document.querySelectorAll('.cw-line')].map(l => [l.querySelector('.cw-t').textContent, l.querySelector('.cw-text').textContent])")
     check("transcribed in pieces cut at the quiet gaps, the silence not sent, Whisper's [BLANK_AUDIO] dropped",
           lines == [["0:01", "This is part 1."], ["0:28", "Please welcome our keynote speaker."], ["1:20", "This is part 3."]], lines)
-    check("… the note says how many lines", pg.text_content(".cw-note").startswith("3 lines"), pg.text_content(".cw-note"))
+    check("… the note says how many lines, and how long it took against real time", pg.text_content(".cw-note").startswith("3 lines") and "1:35 transcribed in" in pg.text_content(".cw-note") and "real time" in pg.text_content(".cw-note"), pg.text_content(".cw-note"))
     pg.fill(".cw-find", "KEYNOTE welcome"); pg.wait_for_timeout(100)
     found = pg.evaluate("[...document.querySelectorAll('.cw-line')].map(l => l.querySelector('.cw-text').innerHTML)")
     check("Find words: every word, any case, any order; marked", found == ["Please <mark>welcome</mark> our <mark>keynote</mark> speaker."], found)
