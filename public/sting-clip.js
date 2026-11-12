@@ -30,11 +30,12 @@
  *                      untouched; any other file as it is. Called as a file is chosen, never on a listing
  *   play(buf, {loop})  plays an AudioBuffer (loop: over and over until stopped) → {stop(), ended: Promise, time()}
  *   preview(src, s)    decode, render and play (the stock dialog's ▶) → {stop()}
- *   open({src, name, region, media, original, hideOriginal, saveLabel})  the clip editor: waveform (whole track + zoomed on the
- *                      selection), start/end handles, fades, a loop, loudness and trim, play (levelled), Save as WAV →
+ *   open({src, name, region, media, original, hideOriginal, saveLabel, level})  the clip editor: waveform (whole track + zoomed on the
+ *                      selection), start/end handles, fades, a loop, loudness and trim, play (levelled: to level.target,
+ *                      LUFS or null = not levelled, when given), Save as WAV →
  *                      Promise<{name, start, end, fadeIn, fadeOut, loop, lufs, volume, hideOriginal} | null>;
  *   loudness(buf)      integrated loudness (LUFS, BS.1770) or null (silence)
- *   gainFor(s, target) what a sting with {lufs, volume} plays at: down to the target, never up
+ *   gainFor(s, target) what a sting with {lufs, volume} plays at: down to the target, never up (target null: its trim only)
  *   target()           the show's level (Level this show…, localStorage SHOW_KEY) or the house level (TARGET_KEY, −23)
  *   toneBuffer(lufs)   a second of 1 kHz reading lufs: the line-up tone original (a stock sting's name) adds the
  *                      choice to hide it from + sting while this clip exists (hideOriginal: a better edit)
@@ -504,13 +505,15 @@ var StingClip = (function () {
         try { lufs = loudness(render(buf, c)); } catch (_) { lufs = null; }
         return lufs;
       }
-      const levelGain = () => gainFor({ lufs: measure(), volume: Math.pow(10, trimDb / 20) });
+      // (opts.level {target: LUFS | null}: the level of where it plays, e.g. a playout cue's output; null = not levelled)
+      const lvl = opts.level, levelGain = () => gainFor({ lufs: measure(), volume: Math.pow(10, trimDb / 20) }, lvl ? lvl.target : undefined);
       function showLoud() {
         const el = $('.sc-loud');
         if (!buf) { el.textContent = '…'; return; }
         if (lufsKey !== JSON.stringify(cur())) return;                   // (being measured)
         if (lufs == null) { el.textContent = 'silent'; return; }
-        const t = target(), sh = showLevel(), to = sh ? 'this show’s level' : 'the house level';
+        if (lvl && lvl.target == null) { el.textContent = lufs.toFixed(1) + ' LUFS · its output isn’t levelled: plays ' + (trimDb ? 'at ' + (lufs + trimDb).toFixed(1) : 'as it is'); return; }
+        const t = lvl ? lvl.target : target(), sh = showLevel(), to = lvl ? 'its output’s level' : sh ? 'this show’s level' : 'the house level';
         const at = Math.min(lufs, t) + trimDb, dB = at - lufs;
         el.textContent = lufs.toFixed(1) + ' LUFS · ' + (lufs > t ? 'plays at ' + at.toFixed(1) + ' (' + dB.toFixed(1) + ' dB, down to ' + to + ', ' + t.toFixed(1) + ')'
           : 'at or under ' + to + ' (' + t.toFixed(1) + '): plays ' + (trimDb ? 'at ' + at.toFixed(1) : 'as it is'));

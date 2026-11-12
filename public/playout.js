@@ -22,9 +22,9 @@
  * stings, a file or a folder of them, my clips) and cut with its clip editor (✂, sting-clip.js: the part
  * to play, fades, a loop, a trim), and always copied into this browser: it plays from here, whatever
  * happens to the site or the network. Cues play as the timer's walk-up stings do: a clip from memory
- * (cut, faded, looped, levelled: only ever turned down, to this computer's house level), anything else
- * streamed. Sound outputs (audio-out.js, data-role="both"): cues go to Show, previews and editing to
- * Previews. A cue may have its own output (the owner, 12 Nov 2026: a sound card for a creative reason,
+ * (cut, faded, looped, levelled: only ever turned down, to its output's level: Options → Levels, per
+ * output, or off), anything else streamed. Sound outputs (audio-out.js, data-role="both"): cues go to
+ * Show, previews and editing to Previews. A cue may have its own output (the owner, 12 Nov 2026: a sound card for a creative reason,
  * or a video's picture without its sound while an audio cue replaces it): out = {id, label} | 'none'
  * (videos only), absent = Show. Cues on the same trigger all play: audio together, but one video at a
  * time (the one later in the list stays on screen).
@@ -32,7 +32,8 @@
  * Cues are kept by item id (an item's id survives Replace sheet and a CSV round trip: runsheet-core.js
  * matchRows), not by timer room, so they outlive a new share code and wait for their items to come back.
  * localStorage: playout_saved_link, playout_server, playout_token_<room>, playout_follow ('0' = off),
- * playout_cue_ctl ('1' = single cues of an item started here stay playable: Options),
+ * playout_cue_ctl ('1' = single cues of an item started here stay playable: Options), playout_levels
+ * ({show | out:<device id>: {lufs?, off?}}: each output's level, unset = the house level; Options),
  * playout_cues ({itemId: [{id, name, media, src, trigger, at, duration, lib?, start?, end?, fadeIn?,
  * fadeOut?, loop?, lufs?, volume?, out?}]}; before Nov 2026 playout_cues_<room>, merged in once); the files
  * are in IndexedDB (video-store.js) as 'pocue:<cue id>'.
@@ -316,7 +317,7 @@
   // As the timer's walk-up stings (sting-player.js): a clip up to MEMORY_MAX is cut in memory with its
   // fades and loop (instant and sample-exact; the current and next items' are made ready ahead), anything
   // else is streamed by a media element, seeked to its start and faded out at its end. Levelled as they
-  // start (StingClip.gainFor: its trim, and only ever down to this computer's house level).
+  // start (StingClip.gainFor: its trim, and only ever down to its output's level: see Levels below).
   const MEMORY_MAX = 180, FADE_MS = 3000;
   const SHOW = 'show';
   const fileOf = async c => { try { return await window.videoStore.get('pocue:' + c.id); } catch (_) { return null; } };
@@ -352,17 +353,20 @@
     const stop = tickEvery(50, () => { n++; el.volume = Math.max(0, Math.min(1, from + (to - from) * n / steps)); if (n >= steps) { stop(); if (done) done(); } });
     return stop;
   }
+  // A voice's level(g) sets its gain while it plays (its output's level changed), not while it fades out
   function bufferVoice(c, buf, onEnd, out) {
-    let p = null;
+    let p = null, fading = false;
     return {
       play() {
         p = StingClip.play(buf, { role: out });
         if (p.refused) { p = null; return false; }
-        p.gain.gain.value = StingClip.gainFor(c);
+        p.gain.gain.value = gainOf(c, out);
         p.ended.then(onEnd);
         return true;
       },
-      fade(ms) { if (p) p.fade(ms); },
+      fade(ms) { if (p) { fading = true; p.fade(ms); } },
+      level(g) { if (p && !fading) p.gain.gain.setTargetAtTime(g, p.gain.context.currentTime, 0.03); },   // (a quick glide: no click)
+      gain: () => (p ? p.gain.gain.value : null),
       stop() { if (p) p.stop(); },
       release() {},
     };
@@ -370,7 +374,7 @@
   // (over: stopped, or another cue took the element, while play() waited: it then leaves it alone)
   function elementVoice(c, el, url, onEnd, out) {
     const r = StingClip.region(c) || {}, start = r.start || 0;
-    let stopEnd = null, stopRamp = null, over = false;
+    let stopEnd = null, stopRamp = null, over = false, g = 0;
     el.src = url;
     const finish = () => { if (over) return; over = true; if (stopEnd) stopEnd(); if (stopRamp) stopRamp(); el.pause(); onEnd(); };
     const v = {
@@ -378,20 +382,22 @@
         if (start) await new Promise(res => { if (el.readyState >= 1) res(); else { el.addEventListener('loadedmetadata', res, { once: true }); el.addEventListener('error', res, { once: true }); } });   // (unreadable: play() says so)
         if (over) return false;
         if (start) el.currentTime = start;
-        const g = out ? StingClip.gainFor(c) : 0;      // (no sound: a video's picture only)
+        g = out ? gainOf(c, out) : 0;                  // (no sound: a video's picture only)
         el.volume = r.fadeIn ? 0 : g;
         el.onended = finish;
         if (window.AudioOut && out) await AudioOut.media(el, out);
         if (over) return false;
         await el.play();
         if (over) return false;
-        if (r.fadeIn) stopRamp = rampEl(el, g, r.fadeIn);
+        if (r.fadeIn) stopRamp = rampEl(el, g, r.fadeIn, () => { stopRamp = null; el.volume = g; });   // (g: its level now)
         if (r.end != null) stopEnd = tickEvery(50, () => {   // the end of the part: faded out there
           if (el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { stopEnd(); stopEnd = null; v.fade(r.fadeOut || 30); }
         });
         return true;
       },
       fade(ms) { if (over) return; if (stopRamp) stopRamp(); stopRamp = rampEl(el, 0, ms, finish); },
+      level(n) { if (over || !out) return; g = n; if (!stopRamp) el.volume = n; },   // (fading in: it ends at g)
+      gain: () => el.volume,
       stop() { finish(); },
       release() { try { el.pause(); el.removeAttribute('src'); el.load(); } catch (_) { /* gone */ } URL.revokeObjectURL(url); },
     };
@@ -410,7 +416,7 @@
     if (!memory && !blob) { status('The file for “' + c.name + '” isn’t in this browser any more. Add the cue again.', 'warn'); return; }
     stopCue(c.id);
     if (c.media === 'video') for (const [id, q] of playing) if (q.video) stopCue(id);   // one video on the output at a time
-    const p = { video: c.media === 'video', run: !!(how && how.run) };
+    const p = { video: c.media === 'video', run: !!(how && how.run), c, out };
     const onEnd = () => { if (playing.get(c.id) === p) stopCue(c.id); };
     p.voice = memory ? bufferVoice(c, memory, onEnd, out) : elementVoice(c, p.video ? vid : new Audio(), URL.createObjectURL(blob), onEnd, out);
     playing.set(c.id, p);
@@ -429,7 +435,45 @@
     if (p.video) $('stage').querySelector('.idle').hidden = false;
     render();
   }
-  function stopAll() { for (const id of [...playing.keys()]) stopCue(id); }
+  function stopAll() {
+    for (const id of [...playing.keys()]) stopCue(id);
+    if (tones.size) { for (const k of [...tones.keys()]) stopTone(k); renderLevels(); }
+  }
+
+  // ─── Levels: loudness normalisation per output (the owner, 12 Nov 2026) ───
+  // Each output (Show, and each sound card a cue has of its own) turns its cues down to a level of its
+  // own, never up (StingClip.gainFor, from their loudness as they play), or not at all (off: as recorded,
+  // only a ✂ trim). Unset: this computer's house level (−23 LUFS, unless the run sheet editor set another).
+  // A change applies at once, to what's playing on that output too. ▶ Tone: the line-up tone at that
+  // level, on that output (it follows the level), to set the desk by.
+  const LEVELS = DEMO ? 'playout_demo_levels' : 'playout_levels';   // {show | out:<id>: {lufs?, off?}}
+  let levels = {};
+  try { const v = JSON.parse(store.get(LEVELS) || '{}'); if (v && typeof v === 'object') levels = v; } catch (_) { /* none yet */ }
+  const L = StingClip.LEVEL, inRange = v => typeof v === 'number' && v >= L.min && v <= L.max;
+  const levelOf = k => { const v = levels[k] || {}; return { off: !!v.off, lufs: inRange(v.lufs) ? v.lufs : StingClip.houseLevel() }; };
+  const targetOf = k => (levelOf(k).off ? null : levelOf(k).lufs);
+  const gainOf = (c, out) => StingClip.gainFor(c, targetOf(out));
+  const tones = new Map();                             // output → {v: the tone playing on it, ref: the level it was made at}
+  function setLevel(k, v) {
+    levels[k] = Object.assign({}, levels[k], v);
+    if (!levels[k].off) delete levels[k].off;
+    store.set(LEVELS, JSON.stringify(levels));
+    for (const p of playing.values()) if (p.out === k) p.voice.level(gainOf(p.c, k));
+    const tn = tones.get(k), t = targetOf(k);
+    if (tn && t == null) stopTone(k);
+    else if (tn) tn.v.gain.gain.setTargetAtTime(Math.pow(10, (t - tn.ref) / 20), tn.v.gain.context.currentTime, 0.02);
+    renderLevels();
+  }
+  function startTone(k) {
+    const t = targetOf(k);
+    if (t == null) return;
+    const v = StingClip.play(StingClip.toneBuffer(t), { role: k, loop: true });   // (its output not there: refused, and says why)
+    if (v.refused) return;
+    const tn = { v, ref: t };
+    tones.set(k, tn);
+    v.ended.then(() => { if (tones.get(k) === tn) { tones.delete(k); renderLevels(); } });   // (faded out: Esc)
+  }
+  function stopTone(k) { const tn = tones.get(k); if (tn) { tones.delete(k); tn.v.stop(); } }
   // ─── Where videos play: here (the Output box; F = full screen) or a floating window ───
   // To external monitor opens a pop-up (the owner's design, 12 Nov 2026) to drag to the audience's screen
   // and make full screen (double-click or F there), and moves the video element into it; Play here
@@ -515,7 +559,7 @@
     retime(itemId, now.c);
     render();
   }
-  function fadeAll(ms) { for (const p of playing.values()) p.voice.fade(ms); }
+  function fadeAll(ms) { for (const p of playing.values()) p.voice.fade(ms); for (const tn of tones.values()) tn.v.fade(ms); }
 
   // ─── Cues (made here, kept here) ──────────────────────────────────────────
   const TRIGGERS = { start: 'At the start', end: 'When time’s up', elapsed: 'After', remaining: 'With … left' };
@@ -538,7 +582,7 @@
     try {
       const blob = await fileOf(c), l = blob && StingClip.loudness(StingClip.render(await StingClip.decode(blob), c));
       const now = findCue(c.id);
-      if (now && Number.isFinite(l)) { now.c.lufs = l; saveCues(); }
+      if (now && Number.isFinite(l)) { now.c.lufs = l; saveCues(); renderLevels(); }
     } catch (_) { /* no sound to measure, or unreadable: plays as it is */ }
   }
   // A cue from the + sting dialog's choice (sting-picker.js): the file, or a copy of the stock sting or
@@ -582,7 +626,8 @@
   async function editCue(c) {
     const blob = await fileOf(c);
     if (!blob) { alert('The file for “' + c.name + '” isn’t in this browser any more. Add the cue again.'); return; }
-    const r = await StingClip.open({ src: blob, name: c.name, region: c, media: c.media });
+    const out = outKey(c);                             // (its loudness shown against its output's level)
+    const r = await StingClip.open({ src: blob, name: c.name, region: c, media: c.media, level: out ? { target: targetOf(out) } : undefined });
     const now = r && findCue(c.id);
     if (!now) return;
     now.c.name = String(r.name || now.c.name).slice(0, 200);
@@ -601,14 +646,17 @@
   let outList = [];
   const refreshOuts = () => { if (window.AudioOut) AudioOut.devices().then(l => { outList = l; render(); }); };
   document.addEventListener('audio-out', refreshOuts);
+  const cardOf = o => {                                // a cue's sound card in the list now (as audio-out.js finds it), or null
+    const named = o.label ? outList.filter(d => d.label === o.label) : [];
+    return outList.find(x => x.id === o.id) || (named.length === 1 ? named[0] : null);
+  };
   function outMenu(c) {
     const ao = window.AudioOut && AudioOut.supported, opts = [['', '→ Show']];
     let val = '';
     if (ao) {
       outList.forEach((d, i) => opts.push([d.id, '→ ' + (d.label || 'Sound card ' + (i + 1))]));
       if (c.out && c.out.id) {
-        const named = c.out.label ? outList.filter(d => d.label === c.out.label) : [];
-        const d = outList.find(x => x.id === c.out.id) || (named.length === 1 ? named[0] : null);   // (as audio-out.js finds it)
+        const d = cardOf(c.out);
         if (d) val = d.id;
         else { opts.push([c.out.id, '→ ' + (c.out.label || 'Its sound card') + ' (not connected)']); val = c.out.id; }
       }
@@ -622,9 +670,57 @@
     return `<select class="cout${val ? ' own' : ''}${busy ? ' busy' : ''}" data-act="out"${busy ? ' disabled' : ''} title="${busy ? 'In use: it stays on this output until it ends' : 'Where this cue plays'}">` +
       opts.map(([v, t]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(t)}</option>`).join('') + '</select>';
   }
+  // Options → Levels: a row for Show and for each sound card this run sheet's cues use (all cues before
+  // there's a sheet): Level to [on] [LUFS], ▶ Tone, Match the quietest, and its cues' loudness
+  const dB = v => (v < 0 ? '−' : '') + Math.abs(v).toFixed(1);
+  const sheetCues = () => (show.items.length ? show.items.flatMap(it => cues[it.id] || []) : Object.values(cues).flat());
+  function renderLevels() {
+    const box = $('levels'), a = document.activeElement;
+    if (a && box.contains(a) && a.matches('input[type=number]')) return;   // (being typed in: on focusout)
+    const all = sheetCues(), keys = [SHOW], own = {};
+    for (const c of all) { const k = outKey(c); if (k && k !== SHOW && !own[k]) { own[k] = c.out; keys.push(k); } }
+    box.innerHTML = keys.map(k => {
+      const v = levelOf(k), list = all.filter(c => outKey(c) === k), known = list.map(c => c.lufs).filter(Number.isFinite);
+      const d = own[k] && cardOf(own[k]);
+      const name = k === SHOW ? 'Show' : (d ? d.label : own[k].label) || 'Its sound card', gone = k !== SHOW && !d;
+      const lo = Math.min(...known), hi = Math.max(...known), under = v.off ? 0 : known.filter(l => l < v.lufs - 0.05).length;
+      const note = !list.length ? 'No cues on it yet' : list.length + (list.length === 1 ? ' cue' : ' cues')
+        + (known.length ? ' · ' + (lo === hi ? dB(lo) : dB(lo) + ' to ' + dB(hi)) + ' LUFS' : '')
+        + (v.off ? ': as recorded' : under ? ' · ' + under + ' quieter than this: ' + (under === 1 ? 'it plays' : 'they play') + ' as recorded (never turned up)' : '');
+      return `<div class="lv-row" data-out="${esc(k)}"><span class="lv-what${k === SHOW ? '' : ' own'}" title="${esc(name)}">→ ${esc(name)}</span>` +
+        `<label class="check" title="Off: its cues play as recorded (only a ✂ trim)"><input type="checkbox" data-lv="on"${v.off ? '' : ' checked'}> Level to</label>` +
+        `<span class="lv-num"><input type="number" data-lv="lufs" min="${L.min}" max="${L.max}" step="0.5" value="${v.lufs}"${v.off ? ' disabled' : ''} aria-label="Level, LUFS"> LUFS</span>` +
+        `<button class="small" data-lv="tone"${v.off ? ' disabled' : ''} title="A 1 kHz tone at this level, on this output: set the desk by it">${tones.has(k) ? '■ Tone' : '▶ Tone'}</button>` +
+        `<button class="small" data-lv="match"${v.off || !known.length ? ' disabled' : ''} title="This level = its quietest cue’s, so they all play as loud as that one">Match the quietest</button>` +
+        `<span class="hint lv-note">${gone ? '<span class="warn">Not connected</span> · ' : ''}${esc(note)}</span></div>`;
+    }).join('');
+  }
+  $('levels').addEventListener('input', e => {         // typed or stepped: at once while it's a level
+    const k = e.target.closest('.lv-row').dataset.out, n = Math.round(Number(e.target.value) * 10) / 10;
+    if (e.target.dataset.lv === 'lufs' && e.target.value !== '' && inRange(n)) setLevel(k, { lufs: n });
+  });
+  $('levels').addEventListener('change', e => {
+    const k = e.target.closest('.lv-row').dataset.out;
+    if (e.target.dataset.lv === 'on') return setLevel(k, { off: !e.target.checked });
+    if (e.target.dataset.lv !== 'lufs') return;
+    const n = Math.round(Number(e.target.value) * 10) / 10;
+    if (e.target.value !== '' && Number.isFinite(n)) setLevel(k, { lufs: Math.max(L.min, Math.min(L.max, n)) });
+    e.target.value = levelOf(k).lufs;                  // (out of range: the nearest; nonsense: as it was)
+  });
+  $('levels').addEventListener('click', e => {
+    const b = e.target.closest('button[data-lv]'), k = b && b.closest('.lv-row').dataset.out;
+    if (!k) return;
+    if (b.dataset.lv === 'tone') { if (tones.has(k)) stopTone(k); else startTone(k); renderLevels(); }
+    else if (b.dataset.lv === 'match') {
+      const known = sheetCues().filter(c => outKey(c) === k).map(c => c.lufs).filter(Number.isFinite);
+      if (known.length) setLevel(k, { lufs: Math.max(L.min, Math.min(L.max, Math.round(Math.min(...known) * 10) / 10)) });
+    }
+  });
+  $('levels').addEventListener('focusout', () => setTimeout(renderLevels, 0));
   function render() {
     document.body.classList.toggle('manual', !following());
     renderPlace();
+    renderLevels();
     const items = show.items;
     $('rshint').textContent = !show.on ? 'The timer isn’t in run sheet mode' : show.fin ? 'The show has finished' : '';
     const curIdx = items.findIndex(x => x.id === show.cur);
@@ -759,7 +855,7 @@
     if (e.metaKey || e.ctrlKey || e.target.closest('input, select, textarea')) return;
     if (document.querySelector('.sting-dlg, .sting-libwrap, .sc-wrap')) return;   // (a dialog has the keys)
     if (e.key === 'f' || e.key === 'F') toggleFull();
-    else if (e.key === 'Escape' && !document.fullscreenElement && playing.size) { e.preventDefault(); fadeAll(FADE_MS); }   // (in full screen, Esc leaves it)
+    else if (e.key === 'Escape' && !document.fullscreenElement && (playing.size || tones.size)) { e.preventDefault(); fadeAll(FADE_MS); }   // (in full screen, Esc leaves it)
   });
   if (window.AudioOut) { AudioOut.picker($('ao-pick'), ['show', 'preview']); refreshOuts(); }
   $('unpair').addEventListener('click', () => {
@@ -772,13 +868,14 @@
   // Test hooks: what's playing, and the cues
   window.__playout = { playing: () => [...playing.keys()], cues: () => cues, show: () => show, fired: () => [...fired], ready: () => [...buffers.keys()],
     local: () => local && { item: local.item, fired: [...local.fired] },
+    gain: id => { const p = playing.get(id); return p ? p.voice.gain() : null; }, levels: () => levels, target: k => targetOf(k), tones: () => [...tones.keys()],
     video: () => ({ where: vid.ownerDocument === document ? 'here' : 'external', paused: vid.paused, t: vid.currentTime, src: !!vid.getAttribute('src') }) };
 
   // ─── Demo (?demo, or /p?demo on the hosted site; the owner, 12 Nov 2026: to show the idea without a
   // timer) ─────────────────────────────────────────────────────────────────────────────────────────────
   // No pairing and no timer: a run sheet of ten made-up speakers, 20 minutes each, and manual only
   // (Follow the timer off and locked: ▶ Start item and ▶ do it all). Its cues are kept apart from the real
-  // ones (playout_demo_cues); its names in playout_demo_sheet, the same until New speakers. The items'
+  // ones (playout_demo_cues), and its levels too (playout_demo_levels); its names in playout_demo_sheet, the same until New speakers. The items'
   // ids (demo-1 … demo-10) never change, so cues stay on their slots whatever the names.
   const DEMO_SHEET = 'playout_demo_sheet', DEMO_N = 10, DEMO_SECS = 20 * 60;
   const FIRST = ['Amara', 'Bea', 'Carlos', 'Devi', 'Elif', 'Farah', 'Gus', 'Hana', 'Ivo', 'Jun', 'Kemi', 'Lars', 'Mei', 'Nikhil', 'Olu', 'Priya',

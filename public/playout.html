@@ -68,6 +68,16 @@
     form.addcue select, form.addcue input[type=text] { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 3px 6px; }
     form.addcue input[type=text] { width: 5.5em; }
 
+    /* Options → Levels: one row per output */
+    .lvsec { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+    #levels { margin-top: 8px; }
+    .lv-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 4px 0; font-size: 14px; }
+    .lv-what { flex: 0 0 13em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lv-what.own { color: var(--accent); }   /* a cue's own sound card */
+    .lv-num input { width: 5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    .lv-num input:disabled { opacity: .4; }
+    .lv-note { font-size: 12px; flex: 1 1 14em; }
+
     /* Output: video cues play here (full screen it, or capture this window into the vision mixer) */
     #stage { position: relative; background: #000; aspect-ratio: 16 / 9; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
     #stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
@@ -139,6 +149,10 @@
           <label class="check"><input type="checkbox" id="cuectl"> Play and stop single cues of an item started here</label>
           <span class="hint">Off: while an item runs from ▶ Start item, its own cues’ ▶ and ■ are locked (■ Stop item stops them). On: for rehearsals, every cue stays in your hands.</span>
         </div>
+        <div class="lvsec">
+          <b>Levels</b> <span class="hint">Each output turns its cues down to its own loudness, so one isn’t louder than the next: measured as they play, in LUFS (−23 is broadcast’s level, −14 a music service’s). Never turned up: a quieter cue plays as recorded. Off: every cue as recorded (a ✂ trim still applies). A change applies at once, to what’s playing too.</span>
+          <div id="levels"></div>
+        </div>
       </div>
       <p class="hint" id="pairline">Paired with timer room <b id="room"></b>. <button id="unpair" class="small">Unpair this computer</button></p>
     </section>
@@ -147,9 +161,9 @@
   <script src="remote-peer.js?v=fd06de67"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="audio-out.js?v=e41c465e" data-role="both"></script>
-  <script src="sting-clip.js?v=c3686b1f"></script>
+  <script src="sting-clip.js?v=8ab12ac7"></script>
   <script src="sting-library.js?v=8c93912b"></script>
   <script src="sting-picker.js?v=9de13565"></script>
-  <script src="playout.js?v=66b1eca8"></script>
+  <script src="playout.js?v=3b70148c"></script>
 </body>
 </html>
