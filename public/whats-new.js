@@ -22,21 +22,26 @@
 
   const CSS = `
 #whats-new { position: fixed; right: 16px; top: calc(var(--buttons-bottom, 70px) + 10px); z-index: 2147481000; width: 380px; max-width: calc(100vw - 32px);
-  max-height: calc(100vh - var(--buttons-bottom, 70px) - 30px); overflow: auto; background: #151515; color: #ddd; border: 1px solid #2a6a9a; border-radius: 12px;
+  max-height: calc(100vh - var(--buttons-bottom, 70px) - 30px); max-height: calc(100dvh - var(--buttons-bottom, 70px) - 30px);
+  display: flex; flex-direction: column; overflow: hidden; background: #151515; color: #ddd; border: 1px solid #2a6a9a; border-radius: 12px;
   padding: 14px 16px 12px; font: 14px/1.45 "Helvetica Neue", Arial, sans-serif; box-shadow: 0 8px 30px rgba(0,0,0,.6);
   transform: translateY(12px); opacity: 0; transition: transform .25s, opacity .25s; }
 #whats-new.in { transform: none; opacity: 1; }
-#whats-new .wn-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+#whats-new .wn-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex: none; }
+#whats-new .wn-body { flex: 1 1 auto; min-height: 0; overflow: auto; }   /* only the notes scroll: the ✕ and Got it stay in view */
 #whats-new .wn-head b { font-size: 16px; color: #fff; flex: 1; }
 #whats-new .wn-x { background: none; border: 0; color: #888; font-size: 18px; cursor: pointer; padding: 0 4px; }
 #whats-new h3 { font-size: 13px; color: #9ab; margin: 8px 0 2px; font-weight: normal; }
 #whats-new ul { margin: 0; padding-left: 1.2em; }
 #whats-new li { margin: 3px 0; }
-#whats-new .wn-row { display: flex; gap: 8px; margin-top: 10px; }
+#whats-new .wn-row { display: flex; gap: 8px; margin-top: 10px; flex: none; }
 #whats-new .wn-row a, #whats-new .wn-row button { flex: 1; text-align: center; padding: 8px; border-radius: 6px; font: inherit; cursor: pointer;
   text-decoration: none; border: 1px solid #444; background: #222; color: #eee; }
 #whats-new .wn-row .wn-ok { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
-@media (pointer: coarse) { #whats-new { left: 12px; right: 12px; width: auto; max-width: none; top: auto; bottom: calc(84px + env(safe-area-inset-bottom)); max-height: calc(100vh - 110px); font-size: 15px; } }
+/* (a phone's 100vh is its height with the browser's bars hidden, so a long toast went up under the address
+   bar, its ✕ out of reach: 100dvh is what's showing) */
+@media (pointer: coarse) { #whats-new { left: 12px; right: 12px; width: auto; max-width: none; top: auto; bottom: calc(84px + env(safe-area-inset-bottom));
+  max-height: calc(100vh - 110px); max-height: calc(100dvh - 110px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); font-size: 15px; } }
 `;
 
   async function releases() {
