@@ -62,12 +62,14 @@
     } catch (_) { iv = setInterval(fn, ms); }
     return () => { if (w) w.terminate(); else clearInterval(iv); };
   }
-  function rampEl(el, to, ms, done) {
+  // A volume ramp: to 0 or from 0, a fade (db: even in dB, StingClip's curves; else a straight line); else straight
+  function rampEl(el, to, ms, done, db) {
     const steps = Math.max(1, Math.round(ms / 50)), from = el.volume;
     let n = 0;
     const stop = tick(50, () => {
       n++;
-      el.volume = Math.max(0, Math.min(1, from + (to - from) * n / steps));
+      const t = n / steps, v = to === 0 ? from * StingClip.curveOut(t, db) : from === 0 ? to * StingClip.curveIn(t, db) : from + (to - from) * t;
+      el.volume = Math.max(0, Math.min(1, v));
       if (n >= steps) { stop(); if (done) done(); }
     });
     return stop;
@@ -109,12 +111,12 @@
         el.onended = finish;
         if (window.AudioOut) await AudioOut.media(el);
         await el.play();
-        if (r.fadeIn) stopRamp = rampEl(el, g, r.fadeIn);
+        if (r.fadeIn) stopRamp = rampEl(el, g, r.fadeIn, undefined, !!r.fadeDb);   // (its own fade: its curve)
         if (r.end != null) stopEnd = tick(50, () => {            // the end of the part: fade out there
-          if (el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { stopEnd(); stopEnd = null; v.fade(r.fadeOut || 30); }
+          if (el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { stopEnd(); stopEnd = null; v.fade(r.fadeOut || 30, !!r.fadeDb); }
         });
       },
-      fade(ms) { if (stopRamp) stopRamp(); stopRamp = rampEl(el, 0, ms, finish); },
+      fade(ms, db = true) { if (stopRamp) stopRamp(); stopRamp = rampEl(el, 0, ms, finish, db); },   // (live: even in dB)
       stop() { finish(); },
       release() {
         try { el.pause(); el.removeAttribute('src'); el.load(); } catch (_) { /* gone */ }

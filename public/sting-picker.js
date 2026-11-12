@@ -8,10 +8,12 @@
  * chooses it). One Use button for whichever tab is showing. It only chooses: the page puts the choice
  * where it goes (and keeps any file).
  * Music styles (a trial, TimerFeatures.styles, with sting-styles.js on the page): stock stings carry their
- * top styles (styles in stock-stings.json; a clip borrows its song's, by url); the Walk-up sting tab shows
- * each one's top style and chips of the genres and styles there are (StingStyles.chips: the owner, 13 Nov
- * 2026, choose rather than type): with some lit, only the stings in any of them (fitsAny), best first, with
- * the style they matched; and the model's credit.
+ * top styles (styles in stock-stings.json; a clip borrows its song's, by url); files of your own (the
+ * folder's, My clips') are listened to on this computer while the dialog is open (StingStyles.listen; step
+ * 4, 13 Nov 2026), a note saying how far it's got. Chips of the genres and styles there are, above the tabs
+ * (StingStyles.chips: the owner, 13 Nov 2026, choose rather than type), filter all three lists: with some
+ * lit, only the stings in any of them (fitsAny; a file not listened to yet sits out), best first, with the
+ * style they matched (else each with its top style); and the model's credit.
  *
  * window.StingPicker:
  *   open(opts) → Promise<choice | null>
@@ -29,8 +31,9 @@
  *   clipFields(x), partFields(x), idOf(x)   a clip's fields (with its level / without), the same track cut
  *                                           the same way
  *   choiceOf(e, list) → Promise<choice | null>   a sting library clip as a choice (list: stock())
- *   folder() / chooseFolder() / savedFolder() / ensureFolder() / onFolder(fn)   the Custom file folder
- *                                           (random stings use it too: sting-roll.js)
+ *   folder() / chooseFolder() / savedFolder() / ensureFolder() / quietFolder() / onFolder(fn)   the Custom
+ *                                           file folder (random stings use it too: sting-roll.js); quietFolder:
+ *                                           listed only if the browser needn't ask (no click needed)
  *   openLibrary() → Promise (resolves when it's closed)
  * MIT Licensed
  */
@@ -51,7 +54,7 @@ var StingPicker = (function () {
   const mediaOf = name => /\.(mp4|m4v|webm|mov|ogv)(\?|#|$)/i.test(name || '') ? 'video' : 'audio';
   // A clip's fields (sting-clip.js): only the ones it has
   // and its level (lufs: its loudness as it plays; volume: a trim, < 1), which travel with it
-  const CLIP_KEYS = ['start', 'end', 'fadeIn', 'fadeOut', 'loop', 'lufs', 'volume'];
+  const CLIP_KEYS = ['start', 'end', 'fadeIn', 'fadeOut', 'loop', 'lufs', 'volume', 'fadeDb'];   // (fadeDb: its fades even in dB)
   const partFields = x => { const r = StingClip.region(x), o = {}; if (r) for (const k of CLIP_KEYS) if (r[k] != null && r[k] !== 0) o[k] = r[k]; return o; };
   const clipFields = x => {
     const o = partFields(x);
@@ -148,6 +151,16 @@ var StingPicker = (function () {
     try { if (!sf.ok && (await sf.handle.requestPermission({ mode: 'read' })) !== 'granted') return null; setFolder(await folderOf(sf.handle)); } catch (_) { return null; }
     return folder;
   }
+  let quietly = null;
+  function quietFolder() {                       // the folder, listed only if the browser needn't ask (no click)
+    if (folder || !keepFolder) return Promise.resolve(folder);
+    if (!quietly) quietly = (async () => {
+      const sf = await savedFolder();
+      if (sf && sf.ok && !folder) { try { setFolder(await folderOf(sf.handle)); } catch (_) { /* gone */ } }
+      return folder;
+    })().finally(() => { quietly = null; });
+    return quietly;
+  }
   window.__stingFolder = setFolder;              // (tests: {name, files: [{path, file}]})
 
   // ─── Previews (on the page's preview output, audio-out.js) ────────────────
@@ -191,9 +204,10 @@ var StingPicker = (function () {
 .sting-check input { width: auto; flex: none; margin: 0; }
 .sting-chiphead { color: var(--dim, #888); font-size: 0.85em; margin: 0 0 0.25rem; }
 .sting-chiphead span { opacity: 0.8; }
-#sting-chips { margin: 0 0 0.5rem; }
+#sting-chips { margin: 0 0 0.3rem; }
 #sting-chips .ss-chips { max-height: 9.5rem; }
-.sting-credit { color: var(--dim, #888); font-size: 0.75em; margin: 0.6rem 0 0; opacity: 0.8; }`;
+.sting-listen { color: var(--dim, #888); font-size: 0.85em; margin: 0 0 0.6rem; min-height: 1.2em; }
+.sting-credit { color: var(--dim, #888); font-size: 0.75em; margin: -0.3rem 0 0.8rem; opacity: 0.8; }`;
   function style() {
     if (document.getElementById('sting-picker-css')) return;
     const s = document.createElement('style'); s.id = 'sting-picker-css'; s.textContent = CSS;
@@ -214,14 +228,13 @@ var StingPicker = (function () {
     const wrap = document.createElement('div');
     wrap.className = 'ask sting-dlg';
     wrap.innerHTML = '<div class="ask-box" role="dialog" aria-modal="true">' +
+      (styled ? `<div class="sting-chiphead">Styles <span>(light some to see only those, in every tab)</span></div><div id="sting-chips"></div><p class="sting-listen" id="sting-listen"></p>` : '') +
       '<div class="sting-tabs"><button class="sting-tab" data-mode="stock">Walk-up sting</button><button class="sting-tab" data-mode="custom">Custom file</button><button class="sting-tab" data-mode="edited">Edited sting</button></div>' +
       (opts.note ? `<p class="sting-note">${esc(opts.note)}</p>` : '') +
       '<div class="sting-pane" data-mode="stock">' +
-        (styled ? `<div class="sting-chiphead">Styles <span>(light some to see only those)</span></div><div id="sting-chips"></div>` : '') +
         (stockSt.length ? `<span class="sting-row"><select id="sting-stock"></select><button type="button" id="sting-prev" title="Hear it">▶</button><button type="button" id="sting-sedit" title="${CLIP_TIP}">✂</button></span>` +
           (opts.users ? `<label class="sting-check"><input type="checkbox" id="sting-hideused"> ${esc(opts.hideLabel || 'Hide stings already in use')}</label>` : '') +
           `<p class="sting-note" id="sting-none" hidden>${esc(opts.noneLeft || 'Every stock sting is already in use.')}</p>` : '<p class="sting-note">This site has no stock stings.</p>') +
-        (styled ? `<p class="sting-credit">${esc(StingStyles.CREDIT)}</p>` : '') +
       '</div>' +
       '<div class="sting-pane" data-mode="custom">' +
         `<p class="sting-note">${esc(opts.fileNote || 'Music or a video of your own, from this computer: one file, or pick from a folder of them.')}</p>` +
@@ -235,12 +248,22 @@ var StingPicker = (function () {
         '<p class="sting-note" id="sting-mnone">No clips yet. In the sting library, choose just the part of a track you want, with fades: of a stock sting or a file of your own.</p>' +
         '<button type="button" id="sting-lib">Open the sting library…</button>' +
       '</div>' +
+      (styled ? `<p class="sting-credit">${esc(StingStyles.CREDIT)}</p>` : '') +
       '<div class="ask-btns"><button class="primary sting-use">Use</button><button class="sting-cancel">Cancel</button></div></div>';
     document.body.appendChild(wrap);
     const $d = sel => wrap.querySelector(sel);
     const sel = $d('#sting-stock'), folderSel = $d('#sting-folder'), mineSel = $d('#sting-mine'), hideBox = $d('#sting-hideused'), prevBtn = $d('#sting-prev'), useBtn = $d('.sting-use');
     let styleKeys = [];                            // the style chips lit (none: every sting)
     let mode = 'stock';
+    // Styles: a stock sting's (stored), a file's (listened to here: undefined until then), a clip's (its song's or its file's)
+    const SS = window.StingStyles, lit = () => styled && styleKeys.length > 0;
+    const fileOf = (name, size) => (styled ? SS.localOf(SS.localKey(name, size)) : undefined);
+    const mineStyles = e => (e.file ? fileOf(e.file, e.size) : (stockSt.find(x => (e.stock ? x.name === e.stock : x.url === e.url) && x.styles) || {}).styles);
+    const styleTag = (list, b) => { const st = b ? b.i : Array.isArray(list) ? SS.top(list) : -1; return st >= 0 ? ' · ' + esc(SS.nameOf(st)) : ''; };
+    function rank(rows) {                          // with chips lit: only those in them, best first (each with the style it matched)
+      if (!lit()) return rows;
+      return rows.map(r => Object.assign(r, { b: SS.bestAny(r.s, styleKeys) })).filter(r => r.b && r.b.score >= SS.FLOOR).sort((a, b) => b.b.score - a.b.score);
+    }
 
     // the stock list: whole tracks a better clip replaces left out; with a style typed, only the stings in it,
     // best first, each with the style it matched (else each with its top style)
@@ -264,23 +287,28 @@ var StingPicker = (function () {
     }
     function fillMine() {
       const keep = mineSel.value;
-      mineSel.innerHTML = mine.map((e, i) => {
+      mineSel.innerHTML = rank(mine.map((e, i) => ({ e, i, s: styled ? mineStyles(e) : undefined }))).map(({ e, i, s, b }) => {
         const l = StingClip.length(e, e.duration);
-        return `<option value="${i}"${mineOk[i] ? '' : ' disabled'}>${esc(e.name)}${l ? ' · ' + fmtDur(Math.max(1, Math.round(l))) : ''}${mineOk[i] ? '' : ' (its file isn’t on this computer)'}</option>`;
+        return `<option value="${i}"${mineOk[i] ? '' : ' disabled'}>${esc(e.name)}${l ? ' · ' + fmtDur(Math.max(1, Math.round(l))) : ''}${styled ? styleTag(s, b) : ''}${mineOk[i] ? '' : ' (its file isn’t on this computer)'}</option>`;
       }).join('');
-      if (keep && mineOk[Number(keep)]) mineSel.value = keep; else { const first = mineOk.indexOf(true); if (first >= 0) mineSel.value = String(first); }
-      $d('#sting-minerow').style.display = mine.length ? '' : 'none';
-      $d('#sting-mnone').style.display = mine.length ? 'none' : '';
+      const ok = [...mineSel.options].filter(o => !o.disabled);
+      if (ok.some(o => o.value === keep)) mineSel.value = keep; else if (ok.length) mineSel.value = ok[0].value;
+      $d('#sting-minerow').style.display = mineSel.options.length ? '' : 'none';
+      $d('#sting-mnone').style.display = mineSel.options.length ? 'none' : '';
+      $d('#sting-mnone').textContent = mine.length ? 'None of your clips is in the styles lit (a file not listened to yet sits out).' : 'No clips yet. In the sting library, choose just the part of a track you want, with fades: of a stock sting or a file of your own.';
     }
     function fillFolder() {
       const box = $d('#sting-folderbox');
       box.hidden = !folder;
       if (!folder) return;
-      const keep = folderSel.value;
-      folderSel.innerHTML = folder.files.map((f, i) => `<option value="${i}">${esc(noExt(f.path))}</option>`).join('');
+      const keep = folderSel.value, rows = rank(folder.files.map((f, i) => ({ f, i, s: styled && f.k ? SS.localOf(f.k) : undefined })));
+      folderSel.innerHTML = rows.map(({ f, i, s, b }) => `<option value="${i}">${esc(noExt(f.path))}${styled ? styleTag(s, b) : ''}</option>`).join('');
       if ([...folderSel.options].some(o => o.value === keep)) folderSel.value = keep;
-      $d('#sting-foldername').textContent = folder.files.length ? `In “${folder.name}”${folder.files.length >= FOLDER_MAX ? ' (the first ' + FOLDER_MAX + ')' : ''}:` : `No audio or video files in “${folder.name}”.`;
-      $d('#sting-folderrow').style.display = folder.files.length ? '' : 'none';
+      const unheard = lit() ? folder.files.filter(f => !f.k || SS.localOf(f.k) === undefined).length : 0;
+      $d('#sting-foldername').textContent = !folder.files.length ? `No audio or video files in “${folder.name}”.`
+        : (lit() ? (rows.length ? `In “${folder.name}”, in the styles lit` : `Nothing in “${folder.name}” in the styles lit`) + (unheard ? ` (${unheard} not listened to yet)` : '') + (rows.length ? ':' : '.')
+          : `In “${folder.name}”${folder.files.length >= FOLDER_MAX ? ' (the first ' + FOLDER_MAX + ')' : ''}:`);
+      $d('#sting-folderrow').style.display = folderSel.options.length ? '' : 'none';
       $d('#sting-reopen').hidden = true;
       $d('#sting-folderpick').textContent = 'Choose another folder…';
     }
@@ -293,13 +321,41 @@ var StingPicker = (function () {
       if (f.pk !== k) { f.pk = k; f.pf = StingClip.playable(raw); }
       try { return await f.pf; } catch (err) { f.pk = null; alert(err && err.message || err); return false; }
     };
+    const canUse = () => { useBtn.disabled = mode === 'stock' ? !(sel && sel.options.length) : mode === 'custom' ? !(folder && folderSel.options.length) : ![...mineSel.options].some(o => !o.disabled); };
     function setMode(m) {
       mode = m;
       stopPreview();
       wrap.querySelectorAll('.sting-tab').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
       wrap.querySelectorAll('.sting-pane').forEach(p => { p.style.display = p.dataset.mode === m ? '' : 'none'; });
       useBtn.textContent = m === 'stock' ? 'Use this sting' : m === 'custom' ? 'Use this file' : 'Use this clip';
-      useBtn.disabled = m === 'stock' ? !(sel && sel.options.length) : m === 'custom' ? !(folder && folder.files.length) : !mineOk.some(Boolean);
+      canUse();
+    }
+    // Styles: the chips count every song here (stock, the folder's files and my clips' once listened to)
+    let chipsUI = null, chipSig = '';
+    function chipLists() {
+      const seen = new Map();
+      for (const x of stockSt) if (x.media !== 'video' && x.styles && !seen.has('url:' + x.url)) seen.set('url:' + x.url, x.styles);
+      mine.forEach((e, i) => { if (mineOk[i] && e.file) { const s = fileOf(e.file, e.size); if (s) seen.set(SS.localKey(e.file, e.size), s); } });
+      if (folder) for (const f of folder.files) if (f.k) { const s = SS.localOf(f.k); if (s) seen.set(f.k, s); }
+      return [...seen.values()];
+    }
+    function refresh() {                           // a file listened to (or the folder, or my clips, changed): redrawn, nothing stopped
+      if (!styled || !wrap.isConnected) return;
+      const lists = chipLists(), sig = lists.length + ':' + (folder ? folder.name + ':' + folder.files.length : '') + ':' + mine.length;
+      if (chipsUI && sig !== chipSig) { chipSig = sig; chipsUI.set(lists, styleKeys); }
+      fill(); fillFolder(); fillMine(); canUse();
+      $d('#sting-listen').textContent = SS.listenNote();
+    }
+    async function listenOwn() {                   // the folder's files and my clips' files: listened to (unless known)
+      if (!styled) return;
+      const items = [];
+      if (folder) for (const f of folder.files) {
+        if (!f.k) { try { const file = f.file || await f.handle.getFile(); f.k = SS.localKey(file.name, file.size); } catch (_) { continue; } }
+        items.push({ key: f.k, get: () => (f.file ? Promise.resolve(f.file) : f.handle.getFile()) });
+      }
+      mine.forEach((e, i) => { if (mineOk[i] && e.file) items.push({ key: SS.localKey(e.file, e.size), get: () => StingLibrary.source(e, stockSt) }); });
+      SS.listen(items);
+      refresh();
     }
     async function libraryChanged() {
       if (!window.StingLibrary) return;
@@ -307,6 +363,7 @@ var StingPicker = (function () {
       if (JSON.stringify(now) === JSON.stringify(mine)) return;
       mine = now; mineOk = await okList(mine, stockSt);
       fillMine(); fill(); setMode(mode);
+      listenOwn();
     }
 
     if (sel) {
@@ -316,11 +373,7 @@ var StingPicker = (function () {
         hideBox.addEventListener('change', () => { try { localStorage.setItem(key, hideBox.checked ? '1' : '0'); } catch (_) { /* private mode */ } stopPreview(); fill(); setMode(mode); });
       }
       sel.addEventListener('change', stopPreview);
-      if ($d('#sting-chips')) {                    // the stock songs' styles, one list a song, for the chips' counts
-        const seen = new Map();
-        for (const x of stockSt) if (x.media !== 'video' && x.styles && !seen.has(x.url)) seen.set(x.url, x.styles);
-        StingStyles.chips($d('#sting-chips'), [...seen.values()], [], keys => { styleKeys = keys; stopPreview(); fill(); setMode(mode); });
-      }
+
       prevBtn.addEventListener('click', () => {
         if (preview) return stopPreview();
         const x = stockSt[Number(sel.value)];
@@ -356,7 +409,9 @@ var StingPicker = (function () {
       preview = { stop() { el.pause(); el.removeAttribute('src'); el.load(); URL.revokeObjectURL(url); } };
       $d('#sting-fprev').textContent = '■'; $d('#sting-fprev').title = 'Stop';
     });
-    const onFolder = () => { stopPreview(); fillFolder(); setMode(mode); };
+    if (styled) chipsUI = SS.chips($d('#sting-chips'), chipLists(), [], keys => { styleKeys = keys; stopPreview(); fill(); fillFolder(); fillMine(); canUse(); });
+    const offLocal = styled ? SS.onLocal(refresh) : () => {};
+    const onFolder = () => { stopPreview(); fillFolder(); setMode(mode); listenOwn(); };
     folderFns.add(onFolder);
     $d('#sting-folderpick').addEventListener('click', () => { stopPreview(); chooseFolder(); });
     if (!folder) savedFolder().then(async sf => {   // the folder from last time: listed at once, or after a click if the browser asks
@@ -368,6 +423,7 @@ var StingPicker = (function () {
     });
     fill(); fillMine(); fillFolder();
     setMode(stockSt.length ? 'stock' : 'custom');
+    listenOwn();
 
     return new Promise(resolve => {
       const onStore = ev => { if (ev.key === 'sting_library') libraryChanged(); };
@@ -379,6 +435,7 @@ var StingPicker = (function () {
         done = true;
         stopPreview();
         folderFns.delete(onFolder);
+        offLocal();
         document.removeEventListener('keydown', onKey, true);
         window.removeEventListener('storage', onStore);
         window.removeEventListener('focus', libraryChanged);
@@ -467,5 +524,5 @@ var StingPicker = (function () {
     });
   }
 
-  return { open, setup, stock, clipFields, partFields, idOf, CLIP_KEYS, choiceOf, folder: () => folder, chooseFolder, savedFolder, ensureFolder, onFolder: fn => folderFns.add(fn), openLibrary };
+  return { open, setup, stock, clipFields, partFields, idOf, CLIP_KEYS, choiceOf, folder: () => folder, chooseFolder, savedFolder, ensureFolder, quietFolder, onFolder: fn => folderFns.add(fn), openLibrary };
 })();

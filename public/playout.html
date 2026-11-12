@@ -204,7 +204,7 @@
           <div><label class="check"><input type="checkbox" id="roll-mine"> My clips <span class="hint">(your edits stand in for the tracks they came from)</span></label></div>
           <div class="row"><label>Items of at least <input type="number" id="roll-min" min="0" max="600" step="0.5"> min</label></div>
           <div class="row"><label>Stings <select id="roll-lenop"><option value="">of any length</option><option value="max">no longer than</option><option value="min">at least</option></select> <input type="number" id="roll-len" min="1" max="3600" step="1"> s</label></div>
-          <div id="roll-stylerow" hidden><div class="roll-stylehead">Only these styles <span class="hint">(any of the ones lit; none lit: any style)</span></div><div id="roll-chips"></div><div class="hint" id="roll-stylehint"></div></div>
+          <div id="roll-stylerow" hidden><div class="roll-stylehead">Only these styles <span class="hint">(any of the ones lit; none lit: any style)</span></div><div id="roll-chips"></div><div class="hint" id="roll-stylehint"></div><div class="hint" id="roll-listen"></div></div>
           <div class="row"><button id="roll-all" class="small primary">🎲 Roll stings</button><button id="roll-clear" class="small">Remove rolled stings</button></div>
           <p class="hint" id="roll-msg"></p>
         </details>
@@ -248,7 +248,7 @@
           <span class="hint">Off: while an item runs from ▶ Start item, its own cues’ ▶ and ■ are locked (■ Stop item stops them). On: for rehearsals, every cue stays in your hands.</span>
         </div>
         <div class="lvsec">
-          <b>Levels</b> <span class="hint">Each output turns its cues down to its own loudness, so one isn’t louder than the next: measured as they play, in LUFS (−23 is broadcast’s level, −14 a music service’s). Never turned up: a quieter cue plays as recorded. Off: every cue as recorded (a ✂ trim still applies). A change applies at once, to what’s playing too.</span>
+          <b>Levels</b> <span class="hint">Each output plays every cue as loud as its quietest one, so no cue is louder than the next: the louder ones are turned down to it (measured as they play, in LUFS; nothing is ever turned up). It follows the cues: add a quieter one and the level drops, to what’s playing too. Off: every cue as recorded (a ✂ trim still applies).</span>
           <div id="levels"></div>
         </div>
       </div>
@@ -259,15 +259,15 @@
   <script src="remote-peer.js?v=fd06de67"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="audio-out.js?v=e41c465e" data-role="both"></script>
-  <script src="sting-clip.js?v=c7b82608"></script>
-  <script src="sting-library.js?v=8c93912b"></script>
-  <script src="sting-picker.js?v=ec3660e8"></script>
-  <script src="sting-styles.js?v=bbfaab94"></script>
-  <script src="sting-roll.js?v=55155fad"></script>
+  <script src="sting-clip.js?v=dc1ee7ff"></script>
+  <script src="sting-library.js?v=db93145a"></script>
+  <script src="sting-picker.js?v=f0d2e63a"></script>
+  <script src="sting-styles.js?v=a7cb8fe0"></script>
+  <script src="sting-roll.js?v=c3446c5b"></script>
   <script src="deck-face.js?v=095d2354"></script>
   <script src="virtual-deck.js?v=909424e5"></script>
   <script src="deck-hid.js?v=a45aeaac"></script>
   <script src="playout-deck.js?v=09148b8e"></script>
-  <script src="playout.js?v=55388e6f"></script>
+  <script src="playout.js?v=e2c29ac4"></script>
 </body>
 </html>

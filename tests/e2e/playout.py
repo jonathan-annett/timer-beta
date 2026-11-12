@@ -294,7 +294,7 @@ with sync_playwright() as p:
     check("the window closed by hand: the video comes back here", vstate()["where"] == "here" and po.text_content("#ext") == "To external monitor", [vstate(), po.text_content("#ext")])
     po.click("#stopall"); po.wait_for_timeout(200)
 
-    # Options → Levels: each output turns its cues down (never up) to a level of its own, or off; at once
+    # Options → Levels: each output plays every cue as loud as its quietest one (never turned up), or off
     po.uncheck("#follow"); po.wait_for_timeout(200)
     lv = lambda k, el="": '#levels .lv-row[data-out="%s"] %s' % (k, el)
     fire = lambda cid: po.click('#items li[data-cue="%s"] button[data-act=fire]' % cid)
@@ -302,38 +302,41 @@ with sync_playwright() as p:
     lufs = po.evaluate("Object.fromEntries(Object.values(window.__playout.cues()).flat().map(c => [c.id, c.lufs]))")
     want = lambda t, cid: min(1, 10 ** ((t - lufs[cid]) / 20)) if t is not None else 1
     out2 = po.evaluate("'out:' + window.__playout.cues().b[2].out.id")
+    show = po.evaluate("Object.values(window.__playout.cues()).flat().filter(c => !c.out && Number.isFinite(c.lufs)).map(c => [c.name, c.lufs])")
+    quiet, loud = min(show, key=lambda x: x[1]), max(show, key=lambda x: x[1])
     rows = po.evaluate("[...document.querySelectorAll('#levels .lv-row')].map(r => r.dataset.out + '|' + r.querySelector('.lv-what').textContent)")
     check("Options → Levels: a row for Show and one for the sound card a cue uses", rows == ["show|→ Show", out2 + "|→ " + OUT2], rows)
-    check("… unset: the house level (−23 LUFS), on", po.input_value(lv("show", "input[data-lv=lufs]")) == "-23" and po.is_checked(lv("show", "input[data-lv=on]")), po.input_value(lv("show", "input[data-lv=lufs]")))
-    check("… with its cues' loudness", "cues ·" in po.text_content(lv("show", ".lv-note")) and "LUFS" in po.text_content(lv("show", ".lv-note")), po.text_content(lv("show", ".lv-note")))
+    note = po.text_content(lv("show", ".lv-note"))
+    check("… its level is its quietest cue's, and it says which", po.evaluate("window.__playout.target('show')") == round(quiet[1], 1) and ("Level: −%.1f LUFS, its quietest cue (%s)" % (-round(quiet[1], 1), quiet[0])) in note, [note, quiet])
+    check("… and the biggest cut: the loudest, turned down by so much", ("The loudest, %s, is turned down %.1f dB" % (loud[0], loud[1] - round(quiet[1], 1))) in note, note)
+    check("… nothing to choose: no level box, no Match the quietest", po.locator("#levels input[type=number], #levels button[data-lv=match]").count() == 0)
+    t = round(quiet[1], 1)
     fire(ids["a"][0]); fire(ids["a"][1]); fire(ids["b"][2]); po.wait_for_timeout(500)
     g = [gain(ids["a"][0]), gain(ids["a"][1]), gain(ids["b"][2])]
-    check("cues play turned down to their output's level (streamed, from memory, on a card of its own)", all(x is not None for x in g) and abs(g[0] - want(-23, ids["a"][0])) < 0.01 and abs(g[1] - want(-23, ids["a"][1])) < 0.01 and abs(g[2] - want(-23, ids["b"][2])) < 0.01 and g[0] < 0.9, [g, lufs])
-    po.fill(lv("show", "input[data-lv=lufs]"), "-30"); po.press(lv("show", "input[data-lv=lufs]"), "Enter"); po.wait_for_timeout(500)
-    g = [gain(ids["a"][0]), gain(ids["a"][1]), gain(ids["b"][2])]
-    check("Show at −30: at once, to what's playing on it; the other output's cue unchanged", abs(g[0] - want(-30, ids["a"][0])) < 0.01 and abs(g[1] - want(-30, ids["a"][1])) < 0.01 and abs(g[2] - want(-23, ids["b"][2])) < 0.01, g)
-    po.fill(lv(out2, "input[data-lv=lufs]"), "-99"); po.press(lv(out2, "input[data-lv=lufs]"), "Tab"); po.wait_for_timeout(300)
-    check("the other output out of range: the nearest level (−40), its cue at once", po.input_value(lv(out2, "input[data-lv=lufs]")) == "-40" and abs(gain(ids["b"][2]) - want(-40, ids["b"][2])) < 0.01 and abs(gain(ids["a"][0]) - want(-30, ids["a"][0])) < 0.01, [po.input_value(lv(out2, "input[data-lv=lufs]")), gain(ids["b"][2])])
+    check("cues play turned down to it (streamed, from memory); a card with one cue: as it is", all(x is not None for x in g) and abs(g[0] - want(t, ids["a"][0])) < 0.01 and abs(g[1] - want(t, ids["a"][1])) < 0.01 and abs(g[2] - 1) < 0.01, [g, lufs, t])
     po.uncheck(lv("show", "input[data-lv=on]")); po.wait_for_timeout(500)
     g = [gain(ids["a"][0]), gain(ids["a"][1]), gain(ids["b"][2])]
-    check("Show off: its cues as recorded (only a trim), the other output still levelled", abs(g[0] - 1) < 0.01 and abs(g[1] - 1) < 0.01 and abs(g[2] - want(-40, ids["b"][2])) < 0.01 and po.is_disabled(lv("show", "input[data-lv=lufs]")), g)
+    check("Show off: its cues as recorded (only a trim), at once", abs(g[0] - 1) < 0.01 and abs(g[1] - 1) < 0.01 and "Off" in po.text_content(lv("show", ".lv-note")), g)
     check("… and the clip editor shows a cue against its own output (off: as it is)", (po.click('#items li[data-cue="%s"] button[data-act=edit]' % ids["a"][1]), po.wait_for_timeout(1500), "its output isn’t levelled" in po.text_content(".sc-loud"))[-1], po.text_content(".sc-loud"))
     po.keyboard.press("Escape"); po.wait_for_timeout(300)
-    po.check(lv("show", "input[data-lv=on]")); po.wait_for_timeout(300)
-    check("on again: back to its level (−30)", po.input_value(lv("show", "input[data-lv=lufs]")) == "-30" and po.evaluate("window.__playout.target('show')") == -30)
-    po.fill(lv("show", "input[data-lv=lufs]"), "-8"); po.press(lv("show", "input[data-lv=lufs]"), "Tab"); po.wait_for_timeout(300)
-    check("a level above its cues: they play as recorded (never turned up), and it says so", "quieter than this" in po.text_content(lv("show", ".lv-note")) and abs(gain(ids["a"][0]) - 1) < 0.01, po.text_content(lv("show", ".lv-note")))
-    shown = [x for x in po.evaluate("Object.values(window.__playout.cues()).flat().filter(c => !c.out && Number.isFinite(c.lufs)).map(c => c.lufs)")]
-    po.click(lv("show", "button[data-lv=match]")); po.wait_for_timeout(300)
-    check("Match the quietest: the level of the quietest cue on that output", po.evaluate("window.__playout.target('show')") == round(min(shown), 1) and "quieter" not in po.text_content(lv("show", ".lv-note")), [po.evaluate("window.__playout.target('show')"), shown])
+    po.check(lv("show", "input[data-lv=on]")); po.wait_for_timeout(500)
+    check("on again: back to its quietest cue's, at once", po.evaluate("window.__playout.target('show')") == t and abs(gain(ids["a"][0]) - want(t, ids["a"][0])) < 0.01, [po.evaluate("window.__playout.target('show')"), gain(ids["a"][0])])
+    # a quieter cue arrives: the level follows, what's playing too
+    qid = [c for c in po.evaluate("Object.values(window.__playout.cues()).flat().filter(c => !c.out)") if c.get("lufs") == quiet[1]][0]["id"]
+    po.evaluate("id => { const c = Object.values(window.__playout.cues()).flat().find(x => x.id === id); c.lufs = c.lufs - 6; }", qid)
+    po.evaluate("document.getElementById('cuectl').click(); document.getElementById('cuectl').click()"); po.wait_for_timeout(500)   # (a re-render)
+    check("a quieter cue (6 dB down): the level drops with it, and what's playing follows", po.evaluate("window.__playout.target('show')") == round(quiet[1] - 6, 1) and abs(gain(ids["a"][0]) - want(round(quiet[1] - 6, 1), ids["a"][0])) < 0.01, [po.evaluate("window.__playout.target('show')"), gain(ids["a"][0])])
+    po.evaluate("id => { const c = Object.values(window.__playout.cues()).flat().find(x => x.id === id); c.lufs = c.lufs + 6; }", qid)
     po.click("#stopall"); po.wait_for_timeout(200)
     po.click(lv(out2, "button[data-lv=tone]")); po.wait_for_timeout(400)
     roles = po.evaluate("AudioOut.sinks().then(s => s.filter(x => x.kind === 'context').map(x => x.role))")
     check("▶ Tone: the line-up tone on that output", po.evaluate("window.__playout.tones()") == [out2] and out2 in roles and po.text_content(lv(out2, "button[data-lv=tone]")) == "■ Tone", [po.evaluate("window.__playout.tones()"), roles])
     po.click("#stopall"); po.wait_for_timeout(300)
     check("… Stop all stops it", po.evaluate("window.__playout.tones()") == [] and po.text_content(lv(out2, "button[data-lv=tone]")) == "▶ Tone")
+    po.uncheck(lv(out2, "input[data-lv=on]")); po.wait_for_timeout(200)
     st = po.evaluate("JSON.parse(localStorage.playout_levels)")
-    check("levels kept on this computer, per output", st.get("show", {}).get("lufs") == round(min(shown), 1) and st.get(out2, {}).get("lufs") == -40, st)
+    check("only on/off kept on this computer, per output", st == {out2: {"off": True}}, st)
+    po.check(lv(out2, "input[data-lv=on]"))
     po.check("#follow"); po.wait_for_timeout(200)
 
     # AIFF (Chrome and Edge can't play or decode it): made a WAV as it's chosen, the samples untouched

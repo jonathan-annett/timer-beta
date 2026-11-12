@@ -27,7 +27,8 @@ def check(name, ok, got=None):
 with sync_playwright() as p:
     b = p.chromium.launch(args=["--no-proxy-server", "--autoplay-policy=no-user-gesture-required"])
     c = b.new_context(ignore_https_errors=True, viewport={"width": 1100, "height": 900})
-    c.add_init_script("window.TimerFeatures = { playout: true };")
+    c.add_init_script("window.TimerFeatures = { playout: true };"
+      "if (!localStorage.__s) { localStorage.__s = 1; localStorage.playout_demo_cues = JSON.stringify({ 'demo-9': [{ id: 'm1', name: 'Measured', media: 'audio', src: 'file', trigger: 'start', at: 0, duration: 5, lufs: -20 }] }); }")   # (a measured cue: Show has a level, so ▶ Tone)
     c.route("**/*", h)
     po = c.new_page(); po.on("pageerror", lambda e: errs.append("playout: " + str(e)))
     po.goto(BASE + "playout.html?demo"); po.wait_for_timeout(1200)

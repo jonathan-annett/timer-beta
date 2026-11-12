@@ -29,6 +29,16 @@
  *                                                       have, with how many, each genre followed by its styles,
  *                                                       most stings first; tapping one turns it on or off;
  *                                                       onChange(keys). → {set(lists, keys)}
+ * Files of your own (step 4, the owner, 13 Nov 2026: automatic, once a folder is ticked or listed): listened
+ * to on this computer in the background, one at a time (one page at a time: the Web Lock
+ * sting-styles-listen), their top 20 styles kept in this browser by file name and size.
+ *   StingStyles.localKey(name, size)                    a file's key ("song.mp3|4197288")
+ *   StingStyles.localOf(key) → list | null | undefined  its styles; null: it couldn't be listened to; undefined: not yet
+ *   StingStyles.listen([{key, get() → Promise<Blob>}])  listened to unless known (or waiting already)
+ *   StingStyles.listening() → {busy, done, total, stopped}   (stopped: why it gave up, e.g. the model didn't load)
+ *   StingStyles.listenNote() → "Listening to your files for their styles: 12 of 85…", or ''
+ *   StingStyles.onLocal(fn) → off()                     fn() after a file is listened to (here or in another
+ *                                                       tab), at most about once a second
  * Scores are independent sigmoids, not shares of 1: a clear match is typically 0.3–0.7, anything over
  * about 0.1 a plausible tag (MTG's guidance; to tune on the stings).
  *
@@ -57,9 +67,9 @@ var StingStyles = (function () {
       if (!w) return;
       if (m.progress != null) { if (w.onProgress) w.onProgress(m.progress); return; }
       waiting.delete(m.id);
-      if (m.error) w.reject(new Error(m.error)); else w.resolve(m);
+      if (m.error) w.reject(Object.assign(new Error(m.error), { model: !!m.model })); else w.resolve(m);
     };
-    worker.onerror = e => { for (const w of waiting.values()) w.reject(new Error(e.message || 'The style worker stopped')); waiting.clear(); worker = null; };
+    worker.onerror = e => { for (const w of waiting.values()) w.reject(Object.assign(new Error(e.message || 'The style worker stopped'), { model: true })); waiting.clear(); worker = null; };
     return worker;
   }
   async function samplesOf(blob) {
@@ -146,7 +156,13 @@ var StingStyles = (function () {
     }
     let on = new Set((keys || []).filter(isKey)), last = lists || [];
     function draw() {
-      const g = [...counts(last).entries()].sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0]));
+      const cm = counts(last);
+      for (const k of on) {                          // a lit one stays (0) when nothing here is in it now, so it can be turned off
+        const i = INDEX.get(k), ge = i != null ? GENRE_OF[i] : k;
+        if (!cm.has(ge)) cm.set(ge, { n: 0, styles: new Map() });
+        if (i != null && !cm.get(ge).styles.has(k)) cm.get(ge).styles.set(k, 0);
+      }
+      const g = [...cm.entries()].sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0]));
       const chip = (k, label, n, genre) => `<button type="button" class="ss-chip${genre ? ' ss-genre' : ''}${on.has(k) ? ' on' : ''}" data-k="${esc(k)}" aria-pressed="${on.has(k)}"${genre ? ` title="Any ${esc(label)} style"` : ''}>${esc(label)} <i>(${n})</i></button>`;
       box.innerHTML = '<div class="ss-chips">' + (g.length ? g.map(([ge, v]) => '<div class="ss-group">' + chip(ge, ge, v.n, true) +
         [...v.styles.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([l, n]) => chip(l, l.split('---')[1], n)).join('') + '</div>').join('')
@@ -164,6 +180,79 @@ var StingStyles = (function () {
     draw();
     return { set(lists2, keys2) { if (lists2) last = lists2; if (keys2) on = new Set(keys2.filter(isKey)); draw(); }, keys: () => [...on] };
   }
+  // ─── Files of your own: listened to here, kept in this browser ───
+  // localStorage sting_styles_local: {model, files: {key: {s: [[i, score]…] | 0, t: day}}} (0: it couldn't be
+  // listened to: not audio, under a second, unreadable; a new model starts again; past LOCAL_MAX the oldest go)
+  const LOCAL = 'sting_styles_local', LOCAL_MAX = 2000;
+  const localKey = (name, size) => String(name).replace(/^.*[\\/]/, '') + '|' + size;
+  let local = null;
+  function localStore() {
+    if (local) return local;
+    try { local = JSON.parse(localStorage.getItem(LOCAL) || 'null'); } catch (_) { local = null; }
+    if (!local || local.model !== MODEL || !local.files || typeof local.files !== 'object') local = { model: MODEL, files: {} };
+    return local;
+  }
+  function saveLocal() {
+    const f = localStore().files, keys = Object.keys(f);
+    if (keys.length > LOCAL_MAX) keys.sort((a, b) => (f[a].t || 0) - (f[b].t || 0)).slice(0, keys.length - LOCAL_MAX).forEach(k => delete f[k]);
+    try { localStorage.setItem(LOCAL, JSON.stringify(local)); } catch (_) { /* full, or private mode: kept for this page */ }
+  }
+  function localOf(key) { const e = localStore().files[key]; return !e ? undefined : e.s ? valid(e.s) : null; }
+  const queue = [], queued = new Set(), localFns = new Set();
+  let busy = false, done = 0, total = 0, stopped = null;
+  const listening = () => ({ busy: busy || queue.length > 0, done, total, stopped });
+  const listenNote = () => (busy || queue.length ? `Listening to your files for their styles: ${done} of ${total}…`
+    : stopped ? 'Couldn’t listen to your files for their styles: ' + stopped + ' Reload the page to try again.' : '');
+  let lastTell = 0, tellT = 0;
+  function tell() {                                // the pages redraw: at most about once a second (and once more at the end)
+    clearTimeout(tellT);
+    const go = () => { lastTell = Date.now(); localFns.forEach(fn => { try { fn(); } catch (_) { /* its own */ } }); };
+    const wait = 1000 - (Date.now() - lastTell);
+    if (wait <= 0) go(); else tellT = setTimeout(go, wait);
+  }
+  function listen(items) {
+    if (stopped) return;                           // (the model didn't load: not again until a reload)
+    let n = 0;
+    for (const it of items || []) if (it && it.key && !queued.has(it.key) && localOf(it.key) === undefined) { queued.add(it.key); queue.push(it); n++; }
+    if (!n) return;
+    if (!busy) { done = 0; total = 0; }
+    total += n;
+    tell();
+    if (!busy) run();
+  }
+  async function run() {
+    busy = true;
+    while (queue.length) {
+      const it = queue[0];
+      try { await one(it); }
+      catch (err) {                                  // the model didn't load: nothing more can be listened to now
+        stopped = 'the style model didn’t load (' + (err && err.message || err) + ').';
+        queue.length = 0; queued.clear();
+        break;
+      }
+      queue.shift(); queued.delete(it.key); done++;
+      tell();
+    }
+    busy = false;
+    tell();
+  }
+  const oneAtATime = fn => (navigator.locks ? navigator.locks.request('sting-styles-listen', fn) : fn());
+  function one(it) {
+    return oneAtATime(async () => {
+      local = null;                                  // (another page may have listened to it meanwhile)
+      if (localOf(it.key) !== undefined) return;
+      let s = 0;
+      try {
+        let blob = await it.get();
+        if (blob && window.StingClip) blob = await StingClip.playable(blob);   // (an AIFF: as WAV)
+        if (blob) s = compact((await analyse(blob)).scores, 20);
+      } catch (err) { if (err && err.model) throw err; s = 0; }
+      localStore().files[it.key] = { s, t: Math.floor(Date.now() / 864e5) };
+      saveLocal();
+    });
+  }
+  window.addEventListener('storage', e => { if (e.key === LOCAL) { local = null; tell(); } });   // (listened to in another tab)
+
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const valid = list => (Array.isArray(list) ? list.filter(p => Array.isArray(p) && Number.isInteger(p[0]) && p[0] >= 0 && p[0] < 400 && typeof p[1] === 'number' && isFinite(p[1]))
     .slice(0, 20).sort((a, b) => b[1] - a[1]) : null);
@@ -171,5 +260,6 @@ var StingStyles = (function () {
   function expand(list) { const s = new Float32Array(400); for (const [i, v] of list || []) if (i >= 0 && i < 400) s[i] = v; return s; }
 
   return { LABELS, STYLES, MODEL, THRESHOLD, FLOOR, CREDIT, analyse, ranked, tags, match, compact, expand, best, fits, top, nameOf, valid, fitsAny, bestAny, chips, isKey,
+    localKey, localOf, listen, listening, listenNote, onLocal: fn => { localFns.add(fn); return () => localFns.delete(fn); },
     get modelUrl() { return modelUrl; }, set modelUrl(u) { modelUrl = new URL(u, location.href).href; } };
 })();

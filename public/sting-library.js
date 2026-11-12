@@ -20,7 +20,7 @@ var StingLibrary = (function () {
   const read = () => { try { const j = JSON.parse(localStorage.getItem(KEY) || '{}'); return Array.isArray(j.stings) ? j.stings : []; } catch (_) { return []; } };
   const write = list => { try { localStorage.setItem(KEY, JSON.stringify({ stings: list })); } catch (_) { /* private mode */ } };
   const fileKey = e => 'lib:' + e.file + ':' + (e.size || 0);
-  const CLIP = ['start', 'end', 'fadeIn', 'fadeOut', 'loop', 'lufs', 'volume'];
+  const CLIP = ['start', 'end', 'fadeIn', 'fadeOut', 'loop', 'lufs', 'volume', 'fadeDb'];   // (fadeDb: its fades even in dB, sting-clip.js)
 
   // One entry, tidied (import, save): only the fields of the format
   function clean(x) {
@@ -33,6 +33,7 @@ var StingLibrary = (function () {
     e.media = x.media === 'video' ? 'video' : 'audio';
     if (Number.isFinite(x.duration)) e.duration = Math.round(x.duration * 100) / 100;
     for (const k of CLIP) if (Number.isFinite(x[k]) && x[k] > 0) e[k] = x[k];
+    if (x.fadeDb === true && (e.fadeIn || e.fadeOut)) e.fadeDb = true;   // (absent: its fades a straight line, as before 13 Nov 2026)
     if (Number.isFinite(x.lufs) && x.lufs >= -70 && x.lufs <= 0) e.lufs = x.lufs; else delete e.lufs;   // its loudness as it plays (negative)
     if (!(e.volume < 1)) delete e.volume;                                                        // a trim: only below 1
     const lp = window.StingClip && StingClip.cleanLoop(x.loop);   // a loop: part of it repeated (sting-clip.js)

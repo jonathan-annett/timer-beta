@@ -68,9 +68,8 @@ with sync_playwright() as p:
     check("▶ Start item: the speaker's cue plays, the item counts down here", cid in po.evaluate("window.__playout.playing()") and "left" in po.text_content('#items li[data-id="demo-1"] .ilocal'), po.text_content('#items li[data-id="demo-1"] .ilocal'))
     po.screenshot(path=OUTDIR + "/playout_demo.png")
     po.click("#stopall"); po.wait_for_timeout(300)
-    lvl = '#levels .lv-row[data-out="show"] input[data-lv=lufs]'
-    po.fill(lvl, "-18"); po.press(lvl, "Tab"); po.wait_for_timeout(200)
-    check("Options → Levels in the demo: kept apart from a real show's", po.evaluate("[JSON.parse(localStorage.playout_demo_levels || '{}').show?.lufs, localStorage.playout_levels ?? null]") == [-18, None],
+    po.uncheck('#levels .lv-row[data-out="show"] input[data-lv=on]'); po.wait_for_timeout(200)
+    check("Options → Levels in the demo: kept apart from a real show's", po.evaluate("[JSON.parse(localStorage.playout_demo_levels || '{}').show?.off, localStorage.playout_levels ?? null]") == [True, None],
           po.evaluate("[localStorage.playout_demo_levels, localStorage.playout_levels]"))
 
     # the names stay over a reload; New speakers changes them, the cues stay on their slots

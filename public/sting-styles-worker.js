@@ -14,7 +14,8 @@
  * Serra, Bogdanov, "Music Representation Learning Based on Editorial Metadata from Discogs", ISMIR 2022.
  *
  * Messages: {id, samples: Float32Array (16 kHz mono), model: url} → {id, scores: Float32Array(400),
- * patches, frames} | {id, error}. The model loads once, on the first message.
+ * patches, frames} | {id, error, model?} (model: true when it's the model that didn't load, not the file).
+ * The model loads once, on the first message.
  * In node (tests): module.exports = {melFrames, patchStarts}.
  * MIT Licensed (this file; not the model)
  */
@@ -107,8 +108,9 @@ if (typeof importScripts === 'function') {
   }
   self.onmessage = async e => {
     const { id, samples, model } = e.data || {};
+    let s;
+    try { s = await load(model); } catch (err) { self.postMessage({ id, error: String(err && err.message || err), model: true }); return; }
     try {
-      const s = await load(model);
       const { mel, frames } = melFrames(samples);
       const starts = patchStarts(frames), sum = new Float64Array(400);
       for (let b = 0; b < starts.length; b += BATCH) {

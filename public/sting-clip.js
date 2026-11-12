@@ -4,6 +4,8 @@
  * play, with fades, without cutting the file. A sting (or a library entry) may carry
  *   start, end    seconds into the source (end missing = to its end)
  *   fadeIn, fadeOut   milliseconds
+ *   fadeDb            true: the fades even in dB (0 to −60 dB, then silence: smooth); absent: a straight
+ *                     line in volume, as every clip made before 13 Nov 2026 (the editor's Linear fades)
  *   loop          {from, to, plays, at?}: a region (s into the source, anywhere in it) that plays
  *                 `plays` times where it is (plays − 1 copies straight after it), to make a short
  *                 sting longer; moved (at: s into the source), `plays` copies go in at `at` and the
@@ -79,10 +81,17 @@ var StingClip = (function () {
     if (at != null && at >= 0 && at <= 86400) o.at = at;
     return o;
   }
+  // Fade curves (the owner, 13 Nov 2026): t from 0 to 1 through the fade → its gain. db: even in dB, 0 to
+  // −60 dB and then silence, which sounds steady; else a straight line in volume (clips made before, and
+  // ticked Linear fades), which sounds as if little happens until the end. Live fades (Fade out, Esc, the
+  // deck) are always even in dB.
+  const curveOut = (t, db) => (t >= 1 ? 0 : t <= 0 ? 1 : db ? Math.pow(10, -3 * t) : 1 - t);
+  const curveIn = (t, db) => (t <= 0 ? 0 : t >= 1 ? 1 : db ? Math.pow(10, -3 * (1 - t)) : t);
   function region(s) {
     if (!s) return null;
     const r = { start: num(s.start), end: num(s.end), fadeIn: num(s.fadeIn) || 0, fadeOut: num(s.fadeOut) || 0 }, lp = cleanLoop(s.loop);
     if (lp) r.loop = lp;
+    if (s.fadeDb === true && (r.fadeIn || r.fadeOut)) r.fadeDb = true;
     return r.start != null || r.end != null || r.fadeIn || r.fadeOut || lp ? r : null;
   }
   function plan(s, dur) {
@@ -141,8 +150,8 @@ var StingClip = (function () {
         }
         o += g[1] - g[0];
       });
-      for (let i = 0; i < fi; i++) to[i] *= i / fi;
-      for (let i = 0; i < fo; i++) to[to.length - 1 - i] *= i / fo;
+      for (let i = 0; i < fi; i++) to[i] *= curveIn(i / fi, r.fadeDb);
+      for (let i = 0; i < fo; i++) to[to.length - 1 - i] *= curveOut(1 - i / fo, r.fadeDb);
     }
     return out;
   }
@@ -302,11 +311,12 @@ var StingClip = (function () {
       gain, ended, duration: buf.duration,
       time: () => (loop ? (c.currentTime - t0) % buf.duration : Math.min(buf.duration, c.currentTime - t0)),
       stop(at) { try { node.stop(at); } catch (_) { /* stopped */ } },
-      fade(ms) {                                       // fades out from here, then stops
-        const now = c.currentTime, end = now + ms / 1000;
-        gain.gain.setValueAtTime(gain.gain.value, now);
-        gain.gain.linearRampToValueAtTime(0, end);
-        try { node.stop(end); } catch (_) { /* stopped */ }
+      fade(ms) {                                       // fades out from here (even in dB, to −60 dB), then stops
+        const now = c.currentTime, end = now + ms / 1000, v = gain.gain.value;
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(v, now);
+        if (v > 1e-6) gain.gain.exponentialRampToValueAtTime(v / 1000, end);
+        try { node.stop(v > 1e-6 ? end : now); } catch (_) { /* stopped */ }
       },
     };
   }
@@ -345,6 +355,8 @@ var StingClip = (function () {
 .sc-row label { color: #aaa; display: inline-flex; gap: 0.4rem; align-items: center; }
 .sc-row input { font: inherit; width: 6.5rem; padding: 0.25rem 0.4rem; background: #1a1a1a; color: #eee; border: 1px solid #333; border-radius: 0.3rem; font-variant-numeric: tabular-nums; }
 .sc-row input.sc-ms { width: 4.5rem; }
+.sc-row label.sc-lin { color: #aaa; }
+.sc-row label.sc-lin input { width: auto; margin: 0 0.3em 0 0; vertical-align: middle; }
 .sc-row input.sc-name { width: 18rem; }
 .sc-row input.sc-on { border-color: #4aa8ff; }
 .sc-row input[type=checkbox] { width: auto; }
@@ -404,6 +416,7 @@ var StingClip = (function () {
           <span>Plays for <span class="sc-len"></span></span>
           <label>Fade in <input class="sc-ms" data-k="fadeIn" type="number" min="0" step="10" title="↑ ↓ or the arrows: 10 ms (Shift: 100 ms)"> ms</label>
           <label>Fade out <input class="sc-ms" data-k="fadeOut" type="number" min="0" step="10" title="↑ ↓ or the arrows: 10 ms (Shift: 100 ms)"> ms</label>
+          <label class="sc-lin" title="Ticked: the fades are a straight line in volume (as clips made before 13 Nov 2026), which sounds as if little happens until the end. Unticked: even in dB, which sounds smooth"><input type="checkbox" class="sc-linear"> Linear fades</label>
         </div>
         <div class="sc-row sc-levelrow">
           <span>Loudness <span class="sc-loud">…</span></span>
@@ -440,6 +453,8 @@ var StingClip = (function () {
       let buf = null, peaks = null, voice = null, playSegs = [], playOff = 0, active = 'start', raf = 0, hover = null;
       const r0 = region(opts.region) || {};
       const sel = { start: r0.start || 0, end: r0.end, fadeIn: r0.fadeIn || 0, fadeOut: r0.fadeOut || 0 };
+      // Even in dB unless it's a clip whose fades were made linear (before 13 Nov 2026, or Linear fades ticked)
+      let fadeDb = r0.fadeIn || r0.fadeOut ? !!r0.fadeDb : true;
       let loop = canLoop && r0.loop ? Object.assign({}, r0.loop) : null;
       let trimDb = Math.round(20 * Math.log10(trim(opts.region)) * 10) / 10;   // the trim by ear, dB (≤ 0)
       let lufs = null, lufsKey = '', lufsT = 0;      // the clip's loudness as it plays, for lufsKey
@@ -455,7 +470,7 @@ var StingClip = (function () {
         else if (k === 'trimdb') trimDb = Math.round(Math.max(-40, Math.min(0, v)) * 10) / 10;
         else sel[k] = v;
       }
-      const cur = () => { const c = { start: sel.start, end: endOf(), fadeIn: sel.fadeIn, fadeOut: sel.fadeOut }; if (loop) c.loop = cleanLoop(loop); return c; };
+      const cur = () => { const c = { start: sel.start, end: endOf(), fadeIn: sel.fadeIn, fadeOut: sel.fadeOut }; if (fadeDb) c.fadeDb = true; if (loop) c.loop = cleanLoop(loop); return c; };
       function clamp() {
         const d = dur();
         sel.start = Math.max(0, Math.min(sel.start, d - 0.05));
@@ -557,7 +572,11 @@ var StingClip = (function () {
         // fades as ramps over the selection
         g.strokeStyle = 'rgba(255,204,51,0.8)'; g.lineWidth = dpr;
         g.beginPath();
-        g.moveTo(x(sel.start), H); g.lineTo(x(sel.start + sel.fadeIn / 1000), 2); g.lineTo(x(endOf() - sel.fadeOut / 1000), 2); g.lineTo(x(endOf()), H);
+        const a0 = sel.start, a1 = sel.start + sel.fadeIn / 1000, b0 = endOf() - sel.fadeOut / 1000, b1 = endOf(), yOf = v => H - (H - 2) * v;
+        g.moveTo(x(a0), H);
+        for (let k = 1; k <= 24; k++) g.lineTo(x(a0 + (a1 - a0) * k / 24), yOf(curveIn(k / 24, fadeDb)));
+        g.lineTo(x(b0), 2);
+        for (let k = 1; k <= 24; k++) g.lineTo(x(b0 + (b1 - b0) * k / 24), yOf(curveOut(k / 24, fadeDb)));
         g.stroke();
         g.fillStyle = '#fff';
         for (const k of ['start', 'end']) g.fillRect(x(get(k)) - edge(k) / 2, 0, edge(k), H);
@@ -804,10 +823,13 @@ var StingClip = (function () {
         const whole = sel.start <= 0 && sel.end == null && !sel.fadeIn && !sel.fadeOut && !loop;
         finish({ name: $('.sc-name').value.trim().slice(0, 200) || opts.name || 'Sting',
           start: whole ? null : sel.start, end: whole ? null : endOf(), fadeIn: sel.fadeIn || null, fadeOut: sel.fadeOut || null,
+          fadeDb: fadeDb && (sel.fadeIn || sel.fadeOut) ? true : null,
           loop: c.loop || null, sourceLength: dur(),
           lufs: measure(), volume: trimDb < 0 ? Math.round(Math.pow(10, trimDb / 20) * 10000) / 10000 : null,
           hideOriginal: opts.original ? $('.sc-hideorig').checked : undefined });
       }
+      $('.sc-linear').checked = !fadeDb;
+      $('.sc-linear').addEventListener('change', e => { fadeDb = !e.target.checked; e.target.blur(); redraw(); });
       $('.sc-cancel').addEventListener('click', () => finish(null));
       $('.sc-save').addEventListener('click', save);
       // Keys stay in here (the run sheet editor's Space is Next; the timer's keys are everywhere)
@@ -860,7 +882,7 @@ var StingClip = (function () {
     });
   }
 
-  return { region, cleanLoop, plan, length, loopCheck, LIMITS, decode, render, wav, playable, play, preview, open,
+  return { region, cleanLoop, plan, length, loopCheck, LIMITS, decode, render, wav, playable, play, preview, open, curveIn, curveOut,
     loudness, toneBuffer, gainFor, trim, target, houseLevel, showLevel, LEVEL, TARGET_KEY, SHOW_KEY };
 })();
 if (typeof module !== 'undefined') module.exports = StingClip;

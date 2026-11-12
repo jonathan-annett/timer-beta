@@ -1002,26 +1002,23 @@
     const o = StingRoll.saveOpts(ROLL_KEY, { stock: $('roll-stock').checked, mine: $('roll-mine').checked, folder: $('roll-folder').checked,
       min: $('roll-min').value, lenOp: $('roll-lenop').value, len: $('roll-len').value, styles: rollChips ? rollChips.keys() : rollOpts().styles });
     $('roll-len').disabled = !o.lenOp;
-    rollStyleHint();
+    if (StingRoll.styled()) renderRollChips(o);
   }
-  // Random stings' styles (a trial: sting-styles.js): chips of the genres and styles the stock stings have,
-  // with how many (the owner, 13 Nov 2026: choose from what there is, several at once); the hint says how many
-  // stock stings are in the ones lit
-  let rollChips = null;
+  // Random stings' styles (a trial: sting-styles.js): chips of the genres and styles the ticked sources have,
+  // with how many (the owner, 13 Nov 2026: choose from what there is, several at once): stock stings, and files
+  // of your own once listened to on this computer (step 4: automatic, StingRoll.listen; redrawn as each is done);
+  // the hint says how many are in the ones lit, and how many of yours aren't listened to yet
+  let rollChips = null, rollSeq = 0;
   async function renderRollChips(o) {
-    const lists = StingRoll.lists(await stockStings());
-    if (!rollChips) rollChips = StingStyles.chips($('roll-chips'), lists, o.styles, () => saveRollOpts());
-    else rollChips.set(lists, o.styles);
-    rollStyleHint();
+    const n = ++rollSeq, sv = await StingRoll.survey(o, await stockStings(), REMOTE);
+    if (n !== rollSeq) return;                       // (a newer one is on its way)
+    if (!rollChips) rollChips = StingStyles.chips($('roll-chips'), sv.lists, o.styles, () => saveRollOpts());
+    else rollChips.set(sv.lists, o.styles);
+    StingRoll.listen(sv);
+    $('roll-stylehint').textContent = StingRoll.hint(sv, o.styles);
+    $('roll-listen').textContent = StingStyles.listenNote();
   }
-  async function rollStyleHint() {
-    if (!StingRoll.styled()) return;
-    const o = rollOpts(), keys = o.styles;
-    if (!keys.length) { $('roll-stylehint').textContent = ''; return; }
-    const n = StingRoll.inStyle(await stockStings(), keys);
-    $('roll-stylehint').textContent = `${n} stock sting${n === 1 ? '' : 's'} in ${keys.length === 1 ? 'that style' : 'those styles'}` +
-      (((o.folder && !REMOTE) || o.mine) ? '; files of your own aren’t tagged yet, so they’re left out' : '');
-  }
+  if (StingRoll.styled() && $('rollpanel')) StingStyles.onLocal(() => { if (STINGS) renderRollChips(rollOpts()); });
   if ($('rollpanel')) {
     for (const k of ['roll-stock', 'roll-mine', 'roll-folder', 'roll-min', 'roll-lenop', 'roll-len']) $(k).addEventListener('change', saveRollOpts);
     $('roll-all').addEventListener('click', e => { e.currentTarget.blur(); rollAll(); });

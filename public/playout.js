@@ -375,10 +375,16 @@
     catch (_) { iv = setInterval(fn, ms); }
     return () => { if (w) w.terminate(); else clearInterval(iv); };
   }
-  function rampEl(el, to, ms, done) {
+  // A volume ramp: to 0 or from 0, a fade (db: even in dB: StingClip.curveOut / curveIn; else a straight line); else straight
+  function rampEl(el, to, ms, done, db) {
     const steps = Math.max(1, Math.round(ms / 50)), from = el.volume;
     let n = 0;
-    const stop = tickEvery(50, () => { n++; el.volume = Math.max(0, Math.min(1, from + (to - from) * n / steps)); if (n >= steps) { stop(); if (done) done(); } });
+    const stop = tickEvery(50, () => {
+      n++;
+      const t = n / steps, v = to === 0 ? from * StingClip.curveOut(t, db) : from === 0 ? to * StingClip.curveIn(t, db) : from + (to - from) * t;
+      el.volume = Math.max(0, Math.min(1, v));
+      if (n >= steps) { stop(); if (done) done(); }
+    });
     return stop;
   }
   // A voice's level(g) sets its gain while it plays (its output's level changed), not while it fades out
@@ -418,13 +424,13 @@
         if (over) return false;
         await el.play();
         if (over) return false;
-        if (r.fadeIn || off) stopRamp = rampEl(el, g, off ? 150 : r.fadeIn, () => { stopRamp = null; el.volume = g; });   // (g: its level now)
+        if (r.fadeIn || off) stopRamp = rampEl(el, g, off ? 150 : r.fadeIn, () => { stopRamp = null; el.volume = g; }, !off && !!r.fadeDb);   // (g: its level now; its own fade: its curve)
         if (r.end != null) stopEnd = tickEvery(50, () => {   // the end of the part: faded out there
-          if (el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { stopEnd(); stopEnd = null; v.fade(r.fadeOut || 30); }
+          if (el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { stopEnd(); stopEnd = null; v.fade(r.fadeOut || 30, !!r.fadeDb); }   // (its own fade: its curve)
         });
         return true;
       },
-      fade(ms) { if (over) return; if (stopRamp) stopRamp(); stopRamp = rampEl(el, 0, ms, finish); },
+      fade(ms, db = true) { if (over) return; if (stopRamp) stopRamp(); stopRamp = rampEl(el, 0, ms, finish, db); },   // (live: even in dB)
       level(n) { if (over || !out) return; g = n; if (!stopRamp) el.volume = n; },   // (fading in: it ends at g)
       gain: () => el.volume,
       stop() { finish(); },
@@ -470,28 +476,34 @@
     if (tones.size) { for (const k of [...tones.keys()]) stopTone(k); renderLevels(); }
   }
 
-  // ─── Levels: loudness normalisation per output (the owner, 12 Nov 2026) ───
-  // Each output (Show, and each sound card a cue has of its own) turns its cues down to a level of its
-  // own, never up (StingClip.gainFor, from their loudness as they play), or not at all (off: as recorded,
-  // only a ✂ trim). Unset: this computer's house level (−23 LUFS, unless the run sheet editor set another).
-  // A change applies at once, to what's playing on that output too. ▶ Tone: the line-up tone at that
-  // level, on that output (it follows the level), to set the desk by.
-  const LEVELS = DEMO ? 'playout_demo_levels' : 'playout_levels';   // {show | out:<id>: {lufs?, off?}}
+  // ─── Levels: loudness normalisation per output (the owner, 12 Nov 2026; always the quietest, 13 Nov) ───
+  // Each output (Show, and each sound card a cue has of its own) plays its cues as loud as its quietest
+  // measured cue: the louder ones are turned down to it, never up (StingClip.gainFor, from their loudness as
+  // they play), so every cue on it is as loud as the next. Not chosen: worked out from the cues on it (the
+  // sheet's and the extra keys'), and again whenever they change (added, measured, removed: applyLevels(),
+  // from renderLevels() when a level moved): what's playing follows, and so does a tone. Off: its cues as
+  // recorded (only a ✂ trim). ▶ Tone: the line-up tone at that level, on that output, to set the desk by.
+  const LEVELS = DEMO ? 'playout_demo_levels' : 'playout_levels';   // {show | out:<id>: {off}} (older lufs: ignored)
   let levels = {};
   try { const v = JSON.parse(store.get(LEVELS) || '{}'); if (v && typeof v === 'object') levels = v; } catch (_) { /* none yet */ }
-  const L = StingClip.LEVEL, inRange = v => typeof v === 'number' && v >= L.min && v <= L.max;
-  const levelOf = k => { const v = levels[k] || {}; return { off: !!v.off, lufs: inRange(v.lufs) ? v.lufs : StingClip.houseLevel() }; };
-  const targetOf = k => (levelOf(k).off ? null : levelOf(k).lufs);
+  const levelOf = k => ({ off: !!(levels[k] && levels[k].off) });
+  function quietestOf(k) { let q = null; for (const c of sheetCues()) if (outKey(c) === k && Number.isFinite(c.lufs) && (!q || c.lufs < q.lufs)) q = c; return q; }
+  const targetOf = k => { if (levelOf(k).off) return null; const q = quietestOf(k); return q ? Math.round(q.lufs * 10) / 10 : null; };
   const gainOf = (c, out) => StingClip.gainFor(c, targetOf(out));
   const tones = new Map();                             // output → {v: the tone playing on it, ref: the level it was made at}
+  let applied = '';                                    // the levels last applied (renderLevels: apply when they move)
+  function applyLevels() {
+    for (const p of playing.values()) if (p.out) p.voice.level(gainOf(p.c, p.out));
+    for (const [k, tn] of [...tones]) {
+      const t = targetOf(k);
+      if (t == null) stopTone(k);
+      else tn.v.gain.gain.setTargetAtTime(Math.pow(10, (t - tn.ref) / 20), tn.v.gain.context.currentTime, 0.02);
+    }
+  }
   function setLevel(k, v) {
-    levels[k] = Object.assign({}, levels[k], v);
-    if (!levels[k].off) delete levels[k].off;
+    if (v.off) levels[k] = { off: true }; else delete levels[k];
     store.set(LEVELS, JSON.stringify(levels));
-    for (const p of playing.values()) if (p.out === k) p.voice.level(gainOf(p.c, k));
-    const tn = tones.get(k), t = targetOf(k);
-    if (tn && t == null) stopTone(k);
-    else if (tn) tn.v.gain.gain.setTargetAtTime(Math.pow(10, (t - tn.ref) / 20), tn.v.gain.context.currentTime, 0.02);
+    applyLevels();
     renderLevels();
   }
   function startTone(k) {
@@ -803,29 +815,26 @@
     $('roll-stylerow').hidden = !StingRoll.styled();
     if (StingRoll.styled()) renderRollChips(o);
   }
-  // Random stings' styles (a trial: sting-styles.js): chips of the genres and styles the stock stings have,
-  // with how many (the owner, 13 Nov 2026: choose from what there is, several at once); the hint says how many
-  // stock stings are in the ones lit
-  let rollChips = null;
+  // Random stings' styles (a trial: sting-styles.js): chips of the genres and styles the ticked sources have,
+  // with how many (the owner, 13 Nov 2026: choose from what there is, several at once): stock stings, and files
+  // of your own once listened to on this computer (step 4: automatic, StingRoll.listen; redrawn as each is done);
+  // the hint says how many are in the ones lit, and how many of yours aren't listened to yet
+  let rollChips = null, rollSeq = 0;
   async function renderRollChips(o) {
-    const lists = StingRoll.lists(await StingPicker.stock());
-    if (!rollChips) rollChips = StingStyles.chips($('roll-chips'), lists, o.styles, () => saveRollOpts());
-    else rollChips.set(lists, o.styles);
-    rollStyleHint();
+    const n = ++rollSeq, sv = await StingRoll.survey(o, await StingPicker.stock(), false);
+    if (n !== rollSeq) return;                       // (a newer one is on its way)
+    if (!rollChips) rollChips = StingStyles.chips($('roll-chips'), sv.lists, o.styles, () => saveRollOpts());
+    else rollChips.set(sv.lists, o.styles);
+    StingRoll.listen(sv);
+    $('roll-stylehint').textContent = StingRoll.hint(sv, o.styles);
+    $('roll-listen').textContent = StingStyles.listenNote();
   }
-  async function rollStyleHint() {
-    if (!StingRoll.styled()) return;
-    const o = StingRoll.opts(ROLL), keys = o.styles;
-    if (!keys.length) { $('roll-stylehint').textContent = ''; return; }
-    const n = StingRoll.inStyle(await StingPicker.stock(), keys);
-    $('roll-stylehint').textContent = `${n} stock sting${n === 1 ? '' : 's'} in ${keys.length === 1 ? 'that style' : 'those styles'}` +
-      ((o.folder || o.mine) ? '; files of your own aren’t tagged yet, so they’re left out' : '');
-  }
+  if (StingRoll.styled()) StingStyles.onLocal(() => renderRollChips(StingRoll.opts(ROLL)));
   function saveRollOpts() {
     const o = StingRoll.saveOpts(ROLL, { stock: $('roll-stock').checked, mine: $('roll-mine').checked, folder: $('roll-folder').checked,
       min: $('roll-min').value, lenOp: $('roll-lenop').value, len: $('roll-len').value, styles: rollChips ? rollChips.keys() : StingRoll.opts(ROLL).styles });
     $('roll-len').disabled = !o.lenOp;
-    rollStyleHint();
+    if (StingRoll.styled()) renderRollChips(o);
   }
   for (const k of ['roll-stock', 'roll-mine', 'roll-folder', 'roll-min', 'roll-lenop', 'roll-len']) $(k).addEventListener('change', saveRollOpts);
   $('roll-all').addEventListener('click', e => { e.currentTarget.blur(); rollAll(); });
@@ -869,49 +878,36 @@
   // there's a sheet): Level to [on] [LUFS], ▶ Tone, Match the quietest, and its cues' loudness
   const dB = v => (v < 0 ? '−' : '') + Math.abs(v).toFixed(1);
   const sheetCues = () => (show.items.length ? show.items.flatMap(it => cues[it.id] || []).concat(cues[BOARD] || []) : Object.values(cues).flat());
+  // A row per output: on/off, ▶ Tone, and what its level is (its quietest cue) and the biggest cut it makes
   function renderLevels() {
-    const box = $('levels'), a = document.activeElement;
-    if (a && box.contains(a) && a.matches('input[type=number]')) return;   // (being typed in: on focusout)
-    const all = sheetCues(), keys = [SHOW], own = {};
+    const box = $('levels'), all = sheetCues(), keys = [SHOW], own = {};
     for (const c of all) { const k = outKey(c); if (k && k !== SHOW && !own[k]) { own[k] = c.out; keys.push(k); } }
+    const now = keys.map(k => k + '=' + targetOf(k)).join(',');
+    if (now !== applied) { applied = now; applyLevels(); }   // (a cue added, measured or removed moved a level)
     box.innerHTML = keys.map(k => {
-      const v = levelOf(k), list = all.filter(c => outKey(c) === k), known = list.map(c => c.lufs).filter(Number.isFinite);
+      const v = levelOf(k), list = all.filter(c => outKey(c) === k), known = list.filter(c => Number.isFinite(c.lufs));
       const d = own[k] && cardOf(own[k]);
       const name = k === SHOW ? 'Show' : (d ? d.label : own[k].label) || 'Its sound card', gone = k !== SHOW && !d;
-      const lo = Math.min(...known), hi = Math.max(...known), under = v.off ? 0 : known.filter(l => l < v.lufs - 0.05).length;
-      const note = !list.length ? 'No cues on it yet' : list.length + (list.length === 1 ? ' cue' : ' cues')
-        + (known.length ? ' · ' + (lo === hi ? dB(lo) : dB(lo) + ' to ' + dB(hi)) + ' LUFS' : '')
-        + (v.off ? ': as recorded' : under ? ' · ' + under + ' quieter than this: ' + (under === 1 ? 'it plays' : 'they play') + ' as recorded (never turned up)' : '');
+      const t = targetOf(k), q = quietestOf(k), loud = known.reduce((m, c) => (!m || c.lufs > m.lufs ? c : m), null);
+      const cut = loud && t != null ? loud.lufs - t : 0, waiting = list.length - known.length;
+      const note = !list.length ? 'No cues on it yet'
+        : v.off ? 'Off: its cues play as recorded'
+        : !known.length ? 'Its cues haven’t been measured yet: as recorded until they are'
+        : 'Level: ' + dB(t) + ' LUFS, its quietest cue (' + q.name + ')' + (known.length < 2 ? '' : cut >= 0.05 ? '. The loudest, ' + loud.name + ', is turned down ' + cut.toFixed(1) + ' dB' : '. They’re all as loud as each other')
+          + (waiting ? ' · ' + waiting + ' not measured yet' : '');
       return `<div class="lv-row" data-out="${esc(k)}"><span class="lv-what${k === SHOW ? '' : ' own'}" title="${esc(name)}">→ ${esc(name)}</span>` +
-        `<label class="check" title="Off: its cues play as recorded (only a ✂ trim)"><input type="checkbox" data-lv="on"${v.off ? '' : ' checked'}> Level to</label>` +
-        `<span class="lv-num"><input type="number" data-lv="lufs" min="${L.min}" max="${L.max}" step="0.5" value="${v.lufs}"${v.off ? ' disabled' : ''} aria-label="Level, LUFS"> LUFS</span>` +
-        `<button class="small" data-lv="tone"${v.off ? ' disabled' : ''} title="A 1 kHz tone at this level, on this output: set the desk by it">${tones.has(k) ? '■ Tone' : '▶ Tone'}</button>` +
-        `<button class="small" data-lv="match"${v.off || !known.length ? ' disabled' : ''} title="This level = its quietest cue’s, so they all play as loud as that one">Match the quietest</button>` +
+        `<label class="check" title="On: every cue on this output as loud as its quietest. Off: as recorded (only a ✂ trim)"><input type="checkbox" data-lv="on"${v.off ? '' : ' checked'}> Level</label>` +
+        `<button class="small" data-lv="tone"${t == null ? ' disabled' : ''} title="A 1 kHz tone at this level, on this output: set the desk by it">${tones.has(k) ? '■ Tone' : '▶ Tone'}</button>` +
         `<span class="hint lv-note">${gone ? '<span class="warn">Not connected</span> · ' : ''}${esc(note)}</span></div>`;
     }).join('');
   }
-  $('levels').addEventListener('input', e => {         // typed or stepped: at once while it's a level
-    const k = e.target.closest('.lv-row').dataset.out, n = Math.round(Number(e.target.value) * 10) / 10;
-    if (e.target.dataset.lv === 'lufs' && e.target.value !== '' && inRange(n)) setLevel(k, { lufs: n });
-  });
   $('levels').addEventListener('change', e => {
-    const k = e.target.closest('.lv-row').dataset.out;
-    if (e.target.dataset.lv === 'on') return setLevel(k, { off: !e.target.checked });
-    if (e.target.dataset.lv !== 'lufs') return;
-    const n = Math.round(Number(e.target.value) * 10) / 10;
-    if (e.target.value !== '' && Number.isFinite(n)) setLevel(k, { lufs: Math.max(L.min, Math.min(L.max, n)) });
-    e.target.value = levelOf(k).lufs;                  // (out of range: the nearest; nonsense: as it was)
+    if (e.target.dataset.lv === 'on') setLevel(e.target.closest('.lv-row').dataset.out, { off: !e.target.checked });
   });
   $('levels').addEventListener('click', e => {
     const b = e.target.closest('button[data-lv]'), k = b && b.closest('.lv-row').dataset.out;
-    if (!k) return;
-    if (b.dataset.lv === 'tone') { if (tones.has(k)) stopTone(k); else startTone(k); renderLevels(); }
-    else if (b.dataset.lv === 'match') {
-      const known = sheetCues().filter(c => outKey(c) === k).map(c => c.lufs).filter(Number.isFinite);
-      if (known.length) setLevel(k, { lufs: Math.max(L.min, Math.min(L.max, Math.round(Math.min(...known) * 10) / 10)) });
-    }
+    if (k && b.dataset.lv === 'tone') { if (tones.has(k)) stopTone(k); else startTone(k); renderLevels(); }
   });
-  $('levels').addEventListener('focusout', () => setTimeout(renderLevels, 0));
 
   // ─── An item's own text (the owner, 12 Nov 2026: to replace the name shown here, or add notes) ───
   // ✎ on an item opens a box holding its name (one line); what's saved is shown here instead: the first
