@@ -53,6 +53,16 @@
     .iname { font-weight: bold; color: #fff; flex: 1; }
     .idur { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
     .itag { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+    /* An item's own text (✎ on an item): the first line in place of its name, the rest as notes */
+    .inotes { white-space: pre-wrap; overflow-wrap: anywhere; color: #f0e2a8; font-size: 14px; margin: 2px 0 0; }
+    #items > li.done .inotes { color: var(--dim); }
+    .irenamed { color: var(--warn); font-size: 13px; margin: 2px 0 0; }
+    .irenamed b { color: var(--warn); }
+    form.iedit { margin: 6px 0 4px; }
+    form.iedit textarea { display: block; width: 100%; field-sizing: content; min-height: 2.1em; max-height: 50vh; resize: vertical;
+      font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 4px 6px; }
+    form.iedit textarea:focus { outline: none; border-color: var(--accent); }
+    form.iedit .row { margin-top: 6px; gap: 8px; }
     .cues { list-style: none; margin: 6px 0 0; padding: 0 0 0 14px; }
     .cues li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; padding: 2px 0; }
     .cues li > form.addcue { flex-basis: 100%; margin: 2px 0 4px 2em; }   /* ✎: when it plays */
@@ -186,6 +196,6 @@
   <script src="sting-library.js?v=8c93912b"></script>
   <script src="sting-picker.js?v=8b880b60"></script>
   <script src="sting-roll.js?v=32454fa7"></script>
-  <script src="playout.js?v=a4d0ed4d"></script>
+  <script src="playout.js?v=bd88b6ec"></script>
 </body>
 </html>

@@ -38,7 +38,8 @@
  * ({show | out:<device id>: {lufs?, off?}}: each output's level, unset = the house level; Options),
  * playout_roll (Random stings' options: StingRoll.opts), playout_cues ({itemId: [{id, name, media, src,
  * trigger, at, duration, song?, rolled?, lib?, start?, end?, fadeIn?, fadeOut?, loop?, lufs?, volume?,
- * out?}]}; before Nov 2026 playout_cues_<room>, merged in once); the files
+ * out?}]}; before Nov 2026 playout_cues_<room>, merged in once), playout_names ({itemId: {text, was, at}}:
+ * the operator's own text for an item, ✎ on it; see "An item's own text"); the files
  * are in IndexedDB (video-store.js) as 'pocue:<cue id>'.
  * MIT Licensed
  */
@@ -71,6 +72,7 @@
   const tokenKey = room => 'playout_token_' + room;
   const DEMO = new URLSearchParams(location.search).has('demo');   // ?demo (/p?demo): no timer, see startDemo()
   const CUES = DEMO ? 'playout_demo_cues' : 'playout_cues', OLD_CUES = 'playout_cues_';   // (OLD_CUES + room: before Nov 2026)
+  const NAMES = DEMO ? 'playout_demo_names' : 'playout_names';
   function loadCues() {
     const read = k => { try { const v = JSON.parse(store.get(k) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; } };
     const all = read(CUES);
@@ -847,6 +849,60 @@
     }
   });
   $('levels').addEventListener('focusout', () => setTimeout(renderLevels, 0));
+
+  // ─── An item's own text (the owner, 12 Nov 2026: to replace the name shown here, or add notes) ───
+  // ✎ on an item opens a box holding its name (one line); what's saved is shown here instead: the first
+  // line as the item's name, the rest as notes under it. On this computer only, never sent to the timer.
+  // Kept by item id, like the cues (playout_names: {itemId: {text, was, at}}; was = the timer's name for
+  // it then, so a rename since is pointed out). Saving the timer's name itself, or nothing, goes back to
+  // the timer's. An open box survives a re-render (drafts), and a list rebuild waits while it's typed in.
+  const MAX_NAMES = 500, MAX_TEXT = 2000;
+  const names = (() => { try { const v = JSON.parse(store.get(NAMES) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; } })();
+  const drafts = new Map();                            // item id → the text in its open box
+  const ownText = id => { const e = names[id]; return e && typeof e.text === 'string' && e.text ? e : null; };
+  const titleOf = it => { const e = ownText(it.id); return e ? e.text.split('\n')[0] : it.n || ''; };
+  function setName(it, text) {
+    text = String(text).replace(/\r/g, '').replace(/^\s*\n/, '').replace(/\s+$/, '').slice(0, MAX_TEXT);
+    if (!text || text === (it.n || '')) delete names[it.id];
+    else names[it.id] = { text, was: it.n || '', at: Date.now() };
+    const ids = Object.keys(names);
+    if (ids.length > MAX_NAMES) {                      // (the oldest of items no longer on the sheet go)
+      const on = new Set(show.items.map(x => x.id));
+      ids.filter(k => !on.has(k)).sort((a, b) => (names[a].at || 0) - (names[b].at || 0)).slice(0, ids.length - MAX_NAMES).forEach(k => delete names[k]);
+    }
+    store.set(NAMES, JSON.stringify(names));
+  }
+  function nameHtml(it) {
+    const own = ownText(it.id), name = it.n || '(no name)';
+    return `<span class="iname"${own ? ` title="${esc('Your text, on this computer (✎ to change it). The timer calls it: ' + name)}"` : ''}>${esc(own ? titleOf(it) : name)}</span>`;
+  }
+  function notesHtml(it) {
+    const own = ownText(it.id), notes = own ? own.text.split('\n').slice(1).join('\n') : '';
+    return (own && own.was !== (it.n || '') ? `<div class="irenamed" title="The timer renamed this item after you wrote your text: ✎ and Save (or Use the timer’s name) to clear this">The timer now calls it: <b>${esc(it.n || '(no name)')}</b></div>` : '') +
+      (notes ? `<div class="inotes">${esc(notes)}</div>` : '') +
+      (drafts.has(it.id) ? `<form class="iedit"><textarea rows="${Math.min(12, drafts.get(it.id).split('\n').length)}" aria-label="Your text for this item">${esc(drafts.get(it.id))}</textarea>` +
+        `<div class="row"><button class="small primary">Save</button><button type="button" class="small" data-name="cancel">Cancel</button>` +
+        (own ? '<button type="button" class="small" data-name="reset" title="Show the item as the timer names it again">Use the timer’s name</button>' : '') +
+        '<span class="hint">On this computer only. The first line is shown as the name, the rest as notes. Ctrl+Enter (⌘+Enter) saves.</span></div></form>' : '');
+  }
+  function openName(id) {
+    const it = show.items.find(x => x.id === id);
+    if (!it) return;
+    if (document.activeElement && document.activeElement.closest('form.iedit')) document.activeElement.blur();   // (another item's box: its text stays)
+    if (!drafts.has(id)) { const own = ownText(id); drafts.set(id, own ? own.text : it.n || ''); }
+    render();
+    const t = document.querySelector(`#items li[data-id="${CSS.escape(id)}"] form.iedit textarea`);
+    if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+  }
+  function closeName(id, save) {
+    const it = show.items.find(x => x.id === id);
+    if (save === 'reset') { delete names[id]; store.set(NAMES, JSON.stringify(names)); }
+    else if (save && it) setName(it, drafts.get(id));
+    drafts.delete(id);
+    if (document.activeElement && document.activeElement.closest('form.iedit')) document.activeElement.blur();
+    render();
+  }
+
   function render() {
     document.body.classList.toggle('manual', !following());
     renderPlace();
@@ -854,8 +910,8 @@
     const items = show.items;
     $('rshint').textContent = !show.on ? 'The timer isn’t in run sheet mode' : show.fin ? 'The show has finished' : '';
     const curIdx = items.findIndex(x => x.id === show.cur);
-    const open = document.activeElement && document.activeElement.closest('form.addcue, #items select.cout');
-    if (open) return;                                  // don't rebuild under someone adding a cue or choosing an output
+    const open = document.activeElement && document.activeElement.closest('form.addcue, #items select.cout, form.iedit');
+    if (open) return;                                  // don't rebuild under someone adding a cue, choosing an output or typing an item's text
     const manual = !following(), ro = StingRoll.opts(ROLL);
     $('items').innerHTML = items.map((it, i) => {
       const list = cues[it.id] || [], here = local && local.item === it.id, locked = here && !cueControl();
@@ -864,10 +920,11 @@
         : here ? '<button class="small" data-act="endrun" title="Stop this item’s cues, and the rest of them won’t play">■ Stop item</button>'
         : `<button class="small" data-act="run" title="Its cues as if it started now: start cues at once, the others timed from now${it.d ? ' (its length: ' + mmss(it.d) + ')' : ''}">▶ Start item</button>`;
       return `<li data-id="${esc(it.id)}" class="${i === curIdx ? 'now' : curIdx >= 0 && i < curIdx ? 'done' : ''}${here ? ' here' : ''}">` +
-        `<div class="ihead"><span class="iname">${esc(it.n || '(no name)')}</span>${i === curIdx ? '<span class="itag">now</span>' : ''}${here ? '<span class="itag ilocal"></span>' : ''}` +
-        `<span class="idur">${it.e ? 'finish' : it.d ? mmss(it.d) : ''}</span>${runBtn}` +
+        `<div class="ihead">${nameHtml(it)}${i === curIdx ? '<span class="itag">now</span>' : ''}${here ? '<span class="itag ilocal"></span>' : ''}` +
+        `<span class="idur">${it.e ? 'finish' : it.d ? mmss(it.d) : ''}</span>` +
+        `<button class="small" data-act="name" title="Your own text for this item, on this computer: replace its name, or add notes">✎</button>${runBtn}` +
         (rollable(it, ro, false) ? `<button class="small" data-act="roll"${rolling ? ' disabled' : ''} title="${rolledOf(it.id) ? 'Another walk-up sting at random (when and where it plays stay)' : 'A walk-up sting at random, at its start (Random stings, under the run sheet, says from where)'}">🎲</button>` : '') +
-        `${it.e ? '' : '<button class="small" data-act="add">+ cue</button>'}</div>` +
+        `${it.e ? '' : '<button class="small" data-act="add">+ cue</button>'}</div>` + notesHtml(it) +
         (list.length ? '<ul class="cues">' + list.map(c => `<li data-cue="${esc(c.id)}" class="${done(c) ? 'fired' : ''}${playing.has(c.id) ? ' playing' : ''}">` +
           `<button class="small" data-act="${playing.has(c.id) ? 'stop' : 'fire'}"${locked ? ' disabled' : ''} title="${locked ? 'The item started here plays its cues: ■ Stop item stops them (Options: play and stop single cues)' : playing.has(c.id) ? 'Stop' : 'Play it now (on this computer)'}">${playing.has(c.id) ? '■' : '▶'}</button>` +
           `<span class="when">${esc(whenText(c))}</span><span class="fname"${c.rolled ? ' title="Picked at random: 🎲 on the item for another; ✂ makes it yours (a roll then leaves it alone)"' : ''}>${c.rolled ? '🎲' : c.media === 'video' ? '🎞' : '🎵'} ${esc(c.name)}</span>` +
@@ -884,7 +941,7 @@
   }
   function renderNow(cd) {
     const it = show.items.find(x => x.id === show.cur);
-    $('now').innerHTML = it && cd ? `Now: <b>${esc(it.n)}</b> · ${cd.remain >= 0 ? mmss(cd.remain / 1000) + ' left' : 'over by ' + mmss(-cd.remain / 1000)}` : '';
+    $('now').innerHTML = it && cd ? `Now: <b>${esc(titleOf(it))}</b> ·${cd.remain >= 0 ? mmss(cd.remain / 1000) + ' left' : 'over by ' + mmss(-cd.remain / 1000)}` : '';
     renderLocal();
   }
   function renderLocal() {                             // the item run here: its time, in place (each tick)
@@ -906,6 +963,7 @@
     else if (b.dataset.act === 'when' && c) whenForm(b.closest('li[data-cue]'), c, 'Save', (trigger, at) => retimeCue(itemId, c, trigger, at));
     else if (b.dataset.act === 'del' && c) { if (confirm('Remove the cue “' + c.name + '”?')) removeCue(itemId, c.id); }
     else if (b.dataset.act === 'add') addForm(li);
+    else if (b.dataset.act === 'name') openName(itemId);
     else if (b.dataset.act === 'run') runLocal(itemId);
     else if (b.dataset.act === 'roll') { b.blur(); rollOne(itemId); }
     else if (b.dataset.act === 'endrun') { for (const x of cues[itemId] || []) stopCue(x.id); endLocal(); }
@@ -926,6 +984,17 @@
     render();
   });
   $('items').addEventListener('focusout', e => { if (e.target.matches('select.cout')) setTimeout(render, 0); });
+  // An item's own text: its box (Save, Cancel, Use the timer's name; Ctrl/⌘+Enter saves, Enter is a new line)
+  const nameBox = el => { const li = el.closest('form.iedit') && el.closest('li[data-id]'); return li && li.dataset.id; };
+  $('items').addEventListener('submit', e => { const id = nameBox(e.target); if (id) { e.preventDefault(); closeName(id, true); } });
+  $('items').addEventListener('click', e => { const b = e.target.closest('button[data-name]'), id = b && nameBox(b); if (id) closeName(id, b.dataset.name === 'reset' ? 'reset' : false); });
+  $('items').addEventListener('input', e => {
+    const id = e.target.matches('form.iedit textarea') && nameBox(e.target);
+    if (id) { drafts.set(id, e.target.value); e.target.rows = Math.min(12, e.target.value.split('\n').length); }
+  });
+  $('items').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.target.matches('form.iedit textarea')) { e.preventDefault(); e.target.form.requestSubmit(); }
+  });
   // + cue: when (a trigger, and its time), then what: the + sting dialog (sting-picker.js)
   const cueFile = $('cuefile');                        // Browse for a file… (needs the dialog's click)
   let browseFor = null;
@@ -985,7 +1054,8 @@
   $('full').addEventListener('click', toggleFull);
   $('ext').addEventListener('click', e => { e.currentTarget.blur(); if (place === 'external') moveVideo('here'); else toExternal(); });
   document.addEventListener('keydown', e => {
-    if (e.metaKey || e.ctrlKey || e.target.closest('input, select, textarea')) return;
+    if (e.metaKey || e.ctrlKey) return;
+    if (e.target.closest('input, select, textarea') && !(e.key === 'Escape' && e.target.closest('form.iedit'))) return;   // (Esc still fades from an item's text box: its text stays)
     if (document.querySelector('.sting-dlg, .sting-libwrap, .sc-wrap')) return;   // (a dialog has the keys)
     if (e.key === 'f' || e.key === 'F') toggleFull();
     else if (e.key === 'Escape' && !document.fullscreenElement && (playing.size || tones.size)) { e.preventDefault(); fadeAll(FADE_MS); }   // (in full screen, Esc leaves it)
@@ -1000,7 +1070,7 @@
 
   // Test hooks: what's playing, and the cues
   window.__playout = { playing: () => [...playing.keys()], cues: () => cues, show: () => show, fired: () => [...fired], ready: () => [...buffers.keys()],
-    local: () => local && { item: local.item, fired: [...local.fired] },
+    local: () => local && { item: local.item, fired: [...local.fired] }, names: () => names,
     gain: id => { const p = playing.get(id); return p ? p.voice.gain() : null; }, levels: () => levels, target: k => targetOf(k), tones: () => [...tones.keys()],
     video: () => ({ where: vid.ownerDocument === document ? 'here' : 'external', paused: vid.paused, t: vid.currentTime, src: !!vid.getAttribute('src') }) };
 
