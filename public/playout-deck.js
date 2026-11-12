@@ -6,7 +6,8 @@
  * from the press). On an item that's playing (or started here), the key stops it: going down starts a fade
  * (over at most playout_deck_fade seconds, 2 unless set), coming up stops it at once; so a tap stops it,
  * and holding fades it out, stopped wherever it's let go. The last key does the same for everything
- * (and the line-up tones); ◀ ▶ before it turn the page when the items don't fit. With Follow on, the keys
+ * (and the line-up tones); ◀ ▶ before it turn the page when the items don't fit (the Mini: four items, and ▶
+ * top right, wrapping round to the first page). With Follow on, the keys
  * show the run sheet (the live item marked) and only stop or fade: the timer starts the items.
  *
  * Extra keys (the owner, 12 Nov 2026: media that isn't on the run sheet): files dropped on an empty key
@@ -66,6 +67,9 @@ var PlayoutDeck = (function () {
       for (const id of keyed) if (!have.has(id)) s.push(id);   // new ones at the end
       return s;
     }
+    // The Mini (the owner, 12 Nov 2026): too few keys for Give to the timer or ◀ ▶: always four items, ▶ top
+    // right (the next page, back to the first after the last: tap through the run sheet) over everything.
+    const MINI = { role: [null, null, 'next', null, null, 'all'], keys: [0, 1, 3, 4] };
     // Give to the timer goes on the key where the timer's layout for that model has Give deck to playout
     // (streamdeck.js; a layout someone has changed is in streamdeck_layout_<model>), so one key hands the
     // deck back and forth; without one, next to the last. From the end, the free keys then take everything
@@ -76,6 +80,7 @@ var PlayoutDeck = (function () {
     }
     function geometry(model, n) {
       const K = MODELS[model].keyCount, r = giveKey(model);
+      if (model === 'mini') return { K, paged: true, wrap: true, per: 4, pages: Math.max(1, Math.ceil(n / 4)), role: MINI.role, keys: MINI.keys };
       const build = paged => {
         const role = new Array(K).fill(null);
         const last = () => { for (let i = K - 1; i >= 0; i--) if (!role[i]) return i; return -1; };
@@ -102,7 +107,7 @@ var PlayoutDeck = (function () {
       const model = b.model(), s = slots(model), g = geometry(model, s.length), k = keyAt(model, s.length, Math.min(b.page, g.pages - 1), i);
       if (down) {
         if (k.kind === 'prev') b.page = Math.max(0, Math.min(b.page, g.pages - 1) - 1);
-        else if (k.kind === 'next') b.page = Math.min(g.pages - 1, b.page + 1);
+        else if (k.kind === 'next') b.page = g.wrap ? (Math.min(b.page, g.pages - 1) + 1) % g.pages : Math.min(g.pages - 1, b.page + 1);
         else if (k.kind === 'all') b.presses.set(i, { all: true, ids: api.fadeAll(fadeSecs() * 1000) });
         else if (k.kind === 'give') { if (b.deck && timerFree() && performance.now() - b.at > HANDOVER_MS) { giveBack(b.deck.id); return; } }
         else {
@@ -154,7 +159,7 @@ var PlayoutDeck = (function () {
         const k = keyAt(model, s.length, page, i);
         if (k.kind === 'all') return { bg: busy ? COLOURS.allOn : COLOURS.all, fg: '#fff', rs: { cap: 'tap: stop', body: '■ All', foot: 'hold: fade' }, press: true };
         if (k.kind === 'prev') return { bg: COLOURS.page, fg: '#fff', rs: { cap: 'page', body: '◀', foot: (page + 1) + ' / ' + g.pages }, press: page > 0 };
-        if (k.kind === 'next') return { bg: COLOURS.page, fg: '#fff', rs: { cap: 'page', body: '▶', foot: (page + 1) + ' / ' + g.pages }, press: page < g.pages - 1 };
+        if (k.kind === 'next') return { bg: COLOURS.page, fg: '#fff', rs: { cap: 'page', body: '▶', foot: (page + 1) + ' / ' + g.pages }, press: g.wrap ? g.pages > 1 : page < g.pages - 1 };
         if (k.kind === 'give') { const ok = timerFree(); return { bg: ok ? '#2a2200' : '#0d0d0d', fg: ok ? '#ffcc33' : '#444', rs: { cap: 'deck', body: 'Give to the timer', foot: ok ? '' : timer.open ? 'it has one' : 'no timer page' }, press: false, a: 'empty', give: true }; }   // (on a deck only: not the page's keys)
         const x = extraOf(s[k.slot]);
         return x ? extraFace(s[k.slot], x) : itemFace(s[k.slot], items);
@@ -642,6 +647,7 @@ var PlayoutDeck = (function () {
       decks: () => [...decks.values()].map(b => ({ id: b.deck.id, model: b.deck.model, page: b.page })),
       faces: (model, page) => faces(model || screenModel, page || 0).map(f => (f.rs ? f.rs.body : '') + (f.rs && f.rs.cap ? ' | ' + f.rs.cap : '')),
       face: (model, page, i) => faces(model, page)[i],
+      screenPage: () => screen.page,
       slots: model => slots(model || screenModel),
       screen: (i, down) => handle(screen, i, down),
       listed: () => listed,

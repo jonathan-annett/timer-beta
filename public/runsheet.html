@@ -268,7 +268,7 @@
       .ask-box { margin: 0 0.75rem; }
     }
   </style>
-  <script src="features.js?v=ee73e8c2"></script>
+  <script src="features.js?v=ec251aa7"></script>
   <script src="key-focus.js?v=4b14eb98"></script>
 </head>
 <body>
@@ -351,6 +351,7 @@
             <label class="check"><input type="checkbox" id="roll-mine"><span>My clips <span class="hint-inline">(your edits stand in for the tracks they came from)</span></span></label>
             <div class="row"><label class="inline">Items of at least <input type="number" id="roll-min" min="0" max="600" step="0.5"> min</label></div>
             <div class="row"><label class="inline">Stings <select id="roll-lenop"><option value="">of any length</option><option value="max">no longer than</option><option value="min">at least</option></select> <input type="number" id="roll-len" min="1" max="3600" step="1"> s</label></div>
+            <div class="row" id="roll-stylerow" hidden><label class="inline">In the style <input type="search" id="roll-style" placeholder="any: e.g. rock, disco" autocomplete="off" spellcheck="false"></label> <span class="hint-inline" id="roll-stylehint"></span></div>
             <div class="row"><button id="roll-all" class="primary">🎲 Roll stings</button><button id="roll-clear">Remove rolled stings</button></div>
             <p class="hint" id="roll-msg"></p>
           </div>
@@ -401,10 +402,11 @@
   <script src="sting-library.js?v=8c93912b"></script>
   <script src="audio-out.js?v=e41c465e" data-role="preview"></script>
   <script src="sting-clip.js?v=8ab12ac7"></script>
-  <script src="sting-picker.js?v=8b880b60"></script>
-  <script src="sting-roll.js?v=32454fa7"></script>
+  <script src="sting-picker.js?v=8af4feff"></script>
+  <script src="sting-styles.js?v=6b6e9b27"></script>
+  <script src="sting-roll.js?v=74cf4025"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="runsheet-core.js?v=7c76e7fa"></script>
-  <script src="runsheet-editor.js?v=0aa4bba4"></script>
+  <script src="runsheet-editor.js?v=2c7c16ec"></script>
 </body>
 </html>

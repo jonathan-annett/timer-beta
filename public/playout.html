@@ -115,6 +115,7 @@
     #rollpanel summary { color: var(--dim); cursor: pointer; }
     #rollpanel > * + * { margin-top: 6px; }
     #rollpanel input[type=checkbox] { width: auto; padding: 0; }   /* (not the pairing server box's: details input) */
+    #rollpanel input[type=search] { width: 13em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
     #rollpanel input[type=number] { width: 4.5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
     #rollpanel select { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
     #rollpanel input:disabled { opacity: .4; }
@@ -192,6 +193,7 @@
           <div><label class="check"><input type="checkbox" id="roll-mine"> My clips <span class="hint">(your edits stand in for the tracks they came from)</span></label></div>
           <div class="row"><label>Items of at least <input type="number" id="roll-min" min="0" max="600" step="0.5"> min</label></div>
           <div class="row"><label>Stings <select id="roll-lenop"><option value="">of any length</option><option value="max">no longer than</option><option value="min">at least</option></select> <input type="number" id="roll-len" min="1" max="3600" step="1"> s</label></div>
+          <div class="row" id="roll-stylerow" hidden><label>In the style <input type="search" id="roll-style" placeholder="any: e.g. rock, disco" autocomplete="off" spellcheck="false"></label> <span class="hint" id="roll-stylehint"></span></div>
           <div class="row"><button id="roll-all" class="small primary">🎲 Roll stings</button><button id="roll-clear" class="small">Remove rolled stings</button></div>
           <p class="hint" id="roll-msg"></p>
         </details>
@@ -242,18 +244,19 @@
       <p class="hint" id="pairline">Paired with timer room <b id="room"></b>. <button id="unpair" class="small">Unpair this computer</button></p>
     </section>
   </main>
-  <script src="features.js?v=ee73e8c2"></script>
+  <script src="features.js?v=ec251aa7"></script>
   <script src="remote-peer.js?v=fd06de67"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="audio-out.js?v=e41c465e" data-role="both"></script>
   <script src="sting-clip.js?v=8ab12ac7"></script>
   <script src="sting-library.js?v=8c93912b"></script>
-  <script src="sting-picker.js?v=8b880b60"></script>
-  <script src="sting-roll.js?v=32454fa7"></script>
+  <script src="sting-picker.js?v=8af4feff"></script>
+  <script src="sting-styles.js?v=6b6e9b27"></script>
+  <script src="sting-roll.js?v=74cf4025"></script>
   <script src="deck-face.js?v=095d2354"></script>
   <script src="virtual-deck.js?v=909424e5"></script>
   <script src="deck-hid.js?v=a45aeaac"></script>
-  <script src="playout-deck.js?v=45dc47f8"></script>
-  <script src="playout.js?v=dce3fe10"></script>
+  <script src="playout-deck.js?v=c0871fc9"></script>
+  <script src="playout.js?v=f71f71ff"></script>
 </body>
 </html>

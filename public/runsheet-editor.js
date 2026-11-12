@@ -941,7 +941,7 @@
       const r = await rollItems(ids, o, true);
       const kept = sheet.items.filter((it, i) => it.sting && !it.sting.rolled && !it.hidden && rollable(i, o, false)).length;
       rollMsg(`${r.got} item${r.got === 1 ? '' : 's'} got a sting at random` + (kept ? `; ${kept} kept the one chosen for ${kept === 1 ? 'it' : 'them'}` : '') +
-        (r.none ? `; ${r.none} didn’t: not enough stings ${o.lenOp ? 'of that length ' : ''}left unused.` : '.'), r.none > 0);
+        (r.none ? `; ${r.none} didn’t: not enough stings ${StingRoll.which(o)}left unused.` : '.'), r.none > 0);
     } finally { rolling = false; renderAll(); }
   }
   async function rollOne(id) {
@@ -953,7 +953,7 @@
     rolling = true; busy.add(id); renderAll();
     try {
       const r = await rollItems([id], o, false);
-      if (!r.got) ask(`No ${sheet.items[i] && sheet.items[i].sting ? 'other ' : ''}sting to pick: every one ${o.lenOp ? 'of that length ' : ''}is already on the run sheet.`, [{ label: 'OK', value: true, kind: 'primary', cancel: true }]);
+      if (!r.got) ask(`No ${sheet.items[i] && sheet.items[i].sting ? 'other ' : ''}sting to pick: every one ${StingRoll.which(o)}is already on the run sheet.`, [{ label: 'OK', value: true, kind: 'primary', cancel: true }]);
     } finally { rolling = false; busy.delete(id); renderAll(); }
   }
   async function clearRolled() {
@@ -979,14 +979,29 @@
     $('roll-foldername').textContent = REMOTE ? '(only on the timer’s computer)' : name ? '“' + name + '”' : '(none chosen yet)';
     $('roll-folderpick').hidden = REMOTE;
     $('roll-folderpick').textContent = name ? 'Another…' : 'Choose…';
+    $('roll-stylerow').hidden = !StingRoll.styled();
+    if (document.activeElement !== $('roll-style')) $('roll-style').value = o.style;
+    rollStyleHint();
   }
   function saveRollOpts() {
     const o = StingRoll.saveOpts(ROLL_KEY, { stock: $('roll-stock').checked, mine: $('roll-mine').checked, folder: $('roll-folder').checked,
-      min: $('roll-min').value, lenOp: $('roll-lenop').value, len: $('roll-len').value });
+      min: $('roll-min').value, lenOp: $('roll-lenop').value, len: $('roll-len').value, style: $('roll-style').value });
     $('roll-len').disabled = !o.lenOp;
+    rollStyleHint();
+  }
+  // Random stings' style (a trial: sting-styles.js): how many stock stings are in it, as it's typed
+  async function rollStyleHint() {
+    if (!StingRoll.styled()) return;
+    const q = $('roll-style').value.trim(), o = rollOpts();
+    if (!q) { $('roll-stylehint').textContent = ''; return; }
+    const n = StingRoll.inStyle(await stockStings(), q);
+    if ($('roll-style').value.trim() !== q) return;    // (typed on meanwhile)
+    $('roll-stylehint').textContent = (n ? n + ' stock sting' + (n === 1 ? '' : 's') + ' in it' : 'no stock sting in it: try a broader word (rock, house, pop, jazz)') +
+      ((o.folder && !REMOTE) || o.mine ? '; files of your own aren’t tagged yet, so they’re left out' : '');
   }
   if ($('rollpanel')) {
-    for (const k of ['roll-stock', 'roll-mine', 'roll-folder', 'roll-min', 'roll-lenop', 'roll-len']) $(k).addEventListener('change', saveRollOpts);
+    for (const k of ['roll-stock', 'roll-mine', 'roll-folder', 'roll-min', 'roll-lenop', 'roll-len', 'roll-style']) $(k).addEventListener('change', saveRollOpts);
+    $('roll-style').addEventListener('input', rollStyleHint);
     $('roll-all').addEventListener('click', e => { e.currentTarget.blur(); rollAll(); });
     $('roll-clear').addEventListener('click', e => { e.currentTarget.blur(); clearRolled(); });
     $('roll-folderpick').addEventListener('click', e => { e.currentTarget.blur(); StingPicker.chooseFolder(); });

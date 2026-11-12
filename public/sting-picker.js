@@ -7,6 +7,10 @@
  * list goes straight into the clip editor (sting-clip.js; Save and use keeps the clip in the library and
  * chooses it). One Use button for whichever tab is showing. It only chooses: the page puts the choice
  * where it goes (and keeps any file).
+ * Music styles (a trial, TimerFeatures.styles, with sting-styles.js on the page): stock stings carry their
+ * top styles (styles in stock-stings.json; a clip borrows its song's, by url); the Walk-up sting tab shows
+ * each one's top style and has a style search (StingStyles.fits: words in "genre style", at least its
+ * FLOOR), the matches best first with the style they matched, and the model's credit.
  *
  * window.StingPicker:
  *   open(opts) → Promise<choice | null>
@@ -62,9 +66,14 @@ var StingPicker = (function () {
       return (Array.isArray(j && j.stings) ? j.stings : []).map(x => {
         try {
           const url = new URL(String(x.url || ''), base).href;
-          return /^https:/.test(url) && x.name ? Object.assign({ name: String(x.name).slice(0, 200), url, media: x.media === 'video' ? 'video' : x.media === 'audio' ? 'audio' : mediaOf(url), duration: Number.isFinite(x.duration) ? Math.round(x.duration) : null }, clipFields(x), x.hideOriginal === true ? { hideOriginal: true } : {}) : null;
+          const styles = window.StingStyles && StingStyles.valid(x.styles);
+          return /^https:/.test(url) && x.name ? Object.assign({ name: String(x.name).slice(0, 200), url, media: x.media === 'video' ? 'video' : x.media === 'audio' ? 'audio' : mediaOf(url), duration: Number.isFinite(x.duration) ? Math.round(x.duration) : null }, clipFields(x), x.hideOriginal === true ? { hideOriginal: true } : {}, styles && styles.length ? { styles } : {}) : null;
         } catch (_) { return null; }
       }).filter(Boolean);
+    }).then(list => {                              // a clip has its song's styles (the same url)
+      const of = new Map(list.filter(x => x.styles).map(x => [x.url, x.styles]));
+      for (const x of list) if (!x.styles && of.has(x.url)) x.styles = of.get(x.url);
+      return list;
     }).catch(() => []);
     return stockList;
   }
@@ -178,7 +187,9 @@ var StingPicker = (function () {
 #sting-reopen, #sting-folderbox { margin-top: 0.6rem; }
 #sting-folderbox .sting-note { margin: 0 0 0.25rem; }
 .sting-check { display: flex; gap: 0.4rem; align-items: center; margin: 0.2rem 0 0.6rem; color: var(--dim, #888); cursor: pointer; }
-.sting-check input { width: auto; flex: none; margin: 0; }`;
+.sting-check input { width: auto; flex: none; margin: 0; }
+.sting-dlg input.sting-style { width: 100%; box-sizing: border-box; margin: 0 0 0.4rem; font: inherit; padding: 0.3rem 0.4rem; background: #1a1a1a; color: var(--text, #ddd); border: 1px solid var(--line2, #333); border-radius: 0.3rem; }
+.sting-credit { color: var(--dim, #888); font-size: 0.75em; margin: 0.6rem 0 0; opacity: 0.8; }`;
   function style() {
     if (document.getElementById('sting-picker-css')) return;
     const s = document.createElement('style'); s.id = 'sting-picker-css'; s.textContent = CSS;
@@ -192,6 +203,7 @@ var StingPicker = (function () {
     style();
     const users = s => (opts.users ? opts.users(s) : []);
     const stockSt = await stock();
+    const styled = !!(window.StingStyles && window.TimerFeatures && TimerFeatures.styles && stockSt.some(x => x.styles));
     let mine = window.StingLibrary ? StingLibrary.read() : [];
     let mineOk = window.StingLibrary ? await okList(mine, stockSt) : [];
     const CLIP_TIP = 'Make a clip of it: just the part you want, with fades (Save and use: kept in your sting library and used here)';
@@ -201,9 +213,11 @@ var StingPicker = (function () {
       '<div class="sting-tabs"><button class="sting-tab" data-mode="stock">Walk-up sting</button><button class="sting-tab" data-mode="custom">Custom file</button><button class="sting-tab" data-mode="edited">Edited sting</button></div>' +
       (opts.note ? `<p class="sting-note">${esc(opts.note)}</p>` : '') +
       '<div class="sting-pane" data-mode="stock">' +
+        (styled ? `<input type="search" id="sting-style" class="sting-style" placeholder="Style: rock, disco, jazz…" autocomplete="off" spellcheck="false" aria-label="Style to look for">` : '') +
         (stockSt.length ? `<span class="sting-row"><select id="sting-stock"></select><button type="button" id="sting-prev" title="Hear it">▶</button><button type="button" id="sting-sedit" title="${CLIP_TIP}">✂</button></span>` +
           (opts.users ? `<label class="sting-check"><input type="checkbox" id="sting-hideused"> ${esc(opts.hideLabel || 'Hide stings already in use')}</label>` : '') +
           `<p class="sting-note" id="sting-none" hidden>${esc(opts.noneLeft || 'Every stock sting is already in use.')}</p>` : '<p class="sting-note">This site has no stock stings.</p>') +
+        (styled ? `<p class="sting-credit">${esc(StingStyles.CREDIT)}</p>` : '') +
       '</div>' +
       '<div class="sting-pane" data-mode="custom">' +
         `<p class="sting-note">${esc(opts.fileNote || 'Music or a video of your own, from this computer: one file, or pick from a folder of them.')}</p>` +
@@ -221,21 +235,27 @@ var StingPicker = (function () {
     document.body.appendChild(wrap);
     const $d = sel => wrap.querySelector(sel);
     const sel = $d('#sting-stock'), folderSel = $d('#sting-folder'), mineSel = $d('#sting-mine'), hideBox = $d('#sting-hideused'), prevBtn = $d('#sting-prev'), useBtn = $d('.sting-use');
+    const styleBox = $d('#sting-style');
     let mode = 'stock';
 
-    function fill() {                              // the stock list: whole tracks a better clip replaces left out
+    // the stock list: whole tracks a better clip replaces left out; with a style typed, only the stings in it,
+    // best first, each with the style it matched (else each with its top style)
+    function fill() {
       if (!sel) return;
-      const keep = sel.value, hide = hideBox && hideBox.checked;
+      const keep = sel.value, hide = hideBox && hideBox.checked, q = styleBox ? styleBox.value.trim() : '';
       const replaced = window.StingLibrary ? StingLibrary.hidden(stockSt, mine) : new Set();
-      sel.innerHTML = stockSt.map((x, i) => {
+      let rows = stockSt.map((x, i) => ({ x, i, b: q ? StingStyles.best(x.styles, q) : null }));
+      if (q) rows = rows.filter(r => r.b && r.b.score >= StingStyles.FLOOR).sort((a, b) => b.b.score - a.b.score);
+      sel.innerHTML = rows.map(({ x, i, b }) => {
         if (replaced.has(i)) return '';
         const used = users(x);
         if (hide && used.length) return '';
-        const len = StingClip.length(x, x.duration);
-        return `<option value="${i}">${esc(x.name)}${len ? ' · ' + fmtDur(Math.max(1, Math.round(len))) : ''}${x.media === 'video' ? ' (video)' : ''}${used.length ? ' · in use: ' + esc(used.join(', ')) : ''}</option>`;
+        const len = StingClip.length(x, x.duration), st = b ? b.i : styled ? StingStyles.top(x.styles) : -1;
+        return `<option value="${i}">${esc(x.name)}${len ? ' · ' + fmtDur(Math.max(1, Math.round(len))) : ''}${x.media === 'video' ? ' (video)' : ''}${st >= 0 ? ' · ' + esc(StingStyles.nameOf(st)) : ''}${used.length ? ' · in use: ' + esc(used.join(', ')) : ''}</option>`;
       }).join('');
       if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
       $d('#sting-none').hidden = sel.options.length > 0;
+      $d('#sting-none').textContent = q ? 'No stock sting in that style (“' + q + '”): try a broader word, such as rock, house, pop or jazz.' : (opts.noneLeft || 'Every stock sting is already in use.');
       prevBtn.disabled = $d('#sting-sedit').disabled = !sel.options.length;
     }
     function fillMine() {
@@ -292,6 +312,7 @@ var StingPicker = (function () {
         hideBox.addEventListener('change', () => { try { localStorage.setItem(key, hideBox.checked ? '1' : '0'); } catch (_) { /* private mode */ } stopPreview(); fill(); setMode(mode); });
       }
       sel.addEventListener('change', stopPreview);
+      if (styleBox) styleBox.addEventListener('input', () => { stopPreview(); fill(); setMode(mode); });
       prevBtn.addEventListener('click', () => {
         if (preview) return stopPreview();
         const x = stockSt[Number(sel.value)];

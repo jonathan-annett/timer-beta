@@ -137,9 +137,12 @@ with sync_playwright() as p:
     # paging (the Mini on the page: 6 keys)
     po.select_option("#deckmodel", "mini"); po.wait_for_timeout(300)
     f = po.evaluate("window.__playoutDeck.faces('mini', 0)")
-    check("seven items on a Mini: two a page, then ◀ ▶, Give to the timer and everything", [x.split(" | ")[0] for x in f] == names[:2] + ["◀", "▶", "Give to the timer", "■ All"], f)
-    bx = cv(3).bounding_box(); po.mouse.click(bx["x"] + 20, bx["y"] + 20); po.wait_for_timeout(300)
-    check("▶: the next page", po.evaluate("window.__playoutDeck.faces('mini', 1)")[0].split(" | ")[0] == names[2] and po.evaluate("document.querySelectorAll('#vdecks canvas').length") == 6)
+    check("a Mini: four items a page, ▶ top right over everything (no Give to the timer)", [x.split(" | ")[0] for x in f] == names[:2] + ["▶"] + names[2:4] + ["■ All"], f)
+    bx = cv(2).bounding_box(); po.mouse.click(bx["x"] + 20, bx["y"] + 20); po.wait_for_timeout(300)
+    f = po.evaluate("window.__playoutDeck.faces('mini', 1)")
+    check("▶: the next page (seven items: two pages)", po.evaluate("window.__playoutDeck.screenPage()") == 1 and [x.split(" | ")[0] for x in f] == names[4:6] + ["▶"] + [names[6], "", "■ All"], f)
+    po.mouse.click(bx["x"] + 20, bx["y"] + 20); po.wait_for_timeout(300)
+    check("… ▶ on the last page: back to the first", po.evaluate("window.__playoutDeck.screenPage()") == 0)
 
     # arranging (the MK.2): drag a key onto another to swap them
     po.select_option("#deckmodel", "mk2"); po.wait_for_timeout(300)

@@ -6,25 +6,35 @@
  * song (its url), a file is known by its size, so no two items get the same track in different cuts.
  * With My clips ticked an edit stands in for its track; unticked, tracks play as supplied (originals
  * hidden behind an edit come back). Audio only (a video walk-up needs the player window). Uses
- * StingClip, StingLibrary and StingPicker when called.
+ * StingClip, StingLibrary and StingPicker when called. A style (a trial, TimerFeatures.styles; Nov 2026):
+ * only songs in it (StingStyles.fits on their stored styles: a stock song's, which its clips and my
+ * clips of it share); folder files and file clips aren't tagged yet, so they sit out while one is set.
  *
  * window.StingRoll:
- *   opts(key) → {stock, folder, mine, min (minutes), lenOp: ''|'max'|'min', len (s)}   saved under key, else the defaults
+ *   opts(key) → {stock, folder, mine, min (minutes), lenOp: ''|'max'|'min', len (s), style}   saved under key, else the defaults
  *   saveOpts(key, o) → o, cleaned and saved
  *   none(o, remote) → true when o leaves nowhere to pick from (a remote editor has no folder)
  *   songOf(s) → 'url:…' | 'size:…' | 'name:…'   a sting's track
  *   pool(o, stock, remote) → Map song → [{kind: 'stock'|'mine'|'folder', len (s as it plays; undefined: not probed yet), x | e | file}]
  *   pick(songs, used, o, avoid) → {song, c} | null   a random song not in used (nor avoid), in a version that fits
  *   choice(c, stock) → the + sting dialog's kind of choice for a version ({sting} or {file, extra}: StingPicker.open)
+ *   styled() → whether styles are on here (the trial, and sting-styles.js loaded)
+ *   inStyle(stock, style) → how many stock songs are in that style (for the panel's hint)
+ *   which(o) → 'of that length ', 'in that style ', both, or '' (what the messages say narrowed the pool)
  * MIT Licensed
  */
 var StingRoll = (function () {
   'use strict';
   const AUDIO_EXT = /\.(mp3|m4a|aac|wav|aif|aiff|flac|ogg|oga|opus|weba)$/i;
-  const DEFAULTS = { stock: true, folder: false, mine: true, min: 2, lenOp: '', len: 30 };
+  const DEFAULTS = { stock: true, folder: false, mine: true, min: 2, lenOp: '', len: 30, style: '' };
   const num = (v, lo, hi, d) => { const x = Number(v); return Number.isFinite(x) && x >= lo && x <= hi ? x : d; };
   const clean = o => ({ stock: !!o.stock, folder: !!o.folder, mine: !!o.mine, min: num(o.min, 0, 600, DEFAULTS.min),
-    lenOp: ['max', 'min'].includes(o.lenOp) ? o.lenOp : '', len: Math.round(num(o.len, 1, 3600, DEFAULTS.len)) });
+    lenOp: ['max', 'min'].includes(o.lenOp) ? o.lenOp : '', len: Math.round(num(o.len, 1, 3600, DEFAULTS.len)),
+    style: String(o.style || '').replace(/\s+/g, ' ').trim().slice(0, 60) });
+  const styled = () => !!(window.StingStyles && window.TimerFeatures && TimerFeatures.styles);
+  // A song's stored styles: a stock song's (by its url); none for files yet
+  const stylesOf = (song, stock) => { if (!song.startsWith('url:')) return null; const x = stock.find(s => 'url:' + s.url === song && s.styles); return x ? x.styles : null; };
+  const inStyle = (stock, style) => new Set(stock.filter(x => x.media !== 'video' && StingStyles.fits(x.styles, style)).map(x => x.url)).size;
   function opts(key) {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (_) { /* unreadable: the defaults */ }
@@ -69,13 +79,14 @@ var StingRoll = (function () {
         add('url:' + x.url, { kind: 'stock', x, len: StingClip.length(x, x.duration) });
       });
     }
-    if (o.folder && !remote && await StingPicker.ensureFolder()) {
+    if (o.folder && !remote && !(o.style && styled()) && await StingPicker.ensureFolder()) {   // (untagged: not with a style)
       for (const f of StingPicker.folder().files) {
         if (!AUDIO_EXT.test(f.path)) continue;
         let file; try { file = f.file || await f.handle.getFile(); } catch (_) { continue; }
         if (!edited.has('size:' + file.size)) add('size:' + file.size, { kind: 'folder', file, len: undefined });
       }
     }
+    if (o.style && styled()) for (const song of [...songs.keys()]) if (!StingStyles.fits(stylesOf(song, stock), o.style)) songs.delete(song);
     return songs;
   }
   async function pick(songs, used, o, avoid) {
@@ -97,5 +108,6 @@ var StingRoll = (function () {
     return StingPicker.choiceOf(c.e, stock);
   }
 
-  return { opts, saveOpts, none, songOf, pool, pick, choice };
+  const which = o => { const w = [o.lenOp ? 'of that length' : '', o.style && styled() ? 'in that style' : ''].filter(Boolean).join(' and '); return w ? w + ' ' : ''; };
+  return { opts, saveOpts, none, songOf, pool, pick, choice, styled, inStyle, which };
 })();
