@@ -75,6 +75,10 @@
     #stage .extnote b { color: var(--accent); font-size: 15px; }
     #stage.external .extnote { display: flex; }   /* videos play in the floating window (To external monitor) */
     #stage.external .idle { display: none; }
+    /* An item started here is playing its video in the Output box, not on the external monitor: look! */
+    @keyframes ext-flash { 0%, 49.9% { background: #1e6fff; border-color: #1e6fff; color: #fff; } 50%, 100% { background: #ffd400; border-color: #ffd400; color: #000; } }
+    #ext.flash { animation: ext-flash .5s infinite; opacity: 1; font-weight: bold; }
+    @media (prefers-reduced-motion: reduce) { #ext.flash { animation: none; background: #ffd400; border-color: #ffd400; color: #000; } }
   </style>
 </head>
 <body>
@@ -137,6 +141,6 @@
   <script src="sting-clip.js?v=c3686b1f"></script>
   <script src="sting-library.js?v=8c93912b"></script>
   <script src="sting-picker.js?v=9de13565"></script>
-  <script src="playout.js?v=72d12fa1"></script>
+  <script src="playout.js?v=0a88eefe"></script>
 </body>
 </html>

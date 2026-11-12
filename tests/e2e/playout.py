@@ -258,6 +258,17 @@ with sync_playwright() as p:
     check("… on again once it stops", not po.is_disabled("#ext"))
     po.click("#ext"); po.wait_for_timeout(300)
     check("Play here instead: back in the Output box, the window left open and black", vstate()["where"] == "here" and not xw.is_closed() and xw.evaluate("!document.querySelector('#xstage video')") and po.text_content("#ext") == "To external monitor", vstate())
+    # an item started here playing its video in the Output box, not out there: the button flashes
+    flashing = lambda: "flash" in (po.get_attribute("#ext", "class") or "")
+    po.uncheck("#follow"); po.wait_for_timeout(200)
+    po.click('#items li[data-id="b"] button[data-act=run]'); po.wait_for_timeout(800)
+    check("an item started here plays its video in the Output box: To external monitor flashes (and works)", flashing() and not po.is_disabled("#ext") and vstate()["where"] == "here", [flashing(), vstate()])
+    po.click("#ext"); po.wait_for_timeout(300)
+    check("… moved out there: no more flashing", vstate()["where"] == "external" and not flashing(), [flashing(), vstate()])
+    po.click('#items li[data-id="b"] button[data-act=endrun]'); po.wait_for_timeout(300)
+    po.click("#ext"); po.check("#follow"); po.wait_for_timeout(300)
+    check("a video started by hand (▶) doesn't flash it", (po.click('#items li[data-cue="%s"] button[data-act=fire]' % ids["b"][0]), po.wait_for_timeout(500), not flashing())[-1])
+    po.click('#items li[data-cue="%s"] button[data-act=stop]' % ids["b"][0]); po.wait_for_timeout(300)
     po.click('#items li[data-cue="%s"] button[data-act=fire]' % ids["b"][0]); po.wait_for_timeout(1300)
     t1 = vstate()["t"]
     po.click("#ext"); po.wait_for_timeout(300)

@@ -283,7 +283,7 @@
   function runLocal(itemId) {
     const it = show.items.find(x => x.id === itemId);
     local = { item: itemId, t0: performance.now(), dur: it && it.d > 0 ? it.d : null, fired: new Set(), prev: new Map() };
-    for (const c of cues[itemId] || []) if (c.trigger === 'start') { local.fired.add(c.id); play(c); }
+    for (const c of cues[itemId] || []) if (c.trigger === 'start') { local.fired.add(c.id); play(c, { run: true }); }
     render();
   }
   function endLocal() { if (local) { local = null; render(); } }
@@ -293,7 +293,7 @@
       if (c.trigger === 'start' || local.fired.has(c.id)) continue;
       const now = condition(c, cd), before = local.prev.get(c.id);
       local.prev.set(c.id, now);
-      if (now && before !== true) { local.fired.add(c.id); play(c); }   // (true from the press: at once)
+      if (now && before !== true) { local.fired.add(c.id); play(c, { run: true }); }   // (true from the press: at once)
     }
     if (list.every(c => local.fired.has(c.id)) && (local.dur == null || cd.remain <= 0)) endLocal();
   }
@@ -397,7 +397,7 @@
   }
   const playing = new Map();                           // cue id → {voice, video}
   const vid = $('vid');                                // video cues' element: in the Output box, or the floating window
-  async function play(c) {
+  async function play(c, how) {                        // how.run: played by an item started here
     const out = outKey(c);
     if (out && window.AudioOut && !AudioOut.ok(out)) {   // its output isn't there: an audio cue doesn't play,
       AudioOut.warn(out);                                // a video plays without its sound (audio-out.js mutes it)
@@ -408,7 +408,7 @@
     if (!memory && !blob) { status('The file for “' + c.name + '” isn’t in this browser any more. Add the cue again.', 'warn'); return; }
     stopCue(c.id);
     if (c.media === 'video') for (const [id, q] of playing) if (q.video) stopCue(id);   // one video on the output at a time
-    const p = { video: c.media === 'video' };
+    const p = { video: c.media === 'video', run: !!(how && how.run) };
     const onEnd = () => { if (playing.get(c.id) === p) stopCue(c.id); };
     p.voice = memory ? bufferVoice(c, memory, onEnd, out) : elementVoice(c, p.video ? vid : new Audio(), URL.createObjectURL(blob), onEnd, out);
     playing.set(c.id, p);
@@ -486,10 +486,15 @@
   // video may move to it)
   function renderPlace() {
     const external = place === 'external', on = videoOn(), setup = !external && on && !extHost();
+    // An item started here playing its video in the Output box, not on the audience's screen: the button
+    // flashes (the owner: in a live show it may save the operator), until the video moves out or stops
+    const remind = !external && [...playing.values()].some(p => p.video && p.run);
     const b = $('ext');
     b.textContent = external ? 'Play here instead' : 'To external monitor';
     b.disabled = (external && on) || setup;
-    b.title = external && on ? 'Not while a video plays on the external monitor'
+    b.classList.toggle('flash', remind);
+    b.title = remind && !setup ? 'This item’s video is playing here, not on the external monitor: click to move it there'
+      : external && on ? 'Not while a video plays on the external monitor'
       : setup ? 'Set up the external monitor with no video playing: stop it first (once the window is open, a playing video can move to it)'
       : external ? 'Videos play in the Output box here again (the floating window stays open, black)'
       : 'Videos play in a floating window: drag it to another screen and make it full screen there';
