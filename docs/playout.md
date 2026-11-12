@@ -1,12 +1,12 @@
 # Playout computers (experimental)
 
-## Using it (an alpha-only trial)
+## Using it (on trial)
 
-Only on the alpha site (`features.js`, `TimerFeatures.playout`; the Worker's `FEATURES`): elsewhere `playout.html` isn't served and the timer treats a playout computer as a plain view-only device.
+On trial on the beta and alpha sites (`features.js`, `TimerFeatures.playout`; the Worker's `FEATURES`): elsewhere `playout.html` isn't served and the timer treats a playout computer as a plain view-only device.
 
 For bigger shows with several operators: an audio operator with the walk-up stings, a video operator feeding the vision mixer, and so on. Each runs `playout.html` on their own computer. It follows the timer's run sheet and plays **their own** audio and video at the moments they choose. The timer doesn't know or control what a playout computer does; it just runs the show.
 
-1. On the playout computer, open `playout.html` next to the timer (e.g. `alpha.timed-show.com/p`, short for `alpha.timed-show.com/playout.html`).
+1. On the playout computer, open `playout.html` next to the timer (e.g. `beta.timed-show.com/p`, short for `beta.timed-show.com/playout.html`).
 2. Pair it like an overlay: **share** → **Pair a computer** on the timer, type the 6-digit code on the playout computer, then type the number it shows into the timer's share panel.
 3. The timer's run sheet appears. Click **+ cue** on an item and choose when: **At the start**, **When time's up**, **After** m:ss, or **With** m:ss **left**. Then **Choose the sound or video…** opens the same dialog as the run sheet editor's **+ sting**: a stock walk-up sting, a file or a folder of your own (**Custom file**), or one of your clips (**Edited sting**, the sting library). **✂** there makes a clip first.
 
@@ -32,6 +32,6 @@ Whatever you choose is copied into this computer's browser: cues play from here,
 
 **Connection:** the status line says **⚡ Connected directly** or **Connected via the server**. Either works for playout (the messages are small); via the server, start cues fire after the trip through it. A browser that never connects directly, even next to the timer, may have WebRTC limited: Opera with its VPN sets *Disable non-proxied UDP* (search its settings for WebRTC and choose the default), then reload.
 
-**Demo (no timer needed):** `alpha.timed-show.com/p?demo`, or **Try the demo** on the pairing screen, shows the idea without a timer: ten made-up speakers of 20 minutes each, manual only (**Follow the timer** is off and locked), so cues play from **▶ Start item** and ▶. Everything else works as usual: cues, ✂, ✎, outputs, the external monitor. A demo's cues and levels are kept apart from a real show's. The names stay until **New speakers** (the cues stay with their places in the list); **Leave the demo** goes back to pairing.
+**Demo (no timer needed):** `beta.timed-show.com/p?demo`, or **Try the demo** on the pairing screen, shows the idea without a timer: ten made-up speakers of 20 minutes each, manual only (**Follow the timer** is off and locked), so cues play from **▶ Start item** and ▶. Everything else works as usual: cues, ✂, ✎, outputs, the external monitor. A demo's cues and levels are kept apart from a real show's. The names stay until **New speakers** (the cues stay with their places in the list); **Leave the demo** goes back to pairing.
 
 Not yet: a Stream Deck on the playout computer (keys to fire cues and to take over), lower-thirds graphics, and slides (the PowerPoint computers were dropped from the run sheet in Nov 2026: slides belong here).

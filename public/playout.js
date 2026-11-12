@@ -46,7 +46,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   if (location.hostname) document.title = location.hostname + ' - Playout';
-  if (window.TimerFeatures && !TimerFeatures.playout) {      // an alpha-only trial (features.js)
+  if (window.TimerFeatures && !TimerFeatures.playout) {      // a trial (features.js: alpha and beta)
     document.querySelector('main').innerHTML = '<h1>Playout</h1><p class="sub">Playout computers aren’t available on this site.</p>';
     return;
   }
