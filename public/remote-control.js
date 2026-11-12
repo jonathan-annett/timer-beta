@@ -220,7 +220,7 @@
   const GLASSES = !!(window.TimerFeatures && TimerFeatures.glasses);
   const ASSIST = !!(window.TimerFeatures && TimerFeatures.assist);
   const STINGS = !!(window.TimerFeatures && TimerFeatures.stings);   // walk-up stings: an alpha-only trial (features.js)
-  const PLAYOUT = !!(window.TimerFeatures && TimerFeatures.playout); // playout computers (playout.html): an alpha-only trial   // the assist station: an alpha-only trial (features.js)
+  const PLAYOUT = !!(window.TimerFeatures && TimerFeatures.playout); // playout computers (playout.html): a trial, alpha and beta   // the assist station: an alpha-only trial (features.js)
   const gl = { code: '', token: '', note: '', bad: false };
   const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
