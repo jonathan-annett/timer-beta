@@ -32,6 +32,7 @@
  * Cues are kept by item id (an item's id survives Replace sheet and a CSV round trip: runsheet-core.js
  * matchRows), not by timer room, so they outlive a new share code and wait for their items to come back.
  * localStorage: playout_saved_link, playout_server, playout_token_<room>, playout_follow ('0' = off),
+ * playout_cue_ctl ('1' = single cues of an item started here stay playable: Options),
  * playout_cues ({itemId: [{id, name, media, src, trigger, at, duration, lib?, start?, end?, fadeIn?,
  * fadeOut?, loop?, lufs?, volume?, out?}]}; before Nov 2026 playout_cues_<room>, merged in once); the files
  * are in IndexedDB (video-store.js) as 'pocue:<cue id>'.
@@ -51,7 +52,7 @@
     set: (k, v) => { try { localStorage.setItem(k, v); } catch (_) { /* private mode */ } },
     del: k => { try { localStorage.removeItem(k); } catch (_) { /* private mode */ } },
   };
-  const SAVED_LINK = 'playout_saved_link', SERVER = 'playout_server', FOLLOW = 'playout_follow';
+  const SAVED_LINK = 'playout_saved_link', SERVER = 'playout_server', FOLLOW = 'playout_follow', CUE_CTL = 'playout_cue_ctl';
   const LATE_START_MS = 2000;
   const parse = frag => Object.fromEntries(new URLSearchParams(frag));
   const defaultServer = () => new URLSearchParams(location.search).get('remote') || store.get(SERVER) || RemotePeer.defaultServer();
@@ -235,6 +236,7 @@
   }
   const sinceStart = () => show.age == null ? Infinity : show.age + (performance.now() - showAt);
   const following = () => store.get(FOLLOW) !== '0';
+  const cueControl = () => store.get(CUE_CTL) === '1';   // single cues of an item started here (Options)
   function countdown() {
     if (!anchor) return null;
     const dt = performance.now() - anchorAt;
@@ -623,7 +625,7 @@
     if (open) return;                                  // don't rebuild under someone adding a cue or choosing an output
     const manual = !following();
     $('items').innerHTML = items.map((it, i) => {
-      const list = cues[it.id] || [], here = local && local.item === it.id;
+      const list = cues[it.id] || [], here = local && local.item === it.id, locked = here && !cueControl();
       const done = c => (i === curIdx && fired.has(c.id)) || (here && local.fired.has(c.id));
       const runBtn = !manual || it.e || !list.length ? ''
         : here ? '<button class="small" data-act="endrun" title="Stop this item’s cues, and the rest of them won’t play">■ Stop item</button>'
@@ -632,7 +634,7 @@
         `<div class="ihead"><span class="iname">${esc(it.n || '(no name)')}</span>${i === curIdx ? '<span class="itag">now</span>' : ''}${here ? '<span class="itag ilocal"></span>' : ''}` +
         `<span class="idur">${it.e ? 'finish' : it.d ? mmss(it.d) : ''}</span>${runBtn}${it.e ? '' : '<button class="small" data-act="add">+ cue</button>'}</div>` +
         (list.length ? '<ul class="cues">' + list.map(c => `<li data-cue="${esc(c.id)}" class="${done(c) ? 'fired' : ''}${playing.has(c.id) ? ' playing' : ''}">` +
-          `<button class="small" data-act="${playing.has(c.id) ? 'stop' : 'fire'}" title="${playing.has(c.id) ? 'Stop' : 'Play it now (on this computer)'}">${playing.has(c.id) ? '■' : '▶'}</button>` +
+          `<button class="small" data-act="${playing.has(c.id) ? 'stop' : 'fire'}"${locked ? ' disabled' : ''} title="${locked ? 'The item started here plays its cues: ■ Stop item stops them (Options: play and stop single cues)' : playing.has(c.id) ? 'Stop' : 'Play it now (on this computer)'}">${playing.has(c.id) ? '■' : '▶'}</button>` +
           `<span class="when">${esc(whenText(c))}</span><span class="fname">${c.media === 'video' ? '🎞' : '🎵'} ${esc(c.name)}</span>` +
           `<span class="clen">${StingClip.region(c) ? '✂ ' : ''}${lenText(c)}</span>` + outMenu(c) +
           `<button class="small" data-act="when" title="Change when it plays">✎</button>` +
@@ -662,6 +664,7 @@
     const li = b.closest('li[data-id]'), itemId = li && li.dataset.id;
     const cueId = b.closest('li[data-cue]') && b.closest('li[data-cue]').dataset.cue;
     const c = cueId && (cues[itemId] || []).find(x => x.id === cueId);
+    if ((b.dataset.act === 'fire' || b.dataset.act === 'stop') && local && local.item === itemId && !cueControl()) return;   // (locked: the item run has them)
     if (b.dataset.act === 'fire' && c) play(c);        // by hand: always, followed or not
     else if (b.dataset.act === 'stop' && c) stopCue(c.id);
     else if (b.dataset.act === 'edit' && c) editCue(c);
@@ -737,6 +740,10 @@
   $('follow').checked = following();
   $('follow').addEventListener('change', e => { store.set(FOLLOW, e.target.checked ? '1' : '0'); if (e.target.checked) { local = null; primeTimeCues(); } render(); });
   $('stopall').addEventListener('click', () => { stopAll(); endLocal(); });
+  // Options: single cues of an item started here (off by default, the owner's call: the run plays them;
+  // on for rehearsals). Applies at once, mid-run included
+  $('cuectl').checked = cueControl();
+  $('cuectl').addEventListener('change', e => { store.set(CUE_CTL, e.target.checked ? '1' : '0'); render(); });
   $('fadeall').addEventListener('click', e => { e.currentTarget.blur(); fadeAll(FADE_MS); });
   const toggleFull = () => { if (document.fullscreenElement) document.exitFullscreen(); else if (place === 'here') $('stage').requestFullscreen().catch(() => {}); };
   $('full').addEventListener('click', toggleFull);
