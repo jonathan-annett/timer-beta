@@ -65,12 +65,13 @@
   if (link.r && link.v) { store.set(SAVED_LINK, location.hash.slice(1)); history.replaceState(null, '', location.pathname + location.search); }
   else link = parse(store.get(SAVED_LINK) || '');
   const tokenKey = room => 'playout_token_' + room;
-  const CUES = 'playout_cues', OLD_CUES = 'playout_cues_';   // (OLD_CUES + room: before Nov 2026)
+  const DEMO = new URLSearchParams(location.search).has('demo');   // ?demo (/p?demo): no timer, see startDemo()
+  const CUES = DEMO ? 'playout_demo_cues' : 'playout_cues', OLD_CUES = 'playout_cues_';   // (OLD_CUES + room: before Nov 2026)
   function loadCues() {
     const read = k => { try { const v = JSON.parse(store.get(k) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; } };
     const all = read(CUES);
     let old = [];
-    try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith(OLD_CUES)) old.push(k); } } catch (_) { old = []; }
+    if (!DEMO) try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith(OLD_CUES)) old.push(k); } } catch (_) { old = []; }
     for (const k of old) {                         // cues kept per room: merged into the one list, by item id
       for (const [item, list] of Object.entries(read(k))) {
         if (!Array.isArray(list)) continue;
@@ -132,6 +133,7 @@
   }
   function status(text, kind) { $('status').textContent = text; $('status').className = kind || ''; }
   function showMode() {
+    if (DEMO) return status('Demo: no timer connected', 'ok');
     if (waiting) return status('Waiting for the timer… (closed, or it made a new share code: then unpair and pair again)', 'warn');
     if (!ws || ws.readyState !== WebSocket.OPEN) return status('Reconnecting…', 'warn');
     if (!hostOnline) return status('The timer is offline: waiting for it…', 'warn');
@@ -235,7 +237,7 @@
     render();
   }
   const sinceStart = () => show.age == null ? Infinity : show.age + (performance.now() - showAt);
-  const following = () => store.get(FOLLOW) !== '0';
+  const following = () => !DEMO && store.get(FOLLOW) !== '0';   // (a demo has no timer to follow)
   const cueControl = () => store.get(CUE_CTL) === '1';   // single cues of an item started here (Options)
   function countdown() {
     if (!anchor) return null;
@@ -772,5 +774,47 @@
     local: () => local && { item: local.item, fired: [...local.fired] },
     video: () => ({ where: vid.ownerDocument === document ? 'here' : 'external', paused: vid.paused, t: vid.currentTime, src: !!vid.getAttribute('src') }) };
 
-  if (link.r && link.v) start(); else showEnter();
+  // ─── Demo (?demo, or /p?demo on the hosted site; the owner, 12 Nov 2026: to show the idea without a
+  // timer) ─────────────────────────────────────────────────────────────────────────────────────────────
+  // No pairing and no timer: a run sheet of ten made-up speakers, 20 minutes each, and manual only
+  // (Follow the timer off and locked: ▶ Start item and ▶ do it all). Its cues are kept apart from the real
+  // ones (playout_demo_cues); its names in playout_demo_sheet, the same until New speakers. The items'
+  // ids (demo-1 … demo-10) never change, so cues stay on their slots whatever the names.
+  const DEMO_SHEET = 'playout_demo_sheet', DEMO_N = 10, DEMO_SECS = 20 * 60;
+  const FIRST = ['Amara', 'Bea', 'Carlos', 'Devi', 'Elif', 'Farah', 'Gus', 'Hana', 'Ivo', 'Jun', 'Kemi', 'Lars', 'Mei', 'Nikhil', 'Olu', 'Priya',
+    'Quinn', 'Rafael', 'Sanna', 'Tomás', 'Uma', 'Viktor', 'Wren', 'Xin', 'Yusuf', 'Zoë', 'Aiko', 'Ben', 'Chloé', 'Dmitri', 'Esi', 'Finn',
+    'Grace', 'Hamid', 'Ines', 'Jonah', 'Kai', 'Leila', 'Mateo', 'Noor'];
+  const LAST = ['Okafor', 'Lindqvist', 'Moreau', 'Tanaka', 'Nguyen', 'Haddad', 'Kowalski', 'Mensah', 'Ferreira', 'Sato', 'Kaur', 'Rossi',
+    'Andersen', 'Delgado', 'Ibrahim', 'Novak', 'Adeyemi-Hart', 'Brennan', 'Castellano', 'Horvat', 'Eriksen', 'Fontaine', 'Gupta', 'Halloran',
+    'Iwasaki', 'Jansen', 'Kariuki', 'Laurent', 'Mwangi-Shaw', 'Nakamura', 'Ortega', 'Petrov', 'Quintero', 'Reyes', 'Sundberg', 'Takahashi'];
+  const pick = list => list[Math.floor(Math.random() * list.length)];
+  function demoNames() {                               // ten different people: no first name or surname twice
+    const used = new Set(), out = [];
+    while (out.length < DEMO_N) {
+      const f = pick(FIRST), l = pick(LAST);
+      if (used.has(f) || used.has(l)) continue;
+      used.add(f); used.add(l); out.push(f + ' ' + l);
+    }
+    return out;
+  }
+  function demoSheet(fresh) {
+    let names = null;
+    if (!fresh) try { const v = JSON.parse(store.get(DEMO_SHEET) || 'null'); if (Array.isArray(v) && v.length === DEMO_N && v.every(n => typeof n === 'string')) names = v; } catch (_) { /* new names */ }
+    if (!names) { names = demoNames(); store.set(DEMO_SHEET, JSON.stringify(names)); }
+    return { items: names.map((n, i) => ({ id: 'demo-' + (i + 1), n, d: DEMO_SECS })), cur: null, run: 0, on: true, fin: false };
+  }
+  function startDemo() {
+    document.body.classList.add('demo');
+    $('paired').hidden = false; $('demobar').hidden = false; $('pairline').hidden = true;
+    $('follow').checked = false; $('follow').disabled = true;
+    $('follow-note').textContent = 'Demo: there’s no timer, so cues play when you start them: ▶ Start item, or ▶ on a cue.';
+    showMode();
+    cues = loadCues();
+    onShow(demoSheet());
+    $('demonames').addEventListener('click', e => { e.currentTarget.blur(); onShow(demoSheet(true)); });
+    $('demoleave').addEventListener('click', () => { stopAll(); location.href = location.pathname; });
+  }
+  $('trydemo').addEventListener('click', () => { location.href = location.pathname + '?demo'; });
+
+  if (DEMO) startDemo(); else if (link.r && link.v) start(); else showEnter();
 })();

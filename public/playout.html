@@ -18,6 +18,8 @@
     button.small { padding: 2px 8px; font-size: 13px; }
     button:disabled { opacity: .4; cursor: default; }
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    #demobar { border-color: var(--warn); font-size: 14px; }   /* the demo (?demo): no timer */
+    #demobar b:first-child { color: var(--warn); }
 
     /* Pairing by code (as the overlay) */
     #code { font: bold 44px/1.1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .3em; text-align: center; width: 100%; max-width: 360px;
@@ -93,9 +95,16 @@
       <details><summary>Pairing server</summary>
         <input id="server" spellcheck="false" aria-label="Pairing server address">
       </details>
+      <p class="hint" style="margin-top:14px">No timer to hand? <button id="trydemo" class="small" type="button">Try the demo</button></p>
     </section>
 
     <section id="paired" hidden>
+      <div id="demobar" class="card" hidden>
+        <div class="row" style="justify-content:space-between">
+          <span><b>Demo</b> · ten made-up speakers, 20 minutes each, and no timer. Add cues with <b>+ cue</b>, then start an item with <b>▶ Start item</b> or play a cue with ▶.</span>
+          <span class="row"><button id="demonames" class="small" title="Other names for the ten speakers (their cues stay)">New speakers</button><button id="demoleave" class="small">Leave the demo</button></span>
+        </div>
+      </div>
       <div id="pinwait" class="card center" hidden>
         <p id="pinmsg">The timer asks who this is. Tell the person at the timer this number (or read it to them over the phone). One wrong try disconnects this computer.</p>
         <div class="pin" id="pincode"></div>
@@ -131,7 +140,7 @@
           <span class="hint">Off: while an item runs from ▶ Start item, its own cues’ ▶ and ■ are locked (■ Stop item stops them). On: for rehearsals, every cue stays in your hands.</span>
         </div>
       </div>
-      <p class="hint">Paired with timer room <b id="room"></b>. <button id="unpair" class="small">Unpair this computer</button></p>
+      <p class="hint" id="pairline">Paired with timer room <b id="room"></b>. <button id="unpair" class="small">Unpair this computer</button></p>
     </section>
   </main>
   <script src="features.js?v=4679249b"></script>
@@ -141,6 +150,6 @@
   <script src="sting-clip.js?v=c3686b1f"></script>
   <script src="sting-library.js?v=8c93912b"></script>
   <script src="sting-picker.js?v=9de13565"></script>
-  <script src="playout.js?v=0a88eefe"></script>
+  <script src="playout.js?v=66b1eca8"></script>
 </body>
 </html>
