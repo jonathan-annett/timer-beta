@@ -6,6 +6,9 @@ OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exis
 # a key per item with cues; a press starts the item; on a playing item a tap stops it and a hold fades it
 # (over playout_deck_fade s, stopped wherever it's let go); the last key does it for everything; ◀ ▶ page
 # when the items don't fit (the Mini on the page). Keys arranged by dragging on the page (per deck model).
+# Give to the timer on a deck (next to the last key, or where the timer's layout has Give deck to playout)
+# and the timer's Give deck to playout hand a deck back and forth with one key, only while the other page
+# is open here, and not straight back (a key held through the hand-over).
 # Decks given to the playout on this computer (deck_claims) are driven there, the rest are the timer's:
 # the timer page lets go of a deck the moment the playout page takes it, and takes it back when given.
 # Fake WebHID decks (an MK.2 and an XL, each with a serial number in its feature report) stand in for the
@@ -16,14 +19,18 @@ BASE = "https://timer.sophtwhere.com/beta/"
 FAKE_HID = """(() => {
   const mk = (pid, serial, keys, name) => {
     const ls = {};
-    const d = { vendorId: 0x0fd9, productId: pid, productName: name, opened: false, images: {}, features: [],
-      async open() { this.opened = true; }, async close() { this.opened = false; },
-      async sendReport(id, data) { if (data[0] === 0x07 && data[2] === 1) this.images[data[1]] = (this.images[data[1]] || 0) + 1; },
-      async sendFeatureReport(id, b) { this.features.push([id, b[0]]); },
-      async receiveFeatureReport(id) { const b = new Uint8Array(32); b[0] = id; b[1] = serial.length; for (let i = 0; i < serial.length; i++) b[2 + i] = serial.charCodeAt(i); return new DataView(b.buffer); },
+    // As WebHID does: opening takes a moment, and a second open (or one under way) is refused; a closed
+    // deck takes no reports and sends no key presses
+    const wait = ms => new Promise(r => setTimeout(r, ms)), shut = () => new DOMException('The device must be opened first.', 'InvalidStateError');
+    const d = { vendorId: 0x0fd9, productId: pid, productName: name, opened: false, opening: false, images: {}, features: [],
+      async open() { if (this.opened || this.opening) throw new DOMException('The device is already open.', 'InvalidStateError'); this.opening = true; await wait(40); this.opening = false; this.opened = true; },
+      async close() { await wait(10); this.opened = false; },
+      async sendReport(id, data) { if (!this.opened) throw shut(); if (data[0] === 0x07 && data[2] === 1) this.images[data[1]] = (this.images[data[1]] || 0) + 1; },
+      async sendFeatureReport(id, b) { if (!this.opened) throw shut(); this.features.push([id, b[0]]); },
+      async receiveFeatureReport(id) { if (!this.opened) throw shut(); await wait(5); const b = new Uint8Array(32); b[0] = id; b[1] = serial.length; for (let i = 0; i < serial.length; i++) b[2 + i] = serial.charCodeAt(i); return new DataView(b.buffer); },
       addEventListener(t, fn) { ls[t] = fn; }, removeEventListener(t) { delete ls[t]; } };
     // a key down (v = 1) or up (0): a gen2 input report, key states from byte 3
-    d.key = (i, v) => { const b = new Uint8Array(3 + keys); b[3 + i] = v; if (ls.inputreport) ls.inputreport({ reportId: 1, data: new DataView(b.buffer) }); };
+    d.key = (i, v) => { if (!d.opened) return; const b = new Uint8Array(3 + keys); b[3 + i] = v; if (ls.inputreport) ls.inputreport({ reportId: 1, data: new DataView(b.buffer) }); };
     return d;
   };
   const mk2 = mk(0x0080, 'MK2SERIAL01', 15, 'Fake MK.2'), xl = mk(0x008f, 'XLSERIAL002', 32, 'Fake XL');
@@ -82,6 +89,7 @@ with sync_playwright() as p:
     faces = po.evaluate("window.__playoutDeck.faces('mk2')")
     check("a key per item with cues, in run sheet order", [f.split(" | ")[0] for f in faces[:7]] == names[:7] and faces[7] == "", faces)
     check("… the last key: everything (tap stops, hold fades)", faces[14] == "■ All | tap: stop", faces[14])
+    check("… next to it: Give to the timer (dim: no timer page open)", faces[13] == "Give to the timer | deck", faces[13])
 
     # a press starts the item (Follow is off in the demo)
     key(0, 1); key(0, 0); po.wait_for_timeout(500)
@@ -129,9 +137,9 @@ with sync_playwright() as p:
     # paging (the Mini on the page: 6 keys)
     po.select_option("#deckmodel", "mini"); po.wait_for_timeout(300)
     f = po.evaluate("window.__playoutDeck.faces('mini', 0)")
-    check("seven items on a Mini: three a page, then ◀ ▶ and everything", [x.split(" | ")[0] for x in f] == names[:3] + ["◀", "▶", "■ All"], f)
-    bx = cv(4).bounding_box(); po.mouse.click(bx["x"] + 20, bx["y"] + 20); po.wait_for_timeout(300)
-    check("▶: the next page", po.evaluate("window.__playoutDeck.faces('mini', 1)")[0].split(" | ")[0] == names[3] and po.evaluate("document.querySelectorAll('#vdecks canvas').length") == 6)
+    check("seven items on a Mini: two a page, then ◀ ▶, Give to the timer and everything", [x.split(" | ")[0] for x in f] == names[:2] + ["◀", "▶", "Give to the timer", "■ All"], f)
+    bx = cv(3).bounding_box(); po.mouse.click(bx["x"] + 20, bx["y"] + 20); po.wait_for_timeout(300)
+    check("▶: the next page", po.evaluate("window.__playoutDeck.faces('mini', 1)")[0].split(" | ")[0] == names[2] and po.evaluate("document.querySelectorAll('#vdecks canvas').length") == 6)
 
     # arranging (the MK.2): drag a key onto another to swap them
     po.select_option("#deckmodel", "mk2"); po.wait_for_timeout(300)
@@ -154,6 +162,63 @@ with sync_playwright() as p:
     po.once("dialog", lambda d: d.accept()); po.click("#deckorder"); po.wait_for_timeout(300)
     check("Run sheet order: the arrangement forgotten", po.evaluate("window.__playoutDeck.slots('mk2')")[:3] == ["demo-1", "demo-2", "demo-3"])
 
+    # extra keys: files dropped on the page's keys (media not on the run sheet)
+    DROP = """([sel, names, secs]) => {
+      const wav = sec => { const sr = 16000, n = Math.round(sr * sec), b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+        const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+        w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+        v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+        for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.sin(2 * Math.PI * 330 * i / sr) * 8000, true);
+        return b; };
+      const dt = new DataTransfer();
+      names.forEach(n => dt.items.add(new File([wav(secs)], n, { type: n.endsWith('.txt') ? 'text/plain' : 'audio/wav' })));
+      const c = document.querySelector(sel), ev = t => c.dispatchEvent(new DragEvent(t, { dataTransfer: dt, bubbles: true, cancelable: true }));
+      ev('dragover'); const lit = c.className; ev('drop'); return lit;
+    }"""
+    vk = lambda pg, i: "#vdecks .vd-page:nth-child(%d) canvas:nth-child(%d)" % (pg + 1, i + 1)
+    extras = lambda: po.evaluate("window.__playout.cues()['~board'] || []")
+    po.select_option("#deckmodel", "mk2"); po.wait_for_timeout(300)
+    lit = po.evaluate(DROP, [vk(0, 9), ["Applause.wav"], 4]); po.wait_for_timeout(1500)
+    x = extras()
+    check("a file dropped on a free key: an extra key", [c["name"] for c in x] == ["Applause"] and po.evaluate("window.__playoutDeck.slots('mk2')[9]") == "cue:" + x[0]["id"] and "drop" in lit, [x, lit])
+    check("… on the deck too, with its length", po.evaluate("window.__playoutDeck.faces('mk2')[9]") == "Applause | 0:04", po.evaluate("window.__playoutDeck.faces('mk2')[9]"))
+    check("… listed under the deck (▶ ✂ ✕, its output; no when)", po.locator("#boardlist .cues li").count() == 1 and po.locator("#boardlist button[data-act=edit]").count() == 1 and po.locator("#boardlist button[data-act=when]").count() == 0 and po.locator("#boardlist select.cout").count() == 1)
+    ax = x[0]["id"]
+    key(9, 1); key(9, 0); po.wait_for_timeout(500)
+    check("its key plays it (no item run)", playing() == [ax] and local() is None, [playing(), local()])
+    key(9, 1); po.wait_for_timeout(80); key(9, 0); po.wait_for_timeout(300)
+    check("… a tap on it again stops it", playing() == [], playing())
+    key(9, 1); key(9, 0); po.wait_for_timeout(500); key(9, 1); po.wait_for_timeout(400)
+    check("… held: fading", playing() == [ax] and po.evaluate("window.__playoutDeck.faces('mk2')[9]").endswith("fading"))
+    key(9, 0); po.wait_for_timeout(200)
+    check("… let go: stopped", playing() == [])
+    lit = po.evaluate(DROP, [vk(0, 0), ["Nope.wav"], 1]); po.wait_for_timeout(800)
+    check("dropped on an item's key: not taken", len(extras()) == 1 and "nodrop" in lit, lit)
+    po.evaluate(DROP, [vk(0, 7), ["B.wav", "A.wav"], 1]); po.wait_for_timeout(2000)
+    s = po.evaluate("window.__playoutDeck.slots('mk2')"); x = {c["id"]: c["name"] for c in extras()}
+    check("two files on a free key: that key and the next free one, in name order", [x.get((s[k] or "")[4:]) for k in (7, 8, 9)] == ["A", "B", "Applause"], s)
+    po.once("dialog", lambda d: d.accept())
+    po.evaluate(DROP, [vk(0, 9), ["Cheers.wav"], 2]); po.wait_for_timeout(1500)
+    s = po.evaluate("window.__playoutDeck.slots('mk2')"); x = {c["id"]: c["name"] for c in extras()}
+    check("dropped on an extra key: replaced (after asking)", x.get((s[9] or "")[4:]) == "Cheers" and "Applause" not in x.values() and len(x) == 3, [s, x])
+    check("… other sizes of deck: the extras after the items", [v[:4] for v in po.evaluate("window.__playoutDeck.slots('xl')")[7:]] == ["cue:"] * 3)
+    # pages
+    po.click("#deckaddpage"); po.wait_for_timeout(300)
+    f = po.evaluate("window.__playoutDeck.faces('mk2', 1)")
+    check("+ Page: a second page of free keys (◀ ▶ now)", len(po.evaluate("window.__playoutDeck.slots('mk2')")) == 22 and f[0] == "" and f[11].split(" | ")[0] == "◀" and f[12].split(" | ")[0] == "▶", f)
+    po.click("#deckarrange"); po.wait_for_timeout(300)
+    po.evaluate(DROP, [vk(1, 2), ["Late.wav"], 1]); po.wait_for_timeout(1500)
+    check("arranging (every page): a file dropped on page 2", po.evaluate("window.__playoutDeck.faces('mk2', 1)[2]").startswith("Late"), po.evaluate("window.__playoutDeck.faces('mk2', 1)"))
+    po.click("#deckarrange"); po.wait_for_timeout(200)
+    po.once("dialog", lambda d: d.accept()); po.click("#deckdelpage"); po.wait_for_timeout(300)
+    check("− Page with a key on it: refused", len(po.evaluate("window.__playoutDeck.slots('mk2')")) == 22)
+    late = [c["id"] for c in extras() if c["name"] == "Late"][0]
+    po.once("dialog", lambda d: d.accept()); po.click('#boardlist li[data-cue="%s"] button[data-act=del]' % late); po.wait_for_timeout(300)
+    po.click("#deckdelpage"); po.wait_for_timeout(300)
+    check("✕ in the list frees its key; − Page then removes the empty page", len(po.evaluate("window.__playoutDeck.slots('mk2')")) == 11 and late not in [c["id"] for c in extras()], po.evaluate("window.__playoutDeck.slots('mk2')"))
+    check("a file dropped elsewhere on the page doesn't open in the tab", po.evaluate("""() => { const dt = new DataTransfer(); dt.items.add(new File(['x'], 'x.wav', { type: 'audio/wav' }));
+      const e = new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }); document.querySelector('h1').dispatchEvent(e); return e.defaultPrevented; }"""))
+
     # the XL too: Use here
     po.click('#decklist [data-deck="sn:XLSERIAL002"] button'); po.wait_for_timeout(1200)
     check("Use here: the XL is driven here too", sorted(d["id"] for d in po.evaluate("window.__playoutDeck.decks()")) == ["sn:MK2SERIAL01", "sn:XLSERIAL002"] and po.evaluate("Object.keys(__decks.xl.images).length") == 32)
@@ -175,9 +240,36 @@ with sync_playwright() as p:
     check("Use here again: the timer page lets go of it", not t.evaluate("__decks.mk2.opened") and "playout page" in t.text_content("#deck-status"), t.text_content("#deck-status"))
     check("… and the playout page drives it", po.evaluate("__decks.mk2.opened") and len(po.evaluate("window.__playoutDeck.decks()")) == 2)
 
+    # one key hands it back and forth: Give to the timer (lit: a timer page with no deck), …
+    po.wait_for_timeout(1700)
+    check("Give to the timer lit: the timer page is open with no deck", po.evaluate("window.__playoutDeck.faces('mk2')[13]") == "Give to the timer | deck" and po.evaluate("localStorage.deck_timer ?? null") is None)
+    po.evaluate("__decks.mk2.features = []; __decks.mk2.key(13, 1); __decks.mk2.key(13, 0)"); po.wait_for_timeout(1500)
+    check("its key: the deck to the timer (Elgato's screen first)", t.evaluate("__decks.mk2.opened") and not po.evaluate("__decks.mk2.opened") and po.evaluate("__decks.mk2.features") == [[3, 2]], [t.evaluate("__decks.mk2.opened"), po.evaluate("__decks.mk2.features")])
+    check("… the timer notes it has a deck (the XL's key: it has one)", po.evaluate("localStorage.deck_timer") == "sn:MK2SERIAL01" and po.evaluate("window.__playoutDeck.face('xl', 0, 30).rs.foot") == "it has one", po.evaluate("window.__playoutDeck.face('xl', 0, 30)"))
+    # … the timer's Give deck to playout, on a key of its layout: the playout's goes on the same key
+    t.evaluate("localStorage.streamdeck_layout_mk2 = JSON.stringify(Array.from({ length: 15 }, (_, i) => i === 4 ? 'deck_to_playout' : i === 10 ? 'toggle_bar' : 'empty'))")
+    t.reload(); t.wait_for_timeout(2500)
+    tf = t.evaluate("StreamDeck.faces('mk2')[4]")
+    check("the timer's Give deck to playout: lit while the playout page is open", tf["label"] == "Give deck\nto playout" and tf["bg"] == "#2a2200", tf)
+    pf = [x.split(" | ")[0] for x in po.evaluate("window.__playoutDeck.faces('mk2')")]
+    check("… the playout's Give to the timer moves to the same key (the items round it)", pf[4] == "Give to the timer" and pf[:4] == names[:4] and pf[5:8] == names[4:7] and pf[14] == "■ All", pf)
+    t.evaluate("__decks.mk2.key(4, 1); __decks.mk2.key(4, 0)"); t.wait_for_timeout(600)
+    check("pressed on the timer's deck: the playout page has it again", po.evaluate("__decks.mk2.opened") and not t.evaluate("__decks.mk2.opened") and "playout page" in t.text_content("#deck-status"), t.text_content("#deck-status"))
+    po.evaluate("__decks.mk2.key(4, 1); __decks.mk2.key(4, 0)"); po.wait_for_timeout(500)
+    check("… the same key at once (held through the hand-over): it stays", po.evaluate("__decks.mk2.opened") and not t.evaluate("__decks.mk2.opened"))
+    po.wait_for_timeout(1000)
+    po.evaluate("__decks.mk2.key(4, 1); __decks.mk2.key(4, 0)"); po.wait_for_timeout(1500)
+    check("… pressed again after a moment: back to the timer", t.evaluate("__decks.mk2.opened") and not po.evaluate("__decks.mk2.opened"))
+    t.wait_for_timeout(1600)
+    t.evaluate("__decks.mk2.key(4, 1); __decks.mk2.key(4, 0)"); t.wait_for_timeout(1500)
+    check("… and on the timer's again: the playout's", po.evaluate("__decks.mk2.opened") and not t.evaluate("__decks.mk2.opened"))
+
     # leaving: the decks back to Elgato's idle screen
     po.evaluate("__decks.mk2.features = []; __decks.xl.features = []; dispatchEvent(new Event('pagehide'))")
     check("the playout page leaving: its decks reset", po.evaluate("__decks.mk2.features") == [[3, 2]] and po.evaluate("__decks.xl.features") == [[3, 2]], [po.evaluate("__decks.mk2.features"), po.evaluate("__decks.xl.features")])
+    po.close(); t.wait_for_timeout(2000)
+    tf = t.evaluate("StreamDeck.faces('mk2')[4]")
+    check("no playout page open: the timer's Give deck to playout dim", tf["bg"] == "#0d0d0d", tf)
     b.close()
 
 print("errors:", errs)

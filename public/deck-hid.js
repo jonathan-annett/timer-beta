@@ -86,21 +86,35 @@ var DeckHID = (function () {
       return s.length >= 4 ? s : null;
     } catch (_) { return null; }
   }
-  const ids = new WeakMap();                           // HIDDevice → its id (worked out once)
-  async function idOf(hid, others) {
+  // One open or close at a time per deck. A page asks a deck's id from more than one place at once (the
+  // playout page drives its decks while it lists them): reading the serial opened the deck and closed it
+  // again, which closed it under the page that had just opened it to drive it (no keys, no presses), and
+  // WebHID refuses a second open while one is under way (the serial unread: another id, so not its own).
+  const queues = new WeakMap(), inUse = new WeakSet();
+  function serially(hid, fn) {
+    const p = (queues.get(hid) || Promise.resolve()).then(fn, fn);
+    queues.set(hid, p.catch(() => {}));
+    return p;
+  }
+  const ids = new WeakMap();                           // HIDDevice → Promise of its id ('sn:': kept; by model: asked again next time)
+  function idOf(hid, others) {
     if (ids.has(hid)) return ids.get(hid);
-    const inf = info(hid);
-    let serial = null;
-    try {
-      const was = hid.opened;
-      if (!was) await hid.open();
-      serial = await readSerial(hid, inf);
-      if (!was) await hid.close();
-    } catch (_) { /* busy: by model */ }
-    const same = (others || [hid]).filter(d => d.productId === hid.productId);
-    const id = serial ? 'sn:' + serial : 'pid:' + hid.productId.toString(16) + ':' + Math.max(0, same.indexOf(hid));
-    ids.set(hid, id);
-    return id;
+    const work = (async () => {
+      let serial = null;
+      try {
+        serial = await serially(hid, async () => {
+          const was = hid.opened;
+          if (!was) await hid.open();
+          try { return await readSerial(hid, info(hid)); }
+          finally { if (!was && !inUse.has(hid)) await hid.close(); }   // (never a deck that's driven)
+        });
+      } catch (_) { /* busy (the Elgato app): by model */ }
+      if (!serial) ids.delete(hid);
+      const same = (others || [hid]).filter(d => d.productId === hid.productId);
+      return serial ? 'sn:' + serial : 'pid:' + hid.productId.toString(16) + ':' + Math.max(0, same.indexOf(hid));
+    })();
+    ids.set(hid, work);
+    return work;
   }
 
   // ─── Claims: which page drives a deck on this computer ───
@@ -175,7 +189,9 @@ var DeckHID = (function () {
   // ─── A deck ───
   async function open(hid, on) {
     on = on || {};
-    if (!hid.opened) await hid.open();
+    inUse.add(hid);
+    try { await serially(hid, () => (hid.opened ? null : hid.open())); }
+    catch (err) { inUse.delete(hid); throw err; }
     const inf = info(hid), m = MODELS[inf.model], kind = orientKind(inf);
     const id = await idOf(hid);
     // The original (v1) deck reports and addresses keys right-to-left within each row
@@ -236,7 +252,7 @@ var DeckHID = (function () {
         for (let i = 0; i < m.keyCount; i++) await deck.setKey(i, c);
       },
       detach() { hid.removeEventListener('inputreport', onReport); },   // (stops hearing it; leaves it open)
-      async close() { deck.detach(); await queue.catch(() => {}); try { await hid.close(); } catch (_) { /* gone */ } },
+      async close() { deck.detach(); inUse.delete(hid); await queue.catch(() => {}); try { await serially(hid, () => (hid.opened ? hid.close() : null)); } catch (_) { /* gone */ } },
     };
     return deck;
   }

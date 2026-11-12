@@ -38,7 +38,8 @@
  * ({show | out:<device id>: {lufs?, off?}}: each output's level, unset = the house level; Options),
  * playout_roll (Random stings' options: StingRoll.opts), playout_cues ({itemId: [{id, name, media, src,
  * trigger, at, duration, song?, rolled?, lib?, start?, end?, fadeIn?, fadeOut?, loop?, lufs?, volume?,
- * out?}]}; before Nov 2026 playout_cues_<room>, merged in once), playout_names ({itemId: {text, was, at}}:
+ * out?}]}; before Nov 2026 playout_cues_<room>, merged in once; under '~board' the Stream Deck's extra keys'
+ * cues: files dropped on a key, not on the run sheet), playout_names ({itemId: {text, was, at}}:
  * the operator's own text for an item, ✎ on it; see "An item's own text"); the files
  * are in IndexedDB (video-store.js) as 'pocue:<cue id>'.
  * MIT Licensed
@@ -73,6 +74,7 @@
   const DEMO = new URLSearchParams(location.search).has('demo');   // ?demo (/p?demo): no timer, see startDemo()
   const CUES = DEMO ? 'playout_demo_cues' : 'playout_cues', OLD_CUES = 'playout_cues_';   // (OLD_CUES + room: before Nov 2026)
   const NAMES = DEMO ? 'playout_demo_names' : 'playout_names';
+  const BOARD = '~board';                              // cues[BOARD]: the Stream Deck's extra keys (files dropped on a key; no item)
   function loadCues() {
     const read = k => { try { const v = JSON.parse(store.get(k) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; } };
     const all = read(CUES);
@@ -354,7 +356,7 @@
     const i = show.items.findIndex(x => x.id === show.cur);
     const ids = i >= 0 ? [show.items[i], show.items[i + 1]] : [show.items[0]];
     const want = new Set();
-    for (const it of ids) for (const c of (it && cues[it.id]) || []) { outKey(c); if (inMemory(c)) { want.add(clipKey(c)); bufferOf(c); } }
+    for (const list of [...ids.map(it => (it && cues[it.id]) || []), cues[BOARD] || []]) for (const c of list) { outKey(c); if (inMemory(c)) { want.add(clipKey(c)); bufferOf(c); } }
     for (const k of [...buffers.keys()]) if (!want.has(k)) buffers.delete(k);
   }
   function tickEvery(ms, fn) {                         // (a worker's tick: keeps time in a background window)
@@ -626,13 +628,14 @@
   async function addCue(itemId, ch, trigger, at) {
     status('Adding the cue…');
     let cue;
-    try { cue = await cueFrom(ch, { trigger, at: at || 0 }); } catch (err) { alert(err && err.message || err); return showMode(); }
+    try { cue = await cueFrom(ch, { trigger, at: at || 0 }); } catch (err) { alert(err && err.message || err); showMode(); return null; }
     (cues[itemId] = cues[itemId] || []).push(cue);
     saveCues();
     retime(itemId, cue);                               // added during its item: only from now on
     showMode();
     render();
     if (!Number.isFinite(cue.lufs)) measure(cue);
+    return cue;
   }
   function removeCue(itemId, id) {
     stopCue(id);
@@ -658,7 +661,7 @@
     render();
   }
   // Cues of items the timer's sheet doesn't have (another show's, or deleted): kept until removed here
-  const orphanIds = () => show.items.length ? Object.keys(cues).filter(k => !show.items.some(it => it.id === k)) : [];
+  const orphanIds = () => show.items.length ? Object.keys(cues).filter(k => k !== BOARD && !show.items.some(it => it.id === k)) : [];
 
   // ─── Random stings (as the run sheet editor's; the pool and the pick are sting-roll.js's) ─────
   // 🎲 Roll stings gives every item long enough to be a speaker an At the start cue with a walk-up sting
@@ -816,7 +819,7 @@
   // Options → Levels: a row for Show and for each sound card this run sheet's cues use (all cues before
   // there's a sheet): Level to [on] [LUFS], ▶ Tone, Match the quietest, and its cues' loudness
   const dB = v => (v < 0 ? '−' : '') + Math.abs(v).toFixed(1);
-  const sheetCues = () => (show.items.length ? show.items.flatMap(it => cues[it.id] || []) : Object.values(cues).flat());
+  const sheetCues = () => (show.items.length ? show.items.flatMap(it => cues[it.id] || []).concat(cues[BOARD] || []) : Object.values(cues).flat());
   function renderLevels() {
     const box = $('levels'), a = document.activeElement;
     if (a && box.contains(a) && a.matches('input[type=number]')) return;   // (being typed in: on focusout)
@@ -922,7 +925,7 @@
     const items = show.items;
     $('rshint').textContent = !show.on ? 'The timer isn’t in run sheet mode' : show.fin ? 'The show has finished' : '';
     const curIdx = items.findIndex(x => x.id === show.cur);
-    const open = document.activeElement && document.activeElement.closest('form.addcue, #items select.cout, form.iedit');
+    const open = document.activeElement && document.activeElement.closest('form.addcue, #items select.cout, #boardlist select.cout, form.iedit');
     if (open) return;                                  // don't rebuild under someone adding a cue, choosing an output or typing an item's text
     const manual = !following(), ro = StingRoll.opts(ROLL), active = manual ? activeItems() : new Set();
     $('items').innerHTML = items.map((it, i) => {
@@ -938,19 +941,27 @@
         `<button class="small" data-act="name" title="Your own text for this item, on this computer: replace its name, or add notes">✎</button>${runBtn}` +
         (rollable(it, ro, false) ? `<button class="small" data-act="roll"${rolling ? ' disabled' : ''} title="${rolledOf(it.id) ? 'Another walk-up sting at random (when and where it plays stay)' : 'A walk-up sting at random, at its start (Random stings, under the run sheet, says from where)'}">🎲</button>` : '') +
         `${it.e ? '' : '<button class="small" data-act="add">+ cue</button>'}</div>` + notesHtml(it) +
-        (list.length ? '<ul class="cues">' + list.map(c => `<li data-cue="${esc(c.id)}" class="${done(c) ? 'fired' : ''}${playing.has(c.id) ? ' playing' : ''}">` +
-          `<button class="small${flash && playing.has(c.id) ? ' superseded' : ''}" data-act="${playing.has(c.id) ? 'stop' : 'fire'}"${locked ? ' disabled' : ''} title="${locked ? 'The item started here plays its cues: ■ Stop item stops them (Options: play and stop single cues)' : playing.has(c.id) ? 'Stop' : 'Play it now (on this computer)'}">${playing.has(c.id) ? '■' : '▶'}</button>` +
-          `<span class="when">${esc(whenText(c))}</span><span class="fname"${c.rolled ? ' title="Picked at random: 🎲 on the item for another; ✂ makes it yours (a roll then leaves it alone)"' : ''}>${c.rolled ? '🎲' : c.media === 'video' ? '🎞' : '🎵'} ${esc(c.name)}</span>` +
-          `<span class="clen">${StingClip.region(c) ? '✂ ' : ''}${lenText(c)}</span>` + outMenu(c) +
-          `<button class="small" data-act="when" title="Change when it plays">✎</button>` +
-          `<button class="small" data-act="edit" title="Choose the part to play, fades, a loop and its level (the file isn’t cut)">✂</button>` +
-          `<button class="small" data-act="del" title="Remove this cue">✕</button></li>`).join('') + '</ul>' : '') +
+        (list.length ? '<ul class="cues">' + list.map(c => cueRow(c, { done: done(c), locked, flash })).join('') + '</ul>' : '') +
         '</li>';
     }).join('') || '<li class="hint">No run sheet yet: the timer sends it when it has one.</li>';
     const orphans = orphanIds(), n = orphans.reduce((a, k) => a + cues[k].length, 0);
     $('orphans').hidden = !n;
     $('orphantext').textContent = n === 1 ? '1 cue belongs to an item that isn’t on the timer’s run sheet (kept here for when it comes back).' : n + ' cues belong to items that aren’t on the timer’s run sheet (kept here for when they come back).';
+    const extra = cues[BOARD] || [];                   // the Stream Deck's extra keys (playout-deck.js: files dropped on a key)
+    $('boardlist').innerHTML = extra.length ? `<li data-id="${BOARD}"><div class="ihead"><span class="iname">Extra keys</span><span class="hint">not on the run sheet: they play when their key is pressed</span></div>` +
+      '<ul class="cues">' + extra.map(c => cueRow(c, { board: true })).join('') + '</ul></li>' : '';
     renderNow(countdown());
+  }
+  // A cue's row: ▶/■, when, its name, length, output, ✎ (when), ✂, ✕. o: {done, locked, flash, board (an extra key: no when)}
+  function cueRow(c, o) {
+    const on = playing.has(c.id);
+    return `<li data-cue="${esc(c.id)}" class="${o.done ? 'fired' : ''}${on ? ' playing' : ''}">` +
+      `<button class="small${o.flash && on ? ' superseded' : ''}" data-act="${on ? 'stop' : 'fire'}"${o.locked ? ' disabled' : ''} title="${o.locked ? 'The item started here plays its cues: ■ Stop item stops them (Options: play and stop single cues)' : on ? 'Stop' : 'Play it now (on this computer)'}">${on ? '■' : '▶'}</button>` +
+      `<span class="when">${o.board ? 'Its key' : esc(whenText(c))}</span><span class="fname"${c.rolled ? ' title="Picked at random: 🎲 on the item for another; ✂ makes it yours (a roll then leaves it alone)"' : ''}>${c.rolled ? '🎲' : c.media === 'video' ? '🎞' : '🎵'} ${esc(c.name)}</span>` +
+      `<span class="clen">${StingClip.region(c) ? '✂ ' : ''}${lenText(c)}</span>` + outMenu(c) +
+      (o.board ? '' : `<button class="small" data-act="when" title="Change when it plays">✎</button>`) +
+      `<button class="small" data-act="edit" title="Choose the part to play, fades, a loop and its level (the file isn’t cut)">✂</button>` +
+      `<button class="small" data-act="del" title="${o.board ? 'Remove it (its key is free again)' : 'Remove this cue'}">✕</button></li>`;
   }
   function renderNow(cd) {
     const it = show.items.find(x => x.id === show.cur);
@@ -962,7 +973,7 @@
     const el = local && document.querySelector('#items .ilocal');
     if (el) el.textContent = 'here · ' + localText();
   }
-  $('items').addEventListener('click', e => {
+  function onListClick(e) {
     const b = e.target.closest('button[data-act]');
     if (!b) return;
     const li = b.closest('li[data-id]'), itemId = li && li.dataset.id;
@@ -979,9 +990,11 @@
     else if (b.dataset.act === 'run') runLocal(itemId);
     else if (b.dataset.act === 'roll') { b.blur(); rollOne(itemId); }
     else if (b.dataset.act === 'endrun') { for (const x of cues[itemId] || []) stopCue(x.id); if (local && local.item === itemId) endLocal(); }
-  });
+  }
+  $('items').addEventListener('click', onListClick);
+  $('boardlist').addEventListener('click', onListClick);   // (the extra keys' cues: ▶ ■ ✂ ✕)
   // A cue's output (from its next play)
-  $('items').addEventListener('change', e => {
+  function onOutChange(e) {
     const s = e.target.closest('select.cout');
     if (!s) return;
     const itemId = s.closest('li[data-id]').dataset.id, cueId = s.closest('li[data-cue]').dataset.cue;
@@ -994,8 +1007,9 @@
     else { const d = outList.find(x => x.id === v); c.out = { id: v, label: d ? d.label : (c.out && c.out.label) || '' }; }
     saveCues();
     render();
-  });
-  $('items').addEventListener('focusout', e => { if (e.target.matches('select.cout')) setTimeout(render, 0); });
+  }
+  const onOutBlur = e => { if (e.target.matches('select.cout')) setTimeout(render, 0); };
+  for (const l of ['items', 'boardlist']) { $(l).addEventListener('change', onOutChange); $(l).addEventListener('focusout', onOutBlur); }
   // An item's own text: its box (Save, Cancel, Use the timer's name; Ctrl/⌘+Enter saves, Enter is a new line)
   const nameBox = el => { const li = el.closest('form.iedit') && el.closest('li[data-id]'); return li && li.dataset.id; };
   $('items').addEventListener('submit', e => { const id = nameBox(e.target); if (id) { e.preventDefault(); closeName(id, true); } });
@@ -1101,6 +1115,14 @@
     fadeAll(ms) { endLocal(); const ids = [...playing.keys()]; fadeAll(ms); return ids; },
     stopIds: ids => ids.forEach(stopCue),
     stopAll: () => { stopAll(); endLocal(); },
+    // The extra keys: files dropped on a key (cues[BOARD]); they play by hand, Follow or not
+    board: () => cues[BOARD] || [],
+    isPlaying: id => playing.has(id),
+    playCue: id => { const c = (cues[BOARD] || []).find(x => x.id === id); if (c) play(c); },
+    fadeCue: (id, ms) => { const p = playing.get(id); if (p) p.voice.fade(ms); return p ? [id] : []; },
+    async addFiles(files) { const ids = []; for (const f of files) { const c = await addCue(BOARD, { file: f }, 'start', 0); if (c) ids.push(c.id); } return ids; },
+    removeExtra: id => removeCue(BOARD, id),
+    server: defaultServer,                             // (a phone's keys: this page hosts a room there)
   });
 
   // Test hooks: what's playing, and the cues

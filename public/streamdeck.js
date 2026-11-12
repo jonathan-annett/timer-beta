@@ -195,6 +195,9 @@
     video_stop:       { label: '■ Stop\nvideo',   group: 'Video', cmd: () => _sendCmd({ cmd: 'videostop' }) },
     video_rewind:     { label: '⟲ Rewind\nvideo', group: 'Video', cmd: () => _sendCmd({ cmd: 'videorewind' }) },
     sting_fade:       { label: 'Fade\nsting',   group: 'Video', toggleState: 'sting_playing', cmd: () => _sendCmd({ cmd: 'stingfade' }) },   // lit while a walk-up sting plays
+    // This deck to the playout page on this computer (its soundboard; deck-hid.js claims). Dim and inert
+    // while no playout page is open here; the playout's deck has Give to the timer on the same key.
+    deck_to_playout:  { label: 'Give deck\nto playout', group: 'Other', cmd: () => giveToPlayout() },
     empty:            { label: '',          group: 'Other',     cmd: null },
   };
 
@@ -421,7 +424,7 @@
   // keep showing stale keys. One short feature report, sent without waiting (a closing page gets a
   // moment at most; blanking every key would be far too slow). Best effort. The next page to attach
   // (a reload, another timer tab) draws its keys again.
-  function resetOnLeave() { if (deck) deck.reset(); }
+  function resetOnLeave() { if (deck) deck.reset(); try { localStorage.removeItem('deck_timer'); } catch (_) { /* private mode */ } }
   window.addEventListener('pagehide', resetOnLeave);
 
   function setBrightness(pct) {
@@ -451,6 +454,8 @@
       return false;
     }
     deck = d; device = hid; deviceInfo = d.info; modelKey = d.model;
+    attachedAt = performance.now();
+    noteDeck();
     _showDeckStatus('Connected: ' + deviceInfo.name, 'ok');
     renderOrientChoice();
     applyBrightness();
@@ -464,6 +469,7 @@
     if (device && ev.device === device) {
       deck.detach();
       deck = null; device = null; deviceInfo = null;
+      noteDeck();
       _showDeckStatus('Unplugged — plug it back in, or click Connect', 'idle');
       renderOrientChoice();
     }
@@ -478,6 +484,7 @@
     while (drawing) await new Promise(r => setTimeout(r, 20));   // let any in-flight flush finish
     await d.blank();
     deck = null; device = null; deviceInfo = null;
+    noteDeck();
     renderOrientChoice();
     await d.close();
     pausedDevice = d.hid;
@@ -687,6 +694,10 @@
       else if (actionKey === 'video_stop') { bg = override.bg || '#3a0d0d'; fg = override.fg || '#ff7777'; }
       else { bg = override.bg || '#0b3d5c'; fg = override.fg || '#7fd4ff'; }
     }
+    if (actionKey === 'deck_to_playout') {
+      bg = playoutOpen ? (override.bg || '#2a2200') : '#0d0d0d';
+      fg = playoutOpen ? (override.fg || '#ffcc33') : '#444444';
+    }
     if (action.rsKey) {
       const on = rs.active && (action.rsKey === 'prev' ? rs.canBack : action.rsKey === 'next' ? !!rs.next : action.rsKey === 'now' ? !!rs.now : true);
       if (!on) { bg = '#0d0d0d'; fg = '#444444'; }
@@ -866,6 +877,7 @@
     const groups = {};
     for (const [key, action] of Object.entries(ACTIONS)) {
       if (action.kp) continue;                       // the keypad's own keys: only on the keypad
+      if (key === 'deck_to_playout' && window.TimerFeatures && !TimerFeatures.playout) continue;   // (no playout computers on this site)
       if (!groups[action.group]) groups[action.group] = [];
       groups[action.group].push({ key, action });
     }
@@ -1133,17 +1145,47 @@
   function letGo() {                                   // given to the playout page: its keys are the playout's to draw
     const d = deck;
     deck = null; device = null; deviceInfo = null;
+    noteDeck();
     dirtyKeys.clear();
     d.close();
     renderOrientChoice();
     _showDeckStatus(PLAYOUT_HAS_IT, 'idle');
     findDeck();
   }
+  // Give deck to playout (the key): only while a playout page is open in this browser (its Web Lock), so a
+  // deck is never handed to nobody; the playout's deck then has Give to the timer on the same key. A key
+  // held through the hand-over mustn't hand it straight back: neither side acts on it for HANDOVER_MS.
+  // deck_timer (localStorage) says which deck the timer drives, so the playout knows whether it would take one.
+  const HANDOVER_MS = 1500;
+  let attachedAt = 0, playoutOpen = false;
+  const noteDeck = () => { try { if (deck) localStorage.setItem('deck_timer', deck.id); else localStorage.removeItem('deck_timer'); } catch (_) { /* private mode */ } };
+  function giveToPlayout() {
+    if (!deck || !playoutOpen || performance.now() - attachedAt < HANDOVER_MS) return;
+    DeckHID.setOwner(deck.id, 'playout');
+    letGo();
+  }
+  function watchPlayout() {                            // is a playout page open here? (it holds playout-streamdeck)
+    if (!navigator.locks || !navigator.locks.query) return;
+    navigator.locks.query().then(q => {
+      const open = (q.held || []).some(l => l.name === 'playout-streamdeck');
+      if (open === playoutOpen) return;
+      playoutOpen = open;
+      if (device) (activeLayout(modelKey) || []).forEach((a, i) => { if (a === 'deck_to_playout') scheduleRedrawKey(i); });
+    }).catch(() => {});
+  }
   function autoAttach() {
     findDeck();
     navigator.hid.addEventListener('connect', ev => { if (DeckHID.isDeck(ev.device)) findDeck(); });
     navigator.hid.addEventListener('disconnect', onHidDisconnect);
-    DeckHID.onClaims(() => { if (deck && DeckHID.ownerOf(deck.id) !== 'timer') letGo(); else findDeck(); });
+    let was = DeckHID.claims();
+    DeckHID.onClaims(() => {
+      const now = DeckHID.claims(), back = Object.keys(was).some(id => was[id] === 'playout' && now[id] !== 'playout');
+      was = now;
+      if (deck && DeckHID.ownerOf(deck.id) !== 'timer') return letGo();
+      if (back && !device) localStorage.removeItem(AUTOCONNECT_KEY);   // given back (Give to the timer): a deliberate hand-over
+      findDeck();
+    });
+    watchPlayout(); setInterval(watchPlayout, 1000);
   }
 
   // ─── Virtual deck (phone remote, see remote-control.js) ──────────────────
@@ -1151,7 +1193,7 @@
   // actions as on a real deck, chosen by the operator's layout: a phone only sends an index.
   // Not from a phone: 'Remote' opens a window here, which needs a click on this computer, and
   // 'Type message' opens the on-screen box here (the phone shows its own box instead).
-  const PHONE_NO_PRESS = new Set(['toggle_presenter', 'custom_msg', 'empty']);
+  const PHONE_NO_PRESS = new Set(['toggle_presenter', 'custom_msg', 'deck_to_playout', 'empty']);
   const changeListeners = [];
   function notifyChange() { changeListeners.forEach(fn => { try { fn(); } catch (_) { /* ignore */ } }); }
 
@@ -1165,7 +1207,7 @@
     layouts = editorLayouts; keyOverrides = editorOverrides;
     try { return fn(); } finally { layouts = L; keyOverrides = O; }
   }
-  const LOCAL_NO_PRESS = new Set(['toggle_presenter', 'empty']);   // the pop-up: Type message works (it's this computer)
+  const LOCAL_NO_PRESS = new Set(['toggle_presenter', 'deck_to_playout', 'empty']);   // the pop-up: Type message works (it's this computer)
 
   window.StreamDeck = {
     model: m => MODELS[m],
