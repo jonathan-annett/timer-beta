@@ -139,6 +139,15 @@ var DeckHID = (function () {
     ctx.drawImage(src, -size / 2, -size / 2);
     return c;
   }
+  // A key image as JPEG, encoded now (toDataURL), not with toBlob: Chrome encodes toBlob's in idle time, which a
+  // hidden tab hardly gets (its fallback timers throttled to 1 s, then 1 min), so a deck handed to a page in the
+  // background took a key a second or worse to draw (the owner, 13 Nov 2026). A key's image is under 100 px a
+  // side: about a millisecond.
+  function jpeg(canvas) {
+    const url = canvas.toDataURL('image/jpeg', 0.95), bin = atob(url.slice(url.indexOf(',') + 1)), out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
   // gen2: report 0x02, 1024 bytes incl. report ID, 8-byte header, 1016-byte payload.
   async function sendGen2(hid, keyIndex, bytes) {
     const DATA_LEN = 1023, HEADER = 7, PAYLOAD = DATA_LEN - HEADER;
@@ -216,8 +225,7 @@ var DeckHID = (function () {
       const img = orient(canvas, kind), k = physical(i);
       try {
         if (inf.protocol === 'gen2') {
-          const blob = await new Promise(r => img.toBlob(r, 'image/jpeg', 0.95));
-          await sendGen2(hid, k, new Uint8Array(await blob.arrayBuffer()));
+          await sendGen2(hid, k, jpeg(img));
         } else {
           await sendGen1(hid, inf, k, toBMP(img));
         }

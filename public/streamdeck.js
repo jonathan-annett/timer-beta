@@ -1159,14 +1159,16 @@
   const HANDOVER_MS = 1500;
   let attachedAt = 0, playoutOpen = false;
   const noteDeck = () => { try { if (deck) localStorage.setItem('deck_timer', deck.id); else localStorage.removeItem('deck_timer'); } catch (_) { /* private mode */ } };
-  function giveToPlayout() {
-    if (!deck || !playoutOpen || performance.now() - attachedAt < HANDOVER_MS) return;
+  async function giveToPlayout() {
+    if (!deck || performance.now() - attachedAt < HANDOVER_MS) return;
+    await watchPlayout();                              // (asked now, not as last checked: a page in the background may be behind)
+    if (!deck || !playoutOpen) return;
     DeckHID.setOwner(deck.id, 'playout');
     letGo();
   }
   function watchPlayout() {                            // is a playout page open here? (it holds playout-streamdeck)
-    if (!navigator.locks || !navigator.locks.query) return;
-    navigator.locks.query().then(q => {
+    if (!navigator.locks || !navigator.locks.query) return Promise.resolve();
+    return navigator.locks.query().then(q => {
       const open = (q.held || []).some(l => l.name === 'playout-streamdeck');
       if (open === playoutOpen) return;
       playoutOpen = open;
@@ -1185,7 +1187,10 @@
       if (back && !device) localStorage.removeItem(AUTOCONNECT_KEY);   // given back (Give to the timer): a deliberate hand-over
       findDeck();
     });
-    watchPlayout(); setInterval(watchPlayout, 1000);
+    watchPlayout();
+    // every second on a worker's tick: a hidden tab's own timers slow to once a second, then once a minute
+    try { const w = new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage(0)},1000)'], { type: 'text/javascript' }))); w.onmessage = watchPlayout; }
+    catch (_) { setInterval(watchPlayout, 1000); }
   }
 
   // ─── Virtual deck (phone remote, see remote-control.js) ──────────────────
