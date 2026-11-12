@@ -24,7 +24,7 @@
   let link = parse(location.hash.slice(1));
   if (link.r && link.k) {
     store.set(LINK, location.hash.slice(1));
-    if (VirtualDeck.MODELS[link.dm]) store.set(MODEL, link.dm);
+    if (VirtualDeck.shape(link.dm)) store.set(MODEL, link.dm);   // (a deck's size, or a custom one: c8x6)
     history.replaceState(null, '', location.pathname + location.search);
   } else link = parse(store.get(LINK) || '');
   const status = (text, kind) => { $('status').textContent = text; $('status').className = kind || ''; };
@@ -33,8 +33,7 @@
   const tokenKey = 'playout_phone_token_' + link.r;
 
   // ─── The keys ───
-  let model = VirtualDeck.MODELS[store.get(MODEL)] ? store.get(MODEL) : 'mk2';
-  $('model').value = model;
+  let model = VirtualDeck.shape(store.get(MODEL)) ? store.get(MODEL) : 'mk2';
   const down = new Set();
   const vd = VirtualDeck.create($('keys'), {
     bind(c, i) {                                       // down and up both go (a tap stops, a hold fades)
@@ -54,7 +53,11 @@
     vd.layout(Math.max(100, box.width - 16), Math.max(80, box.height - 16), 0.18);
   }
   function setModel(m) {
-    if (!VirtualDeck.MODELS[m]) return;
+    const g = VirtualDeck.shape(m);
+    if (!g) return;
+    if (g.custom && ![...$('model').options].some(o => o.value === m)) {   // (a custom size: an entry of its own)
+      const o = document.createElement('option'); o.value = m; o.textContent = g.cols + ' × ' + g.rows; $('model').appendChild(o);
+    }
     model = m; $('model').value = m;
     vd.setModel(m); layout();
   }
@@ -146,7 +149,7 @@
     else if (m.t === 'revoked') gone('The playout computer took these keys away. Scan its code again to use them.');
     else if (m.t === 'deck' && m.k && typeof m.k === 'object') {
       if (!ok) { ok = true; cover(null); keepAwake(); }
-      if (VirtualDeck.MODELS[m.model] && m.model !== vd.model) setModel(m.model);
+      if (VirtualDeck.shape(m.model) && m.model !== vd.model) setModel(m.model);
       for (const [i, f] of Object.entries(m.k)) vd.setFace(Number(i), f);
     }
     showMode();

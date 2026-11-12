@@ -8,7 +8,9 @@
  *   const vd = VirtualDeck.create(box, {bind(canvas, i), onPress(i)})
  *     box: the element the keys go in (a CSS grid: --cols, --key, --col-gap, --row-gap are set on it)
  *     bind: wires a key's presses (the phone's pressable); else a plain press calls onPress(i)
- *   vd.setModel('xl' | 'mk2' | 'mini')   the grid (keeps the faces it has if the count is the same)
+ *   vd.setModel('xl' | 'mk2' | 'mini' | 'c<cols>x<rows>')   the grid (keeps the faces it has if the count is the same)
+ *   VirtualDeck.shape(model) → {cols, rows, custom?} | null   a model's grid: a deck's, or a custom size on screen
+ *                                        ('c8x6': 2–20 across, 2–11 down; the playout's keys, the owner, 13 Nov 2026)
  *   vd.layout(width, height, maxGap)     the biggest square keys that fit, spare space into the gaps
  *   vd.setFace(i, face)                  a key's face (streamdeck.js faceFor: {bg, fg, label…, a, press})
  *   vd.setBacklight(pct)                 dims the keys like the deck's backlight (never quite black)
@@ -19,6 +21,11 @@
 var VirtualDeck = (function () {
   'use strict';
   const MODELS = { mini: { cols: 3, rows: 2 }, mk2: { cols: 5, rows: 3 }, xl: { cols: 8, rows: 4 } };
+  function shape(m) {
+    if (MODELS[m]) return MODELS[m];
+    const x = /^c(\d{1,2})x(\d{1,2})$/.exec(typeof m === 'string' ? m : ''), cols = x ? +x[1] : 0, rows = x ? +x[2] : 0;
+    return cols >= 2 && cols <= 20 && rows >= 2 && rows <= 11 ? { cols, rows, custom: true } : null;
+  }
   // Display keys (they don't do anything, but aren't "off" either)
   const SHOW_ONLY = new Set(['countdown', 'countdown_major', 'countdown_minor', 'rs_now', 'rs_status', 'empty', 'kp_pv_h', 'kp_pv_m', 'kp_pv_s', 'kp_pv_typed']);
 
@@ -50,7 +57,7 @@ var VirtualDeck = (function () {
     }
 
     function setModel(m) {
-      const g = MODELS[m] || MODELS.xl;
+      const g = shape(m) || MODELS.xl;
       const n = g.cols * g.rows;
       if (model === m && canvases.length === n) return;
       model = m; cols = g.cols; rows = g.rows;
@@ -95,5 +102,5 @@ var VirtualDeck = (function () {
       get model() { return model; }, get count() { return canvases.length; } };
   }
 
-  return { create, MODELS };
+  return { create, MODELS, shape };
 })();

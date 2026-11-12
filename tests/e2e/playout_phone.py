@@ -85,6 +85,11 @@ with sync_playwright() as p:
 
     ph.reload(); ph.wait_for_timeout(3000)
     check("a reload: straight back (its token), no number asked", ph.evaluate("window.__pphone.ok()") and not ph.is_visible("#cover") and len(ph.evaluate("window.__pphone.faces()")) == 32)
+    ph.evaluate("localStorage.playout_phone_model = 'c6x4'"); ph.reload(); ph.wait_for_timeout(3000)
+    f = ph.evaluate("window.__pphone.faces()")
+    check("a custom size on the phone (6 × 4, as a dm=c6x4 link sets): 24 keys, its own menu entry", len(f) == 24 and f[23].startswith("■ All") and po.evaluate("window.__playoutDeck.phones()[0].model") == "c6x4"
+          and ph.evaluate("document.getElementById('model').selectedOptions[0].textContent") == "6 × 4", [len(f), ph.evaluate("document.getElementById('model').value")])
+    ph.select_option("#model", "xl"); ph.wait_for_timeout(1200)
 
     # a second phone, the wrong number: out
     pc2, ph2 = phone_ctx()

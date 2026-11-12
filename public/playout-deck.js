@@ -16,6 +16,10 @@
  * playing, a tap stops and a hold fades, as an item; Follow or not. + Page adds a page of empty keys, − Page
  * removes the last one if it's empty.
  *
+ * Crossfade on release (the owner, 13 Nov 2026; playout_deck_xfade = '1', over playout_deck_xfade_s seconds, 5
+ * unless set): a key that starts something (an item, an extra key, cue 1) while other cues play fades all the
+ * others out from the moment it's let go, so one press and release swaps one track for another cleanly.
+ *
  * Item or cue 1 (the XL, the owner, 13 Nov 2026: some operators prefer it): a key just before → timer toggles
  * what the item keys do (playout_deck_xl_mode = 'cue', else items). Cue 1: an item's key stands in for its first
  * cue's ▶ / ■ (pressed, it plays; playing, a tap stops and a hold fades, as an extra key; locked as that button
@@ -44,7 +48,7 @@
  *   nowId(), isDone(id), playingIds(id), anyPlaying(), localItem(), localText(), startText(it), start(id), fadeItem(id, ms) → cue ids,
  *   fadeAll(ms) → cue ids, stopIds(ids), stopAll(), board() (the extra keys' cues), isPlaying(cue id), playCue(id),
  *   fadeCue(id, ms) → ids, addFiles(files) → new cue ids, removeExtra(id), server() (the pairing server),
- *   cueLocked(item id) (its cues' ▶ ■ locked by an item run)}
+ *   cueLocked(item id) (its cues' ▶ ■ locked by an item run), playingAll() → every cue id playing}
  * MIT Licensed
  */
 var PlayoutDeck = (function () {
@@ -55,11 +59,21 @@ var PlayoutDeck = (function () {
   const COLOURS = { extra: '#2e1f45', idle: '#1c2a3a', cue: '#123a3c', none: '#121212', here: '#7a5c00', play: '#13602a', fade: '#9a5200', now: '#0b3d5c', done: '#181818', all: '#3a1212', allOn: '#8a1a1a', page: '#262626' };
 
   function create(api) {
-    const LAYOUT = api.demo ? 'playout_demo_deck_layout' : 'playout_deck_layout', FADE = 'playout_deck_fade', MODEL = 'playout_deck_model', XLMODE = 'playout_deck_xl_mode';
+    const LAYOUT = api.prefix + 'deck_layout', FADE = 'playout_deck_fade', MODEL = 'playout_deck_model', XLMODE = 'playout_deck_xl_mode';
     const MODELS = DeckHID.MODELS;
+    // A deck's shape: a real model's, or a custom size for the page's keys and phones ('c<cols>x<rows>': 2–20
+    // across, 2–11 down; the owner, 13 Nov 2026: tablets and big screens). Its own arrangement, no → timer.
+    function modelOf(m) {
+      if (MODELS[m]) return MODELS[m];
+      const g = window.VirtualDeck && VirtualDeck.shape(m);
+      return g && g.custom ? { cols: g.cols, rows: g.rows, keyCount: g.cols * g.rows, name: g.cols + ' × ' + g.rows + ' keys', custom: true } : null;
+    }
     let arranged = {};
     try { const v = JSON.parse(api.store.get(LAYOUT) || '{}'); if (v && typeof v === 'object') arranged = v; } catch (_) { /* none */ }
     const cueMode = model => model === 'xl' && api.store.get(XLMODE) === 'cue';   // (the XL's item keys play their cue 1)
+    const XFADE = 'playout_deck_xfade', XFADE_S = 'playout_deck_xfade_s';
+    const xfadeOn = () => api.store.get(XFADE) === '1';
+    const xfadeSecs = () => { const v = parseFloat(api.store.get(XFADE_S)); return v >= 0.2 && v <= 20 ? v : 5; };
     const fadeSecs = () => { const v = parseFloat(api.store.get(FADE)); return v >= 0.2 && v <= 10 ? v : 5; };   // (5 s: the owner, 13 Nov 2026, once fades were even in dB; 2 before)
 
     // ─── Keys: slots (item ids in page order) and what each key is ───
@@ -87,14 +101,14 @@ var PlayoutDeck = (function () {
       catch (_) { return null; }
     }
     function geometry(model, n) {
-      const K = MODELS[model].keyCount, r = giveKey(model);
+      const K = modelOf(model).keyCount, custom = modelOf(model).custom, r = giveShown() && !custom ? giveKey(model) : null;
       if (model === 'mini') return { K, paged: true, wrap: true, per: 4, pages: Math.max(1, Math.ceil(n / 4)), role: MINI.role, keys: MINI.keys };
       const build = paged => {
         const role = new Array(K).fill(null);
         const last = () => { for (let i = K - 1; i >= 0; i--) if (!role[i]) return i; return -1; };
         if (r != null) role[r] = 'give';
         role[last()] = 'all';
-        if (r == null) role[last()] = 'give';
+        if (r == null && giveShown() && !custom) role[last()] = 'give';   // (a custom size is on screen only: no deck to give)
         if (model === 'xl') { const gi = role.indexOf('give'); role[gi > 0 && !role[gi - 1] ? gi - 1 : last()] = 'mode'; }
         if (paged) { role[last()] = 'next'; role[last()] = 'prev'; }
         return { role, keys: role.map((x, i) => (x ? -1 : i)).filter(i => i >= 0) };
@@ -122,22 +136,33 @@ var PlayoutDeck = (function () {
         else if (k.kind === 'mode') { if (cueMode(model)) api.store.del(XLMODE); else api.store.set(XLMODE, 'cue'); }
         else {
           const id = s[k.slot], x = extraOf(id) || (cueMode(model) && onSheet().has(id) && !api.cueLocked(id) ? api.cuesOf(id)[0] : null);
+          const others = xfadeOn() && api.playingAll().length > 0;   // (crossfade on release: the rest fade when it's let go)
           if (x) {                                     // an extra key (or cue 1): plays; playing, down fades and up stops
             if (api.isPlaying(x.id)) b.presses.set(i, { item: id, ids: api.fadeCue(x.id, fadeSecs() * 1000) });
-            else api.playCue(x.id);
+            else { api.playCue(x.id); if (others) b.presses.set(i, { xfade: true, keep: x.id }); }
             return changed();
           }
           if (!id || !onSheet().has(id) || cueMode(model)) return;
           if (api.localItem() === id || api.playingIds(id).length) b.presses.set(i, { item: id, ids: api.fadeItem(id, fadeSecs() * 1000) });
-          else if (!api.following() && api.cuesOf(id).length) api.start(id);
+          else if (!api.following() && api.cuesOf(id).length) { api.start(id); if (others) b.presses.set(i, { xfade: true, started: id }); }
         }
       } else {
         const p = b.presses.get(i);
         if (!p) return;
         b.presses.delete(i);
-        if (p.all) api.stopAll(); else api.stopIds(p.ids);
+        if (p.xfade) crossfade(p);
+        else if (p.all) api.stopAll(); else api.stopIds(p.ids);
       }
       changed();
+    }
+
+    // Let go of a key that started something: everything else playing fades out (an item run here that isn't the new
+    // one ends, so its later cues don't follow)
+    function crossfade(p) {
+      const ms = xfadeSecs() * 1000, mine = new Set(p.keep ? [p.keep] : api.playingIds(p.started));
+      const run = api.localItem();
+      if (run && run !== p.started) api.fadeItem(run, ms);
+      for (const id of api.playingAll()) if (!mine.has(id)) api.fadeCue(id, ms);
     }
 
     // ─── Faces (deck-face.js), the same on a deck and on the page ───
@@ -222,6 +247,8 @@ var PlayoutDeck = (function () {
     const HANDOVER_MS = 1500;
     const timer = { open: false };
     const timerFree = () => timer.open && !api.store.get('deck_timer');
+    // A soundboard (the owner, 13 Nov 2026): → timer only while a timer page here has no deck (its key goes to the items otherwise)
+    function giveShown() { return !api.soundboard || timerFree(); }
     function giveBack(id) {
       const b = decks.get(id);
       if (b) b.deck.reset();
@@ -230,7 +257,10 @@ var PlayoutDeck = (function () {
     }
     function watchTimer() {
       if (!navigator.locks || !navigator.locks.query) return;
-      navigator.locks.query().then(q => { timer.open = (q.held || []).some(l => l.name === 'timer-streamdeck'); }).catch(() => {});
+      navigator.locks.query().then(q => {
+        const open = (q.held || []).some(l => l.name === 'timer-streamdeck');
+        if (open !== timer.open) { timer.open = open; if (api.soundboard) renderDecks(); }   // (a soundboard lists Give to the timer only then)
+      }).catch(() => {});
     }
     async function look() {                            // drive every deck that's the playout's, and list them all
       if (!owner || looking) return;
@@ -266,8 +296,9 @@ var PlayoutDeck = (function () {
       box.innerHTML = !navigator.hid ? '<p class="hint">This browser has no WebHID: use Chrome or Edge for a Stream Deck. The keys below still work with the mouse.</p>'
         : !owner ? '<p class="hint">Another playout tab is using the decks: use that one (this tab takes over when it closes).</p>'
         : listed.map(x => `<div class="dk-row" data-deck="${esc(x.id)}"><span class="dk-name">${esc(x.name)}${x.serial ? ' <span class="hint">…' + esc(x.serial) + '</span>' : ''}</span>` +
-          `<span class="dk-state${x.on ? ' ok' : x.busy ? ' bad' : ''}">${x.on ? 'Used here' : x.mine ? (x.busy ? 'Busy: quit the Elgato Stream Deck app' : 'Connecting…') : 'The timer’s'}</span>` +
-          `<button class="small" data-dk="${x.mine ? 'timer' : 'playout'}" title="${x.mine ? 'The timer page on this computer uses it again' : 'Use it here as a soundboard (the timer page on this computer lets go of it)'}">${x.mine ? 'Give to the timer' : 'Use here'}</button></div>`).join('')
+          `<span class="dk-state${x.on ? ' ok' : x.busy ? ' bad' : ''}">${x.on ? 'Used here' : x.mine ? (x.busy ? 'Busy: quit the Elgato Stream Deck app' : 'Connecting…') : api.soundboard ? 'Not used here' : 'The timer’s'}</span>` +
+          (x.mine && api.soundboard && !timer.open ? '' :   // (a soundboard: no timer talk unless a timer page is open here)
+          `<button class="small" data-dk="${x.mine ? 'timer' : 'playout'}" title="${x.mine ? 'The timer page on this computer uses it again' : api.soundboard ? 'Use it here' : 'Use it here as a soundboard (the timer page on this computer lets go of it)'}">${x.mine ? 'Give to the timer' : 'Use here'}</button>`) + '</div>').join('')
           || '<p class="hint">No Stream Deck yet. Quit the Elgato Stream Deck app, plug one in and click <b>Connect a deck…</b></p>';
     }
 
@@ -298,16 +329,16 @@ var PlayoutDeck = (function () {
 
     // ─── On the page: the same keys (a soundboard with the mouse), and Arrange keys ───
     let screenModel = api.store.get(MODEL) || 'mk2';
-    if (!MODELS[screenModel]) screenModel = 'mk2';
+    if (!modelOf(screenModel)) screenModel = 'mk2';
     let arranging = false;
     const screen = { page: 0, presses: new Map(), model: () => screenModel };
     boards.add(screen);
     let views = [];                                    // [{vd, box, page}]
     let drag = null;                                   // arranging: {from: slot, el}
     function setScreenModel(m) {
-      if (!MODELS[m]) return;
+      if (!modelOf(m)) return;
       screenModel = m; api.store.set(MODEL, m);
-      if ($('deckmodel')) $('deckmodel').value = m;
+      if ($('deckmodel')) { customOption(m); $('deckmodel').value = m; }
       views = []; renderScreen();
     }
     function slotOf(view, i) {                         // an item key's slot on a view, else null
@@ -415,17 +446,19 @@ var PlayoutDeck = (function () {
       screen.page = Math.min(screen.page, g.pages - 1);
       // Arranging: every page; else the page the mouse is on
       const pages = arranging ? Array.from({ length: g.pages }, (_, p) => p) : [screen.page];
-      const geo = MODELS[screenModel], W = Math.min(host.clientWidth || 560, geo.cols * 96);
-      if (views.length !== pages.length || views.some((v, j) => v.page !== pages[j] || v.model !== screenModel || v.w !== W)) {
+      // On the page: as wide as the box (96 px a key at most); full screen (the Chromebook, a tablet): the whole screen
+      const geo = modelOf(screenModel), full = document.fullscreenElement === host;
+      const W = full ? host.clientWidth : Math.min(host.clientWidth || 560, geo.cols * 96), H = full ? host.clientHeight : W * geo.rows / geo.cols;
+      if (views.length !== pages.length || views.some((v, j) => v.page !== pages[j] || v.model !== screenModel || v.w !== W || v.h !== H)) {
         host.innerHTML = '';
         views = pages.map(p => {
           const wrap = document.createElement('div'); wrap.className = 'vd-page';
           if (arranging && g.pages > 1) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Page ' + (p + 1); wrap.appendChild(h); }
           const box = document.createElement('div'); box.className = 'vd-keys'; wrap.appendChild(box); host.appendChild(wrap);
-          const view = { box, page: p, model: screenModel, w: W };
+          const view = { box, page: p, model: screenModel, w: W, h: H };
           view.vd = VirtualDeck.create(box, { bind: bind(view) });
           view.vd.setModel(screenModel);
-          view.vd.layout(W, W * geo.rows / geo.cols, 0.12);
+          view.vd.layout(W, H, 0.12);
           return view;
         });
       }
@@ -442,7 +475,7 @@ var PlayoutDeck = (function () {
     }
 
     // ─── On a phone (playout-phone.html) ───
-    const SHARE = api.demo ? 'playout_demo_phone' : 'playout_phone';
+    const SHARE = api.prefix + 'phone';               // (playout_phone, playout_demo_phone, playout_board_phone)
     const ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', KEYABC = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789';
     const randStr = (n, abc) => [...crypto.getRandomValues(new Uint8Array(n))].map(b => abc[b % abc.length]).join('');
     let share = null;                                  // {room, key, on, tokens: [{t, name}]}
@@ -497,7 +530,7 @@ var PlayoutDeck = (function () {
     function fromPhone(p, m) {
       if (!m || typeof m !== 'object') return;
       if (m.t === 'hello') {
-        if (MODELS[m.model]) p.model = m.model;
+        if (modelOf(m.model)) p.model = m.model;
         if (p.ok) { p.sent = []; return draw(); }
         const known = typeof m.token === 'string' && tokens().find(x => x.t === m.token);
         if (known) return letIn(p, known);
@@ -506,9 +539,9 @@ var PlayoutDeck = (function () {
         if (/^\d{3,4}$/.test(String(m.code))) { p.pin = String(m.code); p.name = String(m.name || 'A phone').slice(0, 60); renderPhones(true); }
       } else if (p.ok && m.t === 'relink' && p.peer.mode === 'server' && !(p.relinked > Date.now() - 5000)) {
         p.relinked = Date.now(); p.peer.restart();     // (its network changed: another go at a direct link)
-      } else if (p.ok && m.t === 'model' && MODELS[m.model]) {
+      } else if (p.ok && m.t === 'model' && modelOf(m.model)) {
         p.model = m.model; p.sent = []; changed();
-      } else if (p.ok && (m.t === 'kd' || m.t === 'ku') && Number.isInteger(m.i) && m.i >= 0 && m.i < MODELS[p.model].keyCount) {
+      } else if (p.ok && (m.t === 'kd' || m.t === 'ku') && Number.isInteger(m.i) && m.i >= 0 && m.i < modelOf(p.model).keyCount) {
         handle(p.b, m.i, m.t === 'kd');
       }
     }
@@ -540,7 +573,7 @@ var PlayoutDeck = (function () {
       changed(); renderPhones();
     }
     function sendFaces(p) {                            // the faces that changed, 8 a message (the server's 16 KB limit)
-      const m = MODELS[p.model], full = !p.sent.length, k = {};
+      const m = modelOf(p.model), full = !p.sent.length, k = {};
       const f = faces(p.model, p.b.page).map(x => (x.give ? { bg: '#000', fg: '#000', press: false, a: 'empty' } : x));   // (a phone has no deck to give)
       if (full) p.sent = [];
       f.forEach((face, i) => { const j = JSON.stringify(face); if (p.sent[i] !== j) { p.sent[i] = j; k[i] = face; } });
@@ -573,7 +606,7 @@ var PlayoutDeck = (function () {
         }
       }
       $('ph-note').textContent = !hws ? 'Connecting to the pairing server…'
-        : qrOn ? 'Scan this with the phone’s camera: these keys open on it, as a ' + MODELS[screenModel].name + ' (the phone can change that). The code goes once a phone picks it up.'
+        : qrOn ? 'Scan this with the phone’s camera: these keys open on it, as a ' + modelOf(screenModel).name + ' (the phone can change that). The code goes once a phone picks it up.'
         : 'Sharing these keys with phones.';
       const waiting = [...phones.values()].filter(p => !p.ok);
       const sig = waiting.map(p => p.id + ':' + (p.pin || '')).join(',');
@@ -590,7 +623,32 @@ var PlayoutDeck = (function () {
     }
 
     // ─── Wiring ───
-    if ($('deckmodel')) { $('deckmodel').value = screenModel; $('deckmodel').addEventListener('change', e => { e.target.blur(); setScreenModel(e.target.value); }); }
+    // On screen: the three decks, a custom size (Custom size…: across × down, kept as its own choice in the menu)
+    function customOption(m) {
+      const sel = $('deckmodel'), g = modelOf(m);
+      if (!sel || !g || !g.custom || [...sel.options].some(o => o.value === m)) return;
+      const o = document.createElement('option'); o.value = m; o.textContent = 'Custom: ' + g.cols + ' × ' + g.rows;
+      sel.insertBefore(o, sel.querySelector('option[value=custom]'));
+    }
+    if ($('deckmodel')) {
+      customOption(screenModel);
+      $('deckmodel').value = screenModel;
+      $('deckmodel').addEventListener('change', e => {
+        e.target.blur();
+        if (e.target.value !== 'custom') return setScreenModel(e.target.value);
+        const g = modelOf(screenModel), ask = prompt('Keys across × down (2 × 2 to 20 × 11):', g && g.custom ? g.cols + ' × ' + g.rows : '8 × 6');
+        const x = /^\s*(\d{1,2})\s*[x×*,]\s*(\d{1,2})\s*$/i.exec(ask || ''), m = x && 'c' + Number(x[1]) + 'x' + Number(x[2]);
+        if (m && modelOf(m)) setScreenModel(m);
+        else { if (ask) alert('That isn’t a size I can make: from 2 × 2 up to 20 across and 11 down.'); e.target.value = screenModel; }
+      });
+    }
+    // Full screen: the keys alone (a tablet or a touch screen as the soundboard); ◀ ▶ still turn the page
+    if ($('deckfull')) {
+      $('deckfull').hidden = !document.fullscreenEnabled;
+      $('deckfull').addEventListener('click', e => { e.currentTarget.blur(); arranging = false; $('vdecks').requestFullscreen().catch(() => {}); });
+      document.addEventListener('fullscreenchange', () => { views = []; renderScreen(); });
+      window.addEventListener('resize', () => { if (document.fullscreenElement === $('vdecks')) { views = []; renderScreen(); } });
+    }
     if ($('deckarrange')) $('deckarrange').addEventListener('click', e => { e.currentTarget.blur(); arranging = !arranging; views = []; renderScreen(); });
     if ($('phoneshow')) $('phoneshow').addEventListener('click', e => {
       e.currentTarget.blur();
@@ -630,6 +688,14 @@ var PlayoutDeck = (function () {
       for (const b of decks.values()) b.sent = [];
       views = []; changed();
     });
+    if ($('deckxfade')) {                              // Crossfade on release, and over how long
+      $('deckxfade').checked = xfadeOn(); $('deckxfades').value = xfadeSecs();
+      $('deckxfade').addEventListener('change', e => { e.target.blur(); if (e.target.checked) api.store.set(XFADE, '1'); else api.store.del(XFADE); });
+      $('deckxfades').addEventListener('change', e => {
+        const v = parseFloat(e.target.value);
+        if (v >= 0.2 && v <= 20) api.store.set(XFADE_S, String(v)); else e.target.value = xfadeSecs();
+      });
+    }
     if ($('deckfade')) {
       $('deckfade').value = fadeSecs();
       $('deckfade').addEventListener('change', e => {
@@ -680,7 +746,13 @@ var PlayoutDeck = (function () {
       phoneLink: () => share && phoneLink(),
       phones: () => [...phones.values()].map(p => ({ id: p.id, ok: p.ok, pin: p.pin, name: p.name, model: p.model, page: p.b && p.b.page })),
     };
-    return { changed };
+    // The arrangement read again (a soundboard loaded from a file, or cleared, wrote it)
+    function reloadLayout() {
+      arranged = {};
+      try { const v = JSON.parse(api.store.get(LAYOUT) || '{}'); if (v && typeof v === 'object') arranged = v; } catch (_) { /* none */ }
+      changed();
+    }
+    return { changed, reloadLayout };
   }
   return { create };
 })();

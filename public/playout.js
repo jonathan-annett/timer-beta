@@ -47,9 +47,13 @@
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
-  if (location.hostname) document.title = location.hostname + ' - Playout';
+  const PARAMS = new URLSearchParams(location.search);
+  // Soundboard mode (?soundboard, or /s on the hosted site; the owner, 13 Nov 2026): no timer, a run sheet of your own
+  const SOUNDBOARD = PARAMS.has('soundboard') || /\/s\/?$/.test(location.pathname);
+  const TITLE = SOUNDBOARD ? 'Soundboard' : 'Playout';
+  if (location.hostname) document.title = location.hostname + ' - ' + TITLE;
   if (window.TimerFeatures && !TimerFeatures.playout) {      // a trial (features.js: alpha and beta)
-    document.querySelector('main').innerHTML = '<h1>Playout</h1><p class="sub">Playout computers aren’t available on this site.</p>';
+    document.querySelector('main').innerHTML = '<h1>' + TITLE + '</h1><p class="sub">' + (SOUNDBOARD ? 'The soundboard isn’t' : 'Playout computers aren’t') + ' available on this site.</p>';
     return;
   }
 
@@ -71,15 +75,18 @@
   if (link.r && link.v) { store.set(SAVED_LINK, location.hash.slice(1)); history.replaceState(null, '', location.pathname + location.search); }
   else link = parse(store.get(SAVED_LINK) || '');
   const tokenKey = room => 'playout_token_' + room;
-  const DEMO = new URLSearchParams(location.search).has('demo');   // ?demo (/p?demo): no timer, see startDemo()
-  const CUES = DEMO ? 'playout_demo_cues' : 'playout_cues', OLD_CUES = 'playout_cues_';   // (OLD_CUES + room: before Nov 2026)
-  const NAMES = DEMO ? 'playout_demo_names' : 'playout_names';
+  const DEMO = !SOUNDBOARD && PARAMS.has('demo');     // ?demo (/p?demo): no timer, see startDemo()
+  const SOLO = DEMO || SOUNDBOARD;                     // no timer: manual only
+  const KEY = SOUNDBOARD ? 'playout_board_' : DEMO ? 'playout_demo_' : 'playout_';   // each mode's own storage
+  const CUES = KEY + 'cues', OLD_CUES = 'playout_cues_';   // (OLD_CUES + room: before Nov 2026)
+  const NAMES = KEY + 'names';
+  let adding = '';                                     // (soundboard: files being added, said on the status line)
   const BOARD = '~board';                              // cues[BOARD]: the Stream Deck's extra keys (files dropped on a key; no item)
   function loadCues() {
     const read = k => { try { const v = JSON.parse(store.get(k) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; } };
     const all = read(CUES);
     let old = [];
-    if (!DEMO) try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith(OLD_CUES)) old.push(k); } } catch (_) { old = []; }
+    if (!SOLO) try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith(OLD_CUES)) old.push(k); } } catch (_) { old = []; }
     for (const k of old) {                         // cues kept per room: merged into the one list, by item id
       for (const [item, list] of Object.entries(read(k))) {
         if (!Array.isArray(list)) continue;
@@ -141,6 +148,7 @@
   }
   function status(text, kind) { $('status').textContent = text; $('status').className = kind || ''; }
   function showMode() {
+    if (SOUNDBOARD) return status(adding || 'Soundboard', adding ? 'warn' : 'ok');
     if (DEMO) return status('Demo: no timer connected', 'ok');
     if (waiting) return status('Waiting for the timer… (closed, or it made a new share code: then unpair and pair again)', 'warn');
     if (!ws || ws.readyState !== WebSocket.OPEN) return status('Reconnecting…', 'warn');
@@ -250,7 +258,7 @@
     render();
   }
   const sinceStart = () => show.age == null ? Infinity : show.age + (performance.now() - showAt);
-  const following = () => !DEMO && store.get(FOLLOW) !== '0';   // (a demo has no timer to follow)
+  const following = () => !SOLO && store.get(FOLLOW) !== '0';   // (a demo or a soundboard has no timer to follow)
   const cueControl = () => store.get(CUE_CTL) === '1';   // single cues of an item started here (Options)
   function countdown() {
     if (!anchor) return null;
@@ -450,6 +458,7 @@
     const blob = memory ? null : await fileOf(c);
     if (!memory && !blob) { status('The file for “' + c.name + '” isn’t in this browser any more. Add the cue again.', 'warn'); return; }
     stopCue(c.id);
+    if (tones.size) { for (const k of [...tones.keys()]) stopTone(k); renderLevels(); }   // (no 1 kHz under a cue: the owner, 13 Nov 2026)
     if (c.media === 'video') for (const [id, q] of playing) if (q.video) stopCue(id);   // one video on the output at a time
     const off = how && how.offset > 0 ? how.offset : 0;
     const p = { video: c.media === 'video', run: !!(how && how.run), item: how && how.item, c, out, endsAt: null };
@@ -493,8 +502,8 @@
   // threshold it never reaches: the owner), its LUFS trim offset (per output, 0 dB unless set) − the level
   // in use, so a level 3 dB lower reads 3 dB more: calibrated once (the offset making it read the trim the
   // desk sounds right at), the desk's trim then just follows it.
-  const LEVELS = DEMO ? 'playout_demo_levels' : 'playout_levels';   // {show | out:<id>: {off?, ack?, held?, trim?}}
-  const AUTO = DEMO ? 'playout_demo_levels_auto' : 'playout_levels_auto';   // '0': Automatic levels off
+  const LEVELS = KEY + 'levels';                      // {show | out:<id>: {off?, ack?, held?, trim?}} (playout_demo_levels, playout_board_levels…)
+  const AUTO = KEY + 'levels_auto';                    // '0': Automatic levels off
   let levels = {};
   try { const v = JSON.parse(store.get(LEVELS) || '{}'); if (v && typeof v === 'object') levels = v; } catch (_) { /* none yet */ }
   const levelOf = k => ({ off: !!(levels[k] && levels[k].off) });
@@ -541,6 +550,7 @@
     renderLevels();                                    // (on: a level waiting is used at once)
   }
   function startTone(k) {
+    if (playing.size) return;                          // (not while cues play: the owner, 13 Nov 2026)
     confirmLevel(k);                                   // (setting the desk by it: as a click on the level box)
     renderLevels();                                    // (a level waiting is used: what's playing too)
     const t = targetOf(k);
@@ -677,7 +687,8 @@
       if (!/^(audio|video)\//.test(f.type)) throw new Error('Choose an audio or video file.');
       const x = ch.extra || {};
       blob = f;
-      cue = Object.assign({ name: String(x.name || noExt(f.name)).slice(0, 200), media: f.type.startsWith('video/') ? 'video' : 'audio', src: 'file', song: 'size:' + ch.file.size }, x.clip, x.lib ? { lib: x.lib } : {});
+      cue = Object.assign({ name: String(x.name || noExt(f.name)).slice(0, 200), media: f.type.startsWith('video/') ? 'video' : 'audio', src: 'file', song: 'size:' + ch.file.size,
+        file: String(ch.file.name || '').slice(0, 300) }, x.clip, x.lib ? { lib: x.lib } : {});   // (file: its own name, to find it again: a soundboard loaded elsewhere)
     } else {
       const s = ch.sting;
       try { const r = await fetch(s.url); if (!r.ok) throw new Error('HTTP ' + r.status); blob = await r.blob(); }
@@ -948,7 +959,7 @@
         : 'Level: ' + dB(f.t) + ' LUFS, its quietest cue (' + f.quiet.name + ')' + cutText;
       return `<div class="lv-row${waiting ? ' waiting' : ''}" data-out="${esc(k)}"><span class="lv-what${k === SHOW ? '' : ' own'}" title="${esc(name)}">→ ${esc(name)}</span>` +
         `<label class="check" title="On: every cue on this output as loud as its quietest. Off: as recorded (only a ✂ trim)"><input type="checkbox" data-lv="on"${v.off ? '' : ' checked'}> Level</label>` +
-        `<button class="small" data-lv="tone"${f.q == null ? ' disabled' : ''} title="A 1 kHz tone at this level, on this output: set the desk by it (and the level box counts it as set)">${tones.has(k) ? '■ Tone' : '▶ Tone'}</button>` +
+        `<button class="small" data-lv="tone"${f.q == null || (playing.size && !tones.has(k)) ? ' disabled' : ''} title="${playing.size && !tones.has(k) ? 'Not while cues are playing' : 'A 1 kHz tone at this level, on this output: set the desk by it (and the level box counts it as set)'}">${tones.has(k) ? '■ Tone' : '▶ Tone'}</button>` +
         `<label class="lv-trim" title="Console trim = this − the level in use: the makeup gain for the desk's digital trim (or a channel compressor's makeup gain, at 1:1 or a threshold it never reaches). Set it once so the console trim reads what the desk sounds right at; after that, set the desk's trim to the console trim whenever the level changes">LUFS trim offset <input type="number" data-lv="trim" step="0.5" min="-60" max="60" value="${numOf(k, 'trim') || 0}"${v.off ? ' disabled' : ''}> dB</label>` +
         `<span class="lv-console" data-trim="${esc(k)}">${v.off || f.t == null ? '' : 'console trim ' + sdB(trimOf(k, f.t)) + ' dB'}</span>` +
         `<span class="hint lv-note">${gone ? '<span class="warn">Not connected</span> · ' : ''}${esc(note + (unmeasured && known.length ? ' · ' + unmeasured + ' not measured yet' : ''))}</span></div>`;
@@ -1022,6 +1033,7 @@
   const titleOf = it => { const e = ownText(it.id); return e ? e.text.split('\n')[0] : it.n || ''; };
   function setName(it, text) {
     text = String(text).replace(/\r/g, '').replace(/^\s*\n/, '').replace(/\s+$/, '').slice(0, MAX_TEXT);
+    if (SOUNDBOARD && text) { it.n = text.split('\n')[0].trim().slice(0, 200) || it.n; saveSheet(); }   // (a soundboard: its own name; the rest notes)
     if (!text || text === (it.n || '')) delete names[it.id];
     else names[it.id] = { text, was: it.n || '', at: Date.now() };
     const ids = Object.keys(names);
@@ -1033,7 +1045,7 @@
   }
   function nameHtml(it) {
     const own = ownText(it.id), name = it.n || '(no name)';
-    return `<span class="iname"${own ? ` title="${esc('Your text, on this computer (✎ to change it). The timer calls it: ' + name)}"` : ''}>${esc(own ? titleOf(it) : name)}</span>`;
+    return `<span class="iname"${own && !SOUNDBOARD ? ` title="${esc('Your text, on this computer (✎ to change it). The timer calls it: ' + name)}"` : ''}>${esc(own ? titleOf(it) : name)}</span>`;
   }
   function notesHtml(it) {
     const own = ownText(it.id), notes = own ? own.text.split('\n').slice(1).join('\n') : '';
@@ -1041,8 +1053,9 @@
       (notes ? `<div class="inotes">${esc(notes)}</div>` : '') +
       (drafts.has(it.id) ? `<form class="iedit"><textarea rows="${Math.min(12, drafts.get(it.id).split('\n').length)}" aria-label="Your text for this item">${esc(drafts.get(it.id))}</textarea>` +
         `<div class="row"><button class="small primary">Save</button><button type="button" class="small" data-name="cancel">Cancel</button>` +
-        (own ? '<button type="button" class="small" data-name="reset" title="Show the item as the timer names it again">Use the timer’s name</button>' : '') +
-        '<span class="hint">On this computer only. The first line is shown as the name, the rest as notes. Ctrl+Enter (⌘+Enter) saves.</span></div></form>' : '');
+        (SOUNDBOARD ? `<label class="ilen">Length <input data-name="len" value="${esc(mmss(it.d || 0))}" title="Minutes (5), m:ss (3:30), h:mm:ss, or 90s / 3m" aria-label="Its length"></label>` : '') +
+        (own && !SOUNDBOARD ? '<button type="button" class="small" data-name="reset" title="Show the item as the timer names it again">Use the timer’s name</button>' : '') +
+        `<span class="hint">${SOUNDBOARD ? 'The first line is its name, the rest notes.' : 'On this computer only. The first line is shown as the name, the rest as notes.'} Ctrl+Enter (⌘+Enter) saves.</span></div></form>` : '');
   }
   function openName(id) {
     const it = show.items.find(x => x.id === id);
@@ -1056,7 +1069,12 @@
   function closeName(id, save) {
     const it = show.items.find(x => x.id === id);
     if (save === 'reset') { delete names[id]; store.set(NAMES, JSON.stringify(names)); }
-    else if (save && it) setName(it, drafts.get(id));
+    else if (save && it) {
+      const len = SOUNDBOARD && document.querySelector(`#items li[data-id="${CSS.escape(id)}"] input[data-name=len]`), d = len && readLength(len.value);
+      if (len && len.value.trim() && !d) { alert('That length isn’t one I can read: minutes (5), m:ss (3:30), h:mm:ss, or 90s / 3m.'); len.focus(); return; }
+      if (d) { it.d = d; saveSheet(); }
+      setName(it, drafts.get(id));
+    }
     drafts.delete(id);
     if (document.activeElement && document.activeElement.closest('form.iedit')) document.activeElement.blur();
     render();
@@ -1083,12 +1101,15 @@
       return `<li data-id="${esc(it.id)}" class="${i === curIdx ? 'now' : curIdx >= 0 && i < curIdx ? 'done' : ''}${here ? ' here' : ''}">` +
         `<div class="ihead">${(st => (st ? `<span class="istart${st.late ? ' late' : ''}" title="${it.a != null ? 'Started' : st.late ? 'Expected to start (planned ' + (it.s != null ? clockOf(it.s) : 'no time') + ')' : 'Planned to start'}">${st.t}</span>` : ''))(startOf(it))}${nameHtml(it)}${i === curIdx ? '<span class="itag">now</span>' : ''}${here ? '<span class="itag ilocal"></span>' : ''}` +
         `<span class="iclock" title="When its audio ends (from its start; counting down while it runs)"></span><span class="idur">${it.e ? 'finish' : it.d ? mmss(it.d) : ''}</span>` +
-        `<button class="small" data-act="name" title="Your own text for this item, on this computer: replace its name, or add notes">✎</button>${runBtn}` +
+        `<button class="small" data-act="name" title="${SOUNDBOARD ? 'Rename it, change its length, or add notes' : 'Your own text for this item, on this computer: replace its name, or add notes'}">✎</button>${runBtn}` +
         (rollable(it, ro, false) ? `<button class="small" data-act="roll"${rolling ? ' disabled' : ''} title="${rolledOf(it.id) ? 'Another walk-up sting at random (when and where it plays stay)' : 'A walk-up sting at random, at its start (Random stings, under the run sheet, says from where)'}">🎲</button>` : '') +
-        `${it.e ? '' : '<button class="small" data-act="add">+ cue</button>'}</div>` + notesHtml(it) +
+        `${it.e ? '' : '<button class="small" data-act="add">+ cue</button>'}` +
+        (SOUNDBOARD ? `<span class="iorder"><button class="small" data-act="up"${i ? '' : ' disabled'} title="Move it up">↑</button><button class="small" data-act="down"${i < items.length - 1 ? '' : ' disabled'} title="Move it down">↓</button><button class="small" data-act="delitem" title="Remove it (and its cues)">✕</button></span>` : '') +
+        '</div>' + notesHtml(it) +
         (list.length ? '<ul class="cues">' + list.map(c => cueRow(c, { done: done(c), locked, flash })).join('') + '</ul>' : '') +
         '</li>';
-    }).join('') || '<li class="hint">No run sheet yet: the timer sends it when it has one.</li>';
+    }).join('') || (SOUNDBOARD ? '<li class="hint">No items yet: <b>+ Add item</b>, <b>Paste a list…</b>, or drop a folder of audio or video files anywhere on this page (an item for each, its file as the cue).</li>'
+      : '<li class="hint">No run sheet yet: the timer sends it when it has one.</li>');
     const orphans = orphanIds(), n = orphans.reduce((a, k) => a + cues[k].length, 0);
     $('orphans').hidden = !n;
     $('orphantext').textContent = n === 1 ? '1 cue belongs to an item that isn’t on the timer’s run sheet (kept here for when it comes back).' : n + ' cues belong to items that aren’t on the timer’s run sheet (kept here for when they come back).';
@@ -1189,6 +1210,8 @@
     else if (b.dataset.act === 'run') runLocal(itemId);
     else if (b.dataset.act === 'roll') { b.blur(); rollOne(itemId); }
     else if (b.dataset.act === 'endrun') { for (const x of cues[itemId] || []) stopCue(x.id); if (local && local.item === itemId) endLocal(); }
+    else if (b.dataset.act === 'up' || b.dataset.act === 'down') { b.blur(); moveItem(itemId, b.dataset.act === 'up' ? -1 : 1); }
+    else if (b.dataset.act === 'delitem') removeItem(itemId);
   }
   $('items').addEventListener('click', onListClick);
   $('boardlist').addEventListener('click', onListClick);   // (the extra keys' cues: ▶ ■ ✂ ✕)
@@ -1298,7 +1321,7 @@
   // playing, down starts a fade and up stops it (a tap stops, a hold fades). The last key: everything.
   const playingOf = id => (cues[id] || []).filter(c => playing.has(c.id)).map(c => c.id);
   if (window.PlayoutDeck && window.DeckHID) deckBoard = PlayoutDeck.create({
-    store, demo: DEMO,
+    store, prefix: KEY, soundboard: SOUNDBOARD,
     items: () => show.items.filter(it => !it.e),
     cuesOf: id => cues[id] || [],
     title: titleOf,
@@ -1320,6 +1343,7 @@
     isPlaying: id => playing.has(id),
     playCue: id => { const c = Object.values(cues).flat().find(x => x.id === id); if (c) play(c); },   // (an extra key's, or an item's cue 1: as its ▶)
     cueLocked: id => !!(local && local.item === id && !cueControl()),   // (as its cues' ▶ ■: the item run has them)
+    playingAll: () => [...playing.keys()],             // (crossfade on release: what else is playing)
     fadeCue: (id, ms) => { const p = playing.get(id); if (p) p.voice.fade(ms); return p ? [id] : []; },
     async addFiles(files) { const ids = []; for (const f of files) { const c = await addCue(BOARD, { file: f }, 'start', 0); if (c) ids.push(c.id); } return ids; },
     removeExtra: id => removeCue(BOARD, id),
@@ -1375,7 +1399,291 @@
     $('demonames').addEventListener('click', e => { e.currentTarget.blur(); onShow(demoSheet(true)); });
     $('demoleave').addEventListener('click', () => { stopAll(); location.href = location.pathname; });
   }
+
+  // ─── Soundboard mode (?soundboard, or /s on the hosted site; the owner, 13 Nov 2026) ───────────────────────
+  // The playout page with a run sheet of your own and no timer (worked as the demo is: manual only, ▶ Start
+  // item, the keys): items added one by one (a name and a length), a pasted list (a name per line, a length
+  // after it if you like), or a folder dropped on the page (an item for each audio or video file, named after
+  // it, its length, the file as its At the start cue); ✎ renames and sets the length, ↑ ↓ move, ✕ removes (its
+  // cues too). Save… writes it all to a file (items, cues' settings, notes, the keys' arrangement; not the
+  // media); Load… reads one back (media this browser still has is used, stock and link cues are fetched
+  // again, files: Find files…, by name and size). Clear run sheet… empties it: items, cues, extra keys and
+  // their files. Its own storage (playout_board_*), apart from the demo's and a real show's.
+  const SHEET = KEY + 'sheet', DEFAULT_SECS = 20 * 60, MAX_ITEMS = 500, ID_RE = /^[\w-]{1,40}$/;
+  const MEDIA_FILE = /\.(mp3|m4a|aac|wav|aif|aiff|aifc|flac|ogg|oga|opus|weba|mp4|m4v|webm|mov|ogv)$/i;
+  let sheet = { items: [] }, idn = 0, missing = [];
+  const sheetShow = () => ({ items: sheet.items, cur: null, run: 0, on: true, fin: false });   // (the same objects: ✎ edits them)
+  const newItemId = () => 's' + Date.now().toString(36) + (idn++).toString(36) + Math.random().toString(36).slice(2, 5);
+  function saveSheet() { if (SOUNDBOARD) store.set(SHEET, JSON.stringify({ items: sheet.items.map(({ id, n, d }) => ({ id, n, d })) })); }
+  function cleanItems(list) {
+    const seen = new Set(), out = [];
+    for (const x of (Array.isArray(list) ? list : []).slice(0, MAX_ITEMS)) {
+      if (!x || !ID_RE.test(x.id) || seen.has(x.id)) continue;
+      seen.add(x.id);
+      out.push({ id: x.id, n: String(x.n == null ? '' : x.n).slice(0, 200), d: Number.isFinite(x.d) && x.d >= 1 && x.d <= 86400 ? Math.round(x.d) : DEFAULT_SECS });
+    }
+    return out;
+  }
+  function loadSheet() { try { const v = JSON.parse(store.get(SHEET) || 'null'); return { items: cleanItems(v && v.items) }; } catch (_) { return { items: [] }; } }
+  function sheetChanged() { saveSheet(); onShow(sheetShow()); }
+  // A length typed or pasted: minutes (5, 2.5), m:ss (3:30), h:mm:ss, or 90s / 3m / 1h 5m → s, or null
+  function readLength(text) {
+    const t = String(text == null ? '' : text).trim().toLowerCase(), ok = v => (v >= 1 && v <= 86400 ? Math.round(v) : null);
+    let m;
+    if ((m = t.match(/^(\d+(?:\.\d+)?)$/))) return ok(Number(m[1]) * 60);
+    if ((m = t.match(/^(\d+):(\d{1,2})$/))) return ok(Number(m[1]) * 60 + Number(m[2]));
+    if ((m = t.match(/^(\d+):(\d{1,2}):(\d{1,2})$/))) return ok(Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]));
+    if ((m = t.match(/^(?:(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?)?\s*(?:(\d+(?:\.\d+)?)\s*m(?:in(?:ute)?s?)?)?\s*(?:(\d+(?:\.\d+)?)\s*s(?:ec(?:ond)?s?)?)?$/)) && (m[1] || m[2] || m[3]))
+      return ok(Number(m[1] || 0) * 3600 + Number(m[2] || 0) * 60 + Number(m[3] || 0));
+    return null;
+  }
+  // A pasted list: a name per line, then its length if you like (after a tab, a comma, a semicolon, two spaces,
+  // or just a space: "Keynote 45", "Walk-on 3:30"); a header line (Name, Length) is skipped
+  function parseList(text) {
+    const out = [];
+    String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean).forEach((line, k) => {
+      let parts = line.split(/\t|;|,|\s{2,}/).map(x => x.trim()).filter(Boolean), d = null;
+      if (parts.length > 1 && (d = readLength(parts[parts.length - 1]))) parts.pop();
+      else if (parts.length === 1) { const m = line.match(/^(.*\S)\s+(\S+)$/); if (m && (d = readLength(m[2]))) parts = [m[1]]; }
+      const n = parts.join(' ').slice(0, 200);
+      if (!n || (k === 0 && /^(name|item|title|track)s?$/i.test(parts[0] || ''))) return;
+      out.push({ n, d });
+    });
+    return out;
+  }
+  function addItems(list) {                            // [{n, d}], at the end
+    const room = MAX_ITEMS - sheet.items.length, made = list.slice(0, Math.max(0, room)).map(x => ({ id: newItemId(), n: x.n, d: x.d || DEFAULT_SECS }));
+    sheet.items.push(...made);
+    sheetChanged();
+    if (made.length < list.length) alert(`A soundboard holds ${MAX_ITEMS} items: ${list.length - made.length} weren’t added.`);
+    return made;
+  }
+  function moveItem(id, dir) {
+    const i = sheet.items.findIndex(x => x.id === id), j = i + dir;
+    if (i < 0 || j < 0 || j >= sheet.items.length) return;
+    [sheet.items[i], sheet.items[j]] = [sheet.items[j], sheet.items[i]];
+    sheetChanged();
+  }
+  function removeItem(id) {
+    const it = sheet.items.find(x => x.id === id), n = (cues[id] || []).length;
+    if (!it || !confirm(`Remove “${it.n || 'this item'}”${n ? ' and its ' + (n === 1 ? 'cue' : n + ' cues') : ''}?`)) return;
+    if (local && local.item === id) endLocal();
+    for (const c of [...(cues[id] || [])]) removeCue(id, c.id);
+    delete names[id]; store.set(NAMES, JSON.stringify(names)); drafts.delete(id);
+    sheet.items = sheet.items.filter(x => x.id !== id);
+    sheetChanged();
+  }
+
+  // A folder (or files) dropped on the page: an item for each audio or video file, in name order, its length
+  // the file's, the file its At the start cue (folders walked 3 deep; files named with a dot first skipped)
+  async function filesOf(got) {
+    const out = [];
+    const readDir = dir => new Promise(res => { const r = dir.createReader(), all = []; const next = () => r.readEntries(l => { if (!l.length) return res(all); all.push(...l); next(); }, () => res(all)); next(); });
+    const fileOf = e => new Promise(res => e.file(res, () => res(null)));
+    async function walk(e, path, depth) {
+      if (out.length >= MAX_ITEMS || e.name.startsWith('.')) return;
+      if (e.isDirectory) { if (depth < 3) for (const c of await readDir(e)) await walk(c, path + e.name + '/', depth + 1); }
+      else if (MEDIA_FILE.test(e.name)) { const f = await fileOf(e); if (f) out.push({ path: path + e.name, file: f }); }
+    }
+    for (const g of got) {
+      if (g.entry && g.entry.isDirectory) await walk(g.entry, '', 0);
+      else if (g.file && MEDIA_FILE.test(g.file.name) && !g.file.name.startsWith('.')) out.push({ path: g.file.name, file: g.file });
+    }
+    return out.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' })).slice(0, MAX_ITEMS);
+  }
+  async function addFiles(list) {
+    const room = MAX_ITEMS - sheet.items.length, failed = [], made = [];
+    for (let k = 0; k < list.length && k < room; k++) {
+      adding = `Adding ${k + 1} of ${Math.min(list.length, room)}: ${noExt(list[k].file.name)}…`; showMode();
+      let c;
+      try { c = await cueFrom({ file: list[k].file }, { trigger: 'start', at: 0 }); } catch (_) { failed.push(list[k].path); continue; }
+      const it = { id: newItemId(), n: noExt(list[k].file.name).slice(0, 200), d: c.duration > 0 ? Math.max(1, Math.ceil(c.duration)) : DEFAULT_SECS };
+      sheet.items.push(it); cues[it.id] = [c]; made.push(c);
+    }
+    adding = '';
+    saveCues(); sheetChanged(); showMode();
+    if (failed.length) alert(`${failed.length === 1 ? 'One file isn’t' : failed.length + ' files aren’t'} audio or video this browser can play, so ${failed.length === 1 ? 'it was' : 'they were'} left out: ${failed.slice(0, 8).join(', ')}${failed.length > 8 ? '…' : ''}`);
+    if (list.length > room) alert(`A soundboard holds ${MAX_ITEMS} items: ${list.length - room} files weren’t added.`);
+    for (const c of made) await measure(c);            // (their loudness, for the levels: one at a time)
+  }
+  let dropHide = 0;
+  const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  const dropHere = e => SOUNDBOARD && hasFiles(e) && !e.target.closest('#vdecks') && !e.defaultPrevented;   // (the keys take files of their own: extra keys)
+  document.body.addEventListener('dragover', e => {
+    if (!dropHere(e)) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+    $('sbdrop').hidden = false; clearTimeout(dropHide); dropHide = setTimeout(() => { $('sbdrop').hidden = true; }, 200);
+  });
+  document.body.addEventListener('drop', e => {
+    if (!dropHere(e)) return;
+    e.preventDefault(); $('sbdrop').hidden = true;
+    const got = [...e.dataTransfer.items].filter(i => i.kind === 'file').map(i => ({ entry: i.webkitGetAsEntry ? i.webkitGetAsEntry() : null, file: i.getAsFile() }));   // (now: emptied after the event)
+    filesOf(got).then(list => { if (list.length) addFiles(list); else alert('No audio or video files there.'); });
+  });
+
+  // Save… / Load…: the soundboard as a file. Cues are checked as they're read (a file from anywhere).
+  const FILE_KIND = 'timed-show soundboard';
+  function saveFile() {
+    const on = new Set(sheet.items.map(x => x.id));
+    let layout = null; try { layout = JSON.parse(store.get(KEY + 'deck_layout') || 'null'); } catch (_) { /* none */ }
+    const data = { kind: FILE_KIND, v: 1, saved: new Date().toISOString(), items: sheet.items.map(({ id, n, d }) => ({ id, n, d })),
+      cues: Object.fromEntries(Object.entries(cues).filter(([k, l]) => (k === BOARD || on.has(k)) && l.length)),
+      notes: Object.fromEntries(Object.entries(names).filter(([k]) => on.has(k))), layout };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
+    a.download = 'soundboard-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+  function cleanCue(c) {
+    if (!c || typeof c !== 'object' || !ID_RE.test(c.id) || !TRIGGERS[c.trigger]) return null;
+    const num = (v, lo, hi) => (Number.isFinite(v) && v >= lo && v <= hi ? v : null);
+    const o = { id: c.id, name: String(c.name == null ? 'Cue' : c.name).slice(0, 200), media: c.media === 'video' ? 'video' : 'audio',
+      src: c.src === 'stock' || c.src === 'link' ? c.src : 'file', trigger: c.trigger, at: num(c.at, 0, 86400) || 0, duration: num(c.duration, 0, 86400) };
+    if (typeof c.song === 'string' && /^(url:https:\/\/|size:\d)/.test(c.song)) o.song = c.song.slice(0, 2100);
+    if (typeof c.file === 'string' && c.file) o.file = c.file.replace(/^.*[\\/]/, '').slice(0, 300);
+    if (typeof c.lib === 'string' && c.lib) o.lib = c.lib.slice(0, 200);
+    if (c.rolled === true) o.rolled = true;
+    Object.assign(o, StingPicker.clipFields(c));        // (the part, fades, loop and level: checked as any clip's)
+    if (c.out === 'none' && o.media === 'video') o.out = 'none';
+    else if (c.out && typeof c.out === 'object' && typeof c.out.id === 'string') o.out = { id: c.out.id.slice(0, 300), label: String(c.out.label || '').slice(0, 200) };
+    return o;
+  }
+  function cleanLayout(v) {
+    if (!v || typeof v !== 'object') return null;
+    const out = {};
+    for (const [m, l] of Object.entries(v)) if (/^[\w-]{1,20}$/.test(m) && Array.isArray(l)) out[m] = l.slice(0, 2000).map(x => (typeof x === 'string' && x.length <= 60 ? x : null));
+    return out;
+  }
+  function wipe(keep) {                                // everything, but the files of the cues in keep (ids)
+    stopAll(); endLocal();
+    for (const l of Object.values(cues)) for (const c of l) if (!keep.has(c.id)) window.videoStore.remove('pocue:' + c.id).catch(() => {});
+    cues = {}; saveCues();
+    for (const k of Object.keys(names)) delete names[k];
+    store.set(NAMES, JSON.stringify(names)); drafts.clear();
+    store.del(KEY + 'deck_layout');
+  }
+  async function loadFile(file) {
+    let v; try { v = JSON.parse(await file.text()); } catch (_) { v = null; }
+    if (!v || v.kind !== FILE_KIND || !Array.isArray(v.items)) return alert('That isn’t a soundboard file (Save… makes one).');
+    const items = cleanItems(v.items), ids = new Set(items.map(x => x.id)), loaded = {}, seen = new Set();
+    for (const [k, list] of Object.entries(v.cues && typeof v.cues === 'object' ? v.cues : {})) {
+      if (!(k === BOARD || ids.has(k)) || !Array.isArray(list)) continue;
+      const l = list.slice(0, 50).map(cleanCue).filter(c => c && !seen.has(c.id) && seen.add(c.id));
+      if (l.length) loaded[k] = l;
+    }
+    const n = sheet.items.length + ((cues[BOARD] || []).length ? 1 : 0);
+    if (n && !confirm(`Replace this soundboard (${sheet.items.length} item${sheet.items.length === 1 ? '' : 's'}) with “${file.name}” (${items.length})? Save… first to keep this one.`)) return;
+    wipe(seen);                                        // (the files of cues it brings back stay: the same computer)
+    cues = loaded; saveCues();
+    for (const [k, x] of Object.entries(v.notes && typeof v.notes === 'object' ? v.notes : {}))
+      if (ids.has(k) && x && typeof x.text === 'string' && x.text) names[k] = { text: x.text.slice(0, MAX_TEXT), was: String(x.was || '').slice(0, 200), at: Number(x.at) || Date.now() };
+    store.set(NAMES, JSON.stringify(names));
+    const layout = cleanLayout(v.layout);
+    if (layout) store.set(KEY + 'deck_layout', JSON.stringify(layout));
+    if (deckBoard && deckBoard.reloadLayout) deckBoard.reloadLayout();
+    sheet = { items };
+    sheetChanged();
+    await checkMedia(true);
+    for (const l of Object.values(cues)) for (const c of l) if (!Number.isFinite(c.lufs) && !missing.includes(c)) await measure(c);
+  }
+  // Cues whose media this browser hasn't got (a soundboard loaded on another computer): stock and link cues
+  // fetched again (fetchLinks), files found by Find files… (a folder: by name and size, else size alone)
+  async function checkMedia(fetchLinks) {
+    const out = [];
+    for (const l of Object.values(cues)) for (const c of l) {
+      let have = false;
+      try { have = !!(await window.videoStore.get('pocue:' + c.id)); } catch (_) { /* no store */ }
+      if (have) continue;
+      if (fetchLinks && c.song && c.song.startsWith('url:')) {
+        try { const r = await fetch(c.song.slice(4)); if (r.ok) { await window.videoStore.put('pocue:' + c.id, await r.blob()); continue; } } catch (_) { /* below */ }
+      }
+      out.push(c);
+    }
+    missing = out;
+    $('sb-missing').hidden = !missing.length;
+    $('sb-missingtext').textContent = !missing.length ? '' : (missing.length === 1 ? '1 cue’s file isn’t' : missing.length + ' cues’ files aren’t') + ' on this computer: ' +
+      missing.slice(0, 6).map(c => c.file || c.name).join(', ') + (missing.length > 6 ? '…' : '') + '.';
+    prepare();
+  }
+  async function findFiles(files) {
+    let found = 0;
+    for (const c of missing) {
+      const size = c.song && c.song.startsWith('size:') ? Number(c.song.slice(5)) : null;
+      const f = files.find(x => (!c.file || x.name === c.file) && (size == null || x.size === size)) || (size != null ? files.find(x => x.size === size) : null);
+      if (!f) continue;
+      try { await window.videoStore.put('pocue:' + c.id, await StingClip.playable(f)); found++; } catch (_) { /* not kept */ }
+    }
+    await checkMedia(false);
+    alert(found ? `Found ${found === 1 ? 'one file' : found + ' files'}${missing.length ? `: ${missing.length} still missing` : ''}.` : 'None of the missing files is there (they’re matched by name and size).');
+  }
+  function clearBoard() {
+    if (!confirm('Clear the soundboard? Every item, its cues and the extra keys go, with their files (Save… first to keep a copy).')) return;
+    wipe(new Set());
+    if (deckBoard && deckBoard.reloadLayout) deckBoard.reloadLayout();
+    sheet = { items: [] };
+    sheetChanged();
+    checkMedia(false);
+  }
+  function startSoundboard() {
+    document.body.classList.add('soundboard');
+    document.querySelector('main > h1').textContent = TITLE;
+    document.querySelector('main > p.sub').textContent = 'Plays your own audio and video: a key for each item, on a Stream Deck, on this screen or on a phone. Add the items one by one, paste a list, or drop a folder of files on this page.';
+    $('paired').hidden = false; $('sbbar').hidden = false; $('pairline').hidden = true;
+    $('follow').checked = false; $('follow').closest('label').hidden = true; $('follow-note').hidden = true;
+    showMode();
+    cues = loadCues();
+    sheet = loadSheet();
+    onShow(sheetShow());
+    checkMedia(false);
+    $('sb-addform').addEventListener('submit', e => {
+      e.preventDefault();
+      const n = $('sb-name').value.trim().slice(0, 200), d = readLength($('sb-len').value);
+      if (!n) return $('sb-name').focus();
+      if ($('sb-len').value.trim() && !d) { alert('That length isn’t one I can read: minutes (5), m:ss (3:30), h:mm:ss, or 90s / 3m.'); return $('sb-len').focus(); }
+      addItems([{ n, d }]);
+      $('sb-name').value = ''; $('sb-len').value = ''; $('sb-name').focus();
+    });
+    $('sb-pastebtn').addEventListener('click', e => { e.currentTarget.blur(); $('sb-pastebox').hidden = !$('sb-pastebox').hidden; if (!$('sb-pastebox').hidden) $('sb-paste').focus(); });
+    $('sb-paste').addEventListener('input', () => { const n = parseList($('sb-paste').value).length; $('sb-pastenote').textContent = n ? `${n} item${n === 1 ? '' : 's'}` : ''; });
+    $('sb-pasteok').addEventListener('click', () => {
+      const list = parseList($('sb-paste').value);
+      if (!list.length) return $('sb-paste').focus();
+      addItems(list);
+      $('sb-paste').value = ''; $('sb-pastenote').textContent = ''; $('sb-pastebox').hidden = true;
+    });
+    $('sb-pastecancel').addEventListener('click', () => { $('sb-pastebox').hidden = true; });
+    $('sb-save').addEventListener('click', e => { e.currentTarget.blur(); saveFile(); });
+    $('sb-load').addEventListener('click', e => { e.currentTarget.blur(); $('sb-file').click(); });
+    $('sb-file').addEventListener('change', () => { const f = $('sb-file').files[0]; $('sb-file').value = ''; if (f) loadFile(f); });
+    $('sb-find').addEventListener('click', e => { e.currentTarget.blur(); $('sb-folder').click(); });
+    $('sb-folder').addEventListener('change', () => { const l = [...$('sb-folder').files]; $('sb-folder').value = ''; if (l.length) findFiles(l); });
+    $('sb-clear').addEventListener('click', e => { e.currentTarget.blur(); clearBoard(); });
+    $('sb-leave').addEventListener('click', () => { stopAll(); location.href = /\/s\/?$/.test(location.pathname) ? location.pathname.replace(/s\/?$/, 'p') : location.pathname; });
+  }
+  $('trysb').addEventListener('click', () => { location.href = /\/p\/?$/.test(location.pathname) ? location.pathname.replace(/p\/?$/, 's') : location.pathname + '?soundboard'; });
   $('trydemo').addEventListener('click', () => { location.href = location.pathname + '?demo'; });
 
-  if (DEMO) startDemo(); else if (link.r && link.v) start(); else showEnter();
+  // ─── One playout page per browser (the owner, 13 Nov 2026) ───
+  // Playout, its demo and the soundboard share this browser's sound cards and decks, so one tab runs at a
+  // time: the Web Lock playout-page, held as long as the page lives. Another tab finds it taken and shows
+  // #othertab (saying what the other runs: playout_page_mode) with Use this tab instead (steal: the other
+  // tab's lock is cancelled, so it reloads and finds it taken); it takes over by itself when the other closes.
+  const MODE = SOUNDBOARD ? 'soundboard' : DEMO ? 'demo' : 'playout';
+  const MODE_NAME = { soundboard: 'Soundboard', demo: 'The playout demo', playout: 'Playout' };
+  function oneTab(run) {
+    if (!navigator.locks || !navigator.locks.request) return run();
+    let started = false;
+    const go = () => { if (started) return; started = true; $('othertab').hidden = true; store.set('playout_page_mode', MODE); run(); };
+    const ask = opts => navigator.locks.request('playout-page', opts, lock => { if (!lock) return; go(); return new Promise(() => {}); });   // (held until the page goes)
+    const stolen = err => { if (started && err && err.name === 'AbortError') { stopAll(); location.reload(); } };   // (another tab took over)
+    ask({ ifAvailable: true }).then(() => {
+      if (started) return;
+      $('othertabtext').textContent = (MODE_NAME[store.get('playout_page_mode')] || 'Playout') + ' is running in another tab of this browser.';
+      $('othertab').hidden = false;
+      ask({}).catch(stolen);                           // (it takes over by itself when that tab closes)
+    }).catch(stolen);
+    $('othertake').addEventListener('click', e => { e.currentTarget.disabled = true; ask({ steal: true }).catch(stolen); });
+  }
+  oneTab(() => { if (SOUNDBOARD) startSoundboard(); else if (DEMO) startDemo(); else if (link.r && link.v) start(); else showEnter(); });
 })();

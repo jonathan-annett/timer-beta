@@ -20,6 +20,19 @@
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
     #demobar { border-color: var(--warn); font-size: 14px; }   /* the demo (?demo): no timer */
     #demobar b:first-child { color: var(--warn); }
+    /* Soundboard mode (?soundboard, /s): a run sheet of your own, no timer */
+    #vdecks:fullscreen { background: #000; display: flex; align-items: center; justify-content: center; }   /* the keys alone (⛶ Full screen) */
+    #sbbar { border-color: var(--accent); font-size: 14px; }
+    #sbbar b:first-child { color: var(--accent); }
+    #sbbar #sb-name { width: min(22em, 50vw); }
+    #sbbar input { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 4px 6px; }
+    #sb-paste { width: 100%; box-sizing: border-box; margin-top: 8px; font: 13px/1.4 monospace; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 6px; }
+    #sb-missing { margin: 8px 0 0; }
+    .b-only { display: none; } body.soundboard .b-only { display: inline; } body.soundboard .t-only { display: none; }
+    .iorder { display: inline-flex; gap: 2px; }
+    .ilen input { width: 5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    #sbdrop { position: fixed; inset: 0; z-index: 30; background: rgba(11, 61, 92, .55); border: 3px dashed var(--accent); display: flex; align-items: center; justify-content: center; pointer-events: none; }
+    #sbdrop span { background: var(--panel); color: #fff; padding: 14px 20px; border-radius: 10px; font-size: 18px; }
 
     /* Pairing by code (as the overlay) */
     #code { font: bold 44px/1.1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .3em; text-align: center; width: 100%; max-width: 360px;
@@ -130,6 +143,8 @@
     .dk-name { flex: 1 1 14em; }
     .dk-state { color: var(--dim); font-size: 13px; }
     .dk-state.ok { color: var(--ok); } .dk-state.bad { color: var(--bad); }
+    #deckxfades { width: 4.5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    label.check.xf { display: inline-flex; }
     #deckfade { width: 4.5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
     #deckmodel { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
     #vdecks { margin-top: 10px; user-select: none; }
@@ -183,6 +198,7 @@
   </style>
 </head>
 <body>
+  <div id="sbdrop" hidden><span>Drop to add an item for each audio or video file (folders too)</span></div>
   <div id="topright">
     <button type="button" id="levelbox" hidden></button>
     <div id="bigclock" hidden title="What the audio playing has left (the one that ends last)"><span id="bc-left"></span><span id="bc-what"></span></div>
@@ -191,6 +207,12 @@
     <h1>Playout</h1>
     <p class="sub">Plays your own audio and video as the timer's run sheet moves on: at an item's start, when its time is up, or at a time into it. Everything plays on this computer; the timer only starts the items.</p>
 
+    <section id="othertab" class="card center" hidden>
+      <p id="othertabtext" style="font-size:18px">Playout is running in another tab of this browser.</p>
+      <p class="hint">One tab at a time: they would share the sound cards and the Stream Decks. This one takes over by itself when that tab closes.</p>
+      <button id="othertake" class="primary">Use this tab instead</button>
+    </section>
+
     <section id="enter" class="card center" hidden>
       <p>On the timer, open <b>share</b> and click <b>Pair a computer</b>. Type the 6-digit code it shows:</p>
       <input id="code" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="······" aria-label="Pairing code">
@@ -198,7 +220,7 @@
       <details><summary>Pairing server</summary>
         <input id="server" spellcheck="false" aria-label="Pairing server address">
       </details>
-      <p class="hint" style="margin-top:14px">No timer to hand? <button id="trydemo" class="small" type="button">Try the demo</button></p>
+      <p class="hint" style="margin-top:14px">No timer to hand? <button id="trydemo" class="small" type="button">Try the demo</button> or use it on its own: <button id="trysb" class="small" type="button" title="Your own list of items and their audio or video, with the Stream Deck keys: no timer needed">Soundboard mode</button></p>
     </section>
 
     <section id="paired" hidden>
@@ -207,6 +229,26 @@
           <span><b>Demo</b> · ten made-up speakers, 20 minutes each, and no timer. Add cues with <b>+ cue</b>, then start an item with <b>▶ Start item</b> or play a cue with ▶.</span>
           <span class="row"><button id="demonames" class="small" title="Other names for the ten speakers (their cues stay)">New speakers</button><button id="demoleave" class="small">Leave the demo</button></span>
         </div>
+      </div>
+      <div id="sbbar" class="card" hidden>
+        <div class="row" style="justify-content:space-between">
+          <span><b>Soundboard</b> · start an item with <b>▶ Start item</b> or its key, or play a cue with ▶.</span>
+          <span class="row"><button id="sb-save" class="small" title="Save this soundboard to a file: its items, their cues’ settings, notes and the keys’ arrangement (not the audio and video files themselves)">Save…</button><button id="sb-load" class="small" title="Open a soundboard saved with Save… (it replaces this one)">Load…</button><button id="sb-clear" class="small" title="Every item, its cues and the extra keys go, with their files">Clear run sheet…</button><button id="sb-leave" class="small">Leave soundboard mode</button></span>
+        </div>
+        <form id="sb-addform" class="row" style="margin-top:10px">
+          <input id="sb-name" placeholder="Name" maxlength="200" aria-label="The item’s name" autocomplete="off">
+          <input id="sb-len" placeholder="20:00" size="8" aria-label="Its length" title="Its length: minutes (5), m:ss (3:30), h:mm:ss, or 90s / 3m (20 minutes if left empty)" autocomplete="off">
+          <button class="small primary" id="sb-add">+ Add item</button>
+          <button type="button" class="small" id="sb-pastebtn">Paste a list…</button>
+          <span class="hint">or drop a folder of audio or video files anywhere on this page</span>
+        </form>
+        <div id="sb-pastebox" hidden>
+          <textarea id="sb-paste" rows="6" spellcheck="false" placeholder="One item per line: its name, then its length if you like&#10;Welcome, 5&#10;Keynote	45&#10;Walk-on music 3:30"></textarea>
+          <div class="row"><button type="button" class="small primary" id="sb-pasteok">Add these</button><button type="button" class="small" id="sb-pastecancel">Cancel</button><span class="hint" id="sb-pastenote"></span></div>
+        </div>
+        <p id="sb-missing" class="warn" hidden><span id="sb-missingtext"></span> <button type="button" class="small" id="sb-find" title="Choose a folder: the files are matched by name and size">Find files…</button></p>
+        <input type="file" id="sb-file" accept=".json,application/json" hidden>
+        <input type="file" id="sb-folder" webkitdirectory multiple hidden>
       </div>
       <div id="pinwait" class="card center" hidden>
         <p id="pinmsg">The timer asks who this is. Tell the person at the timer this number (or read it to them over the phone). One wrong try disconnects this computer.</p>
@@ -248,11 +290,12 @@
           <div id="ph-list"></div>
           <div class="row"><button id="ph-again" class="small">Show the code again</button><button id="ph-new" class="small" title="Signs every phone out: the code shown before stops working">New code</button><button id="ph-stop" class="small" title="Phones lose these keys until Show on a phone… again">Stop sharing</button></div>
         </div>
-        <p class="hint" style="margin:4px 0 6px">A key for each item with cues. With <b>Follow the timer</b> off, press one to start its item (as ▶ Start item). On an item that’s playing, a tap stops it and holding the key fades it out over <input type="number" id="deckfade" min="0.2" max="10" step="0.1" aria-label="Fade seconds"> s (let go to stop it there). The last key does the same for everything; ◀ ▶ turn the page. With Follow on, the keys show the run sheet and only stop or fade.
-          <b>Extra keys:</b> drop audio or video files from your computer onto an empty key below (several fill the keys after it), for anything that isn’t on the run sheet: they play when pressed, Follow or not. <b>+ Page</b> adds a page of empty keys.</p>
+        <p class="hint" style="margin:4px 0 6px">A key for each item with cues. <span class="t-only">With <b>Follow the timer</b> off, press</span><span class="b-only">Press</span> one to start its item (as ▶ Start item). On an item that’s playing, a tap stops it and holding the key fades it out over <input type="number" id="deckfade" min="0.2" max="10" step="0.1" aria-label="Fade seconds"> s (let go to stop it there). The last key does the same for everything; ◀ ▶ turn the page.<span class="t-only"> With Follow on, the keys show the run sheet and only stop or fade.</span> <label class="check xf"><input type="checkbox" id="deckxfade"> <b>Crossfade on release</b></label>: a key that starts something while others play fades them out over <input type="number" id="deckxfades" min="0.2" max="20" step="0.5" aria-label="Crossfade seconds"> s from the moment you let it go.
+          <b>Extra keys:</b> drop audio or video files from your computer onto an empty key below (several fill the keys after it), for anything that isn’t on the run sheet: they play when pressed<span class="t-only">, Follow or not</span>. <b>+ Page</b> adds a page of empty keys.</p>
         <div id="decklist"></div>
         <div class="row" style="margin-top:8px">
-          <label>On screen <select id="deckmodel" aria-label="Deck size on screen"><option value="mini">Stream Deck Mini</option><option value="mk2">Stream Deck MK.2</option><option value="xl">Stream Deck XL</option></select></label>
+          <label>On screen <select id="deckmodel" aria-label="Deck size on screen"><option value="mini">Stream Deck Mini</option><option value="mk2">Stream Deck MK.2</option><option value="xl">Stream Deck XL</option><option value="custom">Custom size…</option></select></label>
+          <button id="deckfull" class="small" title="Just the keys, on the whole screen (a tablet or a touch screen as the soundboard): Esc to come back" hidden>⛶ Full screen</button>
           <button id="deckarrange" class="small" title="Every page of keys: drag a key onto another to swap them (kept for this size of deck)">Arrange keys</button>
           <button id="deckorder" class="small" title="Forget the arrangement: keys in run sheet order again">Run sheet order</button>
           <button id="deckaddpage" class="small" title="A page of empty keys at the end (for this size of deck), to drop files on">+ Page</button>
@@ -296,9 +339,9 @@
   <script src="sting-styles.js?v=a7cb8fe0"></script>
   <script src="sting-roll.js?v=08da6f76"></script>
   <script src="deck-face.js?v=095d2354"></script>
-  <script src="virtual-deck.js?v=909424e5"></script>
+  <script src="virtual-deck.js?v=f112dd1e"></script>
   <script src="deck-hid.js?v=63066317"></script>
-  <script src="playout-deck.js?v=a4651459"></script>
-  <script src="playout.js?v=98508e00"></script>
+  <script src="playout-deck.js?v=b8ff00ff"></script>
+  <script src="playout.js?v=41874891"></script>
 </body>
 </html>

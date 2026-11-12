@@ -128,6 +128,28 @@ with sync_playwright() as p:
     check("fade time 0.5 s: held, gone after it", playing() == [] and po.evaluate("localStorage.playout_deck_fade") == "0.5", playing())
     key(3, 0)
 
+    # Crossfade on release (the owner, 13 Nov 2026): a key that starts something while others play fades them as it's let go
+    key(0, 1); key(0, 0); po.wait_for_timeout(500)
+    key(1, 1); po.wait_for_timeout(500)
+    check("off: another item started, both play", playing() == ["c1", "c2"], playing())
+    key(1, 0); po.wait_for_timeout(300)
+    po.click("#stopall"); po.wait_for_timeout(300)
+    po.check("#deckxfade"); po.fill("#deckxfades", "1"); po.press("#deckxfades", "Tab")
+    key(0, 1); key(0, 0); po.wait_for_timeout(500)
+    g0 = po.evaluate("window.__playout.gain('c1')")
+    key(1, 1); po.wait_for_timeout(700)
+    g1 = po.evaluate("window.__playout.gain('c1')")
+    check("Crossfade on release: while the new key is held, the other plays on as it was", sorted(playing()) == ["c1", "c2"] and g1 is not None and abs(g1 - g0) < 0.01, [playing(), g0, g1])
+    key(1, 0); po.wait_for_timeout(500)
+    g2 = po.evaluate("window.__playout.gain('c1')")
+    check("… let go: the other fades from then (over 1 s)", g2 is not None and g2 < g0 * 0.5 and "c2" in playing(), [g0, g2, playing()])
+    po.wait_for_timeout(900)
+    check("… and is gone; the new one plays on", playing() == ["c2"] and (local() or {}).get("item") == "demo-2", [playing(), local()])
+    check("… kept on this computer", po.evaluate("[localStorage.playout_deck_xfade, localStorage.playout_deck_xfade_s]") == ["1", "1"])
+    key(1, 1); po.wait_for_timeout(80); key(1, 0); po.wait_for_timeout(300)
+    check("a tap on the playing key still just stops it", playing() == [], playing())
+    po.uncheck("#deckxfade")
+
     # the same keys on the page, with the mouse
     po.select_option("#deckmodel", "mk2"); po.wait_for_timeout(300)
     cv = lambda i, pg=0: po.locator("#vdecks .vd-page").nth(pg).locator("canvas").nth(i)
@@ -145,6 +167,28 @@ with sync_playwright() as p:
     check("▶: the next page (seven items: two pages)", po.evaluate("window.__playoutDeck.screenPage()") == 1 and [x.split(" | ")[0] for x in f] == names[4:6] + ["▶"] + [names[6], "", "■ All"], f)
     po.mouse.click(bx["x"] + 20, bx["y"] + 20); po.wait_for_timeout(300)
     check("… ▶ on the last page: back to the first", po.evaluate("window.__playoutDeck.screenPage()") == 0)
+
+    # a custom size on screen (the owner, 13 Nov 2026: tablets and big screens): across × down, up to 20 × 11
+    po.once("dialog", lambda d: d.accept("8 x 6")); po.select_option("#deckmodel", "custom"); po.wait_for_timeout(400)
+    f = po.evaluate("window.__playoutDeck.faces('c8x6', 0)")
+    check("Custom size… 8 × 6: 48 keys, the items, ■ All last, no → timer (on screen only)", po.evaluate("localStorage.playout_deck_model") == "c8x6" and len(f) == 48 and [x.split(" | ")[0] for x in f[:7]] == names[:7] and f[47].startswith("■ All") and not any("timer" in x for x in f), [po.evaluate("localStorage.playout_deck_model"), len(f), f[-1]])
+    check("… drawn: 48 keys, 8 across; its own menu entry", po.locator("#vdecks canvas").count() == 48 and po.evaluate("getComputedStyle(document.querySelector('#vdecks .vd-keys')).getPropertyValue('--cols').trim()") == "8"
+          and po.evaluate("document.getElementById('deckmodel').selectedOptions[0].textContent") == "Custom: 8 × 6", po.evaluate("document.getElementById('deckmodel').selectedOptions[0].textContent"))
+    said = []
+    answer = lambda d: (said.append(d.message), d.accept("30 x 2") if d.type == "prompt" else d.accept())
+    po.on("dialog", answer)
+    po.select_option("#deckmodel", "custom"); po.wait_for_timeout(400)
+    po.remove_listener("dialog", answer)
+    check("… a size too big: refused, the menu back as it was", po.evaluate("localStorage.playout_deck_model") == "c8x6" and po.input_value("#deckmodel") == "c8x6", po.input_value("#deckmodel"))
+    po.click("#deckfull"); po.wait_for_timeout(600)
+    full = po.evaluate("document.fullscreenElement && document.fullscreenElement.id")
+    if full == "vdecks":
+        k = po.evaluate("document.querySelector('#vdecks canvas').getBoundingClientRect().width")
+        check("⛶ Full screen: just the keys, as big as the screen allows", k > 100, k)
+        po.evaluate("document.exitFullscreen()"); po.wait_for_timeout(400)
+    else: print("(full screen not available headless: skipped)")
+    po.select_option("#deckmodel", "mini"); po.wait_for_timeout(200); po.select_option("#deckmodel", "c8x6"); po.wait_for_timeout(300)
+    check("… still in the menu after another size", po.evaluate("localStorage.playout_deck_model") == "c8x6" and po.locator("#vdecks canvas").count() == 48)
 
     # arranging (the MK.2): drag a key onto another to swap them
     po.select_option("#deckmodel", "mk2"); po.wait_for_timeout(300)
