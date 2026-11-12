@@ -438,6 +438,7 @@ var StingClip = (function () {
           <button class="sc-play">▶ Play the part</button><button class="sc-first" title="Its first 2 seconds, with the fade in">▶ First 2 s</button><button class="sc-last" title="The 2 seconds before the fade out begins, then the fade (or just the last 2 seconds)">▶ Last 2 s</button><button class="sc-lead" title="From 2 seconds before the start: hear the lead-in">▶ From 2 s before</button><button class="sc-stop">■</button>
           <label>Name <input class="sc-name" spellcheck="false"></label>
         </div>
+        <div class="sc-words" hidden></div>
         <div class="sc-row sc-hide" hidden><label><input type="checkbox" class="sc-hideorig"> Hide the whole “<span class="sc-orig"></span>” from + sting (its clips are offered instead)</label></div>
         <div class="sc-msg"></div>
         <div class="sc-btns"><button class="sc-whole">Whole track</button><button class="sc-addloop" title="Repeat part of the track to make the sting longer">⟲ Add a loop</button><button class="sc-wav" title="Make this edit a WAV file of its own (for edits too long to keep as a clip): add it as the sting’s file">⬇ Save as WAV</button><span class="sc-grow"></span><button class="sc-cancel">Cancel</button><button class="sc-save sc-primary">Save</button></div>
@@ -599,11 +600,13 @@ var StingClip = (function () {
       // 6 s at a standard scale, a left edge 1 s in from the left or a right edge 1 s in from the right
       let zmode = 'all';
       const LEFT = { start: 1, lfrom: 1, at: 1 }, RIGHT = { end: 1, lto: 1 };
-      const LABELS = { start: 'Close up on the start: 1 s before, 5 s after', end: 'Close up on the end: 5 s before, 1 s after',
+      let findAt = 0;                                // (the words found: clip-words.js's ▶ — the close-up there)
+      const LABELS = { find: 'Close up on the words: 1 s before, 5 s after', start: 'Close up on the start: 1 s before, 5 s after', end: 'Close up on the end: 5 s before, 1 s after',
         lfrom: 'Close up on the loop’s start: 1 s before, 5 s after', lto: 'Close up on the loop’s end: 5 s before, 1 s after',
         at: 'Close up on where the repeats go in: 1 s before, 5 s after', all: 'Close up: the whole part' };
       const zoomRange = () => {
         if (LOOPK[zmode] && !loop) zmode = 'all';
+        if (zmode === 'find') { const a = Math.max(0, Math.min(findAt - 1, dur() - 6)); return [a, Math.min(dur(), a + 6)]; }
         if (LEFT[zmode]) { const a = Math.max(0, Math.min(get(zmode) - 1, dur() - 6)); return [a, Math.min(dur(), a + 6)]; }
         if (RIGHT[zmode]) { const b = Math.min(dur(), Math.max(get(zmode) + 1, 6)); return [Math.max(0, b - 6), b]; }
         const len = endOf() - sel.start, pad = Math.max(0.5, len * 0.25); return [Math.max(0, sel.start - pad), Math.min(dur(), endOf() + pad)];
@@ -775,6 +778,22 @@ var StingClip = (function () {
         const tick = () => { if (voice !== v) return; draw(); raf = requestAnimationFrame(tick); };
         tick();
       }
+      // From t in the source, 20 s at most, the close-up there (Transcribe: a line's ▶)
+      function playFrom(t) {
+        stopPlay();
+        if (!buf) return;
+        t = Math.max(0, Math.min(t, dur() - 0.05));
+        const t1 = Math.min(dur(), t + 20);
+        findAt = t; focusOn('find');
+        const v = voice = play(slice(buf, t, t1));
+        v.gain.gain.value = levelGain();
+        playSegs = [[t, t1]]; playOff = 0;
+        playing = { from: r2(t), to: r2(t1) };
+        v.ended.then(() => { if (voice === v) { voice = null; draw(); } });
+        const tick = () => { if (voice !== v) return; draw(); raf = requestAnimationFrame(tick); };
+        tick();
+      }
+      let words = null;                              // (clip-words.js, a trial: the transcript)
       let playing = null;                            // (tests: what's playing, from–to in the source)
       wrap.__playing = () => (voice ? playing : null);
       $('.sc-play').addEventListener('click', () => { focusOn('all'); playPart(); });
@@ -810,6 +829,8 @@ var StingClip = (function () {
 
       function finish(result) {
         stopPlay();
+        if (words) words.stop();
+        clearInterval(readT);
         document.removeEventListener('keydown', onKey, true);
         window.removeEventListener('resize', draw);
         wrap.remove();
@@ -837,6 +858,10 @@ var StingClip = (function () {
         if (e.metaKey) return;
         const typing = e.target.closest && e.target.closest('input');
         e.stopImmediatePropagation();
+        if (e.target.closest && e.target.closest('.sc-words')) {   // (finding words: keys are the box's, not Save; Esc clears it first)
+          if (e.key !== 'Escape') return;
+          if (e.target.value) { e.preventDefault(); e.target.value = ''; e.target.dispatchEvent(new Event('input')); return; }
+        }
         if (e.key === 'Escape') { e.preventDefault(); finish(null); return; }
         if (e.key === 'Enter') { if (typing) e.target.dispatchEvent(new Event('change')); e.preventDefault(); save(); return; }
         if (typing && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.target.dataset.k) {
@@ -868,14 +893,25 @@ var StingClip = (function () {
       ['keyup', 'keypress'].forEach(t => wrap.addEventListener(t, e => e.stopPropagation()));
       window.addEventListener('resize', draw);
 
-      msg('Reading the track…');
+      // Reading a long file takes a while (a 1 GB, 51-minute video: about 30 s, all of its sound decoded): say so, and count
+      const big = opts.src && opts.src.size > 50e6 ? ` (${opts.src.size >= 1e9 ? (opts.src.size / 1e9).toFixed(1) + ' GB' : Math.round(opts.src.size / 1e6) + ' MB'}: a long file takes a while)` : '';
+      const readAt = Date.now(), readMsg = () => msg('Reading the track' + big + '…' + (Date.now() - readAt > 2000 ? ' ' + Math.round((Date.now() - readAt) / 1000) + ' s' : ''));
+      readMsg();
+      const readT = setInterval(readMsg, 1000);
       decode(opts.src).then(b => {
+        clearInterval(readT);
         buf = b;
         msg('');
+        if (window.ClipWords && ClipWords.on()) {      // Transcribe and find words (a trial)
+          $('.sc-words').hidden = false;
+          words = ClipWords.mount($('.sc-words'), { buf: b, key: ClipWords.keyOf(opts.src) || (opts.src && opts.src.size && opts.name ? opts.name + '|' + opts.src.size : null),
+            play: playFrom, setStart: t => { set('start', t); active = 'start'; redraw(); focusOn('start'); }, setEnd: t => { set('end', t); active = 'end'; redraw(); focusOn('end'); } });
+        }
         redraw();
         focusOn('all');
         $('.sc-save').focus();
       }).catch(() => {
+        clearInterval(readT);
         msg('This track can’t be opened here (its server doesn’t allow it, or the browser can’t read the file). Use a file from your computer instead.');
         $('.sc-save').disabled = true;
       });
