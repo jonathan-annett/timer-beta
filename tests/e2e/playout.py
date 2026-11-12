@@ -197,6 +197,12 @@ with sync_playwright() as p:
     t.evaluate("window.runsheet.next()"); t.wait_for_timeout(1000)
     check("the short item is live", po.evaluate("window.__playout.show().cur") == "c", po.evaluate("window.__playout.show().cur"))
     check("… the status line names it as this computer does (✎)", po.text_content("#now").startswith("Now: Short one ·"), po.text_content("#now"))
+    # the Stream Deck soundboard (playout_deck.py has the rest), following the timer: it shows, the timer starts
+    df = po.evaluate("window.__playoutDeck.faces('mk2')")
+    check("Follow on: the deck shows the live item, named as here", "Short one | NOW" in df, df)
+    dk = po.evaluate("window.__playoutDeck.slots('mk2').indexOf('d')"); was = playing()
+    po.evaluate("i => { window.__playoutDeck.screen(i, true); window.__playoutDeck.screen(i, false); }", dk); po.wait_for_timeout(300)
+    check("… a press on another item doesn't start it (the timer does)", po.evaluate("window.__playout.local()") is None and playing() == was, [po.evaluate("window.__playout.local()"), playing()])
     t.wait_for_timeout(3000)
     check("when its time is up: the end cue plays", ids["c"][0] in playing(), playing())
     check("the next item's clip is ready", any(k.startswith(ids["d"][0] + "#") for k in po.evaluate("window.__playout.ready()")), po.evaluate("window.__playout.ready()"))

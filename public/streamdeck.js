@@ -2,46 +2,20 @@
  * streamdeck.js
  * Stream Deck WebHID integration for Presentation Timer
  * Supports: Mini (6), MK.II (15), XL (32)
- * USB device IDs and report layouts follow Julian Waller's node-elgato-stream-deck
- * (https://github.com/Julusian/node-elgato-stream-deck, MIT).
+ * The hardware itself (opening a deck, its keys, images, backlight; which page a deck belongs to on this
+ * computer) is deck-hid.js (DeckHID), shared with the playout computer's soundboard; this is what the
+ * timer's keys do and look like.
  * MIT Licensed
  */
 
-/* global timerAPI, processTimerApiMessage, html */
+/* global timerAPI, processTimerApiMessage, html, DeckHID */
 
 (function () {
   'use strict';
 
-  // ─── Device profiles ─────────────────────────────────────────────────────
+  // ─── Device profiles (deck-hid.js) ──────────────────────────────────────
 
-  const MODELS = {
-    mini: { name: 'Stream Deck Mini', cols: 3, rows: 2, keySize: 80,  keyCount: 6  },
-    mk2:  { name: 'Stream Deck MK.II', cols: 5, rows: 3, keySize: 72,  keyCount: 15 },
-    xl:   { name: 'Stream Deck XL',   cols: 8, rows: 4, keySize: 96,  keyCount: 32 },
-  };
-
-  // USB product IDs (Elgato vendor 0x0fd9), per the published @elgato-stream-deck device list.
-  // protocol 'gen2': JPEG keys, 1024-byte reports, key states from input byte 3.
-  //          'gen1': BMP keys, key states from input byte 0 (original v1 and both Minis).
-  const DEVICE_IDS = [
-    { productId: 0x0060, model: 'mk2',  protocol: 'gen1', name: 'Stream Deck (original)',    reportSize: 8191, pageBase: 1, mirrorCols: true },
-    { productId: 0x006d, model: 'mk2',  protocol: 'gen2', name: 'Stream Deck (original v2)' },
-    { productId: 0x0080, model: 'mk2',  protocol: 'gen2', name: 'Stream Deck MK.2' },
-    { productId: 0x00a5, model: 'mk2',  protocol: 'gen2', name: 'Stream Deck MK.2' },
-    { productId: 0x0063, model: 'mini', protocol: 'gen1', name: 'Stream Deck Mini',          reportSize: 1024, pageBase: 0 },
-    { productId: 0x0090, model: 'mini', protocol: 'gen1', name: 'Stream Deck Mini MK.2',     reportSize: 1024, pageBase: 0 },
-    { productId: 0x006c, model: 'xl',   protocol: 'gen2', name: 'Stream Deck XL' },
-    { productId: 0x008f, model: 'xl',   protocol: 'gen2', name: 'Stream Deck XL' },
-  ].map(d => ({ vendorId: 0x0fd9, ...d }));
-
-  // Key image orientation (degrees clockwise, after an optional horizontal mirror). gen2 (MK.2/XL) is
-  // rotated 180°; the Mini's is from the owner's deck; the original v1's is still a guess. The deck
-  // editor's Key images menu overrides it per kind on one computer (orientation()), for a deck that differs.
-  const ORIENTATION = {
-    gen2: { rotate: 180, mirror: false },
-    mini: { rotate: 270, mirror: true },    // the owner's Mini (Nov 2026): rotate 90° showed it flipped top to bottom
-    gen1: { rotate: 180, mirror: false },   // original v1 — UNVERIFIED on hardware
-  };
+  const MODELS = DeckHID.MODELS;
 
   // ─── Action definitions ───────────────────────────────────────────────────
 
@@ -292,10 +266,10 @@
   let remainText = '';
   const countdownCache = new Map();   // key index -> text last drawn, to skip identical repaints
 
-  let device = null;
-  let deviceInfo = null;     // matching DEVICE_IDS entry
+  let device = null;         // the HIDDevice this page drives
+  let deck = null;           // … opened by DeckHID: {info, model, id, setKey, brightness, reset, blank, close}
+  let deviceInfo = null;     // its DeckHID.info (model, protocol, name)
   let modelKey = null;
-  let prevKeys = [];         // last key states, for press edge detection
   let pausedDevice = null;   // granted deck the user disconnected (kept for Forget / quick reconnect)
   const AUTOCONNECT_KEY = 'streamdeck_autoconnect';  // '0' = user disconnected; don't auto-attach
   const autoConnectAllowed = () => localStorage.getItem(AUTOCONNECT_KEY) !== '0';
@@ -425,14 +399,13 @@
     }
     let hid;
     try {
-      const filters = DEVICE_IDS.map(d => ({ vendorId: d.vendorId, productId: d.productId }));
-      [hid] = await navigator.hid.requestDevice({ filters });
+      [hid] = await navigator.hid.requestDevice({ filters: DeckHID.filters() });
     } catch (err) {
       _showDeckStatus('Could not open the device picker: ' + err.message, 'error');
       return;
     }
     if (!hid) { _showDeckStatus('No device selected', 'idle'); return; }
-    await attach(hid);
+    if (await attach(hid)) DeckHID.setOwner(deck.id, 'timer');   // (the playout page's until now: it lets go)
   }
 
   // ─── Backlight ────────────────────────────────────────────────────────────
@@ -442,32 +415,13 @@
   const BRIGHTNESS_CYCLE  = [100, 50, 25, 10];       // deck key steps (quick to reach in the dark)
   let brightness = parseInt(localStorage.getItem(BRIGHTNESS_KEY), 10) || 100;
 
-  async function applyBrightness() {
-    if (!device || !deviceInfo) return;
-    try {
-      if (deviceInfo.protocol === 'gen2') {
-        const data = new Uint8Array(31); data.set([0x08, brightness]);
-        await device.sendFeatureReport(0x03, data);
-      } else {
-        const data = new Uint8Array(16); data.set([0x55, 0xaa, 0xd1, 0x01, brightness]);
-        await device.sendFeatureReport(0x05, data);
-      }
-    } catch (err) {
-      console.warn('StreamDeck: set brightness failed', err);
-    }
-  }
+  function applyBrightness() { if (deck) deck.brightness(brightness); }
 
   // The page is going away (closed, reloaded): reset the deck to its idle Elgato screen so it doesn't
   // keep showing stale keys. One short feature report, sent without waiting (a closing page gets a
   // moment at most; blanking every key would be far too slow). Best effort. The next page to attach
   // (a reload, another timer tab) draws its keys again.
-  function resetOnLeave() {
-    if (!device || !deviceInfo || !device.opened) return;
-    try {
-      if (deviceInfo.protocol === 'gen2') { const d = new Uint8Array(31); d[0] = 0x02; device.sendFeatureReport(0x03, d).catch(() => {}); }
-      else { const d = new Uint8Array(16); d[0] = 0x63; device.sendFeatureReport(0x0b, d).catch(() => {}); }
-    } catch (_) { /* gone already */ }
-  }
+  function resetOnLeave() { if (deck) deck.reset(); }
   window.addEventListener('pagehide', resetOnLeave);
 
   function setBrightness(pct) {
@@ -488,18 +442,15 @@
 
   // Shared by manual connect and auto-reconnect.
   async function attach(hid) {
+    let d;
     try {
-      if (!hid.opened) await hid.open();
+      d = await DeckHID.open(hid, { down: onKeyPress });
     } catch (err) {
       console.warn('StreamDeck: open failed', err);
       _showDeckStatus('Device is busy — quit the Elgato Stream Deck app, then Connect again', 'error');
       return false;
     }
-    deviceInfo = detectModel(hid);
-    modelKey = deviceInfo.model;
-    prevKeys = [];
-    device = hid;
-    device.addEventListener('inputreport', onKeyEvent);
+    deck = d; device = hid; deviceInfo = d.info; modelKey = d.model;
     _showDeckStatus('Connected: ' + deviceInfo.name, 'ok');
     renderOrientChoice();
     applyBrightness();
@@ -511,8 +462,8 @@
   function onHidDisconnect(ev) {
     if (pausedDevice && ev.device === pausedDevice) { pausedDevice = null; _showDeckStatus('Not connected', 'idle'); }
     if (device && ev.device === device) {
-      device.removeEventListener('inputreport', onKeyEvent);
-      device = null; deviceInfo = null;
+      deck.detach();
+      deck = null; device = null; deviceInfo = null;
       _showDeckStatus('Unplugged — plug it back in, or click Connect', 'idle');
       renderOrientChoice();
     }
@@ -522,15 +473,14 @@
   async function disconnectDeck() {
     if (!device) return;
     localStorage.setItem(AUTOCONNECT_KEY, '0');
-    const hid = device;
+    const d = deck;
     dirtyKeys.clear();
     while (drawing) await new Promise(r => setTimeout(r, 20));   // let any in-flight flush finish
-    await blankKeys();
-    hid.removeEventListener('inputreport', onKeyEvent);
-    device = null; deviceInfo = null;
+    await d.blank();
+    deck = null; device = null; deviceInfo = null;
     renderOrientChoice();
-    try { await hid.close(); } catch (_) {}
-    pausedDevice = hid;
+    await d.close();
+    pausedDevice = d.hid;
     _showDeckStatus('Disconnected — click Connect to use it again', 'idle');
   }
 
@@ -545,41 +495,6 @@
       _showDeckStatus('Forgotten — Connect will ask for permission again', 'idle');
     } else {
       _showDeckStatus('Disconnected (this browser cannot revoke permission; remove it in site settings)', 'idle');
-    }
-  }
-
-  async function blankKeys() {
-    const model = MODELS[modelKey];
-    if (!device || !model) return;
-    const c = document.createElement('canvas');
-    c.width = c.height = model.keySize;
-    const ctx = c.getContext('2d'); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, c.width, c.height);
-    for (let i = 0; i < model.keyCount; i++) await writeKeyImage(i, c);
-  }
-
-  function detectModel(hid) {
-    return DEVICE_IDS.find(d => d.vendorId === hid.vendorId && d.productId === hid.productId)
-      || { model: 'mk2', protocol: 'gen2', name: 'Stream Deck (unknown model)' };
-  }
-
-  // The original (v1) deck reports and addresses keys right-to-left within each row.
-  function physicalKeyIndex(i) {
-    if (!deviceInfo || !deviceInfo.mirrorCols) return i;
-    const cols = MODELS[modelKey].cols, col = i % cols;
-    return i - col + (cols - 1 - col);
-  }
-
-  function onKeyEvent(ev) {
-    if (ev.reportId !== 0x01) return;
-    const data = new Uint8Array(ev.data.buffer, ev.data.byteOffset, ev.data.byteLength);
-    const model = MODELS[modelKey];
-    if (!model) return;
-    const offset = deviceInfo.protocol === 'gen2' ? 3 : 0;
-    for (let i = 0; i < model.keyCount; i++) {
-      const down = data[offset + i] === 1;
-      // Fire on press only (not while held, and not again when another key changes)
-      if (down && !prevKeys[i]) onKeyPress(physicalKeyIndex(i));
-      prevKeys[i] = down;
     }
   }
 
@@ -632,7 +547,7 @@
         for (const index of batch) {
           if (!device || index >= model.keyCount) continue;
           const actionKey = layout ? layout[index] : 'empty';
-          await writeKeyImage(index, renderKey(index, actionKey, model.keySize));
+          await deck.setKey(index, renderKey(index, actionKey, model.keySize));
         }
       }
     } finally {
@@ -826,99 +741,16 @@
   }
 
   // Which orientation a connected deck uses: the built-in guess for its kind, unless the operator chose
-  // one in the editor (Key images: kept per kind, streamdeck_orientation_<kind>), for decks the guesses
-  // got wrong (the Mini's was never checked on hardware)
-  const orientKind = () => (!deviceInfo ? null : deviceInfo.protocol === 'gen2' ? 'gen2' : modelKey === 'mini' ? 'mini' : 'gen1');
-  function orientation(kind = orientKind()) {
-    try {
-      const v = JSON.parse(localStorage.getItem('streamdeck_orientation_' + kind) || 'null');
-      if (v && [0, 90, 180, 270].includes(v.rotate)) return { rotate: v.rotate, mirror: !!v.mirror };
-    } catch (_) { /* none */ }
-    return ORIENTATION[kind] || ORIENTATION.gen2;
-  }
+  // one in the editor (Key images: kept per kind, streamdeck_orientation_<kind>; DeckHID reads it as it
+  // draws), for decks the guesses got wrong (the Mini's was never checked on hardware)
+  const orientKind = () => DeckHID.orientKind(deviceInfo);
+  const orientation = kind => DeckHID.orientation(kind);
   function renderOrientChoice() {
     const sel = document.getElementById('deck-orient'), kind = orientKind();
     if (!sel) return;
     sel.disabled = !kind;
     sel.parentElement.title = kind ? 'If the keys look rotated or mirrored on your deck, step through these until the labels read correctly (kept for this kind of deck)' : 'Connect a deck first';
     if (kind) { const o = orientation(kind); sel.value = o.rotate + '|' + (o.mirror ? 1 : 0); }
-  }
-
-  // Rotate/mirror the key image into the orientation the device expects.
-  function orient(src) {
-    const o = orientation();
-    const size = src.width;
-    const c = document.createElement('canvas'); c.width = c.height = size;
-    const ctx = c.getContext('2d');
-    ctx.translate(size / 2, size / 2);
-    ctx.rotate(o.rotate * Math.PI / 180);
-    if (o.mirror) ctx.scale(-1, 1);
-    ctx.drawImage(src, -size / 2, -size / 2);
-    return c;
-  }
-
-  async function writeKeyImage(logicalIndex, canvas) {
-    const keyIndex = physicalKeyIndex(logicalIndex);
-    const img = orient(canvas);
-    try {
-      if (deviceInfo.protocol === 'gen2') {
-        const blob = await new Promise(r => img.toBlob(r, 'image/jpeg', 0.95));
-        await sendGen2(keyIndex, new Uint8Array(await blob.arrayBuffer()));
-      } else {
-        await sendGen1(keyIndex, toBMP(img));
-      }
-    } catch (err) {
-      console.warn('StreamDeck: key image write failed', err);
-    }
-  }
-
-  // gen2: report 0x02, 1024 bytes incl. report ID, 8-byte header, 1016-byte payload.
-  async function sendGen2(keyIndex, bytes) {
-    const DATA_LEN = 1023, HEADER = 7, PAYLOAD = DATA_LEN - HEADER;
-    for (let page = 0, pos = 0; pos < bytes.length; page++, pos += PAYLOAD) {
-      const chunk = bytes.subarray(pos, pos + PAYLOAD);
-      const isLast = pos + PAYLOAD >= bytes.length;
-      const data = new Uint8Array(DATA_LEN);              // zero-padded to the full report
-      data.set([0x07, keyIndex, isLast ? 1 : 0,
-                chunk.length & 0xff, chunk.length >> 8,
-                page & 0xff, page >> 8]);
-      data.set(chunk, HEADER);
-      await device.sendReport(0x02, data);
-    }
-  }
-
-  // gen1 (Mini, original v1): report 0x02, 16-byte header, BMP payload.
-  async function sendGen1(keyIndex, bytes) {
-    const DATA_LEN = deviceInfo.reportSize - 1, HEADER = 15, PAYLOAD = DATA_LEN - HEADER;
-    for (let page = 0, pos = 0; pos < bytes.length; page++, pos += PAYLOAD) {
-      const chunk = bytes.subarray(pos, pos + PAYLOAD);
-      const isLast = pos + PAYLOAD >= bytes.length;
-      const data = new Uint8Array(DATA_LEN);
-      data.set([0x01, page + deviceInfo.pageBase, 0x00, isLast ? 1 : 0, keyIndex + 1]);
-      data.set(chunk, HEADER);
-      await device.sendReport(0x02, data);
-    }
-  }
-
-  // 24-bit bottom-up BMP, as gen1 devices expect.
-  function toBMP(canvas) {
-    const w = canvas.width, h = canvas.height;
-    const px = canvas.getContext('2d').getImageData(0, 0, w, h).data;
-    const rowBytes = Math.ceil(w * 3 / 4) * 4, imgBytes = rowBytes * h;
-    const buf = new Uint8Array(54 + imgBytes), dv = new DataView(buf.buffer);
-    buf[0] = 0x42; buf[1] = 0x4d;                          // 'BM'
-    dv.setUint32(2, buf.length, true); dv.setUint32(10, 54, true);
-    dv.setUint32(14, 40, true); dv.setInt32(18, w, true); dv.setInt32(22, h, true);
-    dv.setUint16(26, 1, true); dv.setUint16(28, 24, true); dv.setUint32(34, imgBytes, true);
-    dv.setInt32(38, 3780, true); dv.setInt32(42, 3780, true);
-    for (let y = 0; y < h; y++) {
-      const row = 54 + (h - 1 - y) * rowBytes;
-      for (let x = 0; x < w; x++) {
-        const i = (y * w + x) * 4, o = row + x * 3;
-        buf[o] = px[i + 2]; buf[o + 1] = px[i + 1]; buf[o + 2] = px[i];   // BGR
-      }
-    }
-    return buf;
   }
 
   // ─── Status indicator ─────────────────────────────────────────────────────
@@ -1279,21 +1111,39 @@
   }
 
   // Re-attach a previously granted device on load (or on taking over from a closed tab), and when
-  // one is plugged back in. (No user gesture needed for devices already granted to this site.)
+  // one is plugged back in. (No user gesture needed for devices already granted to this site.) Only a
+  // deck that's the timer's on this computer: one given to the playout page (its Stream Deck box,
+  // deck_claims) is left to it, and let go of the moment it's given.
+  let looking = false;
+  async function findDeck() {
+    if (device || looking) return;
+    looking = true;
+    try {
+      const list = await DeckHID.granted();
+      for (const hid of list) {
+        if (DeckHID.ownerOf(await DeckHID.idOf(hid, list)) !== 'timer' || device) continue;
+        if (autoConnectAllowed()) await attach(hid);
+        else { pausedDevice = hid; _showDeckStatus('Disconnected — click Connect to use it again', 'idle'); }
+        return;
+      }
+      if (list.length && !device && !pausedDevice) _showDeckStatus(PLAYOUT_HAS_IT, 'idle');
+    } finally { looking = false; }
+  }
+  const PLAYOUT_HAS_IT = 'Not connected: the playout page on this computer has the deck (its Stream Deck box can give it back)';
+  function letGo() {                                   // given to the playout page: its keys are the playout's to draw
+    const d = deck;
+    deck = null; device = null; deviceInfo = null;
+    dirtyKeys.clear();
+    d.close();
+    renderOrientChoice();
+    _showDeckStatus(PLAYOUT_HAS_IT, 'idle');
+    findDeck();
+  }
   function autoAttach() {
-    const isDeck = d => DEVICE_IDS.some(id => id.vendorId === d.vendorId && id.productId === d.productId);
-    navigator.hid.getDevices().then(devices => {
-      const match = devices.find(isDeck);
-      if (!match || device) return;
-      if (autoConnectAllowed()) attach(match);
-      else { pausedDevice = match; _showDeckStatus('Disconnected — click Connect to use it again', 'idle'); }
-    });
-    navigator.hid.addEventListener('connect', ev => {
-      if (device || !isDeck(ev.device)) return;
-      if (autoConnectAllowed()) attach(ev.device);
-      else { pausedDevice = ev.device; _showDeckStatus('Disconnected — click Connect to use it again', 'idle'); }
-    });
+    findDeck();
+    navigator.hid.addEventListener('connect', ev => { if (DeckHID.isDeck(ev.device)) findDeck(); });
     navigator.hid.addEventListener('disconnect', onHidDisconnect);
+    DeckHID.onClaims(() => { if (deck && DeckHID.ownerOf(deck.id) !== 'timer') letGo(); else findDeck(); });
   }
 
   // ─── Virtual deck (phone remote, see remote-control.js) ──────────────────

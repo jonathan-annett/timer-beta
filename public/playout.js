@@ -287,21 +287,32 @@
   // time, like the timer's items: starting another drops this one's cues still to come (what's playing
   // plays on). Ends when nothing more can play, on ■ Stop item or Stop all, or when Follow goes back on.
   let local = null;                                    // {item, t0, dur (s) | null, fired, prev}
+  let lastRun = null;                                  // the item started here last (it doesn't flash: see activeItems)
+  let deckBoard = null;                                // the Stream Deck soundboard (playout-deck.js), below
   const localCd = () => { const e = performance.now() - local.t0; return { elapsed: e, remain: local.dur == null ? Infinity : local.dur * 1000 - e }; };
   function runLocal(itemId) {
     const it = show.items.find(x => x.id === itemId);
     local = { item: itemId, t0: performance.now(), dur: it && it.d > 0 ? it.d : null, fired: new Set(), prev: new Map() };
-    for (const c of cues[itemId] || []) if (c.trigger === 'start') { local.fired.add(c.id); play(c, { run: true }); }
+    lastRun = itemId;
+    for (const c of cues[itemId] || []) if (c.trigger === 'start') { local.fired.add(c.id); play(c, { run: true, item: itemId }); }
     render();
   }
   function endLocal() { if (local) { local = null; render(); } }
+  // Items playing as a whole: the one started here, and any whose run's cues still play (its run ended, or
+  // another item started since: the owner, 12 Nov 2026). Each keeps ■ Stop item, green; with more than one,
+  // all but the last started flash (and their playing cues' ■ with them): several items at once, on purpose?
+  function activeItems() {
+    const s = new Set(local ? [local.item] : []);
+    for (const p of playing.values()) if (p.run && p.item) s.add(p.item);
+    return s;
+  }
   function tickLocal() {
     const cd = localCd(), list = cues[local.item] || [];
     for (const c of list) {
       if (c.trigger === 'start' || local.fired.has(c.id)) continue;
       const now = condition(c, cd), before = local.prev.get(c.id);
       local.prev.set(c.id, now);
-      if (now && before !== true) { local.fired.add(c.id); play(c, { run: true }); }   // (true from the press: at once)
+      if (now && before !== true) { local.fired.add(c.id); play(c, { run: true, item: local.item }); }   // (true from the press: at once)
     }
     if (list.every(c => local.fired.has(c.id)) && (local.dur == null || cd.remain <= 0)) endLocal();
   }
@@ -410,7 +421,7 @@
   }
   const playing = new Map();                           // cue id → {voice, video}
   const vid = $('vid');                                // video cues' element: in the Output box, or the floating window
-  async function play(c, how) {                        // how.run: played by an item started here
+  async function play(c, how) {                        // how.run: played by an item started here (how.item)
     const out = outKey(c);
     if (out && window.AudioOut && !AudioOut.ok(out)) {   // its output isn't there: an audio cue doesn't play,
       AudioOut.warn(out);                                // a video plays without its sound (audio-out.js mutes it)
@@ -421,7 +432,7 @@
     if (!memory && !blob) { status('The file for “' + c.name + '” isn’t in this browser any more. Add the cue again.', 'warn'); return; }
     stopCue(c.id);
     if (c.media === 'video') for (const [id, q] of playing) if (q.video) stopCue(id);   // one video on the output at a time
-    const p = { video: c.media === 'video', run: !!(how && how.run), c, out };
+    const p = { video: c.media === 'video', run: !!(how && how.run), item: how && how.item, c, out };
     const onEnd = () => { if (playing.get(c.id) === p) stopCue(c.id); };
     p.voice = memory ? bufferVoice(c, memory, onEnd, out) : elementVoice(c, p.video ? vid : new Audio(), URL.createObjectURL(blob), onEnd, out);
     playing.set(c.id, p);
@@ -904,6 +915,7 @@
   }
 
   function render() {
+    if (deckBoard) deckBoard.changed();
     document.body.classList.toggle('manual', !following());
     renderPlace();
     renderLevels();
@@ -912,12 +924,13 @@
     const curIdx = items.findIndex(x => x.id === show.cur);
     const open = document.activeElement && document.activeElement.closest('form.addcue, #items select.cout, form.iedit');
     if (open) return;                                  // don't rebuild under someone adding a cue, choosing an output or typing an item's text
-    const manual = !following(), ro = StingRoll.opts(ROLL);
+    const manual = !following(), ro = StingRoll.opts(ROLL), active = manual ? activeItems() : new Set();
     $('items').innerHTML = items.map((it, i) => {
       const list = cues[it.id] || [], here = local && local.item === it.id, locked = here && !cueControl();
+      const flash = active.has(it.id) && active.size > 1 && it.id !== lastRun;   // (rebuilt together, so they flash in step)
       const done = c => (i === curIdx && fired.has(c.id)) || (here && local.fired.has(c.id));
       const runBtn = !manual || it.e || !list.length ? ''
-        : here ? '<button class="small" data-act="endrun" title="Stop this item’s cues, and the rest of them won’t play">■ Stop item</button>'
+        : active.has(it.id) ? `<button class="small runon${flash ? ' superseded' : ''}" data-act="endrun" title="${flash ? 'Still playing after another item started: stop it here, or let it play to its end' : here ? 'Stop this item’s cues, and the rest of them won’t play' : 'Stop this item’s cues still playing'}">■ Stop item</button>`
         : `<button class="small" data-act="run" title="Its cues as if it started now: start cues at once, the others timed from now${it.d ? ' (its length: ' + mmss(it.d) + ')' : ''}">▶ Start item</button>`;
       return `<li data-id="${esc(it.id)}" class="${i === curIdx ? 'now' : curIdx >= 0 && i < curIdx ? 'done' : ''}${here ? ' here' : ''}">` +
         `<div class="ihead">${nameHtml(it)}${i === curIdx ? '<span class="itag">now</span>' : ''}${here ? '<span class="itag ilocal"></span>' : ''}` +
@@ -926,7 +939,7 @@
         (rollable(it, ro, false) ? `<button class="small" data-act="roll"${rolling ? ' disabled' : ''} title="${rolledOf(it.id) ? 'Another walk-up sting at random (when and where it plays stay)' : 'A walk-up sting at random, at its start (Random stings, under the run sheet, says from where)'}">🎲</button>` : '') +
         `${it.e ? '' : '<button class="small" data-act="add">+ cue</button>'}</div>` + notesHtml(it) +
         (list.length ? '<ul class="cues">' + list.map(c => `<li data-cue="${esc(c.id)}" class="${done(c) ? 'fired' : ''}${playing.has(c.id) ? ' playing' : ''}">` +
-          `<button class="small" data-act="${playing.has(c.id) ? 'stop' : 'fire'}"${locked ? ' disabled' : ''} title="${locked ? 'The item started here plays its cues: ■ Stop item stops them (Options: play and stop single cues)' : playing.has(c.id) ? 'Stop' : 'Play it now (on this computer)'}">${playing.has(c.id) ? '■' : '▶'}</button>` +
+          `<button class="small${flash && playing.has(c.id) ? ' superseded' : ''}" data-act="${playing.has(c.id) ? 'stop' : 'fire'}"${locked ? ' disabled' : ''} title="${locked ? 'The item started here plays its cues: ■ Stop item stops them (Options: play and stop single cues)' : playing.has(c.id) ? 'Stop' : 'Play it now (on this computer)'}">${playing.has(c.id) ? '■' : '▶'}</button>` +
           `<span class="when">${esc(whenText(c))}</span><span class="fname"${c.rolled ? ' title="Picked at random: 🎲 on the item for another; ✂ makes it yours (a roll then leaves it alone)"' : ''}>${c.rolled ? '🎲' : c.media === 'video' ? '🎞' : '🎵'} ${esc(c.name)}</span>` +
           `<span class="clen">${StingClip.region(c) ? '✂ ' : ''}${lenText(c)}</span>` + outMenu(c) +
           `<button class="small" data-act="when" title="Change when it plays">✎</button>` +
@@ -944,11 +957,10 @@
     $('now').innerHTML = it && cd ? `Now: <b>${esc(titleOf(it))}</b> ·${cd.remain >= 0 ? mmss(cd.remain / 1000) + ' left' : 'over by ' + mmss(-cd.remain / 1000)}` : '';
     renderLocal();
   }
+  function localText() { const cd = localCd(); return local.dur == null ? mmss(cd.elapsed / 1000) : cd.remain >= 0 ? mmss(cd.remain / 1000) + ' left' : 'over by ' + mmss(-cd.remain / 1000); }
   function renderLocal() {                             // the item run here: its time, in place (each tick)
     const el = local && document.querySelector('#items .ilocal');
-    if (!el) return;
-    const cd = localCd();
-    el.textContent = 'here · ' + (local.dur == null ? mmss(cd.elapsed / 1000) : cd.remain >= 0 ? mmss(cd.remain / 1000) + ' left' : 'over by ' + mmss(-cd.remain / 1000));
+    if (el) el.textContent = 'here · ' + localText();
   }
   $('items').addEventListener('click', e => {
     const b = e.target.closest('button[data-act]');
@@ -966,7 +978,7 @@
     else if (b.dataset.act === 'name') openName(itemId);
     else if (b.dataset.act === 'run') runLocal(itemId);
     else if (b.dataset.act === 'roll') { b.blur(); rollOne(itemId); }
-    else if (b.dataset.act === 'endrun') { for (const x of cues[itemId] || []) stopCue(x.id); endLocal(); }
+    else if (b.dataset.act === 'endrun') { for (const x of cues[itemId] || []) stopCue(x.id); if (local && local.item === itemId) endLocal(); }
   });
   // A cue's output (from its next play)
   $('items').addEventListener('change', e => {
@@ -1068,9 +1080,32 @@
     location.reload();
   });
 
+  // ─── Stream Deck: a soundboard of the items (playout-deck.js; the owner's design, 12 Nov 2026) ───
+  // A key per item with cues: with Follow off it starts the item (as ▶ Start item); on an item that's
+  // playing, down starts a fade and up stops it (a tap stops, a hold fades). The last key: everything.
+  const playingOf = id => (cues[id] || []).filter(c => playing.has(c.id)).map(c => c.id);
+  if (window.PlayoutDeck && window.DeckHID) deckBoard = PlayoutDeck.create({
+    store, demo: DEMO,
+    items: () => show.items.filter(it => !it.e),
+    cuesOf: id => cues[id] || [],
+    title: titleOf,
+    following,
+    nowId: () => (show.on && !show.fin ? show.cur : null),
+    isDone: id => { const i = show.items.findIndex(x => x.id === id), c = show.items.findIndex(x => x.id === show.cur); return c >= 0 && i >= 0 && i < c; },
+    playingIds: playingOf,
+    anyPlaying: () => !!(playing.size || tones.size || local),
+    localItem: () => local && local.item,
+    localText,
+    start: id => { if (!following()) runLocal(id); },
+    fadeItem(id, ms) { if (local && local.item === id) endLocal(); const ids = playingOf(id); for (const x of ids) playing.get(x).voice.fade(ms); return ids; },
+    fadeAll(ms) { endLocal(); const ids = [...playing.keys()]; fadeAll(ms); return ids; },
+    stopIds: ids => ids.forEach(stopCue),
+    stopAll: () => { stopAll(); endLocal(); },
+  });
+
   // Test hooks: what's playing, and the cues
   window.__playout = { playing: () => [...playing.keys()], cues: () => cues, show: () => show, fired: () => [...fired], ready: () => [...buffers.keys()],
-    local: () => local && { item: local.item, fired: [...local.fired] }, names: () => names,
+    local: () => local && { item: local.item, fired: [...local.fired] }, names: () => names, active: () => [...activeItems()],
     gain: id => { const p = playing.get(id); return p ? p.voice.gain() : null; }, levels: () => levels, target: k => targetOf(k), tones: () => [...tones.keys()],
     video: () => ({ where: vid.ownerDocument === document ? 'here' : 'external', paused: vid.paused, t: vid.currentTime, src: !!vid.getAttribute('src') }) };
 

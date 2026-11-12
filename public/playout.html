@@ -49,6 +49,12 @@
     #items > li.done .iname { color: var(--dim); }
     #items > li.here { box-shadow: inset 3px 0 0 var(--warn); }   /* an item run here (Follow off: ▶ Start item) */
     .itag.ilocal { color: var(--warn); font-variant-numeric: tabular-nums; }
+    /* An item playing (▶ Start item): its ■ Stop item green, as a cue's output menu while it plays. Still
+       playing after another item started: it flashes, with its playing cues' ■ (all rebuilt at once: in step) */
+    button.runon { color: var(--ok); border-color: var(--ok); }
+    @keyframes po-flash { 0%, 49.9% { background: var(--ok); border-color: var(--ok); color: #000; } 50%, 100% { background: #222; border-color: var(--ok); color: var(--ok); } }
+    button.superseded { animation: po-flash .4s infinite; opacity: 1; font-weight: bold; }
+    @media (prefers-reduced-motion: reduce) { button.superseded { animation: none; background: var(--ok); border-color: var(--ok); color: #000; } }
     .ihead { display: flex; gap: 10px; align-items: baseline; }
     .iname { font-weight: bold; color: #fff; flex: 1; }
     .idur { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -77,6 +83,23 @@
     form.addcue { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 0 14px; font-size: 14px; }
     form.addcue select, form.addcue input[type=text] { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 3px 6px; }
     form.addcue input[type=text] { width: 5.5em; }
+
+    /* Stream Deck: the soundboard (playout-deck.js) and the same keys on the page (virtual-deck.js) */
+    .dk-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 3px 0; font-size: 14px; }
+    .dk-name { flex: 1 1 14em; }
+    .dk-state { color: var(--dim); font-size: 13px; }
+    .dk-state.ok { color: var(--ok); } .dk-state.bad { color: var(--bad); }
+    #deckfade { width: 4.5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    #deckmodel { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    #vdecks { margin-top: 10px; user-select: none; }
+    .vd-page + .vd-page { margin-top: 12px; }
+    .vd-keys { display: grid; grid-template-columns: repeat(var(--cols, 5), var(--key, 40px)); grid-auto-rows: var(--key, 40px);
+      column-gap: var(--col-gap, 6px); row-gap: var(--row-gap, 6px); touch-action: none; }
+    .vd-keys canvas { width: var(--key, 40px); height: var(--key, 40px); border-radius: 14%; display: block; cursor: pointer; transition: transform .06s; }
+    .vd-keys canvas.down { transform: scale(0.92); }
+    .vd-keys canvas.idle { cursor: default; }
+    #vdecks.arranging canvas { cursor: grab; outline: 1px dashed #444; outline-offset: 2px; }
+    #vdecks.arranging canvas.drop { outline: 2px solid var(--accent); }
 
     /* Random stings (under the run sheet) */
     #rollpanel { color: var(--text); font-size: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
@@ -165,6 +188,17 @@
         </details>
         <input type="file" id="cuefile" accept="audio/*,video/*" hidden>
       </div>
+      <div class="card" id="deckcard">
+        <div class="row" style="justify-content:space-between"><b>Stream Deck</b><button id="deckconnect" class="small" title="Choose a deck in the browser’s list: it’s used here (quit the Elgato Stream Deck app first)">Connect a deck…</button></div>
+        <p class="hint" style="margin:4px 0 6px">A key for each item with cues. With <b>Follow the timer</b> off, press one to start its item (as ▶ Start item). On an item that’s playing, a tap stops it and holding the key fades it out over <input type="number" id="deckfade" min="0.2" max="10" step="0.1" aria-label="Fade seconds"> s (let go to stop it there). The last key does the same for everything; ◀ ▶ turn the page. With Follow on, the keys show the run sheet and only stop or fade.</p>
+        <div id="decklist"></div>
+        <div class="row" style="margin-top:8px">
+          <label>On screen <select id="deckmodel" aria-label="Deck size on screen"><option value="mini">Stream Deck Mini</option><option value="mk2">Stream Deck MK.2</option><option value="xl">Stream Deck XL</option></select></label>
+          <button id="deckarrange" class="small" title="Every page of keys: drag a key onto another to swap them (kept for this size of deck)">Arrange keys</button>
+          <button id="deckorder" class="small" title="Forget the arrangement: keys in run sheet order again">Run sheet order</button>
+        </div>
+        <div id="vdecks"></div>
+      </div>
       <div class="card">
         <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>Output</b><span class="row"><button id="ext" class="small">To external monitor</button><button id="full" class="small">Full screen (F)</button></span></div>
         <div id="stage"><div class="idle">Video cues play here</div><div class="extnote"><b>External playback activated</b><span>Videos play in the floating window: drag it to the other screen and double-click it for full screen.</span></div><video id="vid" playsinline></video></div>
@@ -196,6 +230,10 @@
   <script src="sting-library.js?v=8c93912b"></script>
   <script src="sting-picker.js?v=8b880b60"></script>
   <script src="sting-roll.js?v=32454fa7"></script>
-  <script src="playout.js?v=bd88b6ec"></script>
+  <script src="deck-face.js?v=095d2354"></script>
+  <script src="virtual-deck.js?v=909424e5"></script>
+  <script src="deck-hid.js?v=6f61808f"></script>
+  <script src="playout-deck.js?v=f78087bc"></script>
+  <script src="playout.js?v=0bb77530"></script>
 </body>
 </html>
