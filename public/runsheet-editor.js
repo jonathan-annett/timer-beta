@@ -862,66 +862,16 @@
 
   // ─── Random stings (the owner's design, Nov 2026) ─────────────────────────
   // A walk-up sting picked at random for every item long enough to be a speaker (Random stings → 🎲 Roll
-  // stings), none used twice on the sheet; 🎲 on a row picks another for that item. The pool: stock stings,
-  // the folder (+ sting's Custom file), My clips (the sting library), and a length filter (as it plays).
-  // One song, one candidate: a stock sting, its clips (the site's and mine) and a link are one song (its url),
-  // a file is known by its size (all a file sting keeps of it), so no two speakers get the same track in
-  // different cuts. With My clips ticked an edit stands in for its track; unticked, tracks play as supplied
-  // (originals hidden behind an edit come back). Audio only (a video walk-up needs the player window).
-  // Rolled stings carry rolled: true; a sting chosen by hand (+ sting, a dropped file, ✂) doesn't, and a
-  // roll of the sheet leaves it, and videos, alone, as it does rows that have run and the live item. A
-  // remote editor picks only stock and link stings (a file would have to be sent).
+  // stings), none used twice on the sheet; 🎲 on a row picks another for that item. The pool and the pick
+  // (stock stings, the folder, My clips; one song, one candidate; the length filter) are sting-roll.js's,
+  // shared with playout computers. Rolled stings carry rolled: true; a sting chosen by hand (+ sting, a
+  // dropped file, ✂) doesn't, and a roll of the sheet leaves it, and videos, alone, as it does rows that
+  // have run and the live item. A remote editor picks only stock and link stings (a file would have to be
+  // sent).
   const ROLL_KEY = 'sting_roll';
-  const AUDIO_EXT = /\.(mp3|m4a|aac|wav|aif|aiff|flac|ogg|oga|opus|weba)$/i;
-  function rollOpts() {
-    const d = { stock: true, folder: false, mine: true, min: 2, lenOp: '', len: 30 };
-    try { return Object.assign(d, JSON.parse(localStorage.getItem(ROLL_KEY) || '{}')); } catch (_) { return d; }
-  }
-  const songOf = s => (s.url ? 'url:' + s.url : s.size ? 'size:' + s.size : 'name:' + s.name);
-  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const rollOpts = () => StingRoll.opts(ROLL_KEY), songOf = StingRoll.songOf, pickSong = StingRoll.pick;
+  const rollPool = (o, stock) => StingRoll.pool(o, stock, REMOTE);
   StingPicker.onFolder(() => renderRollPanel());   // (+ sting's folder, chosen there or here)
-  // song → its versions [{kind: 'stock'|'mine'|'folder', len (s as it plays; undefined: probe it), x | e | file}]
-  async function rollPool(o, stock) {
-    const songs = new Map(), add = (song, c) => { if (!songs.has(song)) songs.set(song, []); songs.get(song).push(c); };
-    const mine = o.mine && window.StingLibrary ? StingLibrary.read() : [];
-    for (const e of mine) {
-      if (e.media === 'video' || (e.file && REMOTE)) continue;
-      const base = e.stock ? stock.find(x => x.name === e.stock) : null;
-      if (e.stock && !base) continue;
-      if (e.file && !(await StingLibrary.source(e, stock))) continue;   // (its file isn't on this computer)
-      add(e.file ? 'size:' + e.size : 'url:' + (base ? base.url : e.url), { kind: 'mine', e, len: StingClip.length(e, e.duration != null ? e.duration : base && base.duration) });
-    }
-    const edited = new Set(songs.keys());         // my edits stand in for the tracks they came from
-    if (o.stock) {
-      const hidden = window.StingLibrary ? StingLibrary.hidden(stock, mine) : new Set();
-      stock.forEach((x, i) => {
-        if (hidden.has(i) || x.media === 'video' || edited.has('url:' + x.url)) return;
-        add('url:' + x.url, { kind: 'stock', x, len: StingClip.length(x, x.duration) });
-      });
-    }
-    if (o.folder && !REMOTE && await StingPicker.ensureFolder()) {
-      for (const f of StingPicker.folder().files) {
-        if (!AUDIO_EXT.test(f.path)) continue;
-        let file; try { file = f.file || await f.handle.getFile(); } catch (_) { continue; }
-        if (!edited.has('size:' + file.size)) add('size:' + file.size, { kind: 'folder', file, len: undefined });
-      }
-    }
-    return songs;
-  }
-  const fitsLen = (len, o) => !o.lenOp || (len != null && (o.lenOp === 'max' ? len <= o.len : len >= o.len));
-  async function pickSong(songs, used, o, avoid) {   // a random song not used (nor avoid), in a version that fits
-    for (const song of shuffle([...songs.keys()])) {
-      if (used.has(song) || song === avoid) continue;
-      for (const c of shuffle(songs.get(song).slice())) {
-        if (c.len === undefined && c.file) {           // (a folder file: an AIFF as WAV, only once picked)
-          try { c.file = await StingClip.playable(c.file); } catch (_) { c.len = null; continue; }
-          c.len = await probeDuration(c.file);
-        }
-        if (fitsLen(c.len, o)) return { song, c };
-      }
-    }
-    return null;
-  }
   async function stingFor(id, c, stock) {        // the sting for a version (a file is stored for item id)
     if (c.kind === 'stock') return Object.assign({ src: 'stock', media: 'audio', name: c.x.name, url: c.x.url, duration: c.x.duration }, clipFields(c.x));
     const e = c.e;
@@ -942,7 +892,7 @@
     return !sheetRoll || ((!it.sting || it.sting.rolled) && (n.eff || 0) >= o.min * 60);
   }
   const rollMsg = (text, bad) => { const m = $('roll-msg'); if (m) { m.textContent = text; m.classList.toggle('bad', !!bad); } };
-  const noPool = o => !o.stock && !o.mine && !(o.folder && !REMOTE);
+  const noPool = o => StingRoll.none(o, REMOTE);
   let rolling = false;
   // Picks for the items (ids), then puts them on the sheet as it is by then (an item that changed meanwhile
   // is left alone, its stored file removed) and saves once. → {got, none}
@@ -1031,10 +981,8 @@
     $('roll-folderpick').textContent = name ? 'Another…' : 'Choose…';
   }
   function saveRollOpts() {
-    const n = (v, lo, hi, d) => { const x = Number(v); return Number.isFinite(x) && x >= lo && x <= hi ? x : d; };
-    const o = { stock: $('roll-stock').checked, mine: $('roll-mine').checked, folder: $('roll-folder').checked, min: n($('roll-min').value, 0, 600, 2),
-      lenOp: ['max', 'min'].includes($('roll-lenop').value) ? $('roll-lenop').value : '', len: Math.round(n($('roll-len').value, 1, 3600, 30)) };
-    try { localStorage.setItem(ROLL_KEY, JSON.stringify(o)); } catch (_) { /* private mode */ }
+    const o = StingRoll.saveOpts(ROLL_KEY, { stock: $('roll-stock').checked, mine: $('roll-mine').checked, folder: $('roll-folder').checked,
+      min: $('roll-min').value, lenOp: $('roll-lenop').value, len: $('roll-len').value });
     $('roll-len').disabled = !o.lenOp;
   }
   if ($('rollpanel')) {

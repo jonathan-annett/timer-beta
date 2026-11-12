@@ -23,8 +23,9 @@
  *   stock() → Promise<[{name, url, media, duration, ...clip, hideOriginal?}]>   the site's list
  *   clipFields(x), partFields(x), idOf(x)   a clip's fields (with its level / without), the same track cut
  *                                           the same way
+ *   choiceOf(e, list) → Promise<choice | null>   a sting library clip as a choice (list: stock())
  *   folder() / chooseFolder() / savedFolder() / ensureFolder() / onFolder(fn)   the Custom file folder
- *                                           (the run sheet editor's Random stings use it too)
+ *                                           (random stings use it too: sting-roll.js)
  *   openLibrary() → Promise (resolves when it's closed)
  * MIT Licensed
  */
@@ -437,5 +438,5 @@ var StingPicker = (function () {
     });
   }
 
-  return { open, setup, stock, clipFields, partFields, idOf, CLIP_KEYS, folder: () => folder, chooseFolder, savedFolder, ensureFolder, onFolder: fn => folderFns.add(fn), openLibrary };
+  return { open, setup, stock, clipFields, partFields, idOf, CLIP_KEYS, choiceOf, folder: () => folder, chooseFolder, savedFolder, ensureFolder, onFolder: fn => folderFns.add(fn), openLibrary };
 })();

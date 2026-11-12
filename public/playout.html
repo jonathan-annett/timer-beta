@@ -68,6 +68,16 @@
     form.addcue select, form.addcue input[type=text] { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 3px 6px; }
     form.addcue input[type=text] { width: 5.5em; }
 
+    /* Random stings (under the run sheet) */
+    #rollpanel { color: var(--text); font-size: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+    #rollpanel summary { color: var(--dim); cursor: pointer; }
+    #rollpanel > * + * { margin-top: 6px; }
+    #rollpanel input[type=checkbox] { width: auto; padding: 0; }   /* (not the pairing server box's: details input) */
+    #rollpanel input[type=number] { width: 4.5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    #rollpanel select { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    #rollpanel input:disabled { opacity: .4; }
+    #roll-msg.bad { color: var(--warn); }
+
     /* Options → Levels: one row per output */
     .lvsec { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
     #levels { margin-top: 8px; }
@@ -132,6 +142,17 @@
         <div class="row" style="justify-content:space-between"><b>Run sheet</b><span class="hint" id="rshint"></span></div>
         <ul id="items"></ul>
         <p id="orphans" class="hint" hidden><span id="orphantext"></span> <button id="orphanx" class="small">Remove them</button></p>
+        <details id="rollpanel">
+          <summary>Random stings</summary>
+          <p class="hint">A walk-up sting at the start of each item long enough to be a speaker, picked at random, none used twice, and copied to this computer like any cue. Items with a start cue of your own are left alone; 🎲 on an item picks another.</p>
+          <div><label class="check"><input type="checkbox" id="roll-stock"> Stock stings</label></div>
+          <div class="row"><label class="check"><input type="checkbox" id="roll-folder"> The folder <span id="roll-foldername"></span></label><button type="button" id="roll-folderpick" class="small">Choose…</button></div>
+          <div><label class="check"><input type="checkbox" id="roll-mine"> My clips <span class="hint">(your edits stand in for the tracks they came from)</span></label></div>
+          <div class="row"><label>Items of at least <input type="number" id="roll-min" min="0" max="600" step="0.5"> min</label></div>
+          <div class="row"><label>Stings <select id="roll-lenop"><option value="">of any length</option><option value="max">no longer than</option><option value="min">at least</option></select> <input type="number" id="roll-len" min="1" max="3600" step="1"> s</label></div>
+          <div class="row"><button id="roll-all" class="small primary">🎲 Roll stings</button><button id="roll-clear" class="small">Remove rolled stings</button></div>
+          <p class="hint" id="roll-msg"></p>
+        </details>
         <input type="file" id="cuefile" accept="audio/*,video/*" hidden>
       </div>
       <div class="card">
@@ -163,7 +184,8 @@
   <script src="audio-out.js?v=e41c465e" data-role="both"></script>
   <script src="sting-clip.js?v=8ab12ac7"></script>
   <script src="sting-library.js?v=8c93912b"></script>
-  <script src="sting-picker.js?v=9de13565"></script>
-  <script src="playout.js?v=3b70148c"></script>
+  <script src="sting-picker.js?v=8b880b60"></script>
+  <script src="sting-roll.js?v=32454fa7"></script>
+  <script src="playout.js?v=a45bd845"></script>
 </body>
 </html>
