@@ -199,7 +199,13 @@ with sync_playwright() as p:
     check("… the status line names it as this computer does (✎)", po.text_content("#now").startswith("Now: Short one ·"), po.text_content("#now"))
     # the Stream Deck soundboard (playout_deck.py has the rest), following the timer: it shows, the timer starts
     df = po.evaluate("window.__playoutDeck.faces('mk2')")
-    check("Follow on: the deck shows the live item, named as here", "Short one | NOW" in df, df)
+    import re as _re
+    bg = po.evaluate("window.__playoutDeck.bgs('mk2')"); ci = [x.split(" | ")[0] for x in df].index("Short one") if any(x.startswith("Short one") for x in df) else -1
+    check("Follow on: the deck shows the live item (blue), named as here, with when it started", ci >= 0 and bg[ci] == "#0b3d5c" and _re.match(r"Short one \| \d\d:\d\d$", df[ci]), [df, bg])
+    nx = [x for x in df if x.startswith("Close")]
+    check("… the next item's key: its planned start on top", nx and _re.match(r"Close \| (≈ )?\d\d:\d\d$", nx[0]), nx)
+    st = po.evaluate("[...document.querySelectorAll('#items > li .istart')].map(e => e.textContent)")
+    check("… and the run sheet's rows: their starts", len(st) == 4 and all(_re.match(r"(≈ )?\d\d:\d\d$", t) for t in st), st)
     dk = po.evaluate("window.__playoutDeck.slots('mk2').indexOf('d')"); was = playing()
     po.evaluate("i => { window.__playoutDeck.screen(i, true); window.__playoutDeck.screen(i, false); }", dk); po.wait_for_timeout(300)
     check("… a press on another item doesn't start it (the timer does)", po.evaluate("window.__playout.local()") is None and playing() == was, [po.evaluate("window.__playout.local()"), playing()])

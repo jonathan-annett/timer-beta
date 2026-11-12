@@ -72,9 +72,9 @@ with sync_playwright() as p:
     key(0, "pointerdown"); key(0, "pointerup"); po.wait_for_timeout(700)
     check("a press on the phone starts the item", (local() or {}).get("item") == "demo-1" and playing() == ["c1"], [local(), playing()])
     ph.wait_for_timeout(500)
-    check("… the phone's key says so", "left" in ph.evaluate("window.__pphone.faces()[0]"), ph.evaluate("window.__pphone.faces()[0]"))
+    check("… the phone's key says so (amber: started there)", ph.evaluate("window.__pphone.bgs()[0]") == "#7a5c00", ph.evaluate("window.__pphone.bgs()[0]"))
     key(0, "pointerdown"); po.wait_for_timeout(700)
-    check("held on the phone: fading", playing() == ["c1"] and "fading" in ph.evaluate("window.__pphone.faces()[0]"), [playing(), ph.evaluate("window.__pphone.faces()[0]")])
+    check("held on the phone: fading", playing() == ["c1"] and ph.evaluate("window.__pphone.bgs()[0]") == "#9a5200", [playing(), ph.evaluate("window.__pphone.bgs()[0]")])
     key(0, "pointerup"); po.wait_for_timeout(400)
     check("… let go: stopped", playing() == [] and local() is None)
 

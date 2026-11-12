@@ -58,7 +58,7 @@ with sync_playwright() as p:
     c.add_init_script(INIT); c.route("**/*", h)
     po = c.new_page(); po.on("pageerror", lambda e: errs.append("playout: " + str(e)))
     dialogs = []
-    po.on("dialog", lambda d: (dialogs.append(d.message), d.accept()))
+    po.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss() if "OK to reuse" in d.message else d.accept()))   # (running out: no to reusing, here; sting_style_search.py says yes)
     po.goto(BASE + "playout.html?demo"); po.wait_for_timeout(1200)
     ids = ["demo-%d" % i for i in range(1, 11)]
     cues = lambda: po.evaluate("window.__playout.cues()")
@@ -148,7 +148,9 @@ with sync_playwright() as p:
     # The length filter (as it plays) and the minimum item length
     po.click("#roll-clear"); po.wait_for_timeout(500)   # (from none: what a roll with the filter picks is then exact)
     po.select_option("#roll-lenop", "max"); po.fill("#roll-len", "15"); po.dispatch_event("#roll-len", "change")
+    dialogs.clear()
     msg = roll()
+    check("running out: it asks whether to reuse (no, here)", any("OK to reuse" in d for d in dialogs), dialogs)
     lens = po.evaluate("() => Object.values(window.__playout.cues()).flat().filter(c => c.rolled).map(c => StingClip.length(c, c.duration))")
     short = {"url:" + U("s2"): 4, "url:" + U("s6"): 8, "url:" + U("s8"): 10, "url:" + U("s7"): 15}   # (as they play: my clip of S2, the site's cut of S6)
     mine_ = {x.get("song") for l in cues().values() for x in l if not x.get("rolled")}       # (S1, and whatever ✂ made demo-5's own)

@@ -94,7 +94,8 @@ with sync_playwright() as p:
     # a press starts the item (Follow is off in the demo)
     key(0, 1); key(0, 0); po.wait_for_timeout(500)
     check("a press starts its item (▶ Start item): its cue plays", (local() or {}).get("item") == "demo-1" and playing() == ["c1"], [local(), playing()])
-    check("… the key says so", "left" in po.evaluate("window.__playoutDeck.faces('mk2')[0]"), po.evaluate("window.__playoutDeck.faces('mk2')[0]"))
+    check("… the key says so (amber: started here)", po.evaluate("window.__playoutDeck.bgs('mk2')[0]") == "#7a5c00", po.evaluate("window.__playoutDeck.bgs('mk2')[0]"))
+    check("… its length at the bottom, no start time in the demo (no timer)", po.evaluate("window.__playoutDeck.face('mk2', 0, 0).rs") == {"cap": "", "body": names[0], "foot": "20:00"}, po.evaluate("window.__playoutDeck.face('mk2', 0, 0).rs"))
     # a tap on a playing item stops it
     key(0, 1); po.wait_for_timeout(80); key(0, 0); po.wait_for_timeout(300)
     check("a tap on it: stopped (and the item run ended)", playing() == [] and local() is None, [playing(), local()])
@@ -105,7 +106,7 @@ with sync_playwright() as p:
     key(0, 1); po.wait_for_timeout(1000)
     g1 = po.evaluate("window.__playout.gain('c1')")
     check("held: still playing after 1 s, fading", playing() == ["c1"] and g1 is not None and g1 < g0 * 0.8, [playing(), g0, g1])
-    check("… the key says fading", "fading" in po.evaluate("window.__playoutDeck.faces('mk2')[0]"))
+    check("… the key says fading (orange)", po.evaluate("window.__playoutDeck.bgs('mk2')[0]") == "#9a5200", po.evaluate("window.__playoutDeck.bgs('mk2')[0]"))
     po.wait_for_timeout(1500)
     check("… held past the fade: gone", playing() == [], playing())
     key(0, 0); po.wait_for_timeout(200)

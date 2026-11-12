@@ -21,6 +21,14 @@
  *   StingStyles.nameOf(i)                               "Hard Rock", "Disco (Funk / Soul)" (the genre when a name is under two)
  *   StingStyles.valid(list)                             the list checked ([[index, score], …], ≤ 20), or null
  *   StingStyles.CREDIT                                  the model's credit line
+ * Chips (the owner, 13 Nov 2026: pick styles from what there is, several at once, rather than typing them):
+ * keys are a genre ("Rock": any of its styles) or a style ("Rock---Hard Rock"); a sting is in them when it's in
+ * any of them (at least FLOOR).
+ *   StingStyles.fitsAny(list, keys), bestAny(list, keys) → {i, score} | null
+ *   StingStyles.chips(box, lists, keys, onChange)       every genre and style the stings (their styles lists)
+ *                                                       have, with how many, each genre followed by its styles,
+ *                                                       most stings first; tapping one turns it on or off;
+ *                                                       onChange(keys). → {set(lists, keys)}
  * Scores are independent sigmoids, not shares of 1: a clear match is typically 0.3–0.7, anything over
  * about 0.1 a plausible tag (MTG's guidance; to tune on the stings).
  *
@@ -93,11 +101,75 @@ var StingStyles = (function () {
   const top = list => (Array.isArray(list) && list.length && list[0][1] >= FLOOR ? list[0][0] : -1);
   const TWICE = (() => { const n = new Map(); STYLES.forEach(s => n.set(s.style, (n.get(s.style) || 0) + 1)); return n; })();
   const nameOf = i => (STYLES[i] ? STYLES[i].style + (TWICE.get(STYLES[i].style) > 1 ? ' (' + STYLES[i].genre + ')' : '') : '');
+  // ─── Chips: genres and styles to choose from ───
+  const GENRE_OF = STYLES.map(s => s.genre), INDEX = new Map(LABELS.map((l, i) => [l, i]));
+  const isKey = k => typeof k === 'string' && (INDEX.has(k) || GENRE_OF.includes(k));
+  function bestAny(list, keys) {                   // its best score among the keys (a genre: its best style)
+    if (!Array.isArray(list) || !keys || !keys.length) return null;
+    let b = null;
+    for (const k of keys) for (const [i, s] of list) {
+      if (!STYLES[i] || (INDEX.has(k) ? INDEX.get(k) !== i : GENRE_OF[i] !== k)) continue;
+      if (!b || s > b.score) b = { i, score: s };
+    }
+    return b;
+  }
+  const fitsAny = (list, keys) => { const b = bestAny(list, keys); return !!b && b.score >= FLOOR; };
+  function counts(lists) {                         // genre → {n, styles: Map(label → n)}: a sting counted once in each
+    const g = new Map();
+    for (const list of lists) {
+      const genres = new Set();
+      for (const [i, s] of list || []) {
+        if (!STYLES[i] || s < FLOOR) continue;
+        const ge = GENRE_OF[i];
+        if (!g.has(ge)) g.set(ge, { n: 0, styles: new Map() });
+        const st = g.get(ge).styles; st.set(LABELS[i], (st.get(LABELS[i]) || 0) + 1);
+        genres.add(ge);
+      }
+      for (const ge of genres) g.get(ge).n++;
+    }
+    return g;
+  }
+  let chipCss = false;
+  function chips(box, lists, keys, onChange) {
+    if (!chipCss) {
+      chipCss = true;
+      const st = document.createElement('style');
+      st.textContent = `.ss-chips { display: flex; flex-direction: column; gap: 0.35rem; max-height: 16rem; overflow: auto; padding: 0.15rem 0; }
+.ss-group { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.ss-chips button.ss-chip { font: inherit; font-size: 0.85em; line-height: 1.2; padding: 0.15rem 0.55rem; border-radius: 999px; border: 1px solid #3a3a3a; background: #1a1a1a; color: #ccc; cursor: pointer; margin: 0; width: auto; }
+.ss-chips button.ss-chip.ss-genre { font-weight: bold; color: #eee; }
+.ss-chips button.ss-chip i { font-style: normal; opacity: 0.6; }
+.ss-chips button.ss-chip.on { background: #0b3d5c; border-color: #4aa8ff; color: #fff; }
+.ss-chips button.ss-chip.on i { opacity: 0.85; }
+.ss-chips .ss-none { color: #888; font-size: 0.85em; }`;
+      document.head.appendChild(st);
+    }
+    let on = new Set((keys || []).filter(isKey)), last = lists || [];
+    function draw() {
+      const g = [...counts(last).entries()].sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0]));
+      const chip = (k, label, n, genre) => `<button type="button" class="ss-chip${genre ? ' ss-genre' : ''}${on.has(k) ? ' on' : ''}" data-k="${esc(k)}" aria-pressed="${on.has(k)}"${genre ? ` title="Any ${esc(label)} style"` : ''}>${esc(label)} <i>(${n})</i></button>`;
+      box.innerHTML = '<div class="ss-chips">' + (g.length ? g.map(([ge, v]) => '<div class="ss-group">' + chip(ge, ge, v.n, true) +
+        [...v.styles.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([l, n]) => chip(l, l.split('---')[1], n)).join('') + '</div>').join('')
+        : '<span class="ss-none">No styles yet: the stings here haven\u2019t been listened to.</span>') + '</div>';
+    }
+    box.addEventListener('click', e => {
+      const b = e.target.closest('button.ss-chip');
+      if (!b) return;
+      b.blur();
+      const k = b.dataset.k;
+      if (on.has(k)) on.delete(k); else on.add(k);
+      draw();
+      if (onChange) onChange([...on]);
+    });
+    draw();
+    return { set(lists2, keys2) { if (lists2) last = lists2; if (keys2) on = new Set(keys2.filter(isKey)); draw(); }, keys: () => [...on] };
+  }
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const valid = list => (Array.isArray(list) ? list.filter(p => Array.isArray(p) && Number.isInteger(p[0]) && p[0] >= 0 && p[0] < 400 && typeof p[1] === 'number' && isFinite(p[1]))
     .slice(0, 20).sort((a, b) => b[1] - a[1]) : null);
   const compact = (scores, n) => ranked(scores, n || 20).map(i => [i, Math.round(scores[i] * 1000) / 1000]);
   function expand(list) { const s = new Float32Array(400); for (const [i, v] of list || []) if (i >= 0 && i < 400) s[i] = v; return s; }
 
-  return { LABELS, STYLES, MODEL, THRESHOLD, FLOOR, CREDIT, analyse, ranked, tags, match, compact, expand, best, fits, top, nameOf, valid,
+  return { LABELS, STYLES, MODEL, THRESHOLD, FLOOR, CREDIT, analyse, ranked, tags, match, compact, expand, best, fits, top, nameOf, valid, fitsAny, bestAny, chips, isKey,
     get modelUrl() { return modelUrl; }, set modelUrl(u) { modelUrl = new URL(u, location.href).href; } };
 })();

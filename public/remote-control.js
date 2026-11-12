@@ -634,9 +634,10 @@
     const sheet = parseOr(localStorage.getItem('runsheet'), { items: [] });
     const st = parseOr(localStorage.getItem('runsheet_state'), {});
     const norm = window.RunsheetCore ? RunsheetCore.normalise(sheet) : { items: [] };
+    const tm = window.runsheet && window.runsheet.times ? window.runsheet.times() : {};   // its start: planned s, expected x, actual a (ms)
     const items = norm.items.filter(it => !it.hidden).map(it => it.isEnd
       ? { id: it.id, n: String(it.name || '').slice(0, 120), e: 1 }
-      : { id: it.id, n: String(it.name || '').slice(0, 120), d: it.eff });
+      : Object.assign({ id: it.id, n: String(it.name || '').slice(0, 120), d: it.eff }, tm[it.id]));
     const log = Array.isArray(st.log) ? st.log : [], last = log[log.length - 1];
     const cur = st.active && !st.finished && typeof st.currentId === 'string' ? st.currentId : null;
     return { items, cur, run: log.length, at: cur && last && last.id === cur ? last.actual : null, on: !!st.active, fin: !!st.finished };

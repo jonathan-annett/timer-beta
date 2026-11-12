@@ -895,25 +895,32 @@
   const noPool = o => StingRoll.none(o, REMOTE);
   let rolling = false;
   // Picks for the items (ids), then puts them on the sheet as it is by then (an item that changed meanwhile
-  // is left alone, its stored file removed) and saves once. → {got, none}
-  async function rollItems(ids, o, sheetRoll) {
+  // is left alone, its stored file removed) and saves once. → {got, none, missing: the ids left without one}
+  // reuse (the operator said yes when they ran out: the owner, 13 Nov 2026): songs already on the sheet, the
+  // least used first, not the one the item before or after it has (StingRoll.reuse)
+  async function rollItems(ids, o, sheetRoll, reuse) {
     const stock = await stockStings(), songs = await rollPool(o, stock);
     const targets = new Set(ids);
     const used = new Set(sheet.items.filter(it => it.sting && !targets.has(it.id)).map(it => songOf(it.sting)));
-    const picks = [];
+    const shown = sheet.items.filter(it => !it.hidden), counts = new Map(), songAt = new Map();
+    for (const it of shown) if (it.sting) { const s = songOf(it.sting); songAt.set(it.id, s); counts.set(s, (counts.get(s) || 0) + 1); }
+    const near = id => { const k = shown.findIndex(x => x.id === id), s = new Set(); for (const j of [k - 1, k, k + 1]) if (shown[j] && songAt.get(shown[j].id)) s.add(songAt.get(shown[j].id)); return s; };
+    const picks = [], missing = [];
     let none = 0;
     for (const id of ids) {
       const it = sheet.items.find(x => x.id === id), was = it && it.sting ? songOf(it.sting) : null;
       // Another song if there is one; rolling the sheet, its own again rather than none (🎲 on a row: only another)
-      let p = await pickSong(songs, used, o, was);
-      if (!p && was && sheetRoll) p = await pickSong(songs, used, o, null);
+      let p;
+      if (reuse) p = await StingRoll.reuse(songs, counts, o, near(id));
+      else { p = await pickSong(songs, used, o, was); if (!p && was && sheetRoll) p = await pickSong(songs, used, o, null); }
       if (!p) {
         none++;
         if (was && !used.has(was)) used.add(was);  // it keeps the one it has
-        else if (was && sheetRoll) picks.push([id, null]);   // (its song went to another item: it can't keep it too)
+        else { missing.push(id); if (was && sheetRoll) picks.push([id, null]); }   // (its song went to another item: it can't keep it too)
         continue;
       }
       used.add(p.song);
+      if (reuse) { counts.set(p.song, (counts.get(p.song) || 0) + 1); songAt.set(id, p.song); }
       try { const st = await stingFor(id, p.c, stock); if (st) picks.push([id, Object.assign(st, { rolled: true })]); else none++; }
       catch (err) { console.warn('Random stings: couldn’t keep the file', err); none++; }
     }
@@ -927,8 +934,12 @@
       else if (st.key && window.videoStore) window.videoStore.remove(st.key).catch(() => {});
     }
     if (changed) saveSheet();
-    return { got, none };
+    return { got, none, missing };
   }
+  // Ran out: ask whether to reuse stings already chosen (the owner, 13 Nov 2026)
+  const askReuse = (n, o) => ask(n ? `${n} item${n === 1 ? '' : 's'} didn’t get a sting: there aren’t enough stings ${esc(StingRoll.which(o))}for every item. OK to reuse stings already chosen for other items? (The least used first, and never the same as the item just before or after, if there’s any other.)`
+    : `No other sting to pick: every one ${esc(StingRoll.which(o))}is already on the run sheet. OK to reuse one already chosen for another item? (The least used, and not the same as the item just before or after, if there’s any other.)`,
+    [{ label: n ? 'Reuse them' : 'Reuse one', value: true, kind: 'primary' }, { label: 'No', value: false, cancel: true }]);
   async function rollAll() {
     if (!canEdit) return refused();
     if (rolling || scaling) return;
@@ -939,9 +950,11 @@
     rolling = true; rollMsg('Rolling…');
     try {
       const r = await rollItems(ids, o, true);
+      const again = r.missing.length && await askReuse(r.missing.length, o) ? await rollItems(r.missing, o, true, true) : null;
       const kept = sheet.items.filter((it, i) => it.sting && !it.sting.rolled && !it.hidden && rollable(i, o, false)).length;
-      rollMsg(`${r.got} item${r.got === 1 ? '' : 's'} got a sting at random` + (kept ? `; ${kept} kept the one chosen for ${kept === 1 ? 'it' : 'them'}` : '') +
-        (r.none ? `; ${r.none} didn’t: not enough stings ${StingRoll.which(o)}left unused.` : '.'), r.none > 0);
+      const got = r.got + (again ? again.got : 0), none = again ? again.none : r.none;
+      rollMsg(`${got} item${got === 1 ? '' : 's'} got a sting at random` + (again && again.got ? ` (${again.got} reusing one already chosen)` : '') + (kept ? `; ${kept} kept the one chosen for ${kept === 1 ? 'it' : 'them'}` : '') +
+        (none ? `; ${none} didn’t: not enough stings ${StingRoll.which(o)}${again ? 'at all' : 'left unused'}.` : '.'), none > 0);
     } finally { rolling = false; renderAll(); }
   }
   async function rollOne(id) {
@@ -953,7 +966,10 @@
     rolling = true; busy.add(id); renderAll();
     try {
       const r = await rollItems([id], o, false);
-      if (!r.got) ask(`No ${sheet.items[i] && sheet.items[i].sting ? 'other ' : ''}sting to pick: every one ${StingRoll.which(o)}is already on the run sheet.`, [{ label: 'OK', value: true, kind: 'primary', cancel: true }]);
+      if (!r.got && await askReuse(0, o)) {
+        const again = await rollItems([id], o, false, true);
+        if (!again.got) ask(`No sting ${esc(StingRoll.which(o))}to pick at all.`, [{ label: 'OK', value: true, kind: 'primary', cancel: true }]);
+      }
     } finally { rolling = false; busy.delete(id); renderAll(); }
   }
   async function clearRolled() {
@@ -980,28 +996,34 @@
     $('roll-folderpick').hidden = REMOTE;
     $('roll-folderpick').textContent = name ? 'Another…' : 'Choose…';
     $('roll-stylerow').hidden = !StingRoll.styled();
-    if (document.activeElement !== $('roll-style')) $('roll-style').value = o.style;
-    rollStyleHint();
+    if (StingRoll.styled()) renderRollChips(o);
   }
   function saveRollOpts() {
     const o = StingRoll.saveOpts(ROLL_KEY, { stock: $('roll-stock').checked, mine: $('roll-mine').checked, folder: $('roll-folder').checked,
-      min: $('roll-min').value, lenOp: $('roll-lenop').value, len: $('roll-len').value, style: $('roll-style').value });
+      min: $('roll-min').value, lenOp: $('roll-lenop').value, len: $('roll-len').value, styles: rollChips ? rollChips.keys() : rollOpts().styles });
     $('roll-len').disabled = !o.lenOp;
     rollStyleHint();
   }
-  // Random stings' style (a trial: sting-styles.js): how many stock stings are in it, as it's typed
+  // Random stings' styles (a trial: sting-styles.js): chips of the genres and styles the stock stings have,
+  // with how many (the owner, 13 Nov 2026: choose from what there is, several at once); the hint says how many
+  // stock stings are in the ones lit
+  let rollChips = null;
+  async function renderRollChips(o) {
+    const lists = StingRoll.lists(await stockStings());
+    if (!rollChips) rollChips = StingStyles.chips($('roll-chips'), lists, o.styles, () => saveRollOpts());
+    else rollChips.set(lists, o.styles);
+    rollStyleHint();
+  }
   async function rollStyleHint() {
     if (!StingRoll.styled()) return;
-    const q = $('roll-style').value.trim(), o = rollOpts();
-    if (!q) { $('roll-stylehint').textContent = ''; return; }
-    const n = StingRoll.inStyle(await stockStings(), q);
-    if ($('roll-style').value.trim() !== q) return;    // (typed on meanwhile)
-    $('roll-stylehint').textContent = (n ? n + ' stock sting' + (n === 1 ? '' : 's') + ' in it' : 'no stock sting in it: try a broader word (rock, house, pop, jazz)') +
-      ((o.folder && !REMOTE) || o.mine ? '; files of your own aren’t tagged yet, so they’re left out' : '');
+    const o = rollOpts(), keys = o.styles;
+    if (!keys.length) { $('roll-stylehint').textContent = ''; return; }
+    const n = StingRoll.inStyle(await stockStings(), keys);
+    $('roll-stylehint').textContent = `${n} stock sting${n === 1 ? '' : 's'} in ${keys.length === 1 ? 'that style' : 'those styles'}` +
+      (((o.folder && !REMOTE) || o.mine) ? '; files of your own aren’t tagged yet, so they’re left out' : '');
   }
   if ($('rollpanel')) {
-    for (const k of ['roll-stock', 'roll-mine', 'roll-folder', 'roll-min', 'roll-lenop', 'roll-len', 'roll-style']) $(k).addEventListener('change', saveRollOpts);
-    $('roll-style').addEventListener('input', rollStyleHint);
+    for (const k of ['roll-stock', 'roll-mine', 'roll-folder', 'roll-min', 'roll-lenop', 'roll-len']) $(k).addEventListener('change', saveRollOpts);
     $('roll-all').addEventListener('click', e => { e.currentTarget.blur(); rollAll(); });
     $('roll-clear').addEventListener('click', e => { e.currentTarget.blur(); clearRolled(); });
     $('roll-folderpick').addEventListener('click', e => { e.currentTarget.blur(); StingPicker.chooseFolder(); });

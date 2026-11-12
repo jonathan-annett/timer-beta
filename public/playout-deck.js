@@ -36,7 +36,7 @@
  * timer's. One playout tab drives them (Web Lock playout-streamdeck).
  *
  *   PlayoutDeck.create(api) → {changed()}: api = {store, demo, items(), cuesOf(id), title(it), following(),
- *   nowId(), isDone(id), playingIds(id), anyPlaying(), localItem(), localText(), start(id), fadeItem(id, ms) → cue ids,
+ *   nowId(), isDone(id), playingIds(id), anyPlaying(), localItem(), localText(), startText(it), start(id), fadeItem(id, ms) → cue ids,
  *   fadeAll(ms) → cue ids, stopIds(ids), stopAll(), board() (the extra keys' cues), isPlaying(cue id), playCue(id),
  *   fadeCue(id, ms) → ids, addFiles(files) → new cue ids, removeExtra(id), server() (the pairing server)}
  * MIT Licensed
@@ -135,13 +135,14 @@ var PlayoutDeck = (function () {
       const it = items.get(id);
       if (!it) return { bg: '#000', fg: '#000', press: false, slot: true, a: 'empty' };   // nothing (or an item not on the sheet)
       const n = api.cuesOf(id).length, playing = api.playingIds(id).length, here = api.localItem() === id, follow = api.following();
-      let bg = n ? COLOURS.idle : COLOURS.none, cap = n ? (it.d ? mmss(it.d) : '') : 'no cues';
-      if (fading(id, playing > 0)) { bg = COLOURS.fade; cap = 'fading'; }
-      else if (here) { bg = COLOURS.here; cap = api.localText(); }
-      else if (playing) { bg = COLOURS.play; cap = 'playing'; }
-      else if (follow && api.nowId() === id) { bg = COLOURS.now; cap = 'NOW'; }
+      // Its start on top, its name, its length (the owner, 13 Nov 2026); what it's doing is its colour
+      let bg = n ? COLOURS.idle : COLOURS.none;
+      if (fading(id, playing > 0)) bg = COLOURS.fade;
+      else if (here) bg = COLOURS.here;
+      else if (playing) bg = COLOURS.play;
+      else if (follow && api.nowId() === id) bg = COLOURS.now;
       else if (follow && api.isDone(id)) bg = COLOURS.done;
-      return { bg, fg: n ? '#fff' : '#777', rs: { cap, body: api.title(it) || '(no name)', foot: n === 1 ? '1 cue' : n + ' cues' },
+      return { bg, fg: n ? '#fff' : '#777', rs: { cap: api.startText(it), body: api.title(it) || '(no name)', foot: n ? (it.d ? mmss(it.d) : '') : 'no cues' },
         press: here || playing > 0 || (!follow && n > 0), slot: true, a: 'empty' };   // (a: never drawn "off" on the page: its colour says it)
     }
     function extraFace(id, c) {
@@ -646,6 +647,7 @@ var PlayoutDeck = (function () {
     window.__playoutDeck = {
       decks: () => [...decks.values()].map(b => ({ id: b.deck.id, model: b.deck.model, page: b.page })),
       faces: (model, page) => faces(model || screenModel, page || 0).map(f => (f.rs ? f.rs.body : '') + (f.rs && f.rs.cap ? ' | ' + f.rs.cap : '')),
+      bgs: (model, page) => faces(model || screenModel, page || 0).map(f => f.bg),
       face: (model, page, i) => faces(model, page)[i],
       screenPage: () => screen.page,
       slots: model => slots(model || screenModel),

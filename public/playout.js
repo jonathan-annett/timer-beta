@@ -225,7 +225,7 @@
   function onShow(m) {
     const was = show;
     show = {
-      items: Array.isArray(m.items) ? m.items.filter(x => x && typeof x.id === 'string') : [],
+      items: Array.isArray(m.items) ? m.items.filter(x => x && typeof x.id === 'string').map(x => { for (const k of ['s', 'x', 'a']) if (!Number.isFinite(x[k])) delete x[k]; return x; }) : [],   // (s, x, a: its planned, expected, actual start)
       cur: typeof m.cur === 'string' ? m.cur : null, run: Number(m.run) || 0,
       at: Number.isFinite(m.at) ? m.at : null, on: !!m.on, fin: !!m.fin,
       age: Number.isFinite(m.now) && Number.isFinite(m.at) ? m.now - m.at : null,   // how long ago it started, as sent
@@ -237,8 +237,13 @@
       runSeen = key;
       fired.clear();
       prevCond = new Map();
-      // A new item started: its start cues play, unless it started a while before we heard
-      if (key && show.run > was.run && sinceStart() < LATE_START_MS) fireWhere(c => c.trigger === 'start');
+      // A new item started: its start cues play, unless it started a while before we heard; and a To finish
+      // cue longer than the item (from its planned length: the timer's new countdown may not be here yet),
+      // joined partway so it still ends on time
+      if (key && show.run > was.run && sinceStart() < LATE_START_MS) {
+        const it = show.items.find(x => x.id === show.cur), cd = { remain: (it && it.d || 0) * 1000 - sinceStart() };
+        fireWhere(c => c.trigger === 'start' || (c.trigger === 'finish' && it && it.d > 0 && condition(c, cd)), cd);
+      }
       primeTimeCues();
     }
     prepare();
@@ -258,27 +263,32 @@
     if (c.trigger === 'end') return cd.remain <= 0;
     if (c.trigger === 'elapsed') return cd.elapsed >= c.at * 1000;
     if (c.trigger === 'remaining') return cd.remain <= c.at * 1000;
+    if (c.trigger === 'finish') return cd.remain <= (c.at + lenOf(c)) * 1000;   // (in time to end n s before the end)
     return false;
   }
+  // A To finish cue that's late (the audio longer than the time left): how far into it to start, so it still
+  // ends on time (the owner, 13 Nov 2026: as radio backtiming); a moment's lateness (a tick) plays it whole
+  const joinAt = (c, remain) => { if (c.trigger !== 'finish' || !Number.isFinite(remain)) return 0; const off = lenOf(c) - (remain / 1000 - c.at); return off > 0.3 ? off : 0; };
   // What's already true when an item is first seen doesn't play (a reconnect mid-item)
   function primeTimeCues() {
     const cd = countdown();
     for (const c of curCues()) if (c.trigger !== 'start') prevCond.set(c.id, condition(c, cd));
   }
-  function fireWhere(test) {
+  function fireWhere(test, cd) {
     if (!following() || !show.on || show.fin) return;
-    for (const c of curCues()) if (test(c) && !fired.has(c.id)) { fired.add(c.id); play(c); }
+    for (const c of curCues()) if (test(c) && !fired.has(c.id)) { fired.add(c.id); play(c, { offset: joinAt(c, cd ? cd.remain : Infinity) }); }
   }
   function tick() {
     if (local) tickLocal();
     if (place === 'external' && (!ext || ext.closed)) extGone();   // (closed without a pagehide)
+    renderClocks();
     if (!show.cur || show.fin) return renderLocal();
     const cd = countdown();
     for (const c of curCues()) {
       if (c.trigger === 'start') continue;
       const now = condition(c, cd), before = prevCond.get(c.id);
       prevCond.set(c.id, now);
-      if (now && before === false) fireWhere(x => x.id === c.id);
+      if (now && before === false) fireWhere(x => x.id === c.id, cd);
     }
     renderNow(cd);
   }
@@ -314,7 +324,7 @@
       if (c.trigger === 'start' || local.fired.has(c.id)) continue;
       const now = condition(c, cd), before = local.prev.get(c.id);
       local.prev.set(c.id, now);
-      if (now && before !== true) { local.fired.add(c.id); play(c, { run: true, item: local.item }); }   // (true from the press: at once)
+      if (now && before !== true) { local.fired.add(c.id); play(c, { run: true, item: local.item, offset: joinAt(c, cd.remain) }); }   // (true from the press: at once)
     }
     if (list.every(c => local.fired.has(c.id)) && (local.dur == null || cd.remain <= 0)) endLocal();
   }
@@ -372,13 +382,14 @@
     return stop;
   }
   // A voice's level(g) sets its gain while it plays (its output's level changed), not while it fades out
-  function bufferVoice(c, buf, onEnd, out) {
+  function bufferVoice(c, buf, onEnd, out, off) {
     let p = null, fading = false;
     return {
       play() {
-        p = StingClip.play(buf, { role: out });
+        p = StingClip.play(buf, { role: out, offset: off });
         if (p.refused) { p = null; return false; }
         p.gain.gain.value = gainOf(c, out);
+        if (off) { const t = p.gain.context.currentTime; p.gain.gain.setValueAtTime(0, t); p.gain.gain.linearRampToValueAtTime(gainOf(c, out), t + 0.15); }   // (joined partway: no click)
         p.ended.then(onEnd);
         return true;
       },
@@ -390,8 +401,8 @@
     };
   }
   // (over: stopped, or another cue took the element, while play() waited: it then leaves it alone)
-  function elementVoice(c, el, url, onEnd, out) {
-    const r = StingClip.region(c) || {}, start = r.start || 0;
+  function elementVoice(c, el, url, onEnd, out, off) {
+    const r = StingClip.region(c) || {}, start = (r.start || 0) + (off || 0);   // (off: joined partway)
     let stopEnd = null, stopRamp = null, over = false, g = 0;
     el.src = url;
     const finish = () => { if (over) return; over = true; if (stopEnd) stopEnd(); if (stopRamp) stopRamp(); el.pause(); onEnd(); };
@@ -401,13 +412,13 @@
         if (over) return false;
         if (start) el.currentTime = start;
         g = out ? gainOf(c, out) : 0;                  // (no sound: a video's picture only)
-        el.volume = r.fadeIn ? 0 : g;
+        el.volume = r.fadeIn || off ? 0 : g;
         el.onended = finish;
         if (window.AudioOut && out) await AudioOut.media(el, out);
         if (over) return false;
         await el.play();
         if (over) return false;
-        if (r.fadeIn) stopRamp = rampEl(el, g, r.fadeIn, () => { stopRamp = null; el.volume = g; });   // (g: its level now)
+        if (r.fadeIn || off) stopRamp = rampEl(el, g, off ? 150 : r.fadeIn, () => { stopRamp = null; el.volume = g; });   // (g: its level now)
         if (r.end != null) stopEnd = tickEvery(50, () => {   // the end of the part: faded out there
           if (el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { stopEnd(); stopEnd = null; v.fade(r.fadeOut || 30); }
         });
@@ -423,7 +434,7 @@
   }
   const playing = new Map();                           // cue id → {voice, video}
   const vid = $('vid');                                // video cues' element: in the Output box, or the floating window
-  async function play(c, how) {                        // how.run: played by an item started here (how.item)
+  async function play(c, how) {                        // how.run: played by an item started here (how.item); how.offset: s into it (joined partway)
     const out = outKey(c);
     if (out && window.AudioOut && !AudioOut.ok(out)) {   // its output isn't there: an audio cue doesn't play,
       AudioOut.warn(out);                                // a video plays without its sound (audio-out.js mutes it)
@@ -434,14 +445,15 @@
     if (!memory && !blob) { status('The file for “' + c.name + '” isn’t in this browser any more. Add the cue again.', 'warn'); return; }
     stopCue(c.id);
     if (c.media === 'video') for (const [id, q] of playing) if (q.video) stopCue(id);   // one video on the output at a time
-    const p = { video: c.media === 'video', run: !!(how && how.run), item: how && how.item, c, out };
+    const off = how && how.offset > 0 ? how.offset : 0;
+    const p = { video: c.media === 'video', run: !!(how && how.run), item: how && how.item, c, out, endsAt: null };
     const onEnd = () => { if (playing.get(c.id) === p) stopCue(c.id); };
-    p.voice = memory ? bufferVoice(c, memory, onEnd, out) : elementVoice(c, p.video ? vid : new Audio(), URL.createObjectURL(blob), onEnd, out);
+    p.voice = memory ? bufferVoice(c, memory, onEnd, out, off) : elementVoice(c, p.video ? vid : new Audio(), URL.createObjectURL(blob), onEnd, out, off);
     playing.set(c.id, p);
     if (p.video) $('stage').querySelector('.idle').hidden = true;
     render();
     let ok = false;
-    try { ok = await p.voice.play(); }
+    try { ok = await p.voice.play(); if (ok && lenOf(c)) p.endsAt = performance.now() + Math.max(0, lenOf(c) - off) * 1000; }   // (its countdown)
     catch (err) { if (playing.get(c.id) === p) status('The browser didn’t let “' + c.name + '” play: click anywhere on ' + (p.video && place === 'external' ? 'the floating window' : 'this page') + ' once.', 'warn'); }
     if (!ok && playing.get(c.id) === p) stopCue(c.id);   // (not when another cue took over meanwhile: no false alarm)
   }
@@ -580,8 +592,11 @@
   function fadeAll(ms) { for (const p of playing.values()) p.voice.fade(ms); for (const tn of tones.values()) tn.v.fade(ms); }
 
   // ─── Cues (made here, kept here) ──────────────────────────────────────────
-  const TRIGGERS = { start: 'At the start', end: 'When time’s up', elapsed: 'After', remaining: 'With … left' };
-  const whenText = c => c.trigger === 'elapsed' ? 'After ' + mmss(c.at) : c.trigger === 'remaining' ? 'With ' + mmss(c.at) + ' left' : TRIGGERS[c.trigger];
+  // To finish (the owner, 13 Nov 2026): starts when it needs to, to end n s before the item does (0: at its end)
+  const TRIGGERS = { start: 'At the start', end: 'When time’s up', elapsed: 'After', remaining: 'With … left', finish: 'To finish … before the end' };
+  const whenText = c => c.trigger === 'elapsed' ? 'After ' + mmss(c.at) : c.trigger === 'remaining' ? 'With ' + mmss(c.at) + ' left'
+    : c.trigger === 'finish' ? (c.at ? 'To finish ' + mmss(c.at) + ' before the end' : 'To finish at the end') : TRIGGERS[c.trigger];
+  const lenOf = c => StingClip.length(c, c.duration) || 0;   // as it plays (its part, a loop), s
   const noExt = n => String(n || '').replace(/\.[A-Za-z0-9]{1,5}$/, '') || String(n || '');
   const findCue = id => { for (const [item, list] of Object.entries(cues)) { const c = list.find(x => x.id === id); if (c) return { item, c }; } return null; };
   function saveCues() { store.set(CUES, JSON.stringify(cues)); prepare(); }
@@ -684,24 +699,31 @@
   const rollMsg = (text, bad) => { $('roll-msg').textContent = text; $('roll-msg').classList.toggle('bad', !!bad); };
   // Picks for the items (ids) first, then puts them in as things are by then (an item that changed
   // meanwhile is left alone, the file kept for it removed) and saves once. → {got, none}
-  async function rollItems(ids, o, sheetRoll) {
+  // reuse (the operator said yes when they ran out: the owner, 13 Nov 2026): songs already chosen, the least
+  // used first, not the one the item before or after it has (StingRoll.reuse). → {got, none, missing}
+  async function rollItems(ids, o, sheetRoll, reuse) {
     const stock = await StingPicker.stock(), songs = await StingRoll.pool(o, stock);
     const targets = new Set(ids), used = new Set();
     for (const it of show.items) for (const c of cues[it.id] || []) if (c.song && !(c.rolled && targets.has(it.id))) used.add(c.song);
-    const picks = [];
+    const songAt = new Map(), counts = new Map();      // an item's walk-up (its rolled cue, else a start cue of its own), and how many have each
+    for (const it of show.items) { const l = cues[it.id] || [], c = l.find(x => x.rolled && x.song) || l.find(x => x.trigger === 'start' && x.song); if (c) { songAt.set(it.id, c.song); counts.set(c.song, (counts.get(c.song) || 0) + 1); } }
+    const near = id => { const k = show.items.findIndex(x => x.id === id), s = new Set(); for (const j of [k - 1, k, k + 1]) if (show.items[j] && songAt.get(show.items[j].id)) s.add(songAt.get(show.items[j].id)); return s; };
+    const picks = [], missing = [];
     let none = 0, again = 0;
     for (const id of ids) {
       const was = rolledOf(id) ? rolledOf(id).song : null;
       // Another song if there is one; rolling the sheet, its own again rather than none (🎲 on an item: only another)
-      let p = await StingRoll.pick(songs, used, o, was);
-      if (!p && was && sheetRoll) p = await StingRoll.pick(songs, used, o, null);
+      let p;
+      if (reuse) p = await StingRoll.reuse(songs, counts, o, near(id));
+      else { p = await StingRoll.pick(songs, used, o, was); if (!p && was && sheetRoll) p = await StingRoll.pick(songs, used, o, null); }
       if (!p) {
         none++;
         if (was && !used.has(was)) used.add(was);    // it keeps the one it has
-        else if (was && sheetRoll) picks.push([id, null]);   // (its song went to another item: it can't keep it too)
+        else { missing.push(id); if (was && sheetRoll) picks.push([id, null]); }   // (its song went to another item: it can't keep it too)
         continue;
       }
       used.add(p.song);
+      if (reuse) { counts.set(p.song, (counts.get(p.song) || 0) + 1); songAt.set(id, p.song); }
       if (p.song === was) { again++; continue; }      // its own again: the cue it has (no second copy)
       try {
         const ch = await StingRoll.choice(p.c, stock);
@@ -729,8 +751,11 @@
     }
     if (picks.length) { saveCues(); render(); }
     (async () => { for (const c of fresh) if (!Number.isFinite(c.lufs)) await measure(c); })();   // their levels, one at a time
-    return { got: got + again, none };
+    return { got: got + again, none, missing };
   }
+  // Ran out: ask whether to reuse stings already chosen (the owner, 13 Nov 2026)
+  const askReuse = (n, o) => confirm(n ? `${n} item${n === 1 ? '' : 's'} didn’t get a sting: there aren’t enough stings ${StingRoll.which(o)}for every item. OK to reuse stings already chosen for other items? (The least used first, and never the same as the item just before or after, if there’s any other.)`
+    : `No other sting to pick: every one ${StingRoll.which(o)}is already chosen. OK to reuse one already chosen for another item? (The least used, and not the same as the item just before or after, if there’s any other.)`);
   async function rollAll() {
     if (rolling) return;
     const o = StingRoll.opts(ROLL);
@@ -740,9 +765,11 @@
     rolling = true; rollMsg('Rolling…'); render();
     try {
       const r = await rollItems(ids, o, true);
+      const again = r.missing.length && askReuse(r.missing.length, o) ? await rollItems(r.missing, o, true, true) : null;
       const kept = show.items.filter(it => ownStart(it.id) && rollable(it, o, false)).length;
-      rollMsg(`${r.got} item${r.got === 1 ? '' : 's'} got a sting at random` + (kept ? `; ${kept} kept the start cue chosen for ${kept === 1 ? 'it' : 'them'}` : '') +
-        (r.none ? `; ${r.none} didn’t: not enough stings ${StingRoll.which(o)}left unused.` : '.'), r.none > 0);
+      const got = r.got + (again ? again.got : 0), none = again ? again.none : r.none;
+      rollMsg(`${got} item${got === 1 ? '' : 's'} got a sting at random` + (again && again.got ? ` (${again.got} reusing one already chosen)` : '') + (kept ? `; ${kept} kept the start cue chosen for ${kept === 1 ? 'it' : 'them'}` : '') +
+        (none ? `; ${none} didn’t: not enough stings ${StingRoll.which(o)}${again ? 'at all' : 'left unused'}.` : '.'), none > 0);
     } finally { rolling = false; render(); }
   }
   async function rollOne(id) {
@@ -752,8 +779,8 @@
     if (StingRoll.none(o)) { $('rollpanel').open = true; alert('Choose where random stings come from in Random stings (under the run sheet) first.'); return; }
     rolling = true; status('Picking a sting…'); render();
     try {
-      const had = rolledOf(id), r = await rollItems([id], o, false);
-      if (!r.got) alert(`No ${had ? 'other ' : ''}sting to pick: every one ${StingRoll.which(o)}is already on the run sheet.`);
+      const r = await rollItems([id], o, false);
+      if (!r.got && askReuse(0, o) && !(await rollItems([id], o, false, true)).got) alert(`No sting ${StingRoll.which(o)}to pick at all.`);
     } finally { rolling = false; showMode(); render(); }
   }
   function clearRolled() {
@@ -774,26 +801,33 @@
     $('roll-foldername').textContent = name ? '“' + name + '”' : '(none chosen yet)';
     $('roll-folderpick').textContent = name ? 'Another…' : 'Choose…';
     $('roll-stylerow').hidden = !StingRoll.styled();
-    if (document.activeElement !== $('roll-style')) $('roll-style').value = o.style;
+    if (StingRoll.styled()) renderRollChips(o);
+  }
+  // Random stings' styles (a trial: sting-styles.js): chips of the genres and styles the stock stings have,
+  // with how many (the owner, 13 Nov 2026: choose from what there is, several at once); the hint says how many
+  // stock stings are in the ones lit
+  let rollChips = null;
+  async function renderRollChips(o) {
+    const lists = StingRoll.lists(await StingPicker.stock());
+    if (!rollChips) rollChips = StingStyles.chips($('roll-chips'), lists, o.styles, () => saveRollOpts());
+    else rollChips.set(lists, o.styles);
     rollStyleHint();
   }
-  // Random stings' style (a trial: sting-styles.js): how many stock stings are in it, as it's typed
   async function rollStyleHint() {
     if (!StingRoll.styled()) return;
-    const q = $('roll-style').value.trim(), o = StingRoll.opts(ROLL);
-    if (!q) { $('roll-stylehint').textContent = ''; return; }
-    const n = StingRoll.inStyle(await StingPicker.stock(), q);
-    if ($('roll-style').value.trim() !== q) return;    // (typed on meanwhile)
-    $('roll-stylehint').textContent = (n ? n + ' stock sting' + (n === 1 ? '' : 's') + ' in it' : 'no stock sting in it: try a broader word (rock, house, pop, jazz)') +
-      (o.folder || o.mine ? '; files of your own aren’t tagged yet, so they’re left out' : '');
+    const o = StingRoll.opts(ROLL), keys = o.styles;
+    if (!keys.length) { $('roll-stylehint').textContent = ''; return; }
+    const n = StingRoll.inStyle(await StingPicker.stock(), keys);
+    $('roll-stylehint').textContent = `${n} stock sting${n === 1 ? '' : 's'} in ${keys.length === 1 ? 'that style' : 'those styles'}` +
+      ((o.folder || o.mine) ? '; files of your own aren’t tagged yet, so they’re left out' : '');
   }
-  for (const k of ['roll-stock', 'roll-mine', 'roll-folder', 'roll-min', 'roll-lenop', 'roll-len', 'roll-style']) $(k).addEventListener('change', () => {
+  function saveRollOpts() {
     const o = StingRoll.saveOpts(ROLL, { stock: $('roll-stock').checked, mine: $('roll-mine').checked, folder: $('roll-folder').checked,
-      min: $('roll-min').value, lenOp: $('roll-lenop').value, len: $('roll-len').value, style: $('roll-style').value });
+      min: $('roll-min').value, lenOp: $('roll-lenop').value, len: $('roll-len').value, styles: rollChips ? rollChips.keys() : StingRoll.opts(ROLL).styles });
     $('roll-len').disabled = !o.lenOp;
     rollStyleHint();
-  });
-  $('roll-style').addEventListener('input', rollStyleHint);
+  }
+  for (const k of ['roll-stock', 'roll-mine', 'roll-folder', 'roll-min', 'roll-lenop', 'roll-len']) $(k).addEventListener('change', saveRollOpts);
   $('roll-all').addEventListener('click', e => { e.currentTarget.blur(); rollAll(); });
   $('roll-clear').addEventListener('click', e => { e.currentTarget.blur(); clearRolled(); });
   $('roll-folderpick').addEventListener('click', e => { e.currentTarget.blur(); StingPicker.chooseFolder(); });
@@ -951,8 +985,8 @@
         : active.has(it.id) ? `<button class="small runon${flash ? ' superseded' : ''}" data-act="endrun" title="${flash ? 'Still playing after another item started: stop it here, or let it play to its end' : here ? 'Stop this item’s cues, and the rest of them won’t play' : 'Stop this item’s cues still playing'}">■ Stop item</button>`
         : `<button class="small" data-act="run" title="Its cues as if it started now: start cues at once, the others timed from now${it.d ? ' (its length: ' + mmss(it.d) + ')' : ''}">▶ Start item</button>`;
       return `<li data-id="${esc(it.id)}" class="${i === curIdx ? 'now' : curIdx >= 0 && i < curIdx ? 'done' : ''}${here ? ' here' : ''}">` +
-        `<div class="ihead">${nameHtml(it)}${i === curIdx ? '<span class="itag">now</span>' : ''}${here ? '<span class="itag ilocal"></span>' : ''}` +
-        `<span class="idur">${it.e ? 'finish' : it.d ? mmss(it.d) : ''}</span>` +
+        `<div class="ihead">${(st => (st ? `<span class="istart${st.late ? ' late' : ''}" title="${it.a != null ? 'Started' : st.late ? 'Expected to start (planned ' + (it.s != null ? clockOf(it.s) : 'no time') + ')' : 'Planned to start'}">${st.t}</span>` : ''))(startOf(it))}${nameHtml(it)}${i === curIdx ? '<span class="itag">now</span>' : ''}${here ? '<span class="itag ilocal"></span>' : ''}` +
+        `<span class="iclock" title="When its audio ends (from its start; counting down while it runs)"></span><span class="idur">${it.e ? 'finish' : it.d ? mmss(it.d) : ''}</span>` +
         `<button class="small" data-act="name" title="Your own text for this item, on this computer: replace its name, or add notes">✎</button>${runBtn}` +
         (rollable(it, ro, false) ? `<button class="small" data-act="roll"${rolling ? ' disabled' : ''} title="${rolledOf(it.id) ? 'Another walk-up sting at random (when and where it plays stay)' : 'A walk-up sting at random, at its start (Random stings, under the run sheet, says from where)'}">🎲</button>` : '') +
         `${it.e ? '' : '<button class="small" data-act="add">+ cue</button>'}</div>` + notesHtml(it) +
@@ -966,6 +1000,60 @@
     $('boardlist').innerHTML = extra.length ? `<li data-id="${BOARD}"><div class="ihead"><span class="iname">Extra keys</span><span class="hint">not on the run sheet: they play when their key is pressed</span></div>` +
       '<ul class="cues">' + extra.map(c => cueRow(c, { board: true })).join('') + '</ul></li>' : '';
     renderNow(countdown());
+    renderClocks();
+  }
+  // An item's start, for its row and its key (the owner, 13 Nov 2026): when it started, else when it's expected
+  // (≈, from the timer: only when that isn't the plan), else planned; none for a sheet without times yet
+  const clockOf = ms => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+  const startOf = it => (it.a != null ? { t: clockOf(it.a) } : it.x != null ? { t: '≈ ' + clockOf(it.x), late: it.s == null || it.x > it.s } : it.s != null ? { t: clockOf(it.s) } : null);
+
+  // ─── How long its audio has to go (the owner, 13 Nov 2026) ───
+  // A cue: when it ends, from its item's start. Before the item runs, as planned (At the start: its length;
+  // After n: n + its length; With n left: the item's length − n + its length; When time's up: the item's length
+  // + its length; To finish n before the end: the item's length − n); while it runs, counting down (still to
+  // come: until it starts, plus its length; playing: what's left of it). An item: its last cue's. The box top
+  // right (#bigclock, out of the scrolling): what the audio playing (and its items' still to come) has left,
+  // the one that ends last.
+  function runOf(itemId) {                             // the countdown an item's cues run by now: started here, or the timer's
+    if (local && local.item === itemId) return { cd: localCd(), done: c => local.fired.has(c.id) };
+    if (following() && show.on && !show.fin && show.cur === itemId) return { cd: countdown(), done: c => fired.has(c.id) };
+    return null;
+  }
+  function cueLeft(c, it, run) {                       // s, or null (nothing to count: played, or no length known)
+    const p = playing.get(c.id), len = lenOf(c), d = (it && it.d) || 0;
+    if (p) return p.endsAt == null ? null : Math.max(0, (p.endsAt - performance.now()) / 1000);
+    if (!len) return null;
+    if (!run) return c.trigger === 'start' ? len : c.trigger === 'elapsed' ? c.at + len : !d ? null
+      : c.trigger === 'remaining' ? d - c.at + len : c.trigger === 'end' ? d + len : c.trigger === 'finish' ? d - c.at : null;
+    if (!run.cd || run.done(c) || c.trigger === 'start') return null;
+    const cd = run.cd, remain = cd.remain / 1000;
+    if (c.trigger === 'elapsed') return Math.max(0, c.at - cd.elapsed / 1000) + len;
+    if (!Number.isFinite(remain)) return null;
+    if (c.trigger === 'remaining') return Math.max(0, remain - c.at) + len;
+    if (c.trigger === 'end') return Math.max(0, remain) + len;
+    if (c.trigger === 'finish') return Math.max(0, remain - c.at);
+    return null;
+  }
+  const clockText = s => (s == null ? '' : '♪ ' + mmss(Math.ceil(s - 1e-6)));
+  function renderClocks() {
+    let big = null;
+    for (const li of document.querySelectorAll('#items > li[data-id], #boardlist > li[data-id]')) {
+      const id = li.dataset.id, it = show.items.find(x => x.id === id), list = cues[id] || [], run = it ? runOf(id) : null;
+      let last = null, live = false;
+      for (const c of list) {
+        const left = cueLeft(c, it, run), on = playing.has(c.id) || (!!run && left != null);
+        const el = li.querySelector(`.cclock[data-clock="${CSS.escape(c.id)}"]`);
+        if (el) { const t = clockText(left); if (el.textContent !== t) el.textContent = t; el.classList.toggle('live', on); }
+        if (left != null && (last == null || left > last)) last = left;
+        if (on) { live = true; if (!big || left > big.left) big = { left, what: it ? titleOf(it) : c.name }; }
+      }
+      const ic = li.querySelector('.iclock');
+      if (ic) { const t = clockText(last); if (ic.textContent !== t) ic.textContent = t; ic.classList.toggle('live', live); }
+    }
+    const box = $('bigclock');
+    if (!box) return;
+    box.hidden = !big;
+    if (big) { const t = clockText(big.left).slice(2); if ($('bc-left').textContent !== t) $('bc-left').textContent = t; if ($('bc-what').textContent !== big.what) $('bc-what').textContent = big.what; }
   }
   // A cue's row: ▶/■, when, its name, length, output, ✎ (when), ✂, ✕. o: {done, locked, flash, board (an extra key: no when)}
   function cueRow(c, o) {
@@ -973,7 +1061,7 @@
     return `<li data-cue="${esc(c.id)}" class="${o.done ? 'fired' : ''}${on ? ' playing' : ''}">` +
       `<button class="small${o.flash && on ? ' superseded' : ''}" data-act="${on ? 'stop' : 'fire'}"${o.locked ? ' disabled' : ''} title="${o.locked ? 'The item started here plays its cues: ■ Stop item stops them (Options: play and stop single cues)' : on ? 'Stop' : 'Play it now (on this computer)'}">${on ? '■' : '▶'}</button>` +
       `<span class="when">${o.board ? 'Its key' : esc(whenText(c))}</span><span class="fname"${c.rolled ? ' title="Picked at random: 🎲 on the item for another; ✂ makes it yours (a roll then leaves it alone)"' : ''}>${c.rolled ? '🎲' : c.media === 'video' ? '🎞' : '🎵'} ${esc(c.name)}</span>` +
-      `<span class="clen">${StingClip.region(c) ? '✂ ' : ''}${lenText(c)}</span>` + outMenu(c) +
+      `<span class="clen">${StingClip.region(c) ? '✂ ' : ''}${lenText(c)}</span><span class="cclock" data-clock="${esc(c.id)}"></span>` + outMenu(c) +
       (o.board ? '' : `<button class="small" data-act="when" title="Change when it plays">✎</button>`) +
       `<button class="small" data-act="edit" title="Choose the part to play, fades, a loop and its level (the file isn’t cut)">✂</button>` +
       `<button class="small" data-act="del" title="${o.board ? 'Remove it (its key is free again)' : 'Remove this cue'}">✕</button></li>`;
@@ -1049,7 +1137,7 @@
     if (host.querySelector(':scope > form.addcue')) return;
     const f = document.createElement('form');
     f.className = 'addcue';
-    const timed = t => t === 'elapsed' || t === 'remaining';
+    const timed = t => t === 'elapsed' || t === 'remaining' || t === 'finish';   // (To finish: empty = at the end)
     f.innerHTML = `<select name="trigger">${Object.entries(TRIGGERS).map(([k, v]) => `<option value="${k}"${k === init.trigger ? ' selected' : ''}>${v}</option>`).join('')}</select>` +
       `<input type="text" name="at" placeholder="m:ss" aria-label="Time" value="${timed(init.trigger) ? mmss(init.at) : ''}">` +
       `<button class="small primary">${esc(label)}</button><button type="button" class="small" data-x>Cancel</button>`;
@@ -1118,6 +1206,7 @@
     items: () => show.items.filter(it => !it.e),
     cuesOf: id => cues[id] || [],
     title: titleOf,
+    startText: it => { const s = startOf(it); return s ? s.t : ''; },
     following,
     nowId: () => (show.on && !show.fin ? show.cur : null),
     isDone: id => { const i = show.items.findIndex(x => x.id === id), c = show.items.findIndex(x => x.id === show.cur); return c >= 0 && i >= 0 && i < c; },
@@ -1143,6 +1232,8 @@
   // Test hooks: what's playing, and the cues
   window.__playout = { playing: () => [...playing.keys()], cues: () => cues, show: () => show, fired: () => [...fired], ready: () => [...buffers.keys()],
     local: () => local && { item: local.item, fired: [...local.fired] }, names: () => names, active: () => [...activeItems()],
+    clocks: () => ({ big: $('bigclock').hidden ? null : $('bc-left').textContent + ' ' + $('bc-what').textContent, items: Object.fromEntries([...document.querySelectorAll('#items > li[data-id]')].map(li => [li.dataset.id, li.querySelector('.iclock').textContent])),
+      cues: Object.fromEntries([...document.querySelectorAll('.cclock[data-clock]')].map(e => [e.dataset.clock, e.textContent])) }),
     gain: id => { const p = playing.get(id); return p ? p.voice.gain() : null; }, levels: () => levels, target: k => targetOf(k), tones: () => [...tones.keys()],
     video: () => ({ where: vid.ownerDocument === document ? 'here' : 'external', paused: vid.paused, t: vid.currentTime, src: !!vid.getAttribute('src') }) };
 

@@ -6,6 +6,9 @@ OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exis
 # keeps a green ■ Stop item while its cues play, even after its run ends or another item starts. With
 # another started since, it flashes (and its playing cues' ■ with it, enabled whatever the option says);
 # pressing it stops that item only; left alone it plays to its end and goes back to ▶ Start item.
+# To finish … before the end (13 Nov 2026): it starts when it must to end n s before its item does; longer than
+# the item, it starts at once, joined partway, and still ends with it. The audio's clocks: each cue's (when it
+# ends, from its item's start; counting down while it runs), the item's (its last), and the box top right.
 import mimetypes, os, sys
 from playwright.sync_api import sync_playwright
 BASE = "https://timer.sophtwhere.com/beta/"
@@ -18,7 +21,9 @@ SETUP = """async () => {                     // three speakers: a tone each at t
     return new Blob([b], { type: 'audio/wav' }); };
   const cues = {};
   [6, 6, 3].forEach((sec, k) => { cues['demo-' + (k + 1)] = [{ id: 'c' + (k + 1), name: 'Tone ' + (k + 1), media: 'audio', src: 'file', trigger: 'start', at: 0, duration: sec }]; });
-  for (const [k, sec] of [[1, 6], [2, 6], [3, 3]]) await videoStore.put('pocue:c' + k, wav(sec));
+  cues['demo-4'] = [{ id: 'c4', name: 'Outro', media: 'audio', src: 'file', trigger: 'finish', at: 1, duration: 3 }];               // (streamed)
+  cues['demo-5'] = [{ id: 'c5', name: 'Long bed', media: 'audio', src: 'file', trigger: 'finish', at: 0, duration: 6, end: 6 }];     // (a clip: from memory)
+  for (const [k, sec] of [[1, 6], [2, 6], [3, 3], [4, 3], [5, 6]]) await videoStore.put('pocue:c' + k, wav(sec));
   localStorage.playout_demo_cues = JSON.stringify(cues);
 }"""
 def h(route, req):
@@ -84,6 +89,35 @@ with sync_playwright() as p:
     check("… its cue's ■ free (the run's over)", cue(1)["text"] == "■" and not cue(1)["disabled"], cue(1))
     po.click(run(1)); po.wait_for_timeout(300)
     check("… ■ Stop item stops it", playing() == [] and btn(1)["text"].startswith("▶"))
+
+    # To finish … before the end, and the clocks
+    po.click(run(1)); po.wait_for_timeout(300); po.evaluate("window.__playout.cues()"); po.click("#stopall"); po.wait_for_timeout(300)   # (nothing left running)
+    po.evaluate("() => { const s = window.__playout.show(); s.items.find(x => x.id === 'demo-4').d = 6; s.items.find(x => x.id === 'demo-5').d = 4; }")
+    po.wait_for_timeout(300)
+    clocks = lambda: po.evaluate("window.__playout.clocks()")
+    check("To finish in the cue's row: “To finish 0:01 before the end”, “To finish at the end”", po.text_content(item(4) + " .cues .when") == "To finish 0:01 before the end" and po.text_content(item(5) + " .cues .when") == "To finish at the end",
+          [po.text_content(item(4) + " .cues .when"), po.text_content(item(5) + " .cues .when")])
+    cl = clocks()
+    check("before an item runs: when each cue ends, from its start (6 s at the start; 6 − 1 s; the item's 4 s)", cl["cues"]["c1"] == "♪ 0:06" and cl["cues"]["c4"] == "♪ 0:05" and cl["cues"]["c5"] == "♪ 0:04" and cl["items"]["demo-4"] == "♪ 0:05", cl)
+    check("… nothing playing: no box top right", cl["big"] is None, cl["big"])
+    import time as _t
+    po.click(run(4)); t0 = _t.time(); po.wait_for_timeout(1200)
+    cl = clocks()
+    check("▶ Start item, a To finish cue (3 s, 1 s before a 6 s item's end): not yet", playing() == [], playing())
+    check("… its clock counts down to its end, and the box top right shows it", cl["cues"]["c4"] == "♪ 0:04" and (cl["big"] or "").startswith("0:04"), cl)
+    po.wait_for_timeout(1500)
+    check("… from 2 s it plays", playing() == ["c4"], playing())
+    po.screenshot(path=OUTDIR + "/playout_finish.png")
+    check("… the box: the time it has left, and its item", (clocks()["big"] or "").startswith("0:03") and po.evaluate("window.__playout.show().items[3].n") in clocks()["big"], clocks()["big"])
+    po.wait_for_timeout(max(0, int((t0 + 5.6 - _t.time()) * 1000)))   # (5.6 s after the press, however long the screenshot took)
+    check("… and it's over 1 s before the item's end", playing() == [], [playing(), round(_t.time() - t0, 2)])
+    po.click(run(5)); po.wait_for_timeout(600)
+    check("longer than its item (6 s, a 4 s item): it starts at once, joined partway", playing() == ["c5"], playing())
+    check("… its clock: the item's end (≈ 3.4 s)", clocks()["cues"]["c5"] == "♪ 0:04", clocks())
+    po.wait_for_timeout(3800)
+    check("… and it ends with its item, not 2 s later", playing() == [], playing())
+    po.wait_for_timeout(400)
+    check("nothing left to play: the box goes", clocks()["big"] is None, clocks()["big"])
     b.close()
 
 print("errors:", errs)

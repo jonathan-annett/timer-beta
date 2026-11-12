@@ -9,8 +9,9 @@
  * where it goes (and keeps any file).
  * Music styles (a trial, TimerFeatures.styles, with sting-styles.js on the page): stock stings carry their
  * top styles (styles in stock-stings.json; a clip borrows its song's, by url); the Walk-up sting tab shows
- * each one's top style and has a style search (StingStyles.fits: words in "genre style", at least its
- * FLOOR), the matches best first with the style they matched, and the model's credit.
+ * each one's top style and chips of the genres and styles there are (StingStyles.chips: the owner, 13 Nov
+ * 2026, choose rather than type): with some lit, only the stings in any of them (fitsAny), best first, with
+ * the style they matched; and the model's credit.
  *
  * window.StingPicker:
  *   open(opts) → Promise<choice | null>
@@ -188,7 +189,10 @@ var StingPicker = (function () {
 #sting-folderbox .sting-note { margin: 0 0 0.25rem; }
 .sting-check { display: flex; gap: 0.4rem; align-items: center; margin: 0.2rem 0 0.6rem; color: var(--dim, #888); cursor: pointer; }
 .sting-check input { width: auto; flex: none; margin: 0; }
-.sting-dlg input.sting-style { width: 100%; box-sizing: border-box; margin: 0 0 0.4rem; font: inherit; padding: 0.3rem 0.4rem; background: #1a1a1a; color: var(--text, #ddd); border: 1px solid var(--line2, #333); border-radius: 0.3rem; }
+.sting-chiphead { color: var(--dim, #888); font-size: 0.85em; margin: 0 0 0.25rem; }
+.sting-chiphead span { opacity: 0.8; }
+#sting-chips { margin: 0 0 0.5rem; }
+#sting-chips .ss-chips { max-height: 9.5rem; }
 .sting-credit { color: var(--dim, #888); font-size: 0.75em; margin: 0.6rem 0 0; opacity: 0.8; }`;
   function style() {
     if (document.getElementById('sting-picker-css')) return;
@@ -213,7 +217,7 @@ var StingPicker = (function () {
       '<div class="sting-tabs"><button class="sting-tab" data-mode="stock">Walk-up sting</button><button class="sting-tab" data-mode="custom">Custom file</button><button class="sting-tab" data-mode="edited">Edited sting</button></div>' +
       (opts.note ? `<p class="sting-note">${esc(opts.note)}</p>` : '') +
       '<div class="sting-pane" data-mode="stock">' +
-        (styled ? `<input type="search" id="sting-style" class="sting-style" placeholder="Style: rock, disco, jazz…" autocomplete="off" spellcheck="false" aria-label="Style to look for">` : '') +
+        (styled ? `<div class="sting-chiphead">Styles <span>(light some to see only those)</span></div><div id="sting-chips"></div>` : '') +
         (stockSt.length ? `<span class="sting-row"><select id="sting-stock"></select><button type="button" id="sting-prev" title="Hear it">▶</button><button type="button" id="sting-sedit" title="${CLIP_TIP}">✂</button></span>` +
           (opts.users ? `<label class="sting-check"><input type="checkbox" id="sting-hideused"> ${esc(opts.hideLabel || 'Hide stings already in use')}</label>` : '') +
           `<p class="sting-note" id="sting-none" hidden>${esc(opts.noneLeft || 'Every stock sting is already in use.')}</p>` : '<p class="sting-note">This site has no stock stings.</p>') +
@@ -235,16 +239,16 @@ var StingPicker = (function () {
     document.body.appendChild(wrap);
     const $d = sel => wrap.querySelector(sel);
     const sel = $d('#sting-stock'), folderSel = $d('#sting-folder'), mineSel = $d('#sting-mine'), hideBox = $d('#sting-hideused'), prevBtn = $d('#sting-prev'), useBtn = $d('.sting-use');
-    const styleBox = $d('#sting-style');
+    let styleKeys = [];                            // the style chips lit (none: every sting)
     let mode = 'stock';
 
     // the stock list: whole tracks a better clip replaces left out; with a style typed, only the stings in it,
     // best first, each with the style it matched (else each with its top style)
     function fill() {
       if (!sel) return;
-      const keep = sel.value, hide = hideBox && hideBox.checked, q = styleBox ? styleBox.value.trim() : '';
+      const keep = sel.value, hide = hideBox && hideBox.checked, q = styleKeys.length > 0;
       const replaced = window.StingLibrary ? StingLibrary.hidden(stockSt, mine) : new Set();
-      let rows = stockSt.map((x, i) => ({ x, i, b: q ? StingStyles.best(x.styles, q) : null }));
+      let rows = stockSt.map((x, i) => ({ x, i, b: q ? StingStyles.bestAny(x.styles, styleKeys) : null }));
       if (q) rows = rows.filter(r => r.b && r.b.score >= StingStyles.FLOOR).sort((a, b) => b.b.score - a.b.score);
       sel.innerHTML = rows.map(({ x, i, b }) => {
         if (replaced.has(i)) return '';
@@ -255,7 +259,7 @@ var StingPicker = (function () {
       }).join('');
       if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
       $d('#sting-none').hidden = sel.options.length > 0;
-      $d('#sting-none').textContent = q ? 'No stock sting in that style (“' + q + '”): try a broader word, such as rock, house, pop or jazz.' : (opts.noneLeft || 'Every stock sting is already in use.');
+      $d('#sting-none').textContent = q ? 'No stock sting in the styles lit (or every one is in use).' : (opts.noneLeft || 'Every stock sting is already in use.');
       prevBtn.disabled = $d('#sting-sedit').disabled = !sel.options.length;
     }
     function fillMine() {
@@ -312,7 +316,11 @@ var StingPicker = (function () {
         hideBox.addEventListener('change', () => { try { localStorage.setItem(key, hideBox.checked ? '1' : '0'); } catch (_) { /* private mode */ } stopPreview(); fill(); setMode(mode); });
       }
       sel.addEventListener('change', stopPreview);
-      if (styleBox) styleBox.addEventListener('input', () => { stopPreview(); fill(); setMode(mode); });
+      if ($d('#sting-chips')) {                    // the stock songs' styles, one list a song, for the chips' counts
+        const seen = new Map();
+        for (const x of stockSt) if (x.media !== 'video' && x.styles && !seen.has(x.url)) seen.set(x.url, x.styles);
+        StingStyles.chips($d('#sting-chips'), [...seen.values()], [], keys => { styleKeys = keys; stopPreview(); fill(); setMode(mode); });
+      }
       prevBtn.addEventListener('click', () => {
         if (preview) return stopPreview();
         const x = stockSt[Number(sel.value)];

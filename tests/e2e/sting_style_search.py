@@ -5,7 +5,7 @@ OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exis
 # Music styles in use (a trial, TimerFeatures.styles): stock stings carry their top styles (stock-stings.json;
 # a clip borrows its song's). The + sting dialog (sting-picker.js) shows each one's top style and searches
 # them ("rock": the stings in it, best first, with the style they matched), with the model's credit; Random
-# stings (sting-roll.js) pick only songs in the style typed, the panel saying how many there are. On the
+# stings (sting-roll.js) pick only songs in the styles chosen (chips: genres and styles, with how many), the panel saying how many there are; running out, it asks to reuse. On the
 # playout demo (the dialog behind + cue, and its Random stings), and the run sheet editor's panel. No model
 # needed: the styles come with the list.
 import io, json, math, mimetypes, os, re, struct, sys, wave
@@ -56,48 +56,63 @@ with sync_playwright() as p:
         po.click('#items li[data-id="demo-1"] button[data-act=add]')
         po.click('#items li[data-id="demo-1"] form.addcue button.primary'); po.wait_for_timeout(600)
 
+    chips = lambda sel: po.evaluate("s => [...document.querySelectorAll(s + ' .ss-chip')].map(c => c.textContent + (c.classList.contains('on') ? ' *' : ''))", sel)
+    tap = lambda sel, k: po.click('%s .ss-chip[data-k="%s"]' % (sel, k))
+
     # the + sting dialog
     dialog()
     o = opts()
-    check("the dialog: a style search box, and the model's credit", po.is_visible("#sting-style") and "Music Technology Group" in po.text_content(".sting-credit"))
+    check("the dialog: style chips, and the model's credit", po.locator("#sting-chips .ss-chip").count() > 0 and "Music Technology Group" in po.text_content(".sting-credit"))
+    check("… every genre and style the stings have, with how many, each genre followed by its styles (most first)",
+          chips("#sting-chips") == ["Electronic (2)", "Deep House (1)", "Disco (1)", "House (1)", "Rock (2)", "Arena Rock (1)", "Hard Rock (1)", "Pop Punk (1)", "Punk (1)", "Funk / Soul (1)", "Disco (1)"], chips("#sting-chips"))
+    check("… none for a style under the floor (Smooth Jazz 0.06: no Jazz)", not any(c.startswith("Jazz") or c.startswith("Smooth") for c in chips("#sting-chips")))
     check("each stock sting with its top style (none under the floor; the genre where a name is under two)",
           o == ["S1 · 8 s · Hard Rock", "S2 · 9 s · House", "S3 · 10 s · Disco (Funk / Soul)", "S4 · 11 s", "S5 · 12 s · Punk", "S6 · 13 s", "S1 cut · 4 s · Hard Rock"], o)
-    po.fill("#sting-style", "rock"); po.wait_for_timeout(200)
-    check("“rock”: the stings in it, best first, with the style they matched (a clip borrows its song's)", opts() == ["S1 · 8 s · Hard Rock", "S1 cut · 4 s · Hard Rock", "S5 · 12 s · Punk"], opts())
-    po.fill("#sting-style", "pop punk"); po.wait_for_timeout(200)
-    check("“pop punk”: every word in the style's name", opts() == ["S5 · 12 s · Pop Punk"], opts())
-    po.fill("#sting-style", "disco"); po.wait_for_timeout(200)
-    check("“disco”: the stronger of a name under two genres", opts() == ["S3 · 10 s · Disco (Funk / Soul)"], opts())
-    po.fill("#sting-style", "jazz"); po.wait_for_timeout(200)
-    check("“jazz”: a sting under the floor isn't in it; it says so", opts() == [] and po.is_visible("#sting-none") and "No stock sting in that style" in po.text_content("#sting-none") and po.is_disabled(".sting-use"), po.text_content("#sting-none"))
-    po.fill("#sting-style", ""); po.wait_for_timeout(200)
-    check("cleared: all of them again", len(opts()) == 7)
-    po.fill("#sting-style", "house"); po.wait_for_timeout(200)
+    tap("#sting-chips", "Rock"); po.wait_for_timeout(200)
+    check("Rock lit: the stings in it, best first, with the style they matched (a clip borrows its song's)", opts() == ["S1 · 8 s · Hard Rock", "S1 cut · 4 s · Hard Rock", "S5 · 12 s · Punk"], opts())
+    tap("#sting-chips", "Funk / Soul---Disco"); po.wait_for_timeout(200)
+    check("… and Disco (Funk / Soul): any of them, best first", opts() == ["S1 · 8 s · Hard Rock", "S1 cut · 4 s · Hard Rock", "S3 · 10 s · Disco (Funk / Soul)", "S5 · 12 s · Punk"] and "Rock (2) *" in chips("#sting-chips"), opts())
+    tap("#sting-chips", "Rock"); po.wait_for_timeout(200)
+    check("… Rock off again: just the disco one", opts() == ["S3 · 10 s · Disco (Funk / Soul)"], opts())
+    tap("#sting-chips", "Funk / Soul---Disco"); po.wait_for_timeout(200)
+    check("none lit: all of them again", len(opts()) == 7)
+    tap("#sting-chips", "Electronic---House"); po.wait_for_timeout(200)
     po.screenshot(path=OUTDIR + "/sting_style_search.png")
     po.click(".sting-dlg .sting-cancel"); po.wait_for_timeout(300)
 
-    # Random stings in a style
-    po.click("#rollpanel summary"); po.wait_for_timeout(300)
-    check("Random stings: an In the style box", po.is_visible("#roll-style"))
+    # Random stings in styles
+    po.click("#rollpanel summary"); po.wait_for_timeout(500)
+    check("Random stings: the same chips", po.is_visible("#roll-chips") and chips("#roll-chips")[0] == "Electronic (2)", chips("#roll-chips"))
     po.uncheck("#roll-mine"); po.uncheck("#roll-folder")
-    po.fill("#roll-style", "rock"); po.press("#roll-style", "Tab"); po.wait_for_timeout(400)
-    check("… how many stock stings are in it", po.text_content("#roll-stylehint") == "2 stock stings in it", po.text_content("#roll-stylehint"))
-    check("… kept", json.loads(po.evaluate("localStorage.playout_roll"))["style"] == "rock")
+    tap("#roll-chips", "Rock"); po.wait_for_timeout(400)
+    check("… Rock lit: how many stock stings are in it", po.text_content("#roll-stylehint") == "2 stock stings in that style", po.text_content("#roll-stylehint"))
+    check("… kept", json.loads(po.evaluate("localStorage.playout_roll"))["styles"] == ["Rock"])
     po.check("#roll-mine"); po.wait_for_timeout(300)
     check("… with My clips ticked: files of your own are left out", "aren’t tagged yet" in po.text_content("#roll-stylehint"), po.text_content("#roll-stylehint"))
     po.click("#roll-all"); po.wait_for_timeout(4000)
     songs = po.evaluate("Object.values(window.__playout.cues()).flat().filter(c => c.rolled).map(c => c.song)")
-    check("🎲 Roll stings in “rock”: only rock songs (two for ten speakers)", sorted(songs) == sorted(["url:" + U("s1"), "url:" + U("s5")]), songs)
+    check("🎲 Roll stings in Rock: only rock songs (two for ten speakers; not reused: the question dismissed)", sorted(songs) == sorted(["url:" + U("s1"), "url:" + U("s5")]), songs)
     check("… the message: the rest weren't, in that style", "in that style" in po.text_content("#roll-msg"), po.text_content("#roll-msg"))
-    po.fill("#roll-style", "polka"); po.press("#roll-style", "Tab"); po.wait_for_timeout(300)
-    check("… a style nothing's in: it says so", "no stock sting in it" in po.text_content("#roll-stylehint"), po.text_content("#roll-stylehint"))
-    po.fill("#roll-style", ""); po.press("#roll-style", "Tab"); po.wait_for_timeout(300)
 
-    # without the trial: no search, no style
+    # running out: OK to reuse (the least used first, never the same as the item before or after)
+    asked = []
+    po.once("dialog", lambda d: (asked.append(d.message), d.accept()))
+    po.click("#roll-all"); po.wait_for_timeout(6000)
+    order = po.evaluate("window.__playout.show().items.map(it => ((window.__playout.cues()[it.id] || []).find(c => c.rolled) || {}).song || null)")
+    check("ran out: it asks whether to reuse the stings already chosen", asked and "OK to reuse" in asked[0], asked)
+    check("… yes: every speaker gets a rock sting, five of each", all(order) and sorted(set(order)) == sorted(["url:" + U("s1"), "url:" + U("s5")]) and order.count("url:" + U("s1")) == 5, order)
+    check("… never the same as the item before", all(order[k] != order[k + 1] for k in range(len(order) - 1)), order)
+    check("… the message says so", "reusing one already chosen" in po.text_content("#roll-msg"), po.text_content("#roll-msg"))
+    tap("#roll-chips", "Electronic"); po.wait_for_timeout(400)
+    check("two lit (Rock, Electronic): any of them", po.text_content("#roll-stylehint").startswith("4 stock stings in those styles"), po.text_content("#roll-stylehint"))
+    tap("#roll-chips", "Rock"); tap("#roll-chips", "Electronic"); po.wait_for_timeout(300)
+    check("none lit: any style, no hint", po.text_content("#roll-stylehint") == "" and json.loads(po.evaluate("localStorage.playout_roll"))["styles"] == [])
+
+    # without the trial: no chips
     po.evaluate("localStorage.__nostyles = 1"); po.reload(); po.wait_for_timeout(1000)
     dialog()
     o = opts()
-    check("without the trial: no search box, no styles on the list", not po.is_visible("#sting-style") and po.locator(".sting-credit").count() == 0 and o[0] == "S1 · 8 s", o)
+    check("without the trial: no chips, no styles on the list", po.locator("#sting-chips").count() == 0 and po.locator(".sting-credit").count() == 0 and o[0] == "S1 · 8 s", o)
     po.click(".sting-dlg .sting-cancel")
     check("… nor in Random stings", not po.is_visible("#roll-stylerow"))
     po.evaluate("delete localStorage.__nostyles")
@@ -105,9 +120,9 @@ with sync_playwright() as p:
     # the run sheet editor's panel
     ed = c.new_page(); ed.on("pageerror", lambda e: errs.append("editor: " + str(e)))
     ed.goto(BASE + "runsheet.html"); ed.wait_for_timeout(1000)
-    ed.evaluate("document.getElementById('rollpanel').open = true"); ed.wait_for_timeout(200)
-    ed.fill("#roll-style", "house"); ed.wait_for_timeout(400)
-    check("the run sheet editor: its Random stings have the style too", ed.is_visible("#roll-style") and ed.text_content("#roll-stylehint").startswith("1 stock sting in it"), ed.text_content("#roll-stylehint"))
+    ed.evaluate("document.getElementById('rollpanel').open = true"); ed.wait_for_timeout(400)
+    ed.click('#roll-chips .ss-chip[data-k="Electronic---House"]'); ed.wait_for_timeout(400)
+    check("the run sheet editor: its Random stings have the chips too", ed.text_content("#roll-stylehint").startswith("1 stock sting in that style"), ed.text_content("#roll-stylehint"))
     b.close()
 
 print("errors:", errs)

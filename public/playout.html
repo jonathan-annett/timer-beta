@@ -60,6 +60,16 @@
     .ihead { display: flex; gap: 10px; align-items: baseline; }
     .iname { font-weight: bold; color: #fff; flex: 1; }
     .idur { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+    .istart { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; flex: none; }   /* its start: planned, ≈ expected, or when it started */
+    .istart.late { color: var(--warn); }
+    .iclock, .cues .cclock { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }   /* when its audio ends */
+    .iclock.live, .cues .cclock.live { color: var(--ok); }
+    /* What the audio playing has left (the one ending last): top right, not scrolled */
+    #bigclock { position: fixed; top: 10px; right: max(10px, env(safe-area-inset-right)); z-index: 20; display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+      background: rgba(10, 30, 14, .92); border: 1px solid var(--ok); border-radius: 8px; padding: 6px 12px; max-width: min(40vw, 320px); pointer-events: none; }
+    #bc-left { font: bold 30px/1 "Helvetica Neue", Arial, sans-serif; color: var(--ok); font-variant-numeric: tabular-nums; }
+    #bc-left::before { content: "♪ "; font-size: 20px; }
+    #bc-what { font-size: 12px; color: var(--text); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .itag { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
     /* An item's own text (✎ on an item): the first line in place of its name, the rest as notes */
     .inotes { white-space: pre-wrap; overflow-wrap: anywhere; color: #f0e2a8; font-size: 14px; margin: 2px 0 0; }
@@ -115,7 +125,7 @@
     #rollpanel summary { color: var(--dim); cursor: pointer; }
     #rollpanel > * + * { margin-top: 6px; }
     #rollpanel input[type=checkbox] { width: auto; padding: 0; }   /* (not the pairing server box's: details input) */
-    #rollpanel input[type=search] { width: 13em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    .roll-stylehead { margin-bottom: 4px; }
     #rollpanel input[type=number] { width: 4.5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
     #rollpanel select { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
     #rollpanel input:disabled { opacity: .4; }
@@ -147,6 +157,7 @@
   </style>
 </head>
 <body>
+  <div id="bigclock" hidden title="What the audio playing has left (the one that ends last)"><span id="bc-left"></span><span id="bc-what"></span></div>
   <main>
     <h1>Playout</h1>
     <p class="sub">Plays your own audio and video as the timer's run sheet moves on: at an item's start, when its time is up, or at a time into it. Everything plays on this computer; the timer only starts the items.</p>
@@ -193,7 +204,7 @@
           <div><label class="check"><input type="checkbox" id="roll-mine"> My clips <span class="hint">(your edits stand in for the tracks they came from)</span></label></div>
           <div class="row"><label>Items of at least <input type="number" id="roll-min" min="0" max="600" step="0.5"> min</label></div>
           <div class="row"><label>Stings <select id="roll-lenop"><option value="">of any length</option><option value="max">no longer than</option><option value="min">at least</option></select> <input type="number" id="roll-len" min="1" max="3600" step="1"> s</label></div>
-          <div class="row" id="roll-stylerow" hidden><label>In the style <input type="search" id="roll-style" placeholder="any: e.g. rock, disco" autocomplete="off" spellcheck="false"></label> <span class="hint" id="roll-stylehint"></span></div>
+          <div id="roll-stylerow" hidden><div class="roll-stylehead">Only these styles <span class="hint">(any of the ones lit; none lit: any style)</span></div><div id="roll-chips"></div><div class="hint" id="roll-stylehint"></div></div>
           <div class="row"><button id="roll-all" class="small primary">🎲 Roll stings</button><button id="roll-clear" class="small">Remove rolled stings</button></div>
           <p class="hint" id="roll-msg"></p>
         </details>
@@ -248,15 +259,15 @@
   <script src="remote-peer.js?v=fd06de67"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="audio-out.js?v=e41c465e" data-role="both"></script>
-  <script src="sting-clip.js?v=8ab12ac7"></script>
+  <script src="sting-clip.js?v=c7b82608"></script>
   <script src="sting-library.js?v=8c93912b"></script>
-  <script src="sting-picker.js?v=8af4feff"></script>
-  <script src="sting-styles.js?v=6b6e9b27"></script>
-  <script src="sting-roll.js?v=74cf4025"></script>
+  <script src="sting-picker.js?v=ec3660e8"></script>
+  <script src="sting-styles.js?v=bbfaab94"></script>
+  <script src="sting-roll.js?v=55155fad"></script>
   <script src="deck-face.js?v=095d2354"></script>
   <script src="virtual-deck.js?v=909424e5"></script>
   <script src="deck-hid.js?v=a45aeaac"></script>
-  <script src="playout-deck.js?v=c0871fc9"></script>
-  <script src="playout.js?v=f71f71ff"></script>
+  <script src="playout-deck.js?v=09148b8e"></script>
+  <script src="playout.js?v=55388e6f"></script>
 </body>
 </html>

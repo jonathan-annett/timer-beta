@@ -154,5 +154,5 @@
   RemotePeer.retryOnNetworkChange(() => { if (peer && peer.mode === 'server') peer.send({ t: 'relink' }); });
   connect();
 
-  window.__pphone = { faces: () => vd.faces.map(f => (f && f.rs ? f.rs.body + (f.rs.cap ? ' | ' + f.rs.cap : '') : '')), ok: () => ok, model: () => vd.model };
+  window.__pphone = { faces: () => vd.faces.map(f => (f && f.rs ? f.rs.body + (f.rs.cap ? ' | ' + f.rs.cap : '') : '')), bgs: () => vd.faces.map(f => f && f.bg), ok: () => ok, model: () => vd.model };
 })();

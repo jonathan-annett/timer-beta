@@ -28,7 +28,7 @@
  *   wav(buf)           an AudioBuffer → a 16-bit WAV Blob
  *   playable(file)     → Promise<File>: an AIFF as WAV (Chrome and Edge can't play or decode AIFF), samples
  *                      untouched; any other file as it is. Called as a file is chosen, never on a listing
- *   play(buf, {loop})  plays an AudioBuffer (loop: over and over until stopped) → {stop(), ended: Promise, time()}
+ *   play(buf, {loop, offset})  plays an AudioBuffer (loop: over and over until stopped; offset: from that many seconds in) → {stop(), ended: Promise, time()}
  *   preview(src, s)    decode, render and play (the stock dialog's ▶) → {stop()}
  *   open({src, name, region, media, original, hideOriginal, saveLabel, level})  the clip editor: waveform (whole track + zoomed on the
  *                      selection), start/end handles, fades, a loop, loudness and trim, play (levelled: to level.target,
@@ -295,8 +295,9 @@ var StingClip = (function () {
     let done;
     const ended = new Promise(r => { done = r; });
     node.onended = () => { try { node.disconnect(); gain.disconnect(); } catch (_) { /* gone */ } done(); };
-    const t0 = c.currentTime;
-    node.start();
+    const off = !loop && opts && opts.offset > 0 ? Math.min(opts.offset, buf.duration) : 0;   // (s into it: joining partway)
+    const t0 = c.currentTime - off;
+    node.start(0, off);
     return {
       gain, ended, duration: buf.duration,
       time: () => (loop ? (c.currentTime - t0) % buf.duration : Math.min(buf.duration, c.currentTime - t0)),
