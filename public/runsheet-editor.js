@@ -915,7 +915,7 @@
       else { p = await pickSong(songs, used, o, was); if (!p && was && sheetRoll) p = await pickSong(songs, used, o, null); }
       if (!p) {
         none++;
-        if (was && !used.has(was)) used.add(was);  // it keeps the one it has
+        if (was && !used.has(was) && !songs.excluded.has(was)) used.add(was);  // it keeps the one it has (unless it's a file excluded from random picks since)
         else { missing.push(id); if (was && sheetRoll) picks.push([id, null]); }   // (its song went to another item: it can't keep it too)
         continue;
       }

@@ -64,9 +64,32 @@
     .istart.late { color: var(--warn); }
     .iclock, .cues .cclock { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }   /* when its audio ends */
     .iclock.live, .cues .cclock.live { color: var(--ok); }
-    /* What the audio playing has left (the one ending last): top right, not scrolled */
-    #bigclock { position: fixed; top: 10px; right: max(10px, env(safe-area-inset-right)); z-index: 20; display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
-      background: rgba(10, 30, 14, .92); border: 1px solid var(--ok); border-radius: 8px; padding: 6px 12px; max-width: min(40vw, 320px); pointer-events: none; }
+    /* Top right, not scrolled: the level box (always, once there are cues), and under it what the audio playing has left */
+    #topright { position: fixed; top: 10px; right: max(10px, env(safe-area-inset-right)); z-index: 20; display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+      max-width: min(40vw, 320px); pointer-events: none; }
+    @media (max-width: 1400px) { main > h1, main > p.sub { margin-right: 190px; } }   /* (clear of it) */
+    #bigclock { display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+      background: rgba(10, 30, 14, .92); border: 1px solid var(--ok); border-radius: 8px; padding: 6px 12px; max-width: 100%; box-sizing: border-box; }
+    /* The level box (the owner, 13 Nov 2026): each output's level (its quietest cue) and the biggest cut. Click it when
+       the desk is set (with Automatic levels off, that applies a new level): neutral; set for nothing yet: amber;
+       the level changed since: flashing */
+    #levelbox { pointer-events: auto; font: inherit; text-align: right; cursor: pointer; border-radius: 8px; padding: 6px 12px; max-width: 100%; box-sizing: border-box;
+      background: rgba(21, 21, 21, .94); border: 1px solid var(--line); color: var(--text); display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+    #levelbox .lb-row { display: flex; gap: 8px; align-items: baseline; justify-content: flex-end; white-space: nowrap; }
+    #levelbox .lb-name { font-size: 12px; color: var(--dim); }
+    #levelbox .lb-lufs { font: bold 20px/1.1 "Helvetica Neue", Arial, sans-serif; font-variant-numeric: tabular-nums; }
+    #levelbox .lb-lufs small { font-size: 11px; font-weight: normal; }
+    #levelbox .lb-cut { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+    #levelbox .lb-trim { font-size: 13px; font-weight: bold; font-variant-numeric: tabular-nums; }   /* what to set the desk's digital trim to */
+    #levelbox .lb-say { font-size: 12px; }
+    #levelbox.lb-ok .lb-say { color: var(--dim); }
+    #levelbox.lb-unset { border-color: var(--warn); }
+    #levelbox.lb-unset .lb-say { color: var(--warn); }
+    #levelbox.lb-flash { animation: lb-flash .5s steps(1, end) infinite; border-color: #ffcc00; }
+    #levelbox.lb-flash .lb-name, #levelbox.lb-flash .lb-cut { color: inherit; }
+    @keyframes lb-flash { 0% { background: #ffcc00; color: #000; } 50% { background: #c0102a; color: #fff; } }
+    @media (prefers-reduced-motion: reduce) { #levelbox.lb-flash { animation: none; background: #ffcc00; color: #000; } }
+    #levelbox:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     #bc-left { font: bold 30px/1 "Helvetica Neue", Arial, sans-serif; color: var(--ok); font-variant-numeric: tabular-nums; }
     #bc-left::before { content: "♪ "; font-size: 20px; }
     #bc-what { font-size: 12px; color: var(--text); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -135,10 +158,13 @@
     .lvsec { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
     #levels { margin-top: 8px; }
     .lv-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 4px 0; font-size: 14px; }
+    .lvsec.waiting { background: rgba(255, 204, 51, .08); border: 1px solid var(--warn); border-radius: 8px; padding: 12px; }   /* Automatic levels off, a new level waiting */
+    .lv-row.waiting .lv-note { color: var(--warn); }
+    .lv-trim input { width: 5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    .lv-console { font-weight: bold; font-variant-numeric: tabular-nums; }
     .lv-what { flex: 0 0 13em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .lv-what.own { color: var(--accent); }   /* a cue's own sound card */
-    .lv-num input { width: 5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
-    .lv-num input:disabled { opacity: .4; }
+    .lv-trim input:disabled { opacity: .4; }
     .lv-note { font-size: 12px; flex: 1 1 14em; }
 
     /* Output: video cues play here (full screen it, or capture this window into the vision mixer) */
@@ -157,7 +183,10 @@
   </style>
 </head>
 <body>
-  <div id="bigclock" hidden title="What the audio playing has left (the one that ends last)"><span id="bc-left"></span><span id="bc-what"></span></div>
+  <div id="topright">
+    <button type="button" id="levelbox" hidden></button>
+    <div id="bigclock" hidden title="What the audio playing has left (the one that ends last)"><span id="bc-left"></span><span id="bc-what"></span></div>
+  </div>
   <main>
     <h1>Playout</h1>
     <p class="sub">Plays your own audio and video as the timer's run sheet moves on: at an item's start, when its time is up, or at a time into it. Everything plays on this computer; the timer only starts the items.</p>
@@ -248,7 +277,9 @@
           <span class="hint">Off: while an item runs from ▶ Start item, its own cues’ ▶ and ■ are locked (■ Stop item stops them). On: for rehearsals, every cue stays in your hands.</span>
         </div>
         <div class="lvsec">
-          <b>Levels</b> <span class="hint">Each output plays every cue as loud as its quietest one, so no cue is louder than the next: the louder ones are turned down to it (measured as they play, in LUFS; nothing is ever turned up). It follows the cues: add a quieter one and the level drops, to what’s playing too. Off: every cue as recorded (a ✂ trim still applies).</span>
+          <b>Levels</b> <span class="hint">Each output plays every cue as loud as its quietest one, so no cue is louder than the next: the louder ones are turned down to it (measured as they play, in LUFS; nothing is ever turned up). Off: every cue as recorded (a ✂ trim still applies). The level box (top right) shows it: set the desk (▶ Tone helps), then click the box; it flashes when the level changes. <b>Console trim</b> = the LUFS trim offset − the level: set the offset once so it reads what your desk's digital trim sounds right at, and from then on set the desk's trim to it when the level changes. No trim on the channel? A compressor's makeup gain does the same, with the compressor itself out of the way (a 1:1 ratio, or a threshold it never reaches).</span>
+          <div class="row"><label class="check" title="On: a new level (a quieter cue added, or the quietest removed) is used at once, by what’s playing too. Off: it waits until you click the level box (or start ▶ Tone)"><input type="checkbox" id="lvauto" checked> Automatic levels</label>
+            <span class="hint" id="lvautonote"></span></div>
           <div id="levels"></div>
         </div>
       </div>
@@ -261,13 +292,13 @@
   <script src="audio-out.js?v=e41c465e" data-role="both"></script>
   <script src="sting-clip.js?v=dc1ee7ff"></script>
   <script src="sting-library.js?v=db93145a"></script>
-  <script src="sting-picker.js?v=f0d2e63a"></script>
+  <script src="sting-picker.js?v=486056af"></script>
   <script src="sting-styles.js?v=a7cb8fe0"></script>
-  <script src="sting-roll.js?v=c3446c5b"></script>
+  <script src="sting-roll.js?v=08da6f76"></script>
   <script src="deck-face.js?v=095d2354"></script>
   <script src="virtual-deck.js?v=909424e5"></script>
   <script src="deck-hid.js?v=a45aeaac"></script>
-  <script src="playout-deck.js?v=09148b8e"></script>
-  <script src="playout.js?v=e2c29ac4"></script>
+  <script src="playout-deck.js?v=a4651459"></script>
+  <script src="playout.js?v=98508e00"></script>
 </body>
 </html>

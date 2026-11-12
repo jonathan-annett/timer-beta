@@ -34,6 +34,8 @@
  *   folder() / chooseFolder() / savedFolder() / ensureFolder() / quietFolder() / onFolder(fn)   the Custom
  *                                           file folder (random stings use it too: sting-roll.js); quietFolder:
  *                                           listed only if the browser needn't ask (no click needed)
+ *   excluded() → {"name|size": {p, t}}, fileKey(name, size)   folder files never picked at random (Custom file's
+ *                                           "Exclude this from random selection pools": the owner, 13 Nov 2026)
  *   openLibrary() → Promise (resolves when it's closed)
  * MIT Licensed
  */
@@ -161,7 +163,25 @@ var StingPicker = (function () {
     })().finally(() => { quietly = null; });
     return quietly;
   }
-  window.__stingFolder = setFolder;              // (tests: {name, files: [{path, file}]})
+  window.__stingFolder = setFolder;
+
+  // ─── Never picked at random (the owner, 13 Nov 2026: a folder holds files for other reasons too) ───
+  // Custom file's "Exclude this from random selection pools" under the folder's list: kept in this browser by
+  // the file's name and size (localStorage sting_roll_exclude: {"name|size": {p: its path when ticked, t}}),
+  // written as it's ticked (Cancel keeps it); Random stings (sting-roll.js) leave those files out. They can
+  // still be chosen by hand.
+  const EXCLUDE = 'sting_roll_exclude';
+  const fileKey = (name, size) => String(name).replace(/^.*[\\/]/, '') + '|' + size;   // (as StingStyles.localKey)
+  function excluded() { try { const v = JSON.parse(localStorage.getItem(EXCLUDE) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; } }
+  function setExcluded(key, on, path) {
+    const all = excluded();
+    if (on) all[key] = { p: String(path || key.split('|')[0]).slice(0, 300), t: Date.now() }; else delete all[key];
+    try { localStorage.setItem(EXCLUDE, JSON.stringify(all)); } catch (_) { /* private mode: not kept */ }
+  }
+  async function keyOfEntry(f) {                 // a folder entry's name|size (a handle's file read once)
+    if (!f.k) { const file = f.file || await f.handle.getFile(); f.k = fileKey(file.name, file.size); }
+    return f.k;
+  }              // (tests: {name, files: [{path, file}]})
 
   // ─── Previews (on the page's preview output, audio-out.js) ────────────────
   let preview = null;                            // what the dialog is playing
@@ -200,6 +220,7 @@ var StingPicker = (function () {
 .sting-btnrow button { padding: 0.35rem 0.8rem; }
 #sting-reopen, #sting-folderbox { margin-top: 0.6rem; }
 #sting-folderbox .sting-note { margin: 0 0 0.25rem; }
+#sting-folderbox .sting-check { margin: 0.4rem 0 0; }
 .sting-check { display: flex; gap: 0.4rem; align-items: center; margin: 0.2rem 0 0.6rem; color: var(--dim, #888); cursor: pointer; }
 .sting-check input { width: auto; flex: none; margin: 0; }
 .sting-chiphead { color: var(--dim, #888); font-size: 0.85em; margin: 0 0 0.25rem; }
@@ -241,7 +262,8 @@ var StingPicker = (function () {
         '<span class="sting-row sting-btnrow"><button type="button" id="sting-browse">Browse for a file…</button><button type="button" id="sting-folderpick">Choose a folder…</button></span>' +
         '<button type="button" id="sting-reopen" hidden></button>' +
         '<div id="sting-folderbox" hidden><p class="sting-note" id="sting-foldername"></p>' +
-          `<span class="sting-row" id="sting-folderrow"><select id="sting-folder"></select><button type="button" id="sting-fprev" title="Hear it">▶</button><button type="button" id="sting-fedit" title="${CLIP_TIP}">✂</button></span></div>` +
+          `<span class="sting-row" id="sting-folderrow"><select id="sting-folder"></select><button type="button" id="sting-fprev" title="Hear it">▶</button><button type="button" id="sting-fedit" title="${CLIP_TIP}">✂</button></span>` +
+          (keepFolder ? '<label class="sting-check" id="sting-fexrow" title="Random stings never pick it (it can still be chosen here). Kept on this computer as soon as it’s ticked, whatever you choose next"><input type="checkbox" id="sting-fexclude"> Exclude this from random selection pools</label>' : '') + '</div>' +
       '</div>' +
       '<div class="sting-pane" data-mode="edited">' +
         '<span class="sting-row" id="sting-minerow"><select id="sting-mine"></select><button type="button" id="sting-mprev" title="Hear it">▶</button><button type="button" id="sting-medit" title="Change this clip (Save and use: kept in your sting library and used here)">✂</button></span>' +
@@ -301,14 +323,16 @@ var StingPicker = (function () {
       const box = $d('#sting-folderbox');
       box.hidden = !folder;
       if (!folder) return;
-      const keep = folderSel.value, rows = rank(folder.files.map((f, i) => ({ f, i, s: styled && f.k ? SS.localOf(f.k) : undefined })));
-      folderSel.innerHTML = rows.map(({ f, i, s, b }) => `<option value="${i}">${esc(noExt(f.path))}${styled ? styleTag(s, b) : ''}</option>`).join('');
+      const keep = folderSel.value, rows = rank(folder.files.map((f, i) => ({ f, i, s: styled && f.k ? SS.localOf(f.k) : undefined }))), ex = excluded();
+      folderSel.innerHTML = rows.map(({ f, i, s, b }) => `<option value="${i}">${esc(noExt(f.path))}${styled ? styleTag(s, b) : ''}${f.k && ex[f.k] ? ' · not picked at random' : ''}</option>`).join('');
       if ([...folderSel.options].some(o => o.value === keep)) folderSel.value = keep;
       const unheard = lit() ? folder.files.filter(f => !f.k || SS.localOf(f.k) === undefined).length : 0;
       $d('#sting-foldername').textContent = !folder.files.length ? `No audio or video files in “${folder.name}”.`
         : (lit() ? (rows.length ? `In “${folder.name}”, in the styles lit` : `Nothing in “${folder.name}” in the styles lit`) + (unheard ? ` (${unheard} not listened to yet)` : '') + (rows.length ? ':' : '.')
           : `In “${folder.name}”${folder.files.length >= FOLDER_MAX ? ' (the first ' + FOLDER_MAX + ')' : ''}:`);
       $d('#sting-folderrow').style.display = folderSel.options.length ? '' : 'none';
+      if ($d('#sting-fexrow')) $d('#sting-fexrow').style.display = folderSel.options.length ? '' : 'none';
+      syncExclude();
       $d('#sting-reopen').hidden = true;
       $d('#sting-folderpick').textContent = 'Choose another folder…';
     }
@@ -321,6 +345,21 @@ var StingPicker = (function () {
       if (f.pk !== k) { f.pk = k; f.pf = StingClip.playable(raw); }
       try { return await f.pf; } catch (err) { f.pk = null; alert(err && err.message || err); return false; }
     };
+    // The exclude tick: the selected file's (read from what's kept); ticking it is kept at once
+    async function syncExclude() {
+      const box = $d('#sting-fexclude'), f = folder && folder.files[Number(folderSel.value)];
+      if (!box) return;
+      if (!f) { box.checked = false; box.disabled = true; return; }
+      let k; try { k = await keyOfEntry(f); } catch (_) { box.disabled = true; return; }
+      if (!folder || folder.files[Number(folderSel.value)] !== f) return;   // (another chosen meanwhile)
+      box.disabled = false; box.checked = !!excluded()[k];
+    }
+    async function keyAll() {                      // every folder file's name|size: the marks, and listening
+      const fo = folder;
+      if (!fo) return;
+      for (const f of fo.files) { try { await keyOfEntry(f); } catch (_) { /* unreadable */ } }
+      if (fo === folder && wrap.isConnected) fillFolder();
+    }
     const canUse = () => { useBtn.disabled = mode === 'stock' ? !(sel && sel.options.length) : mode === 'custom' ? !(folder && folderSel.options.length) : ![...mineSel.options].some(o => !o.disabled); };
     function setMode(m) {
       mode = m;
@@ -347,12 +386,10 @@ var StingPicker = (function () {
       $d('#sting-listen').textContent = SS.listenNote();
     }
     async function listenOwn() {                   // the folder's files and my clips' files: listened to (unless known)
-      if (!styled) return;
+      if (!styled) return keyAll();
       const items = [];
-      if (folder) for (const f of folder.files) {
-        if (!f.k) { try { const file = f.file || await f.handle.getFile(); f.k = SS.localKey(file.name, file.size); } catch (_) { continue; } }
-        items.push({ key: f.k, get: () => (f.file ? Promise.resolve(f.file) : f.handle.getFile()) });
-      }
+      await keyAll();
+      if (folder) for (const f of folder.files) if (f.k) items.push({ key: f.k, get: () => (f.file ? Promise.resolve(f.file) : f.handle.getFile()) });
       mine.forEach((e, i) => { if (mineOk[i] && e.file) items.push({ key: SS.localKey(e.file, e.size), get: () => StingLibrary.source(e, stockSt) }); });
       SS.listen(items);
       refresh();
@@ -398,7 +435,14 @@ var StingPicker = (function () {
       if (preview.refused) { preview = null; return; }
       $d('#sting-mprev').textContent = '■';
     });
-    folderSel.addEventListener('change', stopPreview);
+    folderSel.addEventListener('change', () => { stopPreview(); syncExclude(); });
+    if ($d('#sting-fexclude')) $d('#sting-fexclude').addEventListener('change', async e => {
+      const box = e.target, f = folder && folder.files[Number(folderSel.value)], on = box.checked;
+      if (!f) return;
+      let k; try { k = await keyOfEntry(f); } catch (_) { return; }
+      setExcluded(k, on, f.path);
+      fillFolder();                                // (its mark in the list)
+    });
     $d('#sting-fprev').addEventListener('click', async () => {
       if (preview) return stopPreview();
       if (window.AudioOut && !AudioOut.ok()) return AudioOut.warn();   // the preview output isn't there
@@ -524,5 +568,6 @@ var StingPicker = (function () {
     });
   }
 
-  return { open, setup, stock, clipFields, partFields, idOf, CLIP_KEYS, choiceOf, folder: () => folder, chooseFolder, savedFolder, ensureFolder, quietFolder, onFolder: fn => folderFns.add(fn), openLibrary };
+  return { open, setup, stock, clipFields, partFields, idOf, CLIP_KEYS, choiceOf, folder: () => folder, chooseFolder, savedFolder, ensureFolder, quietFolder, onFolder: fn => folderFns.add(fn), openLibrary,
+    excluded, fileKey };
 })();

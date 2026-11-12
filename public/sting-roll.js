@@ -6,7 +6,8 @@
  * song (its url), a file is known by its size, so no two items get the same track in different cuts.
  * With My clips ticked an edit stands in for its track; unticked, tracks play as supplied (originals
  * hidden behind an edit come back). Audio only (a video walk-up needs the player window). Uses
- * StingClip, StingLibrary and StingPicker when called. Styles (a trial, TimerFeatures.styles; Nov 2026):
+ * StingClip, StingLibrary and StingPicker when called. Folder files ticked "Exclude this from random selection
+ * pools" in + sting's Custom file (StingPicker.excluded) are left out. Styles (a trial, TimerFeatures.styles; Nov 2026):
  * chosen as chips (genres and styles: StingStyles.chips), only songs in any of them (StingStyles.fitsAny on
  * their stored styles: a stock song's, which its clips and my clips of it share; a file's, once listened to
  * on this computer (step 4, 13 Nov 2026: StingStyles.listen, from survey() when the folder or My clips is
@@ -17,7 +18,7 @@
  *   saveOpts(key, o) → o, cleaned and saved
  *   none(o, remote) → true when o leaves nowhere to pick from (a remote editor has no folder)
  *   songOf(s) → 'url:…' | 'size:…' | 'name:…'   a sting's track
- *   pool(o, stock, remote, quiet) → Map song → [{kind: 'stock'|'mine'|'folder', len (s as it plays; undefined: not probed yet),
+ *   pool(o, stock, remote, quiet) → Map song → [   (.excluded: the folder's songs excluded from random picks){kind: 'stock'|'mine'|'folder', len (s as it plays; undefined: not probed yet),
  *                                   x | e | file, styles, key? (a file of your own: StingStyles.localKey)}]   (quiet: the
  *                                   folder only if it can be listed without asking: not in a click)
  *   pick(songs, used, o, avoid) → {song, c} | null   a random song not in used (nor avoid), in a version that fits
@@ -75,6 +76,7 @@ var StingRoll = (function () {
 
   async function pool(o, stock, remote, quiet) {
     const songs = new Map(), add = (song, c) => { if (!songs.has(song)) songs.set(song, []); songs.get(song).push(c); };
+    const excluded = songs.excluded = new Set();       // (the folder's files excluded from random picks: an item doesn't keep one)
     const mine = o.mine && window.StingLibrary ? StingLibrary.read() : [];
     for (const e of mine) {
       if (e.media === 'video' || (e.file && remote)) continue;
@@ -93,9 +95,11 @@ var StingRoll = (function () {
       });
     }
     if (o.folder && !remote && await (quiet ? StingPicker.quietFolder() : StingPicker.ensureFolder())) {
+      const ex = StingPicker.excluded();               // (ticked in + sting's Custom file: never picked at random, nor kept by an item when a roll runs out)
       for (const f of StingPicker.folder().files) {
         if (!AUDIO_EXT.test(f.path)) continue;
         let file; try { file = f.file || await f.handle.getFile(); } catch (_) { continue; }
+        if (ex[StingPicker.fileKey(file.name, file.size)]) { excluded.add('size:' + file.size); continue; }
         const key = keyOf(file.name, file.size);
         if (!edited.has('size:' + file.size)) add('size:' + file.size, { kind: 'folder', file, len: undefined, key, styles: fileStyles(key) });
       }

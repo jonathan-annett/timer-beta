@@ -476,19 +476,39 @@
     if (tones.size) { for (const k of [...tones.keys()]) stopTone(k); renderLevels(); }
   }
 
-  // ─── Levels: loudness normalisation per output (the owner, 12 Nov 2026; always the quietest, 13 Nov) ───
+  // ─── Levels: loudness normalisation per output (the owner, 12 Nov 2026; always the quietest, 13 Nov;
+  //     the level box and Automatic levels, 13 Nov) ───
   // Each output (Show, and each sound card a cue has of its own) plays its cues as loud as its quietest
-  // measured cue: the louder ones are turned down to it, never up (StingClip.gainFor, from their loudness as
-  // they play), so every cue on it is as loud as the next. Not chosen: worked out from the cues on it (the
-  // sheet's and the extra keys'), and again whenever they change (added, measured, removed: applyLevels(),
-  // from renderLevels() when a level moved): what's playing follows, and so does a tone. Off: its cues as
-  // recorded (only a ✂ trim). ▶ Tone: the line-up tone at that level, on that output, to set the desk by.
-  const LEVELS = DEMO ? 'playout_demo_levels' : 'playout_levels';   // {show | out:<id>: {off}} (older lufs: ignored)
+  // measured cue (quietOf): the louder ones are turned down to it, never up (StingClip.gainFor, from their
+  // loudness as they play), so every cue on it is as loud as the next. Not chosen: worked out from the cues on
+  // it (the sheet's and the extra keys'). Automatic levels (on unless playout_levels_auto is '0'): a new
+  // quietest (a cue added, measured or removed) is used at once (applyLevels(), from renderLevels() when a
+  // level moved: what's playing follows, and so does a tone); off, the level in use (held) stays until the
+  // operator says so. The level box (#levelbox, top right) shows each output's level and its biggest cut; a
+  // click (or ▶ Tone on that output) means the desk is set for it (ack; automatic off: held = the new level
+  // too). It flashes while a level differs from the one the desk was set for (or, automatic off, from the one
+  // in use), amber while the desk was never set. Off: its cues as recorded (only a ✂ trim). ▶ Tone: the
+  // line-up tone at that level, on that output, to set the desk by. Console trim (the owner, 13 Nov 2026):
+  // the makeup gain for a desk's digital trim (or a channel compressor's makeup gain, the compressor at 1:1 or a
+  // threshold it never reaches: the owner), its LUFS trim offset (per output, 0 dB unless set) − the level
+  // in use, so a level 3 dB lower reads 3 dB more: calibrated once (the offset making it read the trim the
+  // desk sounds right at), the desk's trim then just follows it.
+  const LEVELS = DEMO ? 'playout_demo_levels' : 'playout_levels';   // {show | out:<id>: {off?, ack?, held?, trim?}}
+  const AUTO = DEMO ? 'playout_demo_levels_auto' : 'playout_levels_auto';   // '0': Automatic levels off
   let levels = {};
   try { const v = JSON.parse(store.get(LEVELS) || '{}'); if (v && typeof v === 'object') levels = v; } catch (_) { /* none yet */ }
   const levelOf = k => ({ off: !!(levels[k] && levels[k].off) });
+  const autoLevels = () => store.get(AUTO) !== '0';
+  const numOf = (k, f) => { const v = levels[k] && levels[k][f]; return Number.isFinite(v) ? v : null; };
+  function saveLevels() {
+    for (const k of Object.keys(levels)) if (!levels[k] || !Object.keys(levels[k]).length) delete levels[k];
+    store.set(LEVELS, JSON.stringify(levels));
+  }
   function quietestOf(k) { let q = null; for (const c of sheetCues()) if (outKey(c) === k && Number.isFinite(c.lufs) && (!q || c.lufs < q.lufs)) q = c; return q; }
-  const targetOf = k => { if (levelOf(k).off) return null; const q = quietestOf(k); return q ? Math.round(q.lufs * 10) / 10 : null; };
+  const quietOf = k => { if (levelOf(k).off) return null; const q = quietestOf(k); return q ? Math.round(q.lufs * 10) / 10 : null; };
+  const targetOf = k => (levelOf(k).off ? null : autoLevels() ? quietOf(k) : numOf(k, 'held'));   // the level in use
+  const trimOf = (k, level) => (level == null ? null : Math.round(((numOf(k, 'trim') || 0) - level) * 10) / 10);   // console trim at that level
+  const sdB = v => (v >= 0.05 ? '+' : v <= -0.05 ? '−' : '') + Math.abs(v).toFixed(1);   // (+3.0, −2.5, 0.0)
   const gainOf = (c, out) => StingClip.gainFor(c, targetOf(out));
   const tones = new Map();                             // output → {v: the tone playing on it, ref: the level it was made at}
   let applied = '';                                    // the levels last applied (renderLevels: apply when they move)
@@ -500,13 +520,29 @@
       else tn.v.gain.gain.setTargetAtTime(Math.pow(10, (t - tn.ref) / 20), tn.v.gain.context.currentTime, 0.02);
     }
   }
-  function setLevel(k, v) {
-    if (v.off) levels[k] = { off: true }; else delete levels[k];
-    store.set(LEVELS, JSON.stringify(levels));
+  function setLevel(k, v) {                            // on / off
+    levels[k] = Object.assign({}, levels[k]);
+    if (v.off) levels[k].off = true; else delete levels[k].off;
+    saveLevels();
     applyLevels();
     renderLevels();
   }
+  // The desk is set for output k's level now (the level box clicked, or ▶ Tone): automatic off, it's used from now
+  function confirmLevel(k) {
+    const q = quietOf(k);
+    if (q == null) return;
+    levels[k] = Object.assign({}, levels[k], { ack: q }, autoLevels() ? {} : { held: q });
+    saveLevels();
+  }
+  function setAuto(on) {
+    if (!on) for (const k of outputs().keys) { const q = quietOf(k); if (q != null) levels[k] = Object.assign({}, levels[k], { held: q }); }   // (the level in use now stays)
+    store.set(AUTO, on ? '1' : '0');
+    saveLevels();
+    renderLevels();                                    // (on: a level waiting is used at once)
+  }
   function startTone(k) {
+    confirmLevel(k);                                   // (setting the desk by it: as a click on the level box)
+    renderLevels();                                    // (a level waiting is used: what's playing too)
     const t = targetOf(k);
     if (t == null) return;
     const v = StingClip.play(StingClip.toneBuffer(t), { role: k, loop: true });   // (its output not there: refused, and says why)
@@ -730,7 +766,7 @@
       else { p = await StingRoll.pick(songs, used, o, was); if (!p && was && sheetRoll) p = await StingRoll.pick(songs, used, o, null); }
       if (!p) {
         none++;
-        if (was && !used.has(was)) used.add(was);    // it keeps the one it has
+        if (was && !used.has(was) && !songs.excluded.has(was)) used.add(was);    // it keeps the one it has (unless it's a file excluded from random picks since)
         else { missing.push(id); if (was && sheetRoll) picks.push([id, null]); }   // (its song went to another item: it can't keep it too)
         continue;
       }
@@ -874,33 +910,97 @@
     return `<select class="cout${val ? ' own' : ''}${busy ? ' busy' : ''}" data-act="out"${busy ? ' disabled' : ''} title="${busy ? 'In use: it stays on this output until it ends' : 'Where this cue plays'}">` +
       opts.map(([v, t]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(t)}</option>`).join('') + '</select>';
   }
-  // Options → Levels: a row for Show and for each sound card this run sheet's cues use (all cues before
-  // there's a sheet): Level to [on] [LUFS], ▶ Tone, Match the quietest, and its cues' loudness
+  // Options → Levels: Automatic levels, then a row for Show and for each sound card this run sheet's cues use
+  // (all cues before there's a sheet): Level [on], ▶ Tone, and its level (its quietest cue) and the biggest cut
   const dB = v => (v < 0 ? '−' : '') + Math.abs(v).toFixed(1);
   const sheetCues = () => (show.items.length ? show.items.flatMap(it => cues[it.id] || []).concat(cues[BOARD] || []) : Object.values(cues).flat());
-  // A row per output: on/off, ▶ Tone, and what its level is (its quietest cue) and the biggest cut it makes
-  function renderLevels() {
-    const box = $('levels'), all = sheetCues(), keys = [SHOW], own = {};
+  function outputs() {                                 // {all: the cues, keys: Show and each sound card a cue has, own: key → its card}
+    const all = sheetCues(), keys = [SHOW], own = {};
     for (const c of all) { const k = outKey(c); if (k && k !== SHOW && !own[k]) { own[k] = c.out; keys.push(k); } }
-    const now = keys.map(k => k + '=' + targetOf(k)).join(',');
+    return { all, keys, own };
+  }
+  const outName = (k, o) => { const d = o.own[k] && cardOf(o.own[k]); return k === SHOW ? 'Show' : (d ? d.label : o.own[k].label) || 'Its sound card'; };
+  function levelFacts(k, o) {                          // one output's level: in use (t), its quietest (q), the loudest cue's cut
+    const known = o.all.filter(c => outKey(c) === k && Number.isFinite(c.lufs)), t = targetOf(k), q = quietOf(k), ack = numOf(k, 'ack');
+    const loud = known.reduce((m, c) => (!m || c.lufs > m.lufs ? c : m), null), auto = autoLevels();
+    return { k, t, q, ack, known, loud, quiet: quietestOf(k), cut: loud && t != null ? Math.max(0, loud.lufs - t) : null,
+      waiting: !auto && q != null && t !== q,          // automatic off: a new level not used yet
+      changed: q != null && ((ack != null && q !== ack) || (!auto && t != null && t !== q)), unset: q != null && ack == null };
+  }
+  function renderLevels() {
+    const box = $('levels'), o = outputs(), all = o.all;
+    const now = o.keys.map(k => k + '=' + targetOf(k)).join(',');
     if (now !== applied) { applied = now; applyLevels(); }   // (a cue added, measured or removed moved a level)
-    box.innerHTML = keys.map(k => {
-      const v = levelOf(k), list = all.filter(c => outKey(c) === k), known = list.filter(c => Number.isFinite(c.lufs));
-      const d = own[k] && cardOf(own[k]);
-      const name = k === SHOW ? 'Show' : (d ? d.label : own[k].label) || 'Its sound card', gone = k !== SHOW && !d;
-      const t = targetOf(k), q = quietestOf(k), loud = known.reduce((m, c) => (!m || c.lufs > m.lufs ? c : m), null);
-      const cut = loud && t != null ? loud.lufs - t : 0, waiting = list.length - known.length;
+    const a = document.activeElement;
+    if (a && box.contains(a) && a.matches('input[type=number]')) return renderLevelBox(o);   // (a trim offset being typed: the rest on focusout)
+    const auto = autoLevels();
+    let anyWaiting = false;
+    box.innerHTML = o.keys.map(k => {
+      const v = levelOf(k), list = all.filter(c => outKey(c) === k), f = levelFacts(k, o), known = f.known;
+      const name = outName(k, o), gone = k !== SHOW && !cardOf(o.own[k]);
+      const waiting = !v.off && f.waiting, unmeasured = list.length - known.length;
+      anyWaiting = anyWaiting || waiting;
+      const cutText = known.length < 2 ? '' : f.cut != null && f.cut >= 0.05 ? '. The loudest, ' + f.loud.name + ', is turned down ' + f.cut.toFixed(1) + ' dB' : f.cut != null ? '. They’re all as loud as each other' : '';
       const note = !list.length ? 'No cues on it yet'
         : v.off ? 'Off: its cues play as recorded'
         : !known.length ? 'Its cues haven’t been measured yet: as recorded until they are'
-        : 'Level: ' + dB(t) + ' LUFS, its quietest cue (' + q.name + ')' + (known.length < 2 ? '' : cut >= 0.05 ? '. The loudest, ' + loud.name + ', is turned down ' + cut.toFixed(1) + ' dB' : '. They’re all as loud as each other')
-          + (waiting ? ' · ' + waiting + ' not measured yet' : '');
-      return `<div class="lv-row" data-out="${esc(k)}"><span class="lv-what${k === SHOW ? '' : ' own'}" title="${esc(name)}">→ ${esc(name)}</span>` +
+        : waiting ? (f.t == null ? 'As recorded for now' : 'Level in use: ' + dB(f.t) + ' LUFS' + cutText) + '. Waiting: ' + dB(f.q) + ' LUFS, its quietest cue now (' + f.quiet.name + '): click the level box (top right) or ▶ Tone to use it'
+        : 'Level: ' + dB(f.t) + ' LUFS, its quietest cue (' + f.quiet.name + ')' + cutText;
+      return `<div class="lv-row${waiting ? ' waiting' : ''}" data-out="${esc(k)}"><span class="lv-what${k === SHOW ? '' : ' own'}" title="${esc(name)}">→ ${esc(name)}</span>` +
         `<label class="check" title="On: every cue on this output as loud as its quietest. Off: as recorded (only a ✂ trim)"><input type="checkbox" data-lv="on"${v.off ? '' : ' checked'}> Level</label>` +
-        `<button class="small" data-lv="tone"${t == null ? ' disabled' : ''} title="A 1 kHz tone at this level, on this output: set the desk by it">${tones.has(k) ? '■ Tone' : '▶ Tone'}</button>` +
-        `<span class="hint lv-note">${gone ? '<span class="warn">Not connected</span> · ' : ''}${esc(note)}</span></div>`;
+        `<button class="small" data-lv="tone"${f.q == null ? ' disabled' : ''} title="A 1 kHz tone at this level, on this output: set the desk by it (and the level box counts it as set)">${tones.has(k) ? '■ Tone' : '▶ Tone'}</button>` +
+        `<label class="lv-trim" title="Console trim = this − the level in use: the makeup gain for the desk's digital trim (or a channel compressor's makeup gain, at 1:1 or a threshold it never reaches). Set it once so the console trim reads what the desk sounds right at; after that, set the desk's trim to the console trim whenever the level changes">LUFS trim offset <input type="number" data-lv="trim" step="0.5" min="-60" max="60" value="${numOf(k, 'trim') || 0}"${v.off ? ' disabled' : ''}> dB</label>` +
+        `<span class="lv-console" data-trim="${esc(k)}">${v.off || f.t == null ? '' : 'console trim ' + sdB(trimOf(k, f.t)) + ' dB'}</span>` +
+        `<span class="hint lv-note">${gone ? '<span class="warn">Not connected</span> · ' : ''}${esc(note + (unmeasured && known.length ? ' · ' + unmeasured + ' not measured yet' : ''))}</span></div>`;
     }).join('');
+    box.closest('.lvsec').classList.toggle('waiting', anyWaiting);
+    $('lvauto').checked = auto;
+    $('lvautonote').textContent = auto ? '' : 'Off: a new level waits until you click the level box (or start ▶ Tone).';
+    renderLevelBox(o);
   }
+  // The level box (top right, not scrolled; the owner, 13 Nov 2026): each output's level and its loudest cue's cut,
+  // always (once there are cues). Neutral once the desk is set (a click on it, or ▶ Tone); amber while it never
+  // was; flashing when a level changed since (automatic off: a new level waiting, used by the click)
+  function renderLevelBox(o) {
+    const box = $('levelbox');
+    if (!box) return;
+    box.hidden = !o.all.length;
+    if (box.hidden) return;
+    const auto = autoLevels(), rows = o.keys.filter(k => quietOf(k) != null).map(k => levelFacts(k, o));
+    const flash = rows.some(r => r.changed), unset = !flash && rows.some(r => r.unset), many = rows.length > 1;
+    const say = !rows.length ? (o.keys.every(k => levelOf(k).off) ? 'Levels off' : 'Levels: no cue measured yet')
+      : flash ? (auto ? 'Level changed: set the desk, then click here' : 'New level waiting: click to use it')
+      : unset ? (auto ? 'Set the desk (▶ Tone), then click here' : 'Click to use this level') : '✓ Desk set for this level';
+    const html = rows.map(r => `<span class="lb-row">${many ? `<span class="lb-name">${esc(outName(r.k, o))}</span>` : ''}` +
+        `<span class="lb-lufs">${r.waiting && r.t != null ? dB(r.t) + ' → ' : ''}${dB(r.q)} <small>LUFS</small></span></span>` +
+        `<span class="lb-cut">${r.cut == null ? 'as recorded for now' : r.cut >= 0.05 ? 'loudest cue turned down ' + r.cut.toFixed(1) + ' dB' : 'no cue turned down'}</span>` +
+        `<span class="lb-trim">console trim ${r.waiting && r.t != null ? sdB(trimOf(r.k, r.t)) + ' → ' : ''}${sdB(trimOf(r.k, r.waiting ? r.q : r.t != null ? r.t : r.q))} dB</span>`).join('') +
+      `<span class="lb-say">${esc(say)}</span>`;
+    if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
+    box.className = !rows.length ? 'lb-ok' : flash ? 'lb-flash' : unset ? 'lb-unset' : 'lb-ok';
+    box.disabled = !rows.length;
+    box.title = !rows.length ? '' : auto ? 'Each output’s level: its quietest cue. Click when the desk is set for it' : 'Each output’s level: its quietest cue. Click to use a new level (and when the desk is set for it)';
+  }
+  $('levelbox').addEventListener('click', e => {
+    e.currentTarget.blur();
+    for (const k of outputs().keys) confirmLevel(k);
+    renderLevels();
+  });
+  $('lvauto').addEventListener('change', e => { e.target.blur(); setAuto(e.target.checked); });
+  function setTrim(input, tidy) {                      // a LUFS trim offset typed (−60…+60 dB; 0 = none)
+    const k = input.closest('.lv-row').dataset.out, n = Math.round(Number(input.value) * 10) / 10;
+    if (input.value === '' || !Number.isFinite(n)) { if (tidy) input.value = numOf(k, 'trim') || 0; return; }
+    const v = Math.max(-60, Math.min(60, n));
+    levels[k] = Object.assign({}, levels[k]);
+    if (v) levels[k].trim = v; else delete levels[k].trim;
+    saveLevels();
+    if (tidy) input.value = v;
+    const el = $('levels').querySelector(`.lv-console[data-trim="${CSS.escape(k)}"]`), t = targetOf(k);
+    if (el && t != null) el.textContent = 'console trim ' + sdB(trimOf(k, t)) + ' dB';
+    renderLevelBox(outputs());
+  }
+  $('levels').addEventListener('input', e => { if (e.target.dataset.lv === 'trim') setTrim(e.target, false); });
+  $('levels').addEventListener('focusout', e => { if (e.target.dataset.lv === 'trim') { setTrim(e.target, true); setTimeout(renderLevels, 0); } });
   $('levels').addEventListener('change', e => {
     if (e.target.dataset.lv === 'on') setLevel(e.target.closest('.lv-row').dataset.out, { off: !e.target.checked });
   });
@@ -1218,7 +1318,8 @@
     // The extra keys: files dropped on a key (cues[BOARD]); they play by hand, Follow or not
     board: () => cues[BOARD] || [],
     isPlaying: id => playing.has(id),
-    playCue: id => { const c = (cues[BOARD] || []).find(x => x.id === id); if (c) play(c); },
+    playCue: id => { const c = Object.values(cues).flat().find(x => x.id === id); if (c) play(c); },   // (an extra key's, or an item's cue 1: as its ▶)
+    cueLocked: id => !!(local && local.item === id && !cueControl()),   // (as its cues' ▶ ■: the item run has them)
     fadeCue: (id, ms) => { const p = playing.get(id); if (p) p.voice.fade(ms); return p ? [id] : []; },
     async addFiles(files) { const ids = []; for (const f of files) { const c = await addCue(BOARD, { file: f }, 'start', 0); if (c) ids.push(c.id); } return ids; },
     removeExtra: id => removeCue(BOARD, id),
@@ -1231,6 +1332,7 @@
     clocks: () => ({ big: $('bigclock').hidden ? null : $('bc-left').textContent + ' ' + $('bc-what').textContent, items: Object.fromEntries([...document.querySelectorAll('#items > li[data-id]')].map(li => [li.dataset.id, li.querySelector('.iclock').textContent])),
       cues: Object.fromEntries([...document.querySelectorAll('.cclock[data-clock]')].map(e => [e.dataset.clock, e.textContent])) }),
     gain: id => { const p = playing.get(id); return p ? p.voice.gain() : null; }, levels: () => levels, target: k => targetOf(k), tones: () => [...tones.keys()],
+    levelBox: () => ({ shown: !$('levelbox').hidden, cls: $('levelbox').className, text: $('levelbox').textContent }),
     video: () => ({ where: vid.ownerDocument === document ? 'here' : 'external', paused: vid.paused, t: vid.currentTime, src: !!vid.getAttribute('src') }) };
 
   // ─── Demo (?demo, or /p?demo on the hosted site; the owner, 12 Nov 2026: to show the idea without a

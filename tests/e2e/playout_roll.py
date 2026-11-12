@@ -174,6 +174,34 @@ with sync_playwright() as p:
     files = [x for k in ids for x in rolled()[k] if x["src"] == "file"]
     check("from the folder only: its two files, rolled, kept in the browser; the others keep theirs", len(files) == 2 and all(x["song"].startswith("size:") for x in files)
           and all(stored([x["id"] for x in files])) and unique() and msg.startswith("2 items got a sting"), (msg, [x["name"] for x in files]))
+
+    # Exclude this from random selection pools (+ cue's Custom file, the owner, 13 Nov 2026): kept as it's ticked, Cancel or not
+    def picker():
+        po.click('#items li[data-id="demo-1"] button[data-act=add]')
+        po.click('#items li[data-id="demo-1"] form.addcue button.primary'); po.wait_for_timeout(600)
+        po.click('.sting-dlg .sting-tab[data-mode=custom]'); po.wait_for_timeout(400)
+    fopts = lambda: po.evaluate("[...document.querySelectorAll('#sting-folder option')].map(o => o.textContent)")
+    pick = lambda name: po.select_option("#sting-folder", po.evaluate("n => [...document.querySelectorAll('#sting-folder option')].find(o => o.textContent.startsWith(n)).value", name))
+    before = cues()["demo-1"]
+    picker()
+    pick("Big entrance"); po.wait_for_timeout(200)
+    check("Custom file: under the folder's list, Exclude this from random selection pools (unticked)", po.is_visible("#sting-fexclude") and not po.is_checked("#sting-fexclude"))
+    po.check("#sting-fexclude"); po.wait_for_timeout(200)
+    check("… ticked: the list marks it", "Big entrance · not picked at random" in fopts() and "Walk on" in fopts(), fopts())
+    pick("Walk on"); po.wait_for_timeout(200)
+    check("… another file chosen: its own tick (none)", not po.is_checked("#sting-fexclude"))
+    po.click(".sting-dlg .sting-cancel"); po.wait_for_timeout(300)
+    ex = json.loads(po.evaluate("localStorage.sting_roll_exclude || '{}'"))
+    check("Cancel: the tick is kept (by name and size), nothing chosen", list(ex) == ["Big entrance.wav|%d" % len(FOLDER[1][1])] and cues()["demo-1"] == before, [ex, cues()["demo-1"]])
+    msg = roll()
+    files = [x for k in ids for x in rolled()[k] if x["src"] == "file"]
+    check("🎲 from the folder again: never the excluded file", files and all(x["song"] == "size:%d" % len(FOLDER[0][1]) for x in files), [x["name"] for x in files])
+    picker()
+    pick("Big entrance"); po.wait_for_timeout(200)
+    check("the dialog again: its tick is still there", po.is_checked("#sting-fexclude"))
+    po.uncheck("#sting-fexclude"); po.wait_for_timeout(200)
+    check("… unticked: kept at once, the mark goes", json.loads(po.evaluate("localStorage.sting_roll_exclude || '{}'")) == {} and not any("not picked" in o for o in fopts()), fopts())
+    po.click(".sting-dlg .sting-cancel"); po.wait_for_timeout(300)
     po.check("#roll-stock"); po.check("#roll-mine"); po.uncheck("#roll-folder")
 
     # Remove rolled stings

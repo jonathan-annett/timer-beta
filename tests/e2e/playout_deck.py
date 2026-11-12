@@ -38,7 +38,7 @@ FAKE_HID = """(() => {
   Object.defineProperty(navigator, 'hid', { configurable: true, value: {
     getDevices: async () => [mk2, xl], requestDevice: async () => [xl], addEventListener() {}, removeEventListener() {} } });
 })();"""
-SETUP = """async () => {                     // seven speakers with a 6 s tone each (a start cue), files in the store
+SETUP = """async () => {                     // seven speakers with a 10 s tone each (a start cue), files in the store (longer than a 5 s fade)
   const wav = sec => { const sr = 16000, n = sr * sec, b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
     const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
     w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
@@ -47,8 +47,8 @@ SETUP = """async () => {                     // seven speakers with a 6 s tone e
     return new Blob([b], { type: 'audio/wav' }); };
   const cues = {};
   for (let k = 1; k <= 7; k++) {
-    cues['demo-' + k] = [{ id: 'c' + k, name: 'Tone ' + k, media: 'audio', src: 'file', trigger: 'start', at: 0, duration: 6 }];
-    await videoStore.put('pocue:c' + k, wav(6));
+    cues['demo-' + k] = [{ id: 'c' + k, name: 'Tone ' + k, media: 'audio', src: 'file', trigger: 'start', at: 0, duration: 10 }];
+    await videoStore.put('pocue:c' + k, wav(10));
   }
   localStorage.playout_demo_cues = JSON.stringify(cues);
   localStorage.deck_claims = JSON.stringify({ 'sn:MK2SERIAL01': 'playout' });
@@ -89,7 +89,7 @@ with sync_playwright() as p:
     faces = po.evaluate("window.__playoutDeck.faces('mk2')")
     check("a key per item with cues, in run sheet order", [f.split(" | ")[0] for f in faces[:7]] == names[:7] and faces[7] == "", faces)
     check("… the last key: everything (tap stops, hold fades)", faces[14] == "■ All | tap: stop", faces[14])
-    check("… next to it: Give to the timer (dim: no timer page open)", faces[13] == "Give to the timer | deck", faces[13])
+    check("… next to it: Give to the timer (dim: no timer page open)", faces[13] == "→ timer | deck", faces[13])
 
     # a press starts the item (Follow is off in the demo)
     key(0, 1); key(0, 0); po.wait_for_timeout(500)
@@ -100,14 +100,15 @@ with sync_playwright() as p:
     key(0, 1); po.wait_for_timeout(80); key(0, 0); po.wait_for_timeout(300)
     check("a tap on it: stopped (and the item run ended)", playing() == [] and local() is None, [playing(), local()])
 
-    # a hold fades it out (2 s), stopped wherever it's let go
+    # a hold fades it out (5 s unless changed), stopped wherever it's let go
+    check("the fade time: 5 s unless changed", po.input_value("#deckfade") == "5" and po.evaluate("localStorage.playout_deck_fade ?? null") is None, po.input_value("#deckfade"))
     key(0, 1); key(0, 0); po.wait_for_timeout(600)
     g0 = po.evaluate("window.__playout.gain('c1')")
     key(0, 1); po.wait_for_timeout(1000)
     g1 = po.evaluate("window.__playout.gain('c1')")
     check("held: still playing after 1 s, fading", playing() == ["c1"] and g1 is not None and g1 < g0 * 0.8, [playing(), g0, g1])
     check("… the key says fading (orange)", po.evaluate("window.__playoutDeck.bgs('mk2')[0]") == "#9a5200", po.evaluate("window.__playoutDeck.bgs('mk2')[0]"))
-    po.wait_for_timeout(1500)
+    po.wait_for_timeout(4500)
     check("… held past the fade: gone", playing() == [], playing())
     key(0, 0); po.wait_for_timeout(200)
     check("… let go after: nothing more", playing() == [] and local() is None)
@@ -185,7 +186,7 @@ with sync_playwright() as p:
     lit = po.evaluate(DROP, [vk(0, 9), ["Applause.wav"], 4]); po.wait_for_timeout(1500)
     x = extras()
     check("a file dropped on a free key: an extra key", [c["name"] for c in x] == ["Applause"] and po.evaluate("window.__playoutDeck.slots('mk2')[9]") == "cue:" + x[0]["id"] and "drop" in lit, [x, lit])
-    check("… on the deck too, with its length", po.evaluate("window.__playoutDeck.faces('mk2')[9]") == "Applause | 0:04", po.evaluate("window.__playoutDeck.faces('mk2')[9]"))
+    check("… on the deck too: 'extra' on top, its length at the bottom (where an item's is)", po.evaluate("window.__playoutDeck.face('mk2', 0, 9).rs") == {"cap": "extra", "body": "Applause", "foot": "0:04"}, po.evaluate("window.__playoutDeck.face('mk2', 0, 9).rs"))
     check("… listed under the deck (▶ ✂ ✕, its output; no when)", po.locator("#boardlist .cues li").count() == 1 and po.locator("#boardlist button[data-act=edit]").count() == 1 and po.locator("#boardlist button[data-act=when]").count() == 0 and po.locator("#boardlist select.cout").count() == 1)
     ax = x[0]["id"]
     key(9, 1); key(9, 0); po.wait_for_timeout(500)
@@ -232,6 +233,32 @@ with sync_playwright() as p:
     check("… its keys work", (local() or {}).get("item") == "demo-2", local())
     po.evaluate("__decks.xl.key(31, 1); __decks.xl.key(31, 0)"); po.wait_for_timeout(200)
 
+    # the XL's Item / Cue 1 key (the owner, 13 Nov 2026), just before → timer: what the item keys play
+    xf = lambda: po.evaluate("window.__playoutDeck.faces('xl')")
+    xk = lambda i, v: po.evaluate("__decks.xl.key(%d, %d)" % (i, v))
+    bg = lambda i: po.evaluate("window.__playoutDeck.bgs('xl')[%d]" % i)
+    f = xf(); gi = f.index("→ timer | deck")
+    check("the XL: Item / Cue 1 just before → timer (items unless changed)", gi == 30 and f[29] == "Item | keys play" and f[31].startswith("■ All"), f[26:])
+    check("… not on the MK.2", not any(x.split(" | ")[0] in ("Item", "Cue 1") for x in po.evaluate("window.__playoutDeck.faces('mk2')")))
+    idle = bg(2)
+    xk(29, 1); xk(29, 0); po.wait_for_timeout(300)
+    check("tapped: Cue 1, kept on this computer; the item keys a teal tint", xf()[29] == "Cue 1 | keys play" and po.evaluate("localStorage.playout_deck_xl_mode") == "cue" and bg(2) == "#123a3c" and idle != bg(2), [xf()[29], idle, bg(2)])
+    check("… the key's foot: its first cue's length", po.evaluate("window.__playoutDeck.face('xl', 0, 2).rs.foot") == "0:10", po.evaluate("window.__playoutDeck.face('xl', 0, 2).rs"))
+    xk(2, 1); xk(2, 0); po.wait_for_timeout(500)
+    check("… an item's key plays its first cue, as the cue's ▶ (no item run)", playing() == ["c3"] and local() is None and bg(2) == "#13602a", [playing(), local(), bg(2)])
+    xk(2, 1); po.wait_for_timeout(80); xk(2, 0); po.wait_for_timeout(300)
+    check("… a tap stops it", playing() == [] and bg(2) == "#123a3c", [playing(), bg(2)])
+    xk(2, 1); xk(2, 0); po.wait_for_timeout(500); xk(2, 1); po.wait_for_timeout(250)   # (the fade time is 0.5 s by now)
+    check("… a hold fades it (orange)", playing() == ["c3"] and bg(2) == "#9a5200", [playing(), bg(2)])
+    xk(2, 0); po.wait_for_timeout(200)
+    check("… let go: stopped there", playing() == [])
+    po.click('#items li[data-id="demo-3"] .ihead button[data-act=run]'); po.wait_for_timeout(500)
+    xk(2, 1); po.wait_for_timeout(80); xk(2, 0); po.wait_for_timeout(300)
+    check("its item run from ▶ Start item: the key is locked, as the cue's ▶ ■", playing() == ["c3"] and (local() or {}).get("item") == "demo-3" and not po.evaluate("window.__playoutDeck.face('xl', 0, 2).press"), [playing(), local()])
+    xk(31, 1); xk(31, 0); po.wait_for_timeout(300)
+    xk(29, 1); xk(29, 0); po.wait_for_timeout(300)
+    check("tapped again: Item, the tint gone", xf()[29] == "Item | keys play" and po.evaluate("localStorage.playout_deck_xl_mode ?? null") is None and bg(2) == idle, [xf()[29], bg(2)])
+
     # the timer page on the same computer: it leaves the playout's decks alone, and takes one when given it
     po.screenshot(path=OUTDIR + "/playout_deck.png", full_page=True)
     t = c.new_page(); t.on("pageerror", lambda e: errs.append("timer: " + str(e)))
@@ -246,7 +273,7 @@ with sync_playwright() as p:
 
     # one key hands it back and forth: Give to the timer (lit: a timer page with no deck), …
     po.wait_for_timeout(1700)
-    check("Give to the timer lit: the timer page is open with no deck", po.evaluate("window.__playoutDeck.faces('mk2')[13]") == "Give to the timer | deck" and po.evaluate("localStorage.deck_timer ?? null") is None)
+    check("Give to the timer lit: the timer page is open with no deck", po.evaluate("window.__playoutDeck.faces('mk2')[13]") == "→ timer | deck" and po.evaluate("localStorage.deck_timer ?? null") is None)
     po.evaluate("__decks.mk2.features = []; __decks.mk2.key(13, 1); __decks.mk2.key(13, 0)"); po.wait_for_timeout(1500)
     check("its key: the deck to the timer (Elgato's screen first)", t.evaluate("__decks.mk2.opened") and not po.evaluate("__decks.mk2.opened") and po.evaluate("__decks.mk2.features") == [[3, 2]], [t.evaluate("__decks.mk2.opened"), po.evaluate("__decks.mk2.features")])
     check("… the timer notes it has a deck (the XL's key: it has one)", po.evaluate("localStorage.deck_timer") == "sn:MK2SERIAL01" and po.evaluate("window.__playoutDeck.face('xl', 0, 30).rs.foot") == "it has one", po.evaluate("window.__playoutDeck.face('xl', 0, 30)"))
@@ -256,7 +283,7 @@ with sync_playwright() as p:
     tf = t.evaluate("StreamDeck.faces('mk2')[4]")
     check("the timer's Give deck to playout: lit while the playout page is open", tf["label"] == "Give deck\nto playout" and tf["bg"] == "#2a2200", tf)
     pf = [x.split(" | ")[0] for x in po.evaluate("window.__playoutDeck.faces('mk2')")]
-    check("… the playout's Give to the timer moves to the same key (the items round it)", pf[4] == "Give to the timer" and pf[:4] == names[:4] and pf[5:8] == names[4:7] and pf[14] == "■ All", pf)
+    check("… the playout's Give to the timer moves to the same key (the items round it)", pf[4] == "→ timer" and pf[:4] == names[:4] and pf[5:8] == names[4:7] and pf[14] == "■ All", pf)
     t.evaluate("__decks.mk2.key(4, 1); __decks.mk2.key(4, 0)"); t.wait_for_timeout(600)
     check("pressed on the timer's deck: the playout page has it again", po.evaluate("__decks.mk2.opened") and not t.evaluate("__decks.mk2.opened") and "playout page" in t.text_content("#deck-status"), t.text_content("#deck-status"))
     po.evaluate("__decks.mk2.key(4, 1); __decks.mk2.key(4, 0)"); po.wait_for_timeout(500)

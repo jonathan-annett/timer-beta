@@ -4,7 +4,7 @@
  * 2026; rehearsals, where the order depends on who's there). A key per item with cues, in run sheet order
  * unless arranged: with Follow the timer off, pressing one starts the item (▶ Start item: its cues timed
  * from the press). On an item that's playing (or started here), the key stops it: going down starts a fade
- * (over at most playout_deck_fade seconds, 2 unless set), coming up stops it at once; so a tap stops it,
+ * (over at most playout_deck_fade seconds, 5 unless set: even in dB, 13 Nov 2026), coming up stops it at once; so a tap stops it,
  * and holding fades it out, stopped wherever it's let go. The last key does the same for everything
  * (and the line-up tones); ◀ ▶ before it turn the page when the items don't fit (the Mini: four items, and ▶
  * top right, wrapping round to the first page). With Follow on, the keys
@@ -15,6 +15,11 @@
  * cues of their own (playout.js cues['~board'], listed under the deck with ▶ ■ ✂ ✕): pressed, they play;
  * playing, a tap stops and a hold fades, as an item; Follow or not. + Page adds a page of empty keys, − Page
  * removes the last one if it's empty.
+ *
+ * Item or cue 1 (the XL, the owner, 13 Nov 2026: some operators prefer it): a key just before → timer toggles
+ * what the item keys do (playout_deck_xl_mode = 'cue', else items). Cue 1: an item's key stands in for its first
+ * cue's ▶ / ■ (pressed, it plays; playing, a tap stops and a hold fades, as an extra key; locked as that button
+ * is while its item runs from ▶ Start item), and its idle colour is a teal tint, so it's plain which way it is.
  *
  * Keys are arranged per deck model (playout_deck_layout = {mini|mk2|xl: [item id | 'cue:<id>' | null, …]},
  * slots in page order, empty pages kept; playout_demo_deck_layout in the demo): Arrange keys on the page
@@ -38,7 +43,8 @@
  *   PlayoutDeck.create(api) → {changed()}: api = {store, demo, items(), cuesOf(id), title(it), following(),
  *   nowId(), isDone(id), playingIds(id), anyPlaying(), localItem(), localText(), startText(it), start(id), fadeItem(id, ms) → cue ids,
  *   fadeAll(ms) → cue ids, stopIds(ids), stopAll(), board() (the extra keys' cues), isPlaying(cue id), playCue(id),
- *   fadeCue(id, ms) → ids, addFiles(files) → new cue ids, removeExtra(id), server() (the pairing server)}
+ *   fadeCue(id, ms) → ids, addFiles(files) → new cue ids, removeExtra(id), server() (the pairing server),
+ *   cueLocked(item id) (its cues' ▶ ■ locked by an item run)}
  * MIT Licensed
  */
 var PlayoutDeck = (function () {
@@ -46,14 +52,15 @@ var PlayoutDeck = (function () {
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const mmss = sec => { sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0'); };
-  const COLOURS = { extra: '#2e1f45', idle: '#1c2a3a', none: '#121212', here: '#7a5c00', play: '#13602a', fade: '#9a5200', now: '#0b3d5c', done: '#181818', all: '#3a1212', allOn: '#8a1a1a', page: '#262626' };
+  const COLOURS = { extra: '#2e1f45', idle: '#1c2a3a', cue: '#123a3c', none: '#121212', here: '#7a5c00', play: '#13602a', fade: '#9a5200', now: '#0b3d5c', done: '#181818', all: '#3a1212', allOn: '#8a1a1a', page: '#262626' };
 
   function create(api) {
-    const LAYOUT = api.demo ? 'playout_demo_deck_layout' : 'playout_deck_layout', FADE = 'playout_deck_fade', MODEL = 'playout_deck_model';
+    const LAYOUT = api.demo ? 'playout_demo_deck_layout' : 'playout_deck_layout', FADE = 'playout_deck_fade', MODEL = 'playout_deck_model', XLMODE = 'playout_deck_xl_mode';
     const MODELS = DeckHID.MODELS;
     let arranged = {};
     try { const v = JSON.parse(api.store.get(LAYOUT) || '{}'); if (v && typeof v === 'object') arranged = v; } catch (_) { /* none */ }
-    const fadeSecs = () => { const v = parseFloat(api.store.get(FADE)); return v >= 0.2 && v <= 10 ? v : 2; };
+    const cueMode = model => model === 'xl' && api.store.get(XLMODE) === 'cue';   // (the XL's item keys play their cue 1)
+    const fadeSecs = () => { const v = parseFloat(api.store.get(FADE)); return v >= 0.2 && v <= 10 ? v : 5; };   // (5 s: the owner, 13 Nov 2026, once fades were even in dB; 2 before)
 
     // ─── Keys: slots (item ids in page order) and what each key is ───
     const onSheet = () => new Map(api.items().map(it => [it.id, it]));
@@ -70,10 +77,11 @@ var PlayoutDeck = (function () {
     // The Mini (the owner, 12 Nov 2026): too few keys for Give to the timer or ◀ ▶: always four items, ▶ top
     // right (the next page, back to the first after the last: tap through the run sheet) over everything.
     const MINI = { role: [null, null, 'next', null, null, 'all'], keys: [0, 1, 3, 4] };
-    // Give to the timer goes on the key where the timer's layout for that model has Give deck to playout
-    // (streamdeck.js; a layout someone has changed is in streamdeck_layout_<model>), so one key hands the
-    // deck back and forth; without one, next to the last. From the end, the free keys then take everything
-    // (the last), and ◀ ▶ when the items don't fit; the rest are the items' keys, in order.
+    // Give to the timer (→ timer) goes on the key where the timer's layout for that model has Give deck to
+    // playout (streamdeck.js; a layout someone has changed is in streamdeck_layout_<model>), so one key hands
+    // the deck back and forth; without one, next to the last. From the end, the free keys then take everything
+    // (the last), on the XL item / cue 1 just before → timer, and ◀ ▶ when the items don't fit; the rest are
+    // the items' keys, in order.
     function giveKey(model) {
       try { const l = JSON.parse(api.store.get('streamdeck_layout_' + model) || 'null'), i = Array.isArray(l) ? l.indexOf('deck_to_playout') : -1; return i >= 0 && i < MODELS[model].keyCount ? i : null; }
       catch (_) { return null; }
@@ -87,6 +95,7 @@ var PlayoutDeck = (function () {
         if (r != null) role[r] = 'give';
         role[last()] = 'all';
         if (r == null) role[last()] = 'give';
+        if (model === 'xl') { const gi = role.indexOf('give'); role[gi > 0 && !role[gi - 1] ? gi - 1 : last()] = 'mode'; }
         if (paged) { role[last()] = 'next'; role[last()] = 'prev'; }
         return { role, keys: role.map((x, i) => (x ? -1 : i)).filter(i => i >= 0) };
       };
@@ -110,14 +119,15 @@ var PlayoutDeck = (function () {
         else if (k.kind === 'next') b.page = g.wrap ? (Math.min(b.page, g.pages - 1) + 1) % g.pages : Math.min(g.pages - 1, b.page + 1);
         else if (k.kind === 'all') b.presses.set(i, { all: true, ids: api.fadeAll(fadeSecs() * 1000) });
         else if (k.kind === 'give') { if (b.deck && timerFree() && performance.now() - b.at > HANDOVER_MS) { giveBack(b.deck.id); return; } }
+        else if (k.kind === 'mode') { if (cueMode(model)) api.store.del(XLMODE); else api.store.set(XLMODE, 'cue'); }
         else {
-          const id = s[k.slot], x = extraOf(id);
-          if (x) {                                     // an extra key: plays; playing, down fades and up stops
+          const id = s[k.slot], x = extraOf(id) || (cueMode(model) && onSheet().has(id) && !api.cueLocked(id) ? api.cuesOf(id)[0] : null);
+          if (x) {                                     // an extra key (or cue 1): plays; playing, down fades and up stops
             if (api.isPlaying(x.id)) b.presses.set(i, { item: id, ids: api.fadeCue(x.id, fadeSecs() * 1000) });
             else api.playCue(x.id);
             return changed();
           }
-          if (!id || !onSheet().has(id)) return;
+          if (!id || !onSheet().has(id) || cueMode(model)) return;
           if (api.localItem() === id || api.playingIds(id).length) b.presses.set(i, { item: id, ids: api.fadeItem(id, fadeSecs() * 1000) });
           else if (!api.following() && api.cuesOf(id).length) api.start(id);
         }
@@ -131,9 +141,10 @@ var PlayoutDeck = (function () {
     }
 
     // ─── Faces (deck-face.js), the same on a deck and on the page ───
-    function itemFace(id, items) {
+    function itemFace(id, items, cue1) {
       const it = items.get(id);
       if (!it) return { bg: '#000', fg: '#000', press: false, slot: true, a: 'empty' };   // nothing (or an item not on the sheet)
+      if (cue1) return cueFace(id, it);
       const n = api.cuesOf(id).length, playing = api.playingIds(id).length, here = api.localItem() === id, follow = api.following();
       // Its start on top, its name, its length (the owner, 13 Nov 2026); what it's doing is its colour
       let bg = n ? COLOURS.idle : COLOURS.none;
@@ -145,12 +156,24 @@ var PlayoutDeck = (function () {
       return { bg, fg: n ? '#fff' : '#777', rs: { cap: api.startText(it), body: api.title(it) || '(no name)', foot: n ? (it.d ? mmss(it.d) : '') : 'no cues' },
         press: here || playing > 0 || (!follow && n > 0), slot: true, a: 'empty' };   // (a: never drawn "off" on the page: its colour says it)
     }
+    // An item key in cue 1 mode (the XL): its start and name as ever, its first cue's length at the bottom; teal
+    // while it isn't playing (the live item still blue with Follow on), green playing, orange fading
+    function cueFace(id, it) {
+      const c = api.cuesOf(id)[0], on = !!c && api.isPlaying(c.id), locked = api.cueLocked(id), len = c ? StingClip.length(c, c.duration) : 0;
+      let bg = COLOURS.cue;
+      if (c && fading(id, on)) bg = COLOURS.fade;
+      else if (on) bg = COLOURS.play;
+      else if (api.following() && api.nowId() === id) bg = COLOURS.now;
+      return { bg, fg: locked ? '#8aa' : '#fff', rs: { cap: api.startText(it), body: api.title(it) || '(no name)', foot: c ? (len ? mmss(Math.max(1, len)) : '') + (api.cuesOf(id).length > 1 ? ' · cue 1' : '') : 'no cues' },
+        press: !!c && !locked, slot: true, a: 'empty' };
+    }
+    // An extra key: what it is (or what it's doing) on top, its length at the bottom, where an item's is
     function extraFace(id, c) {
       const on = api.isPlaying(c.id), len = StingClip.length(c, c.duration);
-      let bg = COLOURS.extra, cap = len ? mmss(Math.max(1, len)) : '';
+      let bg = COLOURS.extra, cap = c.media === 'video' ? 'video' : 'extra';
       if (fading(id, on)) { bg = COLOURS.fade; cap = 'fading'; }
       else if (on) { bg = COLOURS.play; cap = 'playing'; }
-      return { bg, fg: '#fff', rs: { cap, body: c.name || '(no name)', foot: c.media === 'video' ? 'video' : 'extra' }, press: true, slot: true, a: 'empty' };
+      return { bg, fg: '#fff', rs: { cap, body: c.name || '(no name)', foot: len ? mmss(Math.max(1, len)) : '' }, press: true, slot: true, a: 'empty' };
     }
     function faces(model, page) {
       const s = slots(model), g = geometry(model, s.length), items = onSheet();
@@ -161,9 +184,10 @@ var PlayoutDeck = (function () {
         if (k.kind === 'all') return { bg: busy ? COLOURS.allOn : COLOURS.all, fg: '#fff', rs: { cap: 'tap: stop', body: '■ All', foot: 'hold: fade' }, press: true };
         if (k.kind === 'prev') return { bg: COLOURS.page, fg: '#fff', rs: { cap: 'page', body: '◀', foot: (page + 1) + ' / ' + g.pages }, press: page > 0 };
         if (k.kind === 'next') return { bg: COLOURS.page, fg: '#fff', rs: { cap: 'page', body: '▶', foot: (page + 1) + ' / ' + g.pages }, press: g.wrap ? g.pages > 1 : page < g.pages - 1 };
-        if (k.kind === 'give') { const ok = timerFree(); return { bg: ok ? '#2a2200' : '#0d0d0d', fg: ok ? '#ffcc33' : '#444', rs: { cap: 'deck', body: 'Give to the timer', foot: ok ? '' : timer.open ? 'it has one' : 'no timer page' }, press: false, a: 'empty', give: true }; }   // (on a deck only: not the page's keys)
+        if (k.kind === 'give') { const ok = timerFree(); return { bg: ok ? '#2a2200' : '#0d0d0d', fg: ok ? '#ffcc33' : '#444', rs: { cap: 'deck', body: '→ timer', foot: ok ? '' : timer.open ? 'it has one' : 'no timer page' }, press: false, a: 'empty', give: true }; }   // (on a deck only: not the page's keys)
+        if (k.kind === 'mode') { const cm = cueMode(model); return { bg: cm ? COLOURS.cue : COLOURS.page, fg: '#fff', rs: { cap: 'keys play', body: cm ? 'Cue 1' : 'Item', foot: cm ? 'tap: items' : 'tap: cue 1' }, press: true }; }
         const x = extraOf(s[k.slot]);
-        return x ? extraFace(s[k.slot], x) : itemFace(s[k.slot], items);
+        return x ? extraFace(s[k.slot], x) : itemFace(s[k.slot], items, cueMode(model));
       });
     }
 
