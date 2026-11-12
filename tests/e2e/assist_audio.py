@@ -85,7 +85,12 @@ with sync_playwright() as p:
     a.click("#hearstart"); a.wait_for_timeout(300)
     print("play a line:", a.evaluate("(()=>{const b=document.querySelector('#log button.play'); b.click(); return !!b})()"), "| status after:", a.text_content("#asrstate")[:60])
     s0=t.evaluate("processTimerApiMessage({cmd:'snapshot'}).startedAt")
-    a.click("#log .ln[data-i='1']"); a.click("#log .ln.armed button[data-act=move]"); a.wait_for_timeout(1500)
+    # A line is armed by a click on it, but not on its pictures (they enlarge), chips or ▶. A click at the
+    # row's middle landed on a picture whenever one was kept while the line was spoken (12 Nov 2026: why
+    # this failed since the pictures came), and the log re-renders under the pointer as pictures arrive,
+    # so the clicks go to the elements themselves: the line's time, then Move it
+    a.locator("#log .ln[data-i='1'] .t").dispatch_event("click")
+    a.locator("#log .ln.armed button[data-act=move]").dispatch_event("click"); a.wait_for_timeout(1500)
     s1=t.evaluate("processTimerApiMessage({cmd:'snapshot'}).startedAt")
     print("moved to line 2: start +%.1f s | line now:" % ((s1-s0)/1000), a.text_content("#log .ln[data-i='1'] .o"))
     a.click("#listen"); a.wait_for_timeout(500)

@@ -26,13 +26,16 @@
  *   decode(src)        a URL or Blob → AudioBuffer (the whole source)
  *   render(buf, s)     the clip as its own AudioBuffer, loop and fades included
  *   wav(buf)           an AudioBuffer → a 16-bit WAV Blob
+ *   playable(file)     → Promise<File>: an AIFF as WAV (Chrome and Edge can't play or decode AIFF), samples
+ *                      untouched; any other file as it is. Called as a file is chosen, never on a listing
  *   play(buf, {loop})  plays an AudioBuffer (loop: over and over until stopped) → {stop(), ended: Promise, time()}
  *   preview(src, s)    decode, render and play (the stock dialog's ▶) → {stop()}
- *   open({src, name, region, media, original, hideOriginal, saveLabel})  the clip editor: waveform (whole track + zoomed on the
- *                      selection), start/end handles, fades, a loop, loudness and trim, play (levelled), Save as WAV →
+ *   open({src, name, region, media, original, hideOriginal, saveLabel, level})  the clip editor: waveform (whole track + zoomed on the
+ *                      selection), start/end handles, fades, a loop, loudness and trim, play (levelled: to level.target,
+ *                      LUFS or null = not levelled, when given), Save as WAV →
  *                      Promise<{name, start, end, fadeIn, fadeOut, loop, lufs, volume, hideOriginal} | null>;
  *   loudness(buf)      integrated loudness (LUFS, BS.1770) or null (silence)
- *   gainFor(s, target) what a sting with {lufs, volume} plays at: down to the target, never up
+ *   gainFor(s, target) what a sting with {lufs, volume} plays at: down to the target, never up (target null: its trim only)
  *   target()           the show's level (Level this show…, localStorage SHOW_KEY) or the house level (TARGET_KEY, −23)
  *   toneBuffer(lufs)   a second of 1 kHz reading lufs: the line-up tone original (a stock sting's name) adds the
  *                      choice to hide it from + sting while this clip exists (hideOriginal: a better edit)
@@ -41,14 +44,17 @@
 var StingClip = (function () {
   'use strict';
 
-  let ctx = null;
-  const audio = () => {
-    if (ctx) return ctx;
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
-    if (window.AudioOut) AudioOut.attach(ctx);       // the page's output: show or preview (audio-out.js)
+  // A context per output (audio-out.js): the page's own, unless a role is given (a playout computer's
+  // cues: 'show' or a cue's own output; its previews and editing: the page's, 'preview')
+  const ctxs = {};
+  const audio = role => {
+    const k = role || '';
+    if (ctxs[k]) return ctxs[k];
+    const ctx = ctxs[k] = new (window.AudioContext || window.webkitAudioContext)();
+    if (window.AudioOut) AudioOut.attach(ctx, role);
     return ctx;
   };
-  const outOk = () => !window.AudioOut || AudioOut.ok() || (AudioOut.warn(), false);
+  const outOk = role => !window.AudioOut || AudioOut.ok(role) || (AudioOut.warn(role), false);
   const num = v => (typeof v === 'number' && isFinite(v) ? v : null);
   const r2 = t => Math.round(t * 100) / 100;
   const clock = t => { t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
@@ -237,9 +243,52 @@ var StingClip = (function () {
     return new Blob([v], { type: 'audio/wav' });
   }
 
+  // AIFF (Logic's and Pro Tools' format; Safari plays it, Chrome and Edge neither play nor decode it) as a
+  // WAV with the same samples: big-endian PCM (AIFF, AIFF-C 'NONE'/'twos') byte-swapped, 'sowt' as it is,
+  // 8-bit made unsigned, 'fl32'/'fl64' as 32-bit float. Other AIFF-C compressions are refused. Anything
+  // that isn't AIFF (read from its first 12 bytes, whatever its name) comes back untouched.
+  async function playable(file) {
+    if (!file || file.size < 12) return file;
+    const tag = (v, o) => String.fromCharCode(v.getUint8(o), v.getUint8(o + 1), v.getUint8(o + 2), v.getUint8(o + 3));
+    const head = new DataView(await file.slice(0, 12).arrayBuffer());
+    if (tag(head, 0) !== 'FORM' || !/^AIF[FC]$/.test(tag(head, 8))) return file;
+    const src = await file.arrayBuffer(), v = new DataView(src), aifc = tag(v, 8) === 'AIFC';
+    let comm = -1, ssnd = -1, ssndEnd = 0;
+    for (let o = 12; o + 8 <= v.byteLength;) {
+      const id = tag(v, o), size = v.getUint32(o + 4);
+      if (id === 'COMM') comm = o + 8;
+      else if (id === 'SSND') { ssnd = o + 8; ssndEnd = Math.min(v.byteLength, o + 8 + size); }
+      o += 8 + size + (size & 1);
+    }
+    const bad = why => new Error('“' + file.name + '” can’t be used: ' + why + '.');
+    if (comm < 0 || ssnd < 0) throw bad('it has no sound in it');
+    const ch = v.getUint16(comm), bits = v.getUint16(comm + 6);
+    const exp = v.getUint16(comm + 8) & 0x7fff, rate = Math.round((v.getUint32(comm + 10) * 2 ** -31 + v.getUint32(comm + 14) * 2 ** -63) * 2 ** (exp - 16383));   // (80-bit extended)
+    const kind = aifc ? tag(v, comm + 18) : 'NONE';
+    const float = /^(fl32|FL32|fl64|FL64)$/.test(kind);
+    if (!/^(NONE|twos|sowt)$/.test(kind) && !float) throw bad('its compression (“' + kind.trim() + '”) isn’t supported; export it as WAV or uncompressed AIFF');
+    if (!ch || !rate || (!float && (bits < 1 || bits > 32))) throw bad('it isn’t an audio file this page can read');
+    const inBytes = float ? (/64/.test(kind) ? 8 : 4) : Math.ceil(bits / 8), outBytes = float ? 4 : inBytes;
+    const at = ssnd + 8 + v.getUint32(ssnd);           // (SSND: offset, block size, then the samples)
+    const frames = Math.min(v.getUint32(comm + 2), Math.floor((ssndEnd - at) / (inBytes * ch)));
+    if (!(frames > 0)) throw bad('it has no sound in it');
+    const n = frames * ch, bytes = n * outBytes;
+    const out = new ArrayBuffer(44 + bytes), w = new DataView(out), str = (o, t) => { for (let i = 0; i < t.length; i++) w.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, 'RIFF'); w.setUint32(4, 36 + bytes, true); str(8, 'WAVE'); str(12, 'fmt ');
+    w.setUint32(16, 16, true); w.setUint16(20, float ? 3 : 1, true); w.setUint16(22, ch, true); w.setUint32(24, rate, true);
+    w.setUint32(28, rate * ch * outBytes, true); w.setUint16(32, ch * outBytes, true); w.setUint16(34, outBytes * 8, true);
+    str(36, 'data'); w.setUint32(40, bytes, true);
+    const s = new Uint8Array(src, at, n * inBytes), d = new Uint8Array(out, 44);
+    if (float && inBytes === 8) for (let i = 0; i < n; i++) w.setFloat32(44 + i * 4, v.getFloat64(at + i * 8), true);
+    else if (kind === 'sowt') d.set(s);
+    else for (let i = 0, o = 0; i < n; i++, o += inBytes) for (let b = 0; b < inBytes; b++) d[o + b] = s[o + inBytes - 1 - b];
+    if (!float && inBytes === 1) for (let i = 0; i < n; i++) d[i] ^= 0x80;   // (WAV's 8-bit is unsigned)
+    return new File([out], file.name.replace(/\.[^.]+$/, '') + '.wav', { type: 'audio/wav', lastModified: file.lastModified });
+  }
+
   function play(buf, opts) {
-    const c = audio(), loop = !!(opts && opts.loop);
-    if (!outOk()) return { gain: c.createGain(), ended: Promise.resolve(), duration: buf.duration, refused: true, time: () => 0, stop() {}, fade() {} };   // (its output isn't there)
+    const role = opts && opts.role, c = audio(role), loop = !!(opts && opts.loop);
+    if (!outOk(role)) return { gain: c.createGain(), ended: Promise.resolve(), duration: buf.duration, refused: true, time: () => 0, stop() {}, fade() {} };   // (its output isn't there)
     if (c.state === 'suspended') c.resume().catch(() => {});
     const gain = c.createGain(), node = c.createBufferSource();
     node.buffer = buf; node.loop = loop; node.connect(gain); gain.connect(c.destination);
@@ -456,13 +505,15 @@ var StingClip = (function () {
         try { lufs = loudness(render(buf, c)); } catch (_) { lufs = null; }
         return lufs;
       }
-      const levelGain = () => gainFor({ lufs: measure(), volume: Math.pow(10, trimDb / 20) });
+      // (opts.level {target: LUFS | null}: the level of where it plays, e.g. a playout cue's output; null = not levelled)
+      const lvl = opts.level, levelGain = () => gainFor({ lufs: measure(), volume: Math.pow(10, trimDb / 20) }, lvl ? lvl.target : undefined);
       function showLoud() {
         const el = $('.sc-loud');
         if (!buf) { el.textContent = '…'; return; }
         if (lufsKey !== JSON.stringify(cur())) return;                   // (being measured)
         if (lufs == null) { el.textContent = 'silent'; return; }
-        const t = target(), sh = showLevel(), to = sh ? 'this show’s level' : 'the house level';
+        if (lvl && lvl.target == null) { el.textContent = lufs.toFixed(1) + ' LUFS · its output isn’t levelled: plays ' + (trimDb ? 'at ' + (lufs + trimDb).toFixed(1) : 'as it is'); return; }
+        const t = lvl ? lvl.target : target(), sh = showLevel(), to = lvl ? 'its output’s level' : sh ? 'this show’s level' : 'the house level';
         const at = Math.min(lufs, t) + trimDb, dB = at - lufs;
         el.textContent = lufs.toFixed(1) + ' LUFS · ' + (lufs > t ? 'plays at ' + at.toFixed(1) + ' (' + dB.toFixed(1) + ' dB, down to ' + to + ', ' + t.toFixed(1) + ')'
           : 'at or under ' + to + ' (' + t.toFixed(1) + '): plays ' + (trimDb ? 'at ' + at.toFixed(1) : 'as it is'));
@@ -808,7 +859,7 @@ var StingClip = (function () {
     });
   }
 
-  return { region, cleanLoop, plan, length, loopCheck, LIMITS, decode, render, wav, play, preview, open,
+  return { region, cleanLoop, plan, length, loopCheck, LIMITS, decode, render, wav, playable, play, preview, open,
     loudness, toneBuffer, gainFor, trim, target, houseLevel, showLevel, LEVEL, TARGET_KEY, SHOW_KEY };
 })();
 if (typeof module !== 'undefined') module.exports = StingClip;

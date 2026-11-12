@@ -214,8 +214,9 @@ StingLibrary.mount = function (root, opts) {
   });
 
   $('.sl-pickfile').addEventListener('change', async () => {
-    const f = $('.sl-pickfile').files[0]; $('.sl-pickfile').value = '';
+    let f = $('.sl-pickfile').files[0]; $('.sl-pickfile').value = '';
     if (!f) return;
+    try { f = await StingClip.playable(f); } catch (err) { return msg(String(err && err.message || err), true); }   // (an AIFF as WAV)
     try { await L.keepFile(f); } catch (err) { return msg('Couldn’t keep the file in this browser: ' + (err && err.message || err), true); }
     have.add(L.fileKey({ file: f.name, size: f.size }));
     edit({ name: f.name.replace(/\.[^.]+$/, ''), file: f.name, size: f.size, media: f.type.startsWith('video/') ? 'video' : 'audio' }, f, true);

@@ -130,31 +130,7 @@
     #rollpanel #roll-folderpick { padding: 0.07rem 0.5rem; font-size: 0.857rem; }
     #rollpanel label.check { margin-top: 0.286rem; }
     #rollpanel #roll-msg.bad { color: #ffb86b; }
-    .sting-note { color: var(--dim); margin: 0.4rem 0 0.8rem; }
-    .sting-field { display: block; margin: 0.5rem 0; color: var(--dim); }
-    .sting-row { display: flex; gap: 0.4rem; margin-top: 0.25rem; }
-    .sting-dlg .ask-box { width: min(36rem, 94vw); max-width: none; }
-    .sting-dlg select { font: inherit; padding: 0.3rem 0.4rem; background: #1a1a1a; color: var(--text); border: 1px solid var(--line2); border-radius: 0.3rem; }
-    .sting-tabs { display: flex; margin: 0 0 0.6rem; }
-    .sting-tabs .sting-tab { flex: 1; border-radius: 0; padding: 0.45rem 0.6rem; }
-    .sting-tabs .sting-tab:first-child { border-radius: 0.35rem 0 0 0.35rem; }
-    .sting-tabs .sting-tab:last-child { border-radius: 0 0.35rem 0.35rem 0; }
-    .sting-tabs .sting-tab + .sting-tab { border-left: 0; }
-    .sting-tabs .sting-tab.on { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
-    .sting-pane { min-height: 6.5rem; margin-bottom: 0.8rem; }
-    .sting-pane > button { margin: 0.3rem 0 0.4rem; }
-    .sting-libwrap { z-index: 60; }
-    .ask .sting-libbox { width: min(64rem, 94vw); max-width: none; max-height: 88vh; overflow: auto; }
-    .sting-libtop { display: flex; gap: 0.8rem; align-items: baseline; margin-bottom: 0.6rem; }
-    .sting-libtop .sting-note { flex: 1; margin: 0; }
-    .sting-row select { flex: 1; min-width: 0; margin-top: 0 !important; }   /* (min-width 0: a long file name mustn't push ▶ ✂ out of the dialog) */
-    .sting-row button { flex: none; padding: 0.2rem 0.7rem; }
-    .sting-btnrow button { padding: 0.35rem 0.8rem; }
-    #sting-reopen, #sting-folderbox { margin-top: 0.6rem; }
-    #sting-folderbox .sting-note { margin: 0 0 0.25rem; }
-    .sting-check { display: flex; gap: 0.4rem; align-items: center; margin: 0.2rem 0 0.6rem; color: var(--dim); cursor: pointer; }
-    .sting-check input { width: auto; flex: none; margin: 0; }
-    .sting-field select, .sting-field input { display: block; width: 100%; box-sizing: border-box; margin-top: 0.25rem; font: inherit; padding: 0.3rem 0.4rem; background: #1a1a1a; color: var(--text); border: 1px solid var(--line2); border-radius: 0.3rem; }
+    /* + sting and the sting library panel: sting-picker.js injects their styles */
     #rs-table tr.vdrop td { background: #0b2a3d !important; }
     #rs-table td.status { width: 9rem; font-size: 0.857rem; color: var(--dim); }   /* wraps: long notes mustn't squeeze the Item column */
     #rs-table td.name { min-width: 9rem; }
@@ -422,11 +398,13 @@
 
   <script src="markdown-lite.js?v=938fee93"></script>
   <script src="help-overlay.js?v=8a5dbd9d"></script>
-  <script src="sting-library.js?v=2cb7cc28"></script>
-  <script src="audio-out.js?v=6558e786" data-role="preview"></script>
-  <script src="sting-clip.js?v=132c2727"></script>
+  <script src="sting-library.js?v=8c93912b"></script>
+  <script src="audio-out.js?v=e41c465e" data-role="preview"></script>
+  <script src="sting-clip.js?v=8ab12ac7"></script>
+  <script src="sting-picker.js?v=8b880b60"></script>
+  <script src="sting-roll.js?v=32454fa7"></script>
   <script src="video-store.js?v=069f77d9"></script>
-  <script src="runsheet-core.js?v=bbefdbe8"></script>
-  <script src="runsheet-editor.js?v=3288f6a8"></script>
+  <script src="runsheet-core.js?v=7c76e7fa"></script>
+  <script src="runsheet-editor.js?v=0aa4bba4"></script>
 </body>
 </html>

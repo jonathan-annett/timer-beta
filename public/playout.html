@@ -18,6 +18,8 @@
     button.small { padding: 2px 8px; font-size: 13px; }
     button:disabled { opacity: .4; cursor: default; }
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    #demobar { border-color: var(--warn); font-size: 14px; }   /* the demo (?demo): no timer */
+    #demobar b:first-child { color: var(--warn); }
 
     /* Pairing by code (as the overlay) */
     #code { font: bold 44px/1.1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .3em; text-align: center; width: 100%; max-width: 360px;
@@ -45,25 +47,60 @@
     #items > li { border-top: 1px solid var(--line); padding: 8px 4px; }
     #items > li.now { background: #10243a; border-radius: 6px; }
     #items > li.done .iname { color: var(--dim); }
+    #items > li.here { box-shadow: inset 3px 0 0 var(--warn); }   /* an item run here (Follow off: ▶ Start item) */
+    .itag.ilocal { color: var(--warn); font-variant-numeric: tabular-nums; }
     .ihead { display: flex; gap: 10px; align-items: baseline; }
     .iname { font-weight: bold; color: #fff; flex: 1; }
     .idur { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
     .itag { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
     .cues { list-style: none; margin: 6px 0 0; padding: 0 0 0 14px; }
-    .cues li { display: flex; gap: 8px; align-items: center; font-size: 14px; padding: 2px 0; }
+    .cues li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; padding: 2px 0; }
+    .cues li > form.addcue { flex-basis: 100%; margin: 2px 0 4px 2em; }   /* ✎: when it plays */
     .cues .when { color: var(--dim); min-width: 11em; }
     .cues .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cues .clen { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .cues select.cout { flex: 0 1 auto; min-width: 0; max-width: 13em; font: inherit; font-size: 12px; background: #111; color: var(--dim); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    .cues select.cout.own { color: var(--text); border-color: var(--accent); }   /* not the Show output */
+    .cues select.cout.busy { opacity: 1; color: var(--ok); border-color: var(--ok); cursor: not-allowed; }   /* in use: locked until it ends */
     .cues li.fired .when::after { content: " · played"; color: var(--ok); }
     .cues li.playing .fname { color: var(--ok); }
     form.addcue { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 0 14px; font-size: 14px; }
     form.addcue select, form.addcue input[type=text] { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 3px 6px; }
     form.addcue input[type=text] { width: 5.5em; }
 
+    /* Random stings (under the run sheet) */
+    #rollpanel { color: var(--text); font-size: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+    #rollpanel summary { color: var(--dim); cursor: pointer; }
+    #rollpanel > * + * { margin-top: 6px; }
+    #rollpanel input[type=checkbox] { width: auto; padding: 0; }   /* (not the pairing server box's: details input) */
+    #rollpanel input[type=number] { width: 4.5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    #rollpanel select { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    #rollpanel input:disabled { opacity: .4; }
+    #roll-msg.bad { color: var(--warn); }
+
+    /* Options → Levels: one row per output */
+    .lvsec { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+    #levels { margin-top: 8px; }
+    .lv-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 4px 0; font-size: 14px; }
+    .lv-what { flex: 0 0 13em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lv-what.own { color: var(--accent); }   /* a cue's own sound card */
+    .lv-num input { width: 5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    .lv-num input:disabled { opacity: .4; }
+    .lv-note { font-size: 12px; flex: 1 1 14em; }
+
     /* Output: video cues play here (full screen it, or capture this window into the vision mixer) */
     #stage { position: relative; background: #000; aspect-ratio: 16 / 9; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
     #stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
     #stage:fullscreen { border: 0; border-radius: 0; }
     #stage .idle { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #333; font-size: 13px; }
+    #stage .extnote { position: absolute; inset: 0; display: none; flex-direction: column; gap: 6px; align-items: center; justify-content: center; padding: 0 12%; text-align: center; color: var(--dim); font-size: 13px; }
+    #stage .extnote b { color: var(--accent); font-size: 15px; }
+    #stage.external .extnote { display: flex; }   /* videos play in the floating window (To external monitor) */
+    #stage.external .idle { display: none; }
+    /* An item started here is playing its video in the Output box, not on the external monitor: look! */
+    @keyframes ext-flash { 0%, 49.9% { background: #1e6fff; border-color: #1e6fff; color: #fff; } 50%, 100% { background: #ffd400; border-color: #ffd400; color: #000; } }
+    #ext.flash { animation: ext-flash .5s infinite; opacity: 1; font-weight: bold; }
+    @media (prefers-reduced-motion: reduce) { #ext.flash { animation: none; background: #ffd400; border-color: #ffd400; color: #000; } }
   </style>
 </head>
 <body>
@@ -78,9 +115,16 @@
       <details><summary>Pairing server</summary>
         <input id="server" spellcheck="false" aria-label="Pairing server address">
       </details>
+      <p class="hint" style="margin-top:14px">No timer to hand? <button id="trydemo" class="small" type="button">Try the demo</button></p>
     </section>
 
     <section id="paired" hidden>
+      <div id="demobar" class="card" hidden>
+        <div class="row" style="justify-content:space-between">
+          <span><b>Demo</b> · ten made-up speakers, 20 minutes each, and no timer. Add cues with <b>+ cue</b>, then start an item with <b>▶ Start item</b> or play a cue with ▶.</span>
+          <span class="row"><button id="demonames" class="small" title="Other names for the ten speakers (their cues stay)">New speakers</button><button id="demoleave" class="small">Leave the demo</button></span>
+        </div>
+      </div>
       <div id="pinwait" class="card center" hidden>
         <p id="pinmsg">The timer asks who this is. Tell the person at the timer this number (or read it to them over the phone). One wrong try disconnects this computer.</p>
         <div class="pin" id="pincode"></div>
@@ -90,23 +134,58 @@
         <div class="row" style="margin-top:10px">
           <label class="check"><input type="checkbox" id="follow" checked> Follow the timer</label>
           <span id="follow-note" class="hint">Cues play by themselves as the run sheet moves on. Off: they only play when you press ▶.</span>
+          <button id="fadeall" class="small" title="Everything playing fades out over 3 seconds">Fade out (Esc)</button>
           <button id="stopall" class="small">■ Stop all</button>
         </div>
       </div>
       <div class="card">
         <div class="row" style="justify-content:space-between"><b>Run sheet</b><span class="hint" id="rshint"></span></div>
         <ul id="items"></ul>
+        <p id="orphans" class="hint" hidden><span id="orphantext"></span> <button id="orphanx" class="small">Remove them</button></p>
+        <details id="rollpanel">
+          <summary>Random stings</summary>
+          <p class="hint">A walk-up sting at the start of each item long enough to be a speaker, picked at random, none used twice, and copied to this computer like any cue. Items with a start cue of your own are left alone; 🎲 on an item picks another.</p>
+          <div><label class="check"><input type="checkbox" id="roll-stock"> Stock stings</label></div>
+          <div class="row"><label class="check"><input type="checkbox" id="roll-folder"> The folder <span id="roll-foldername"></span></label><button type="button" id="roll-folderpick" class="small">Choose…</button></div>
+          <div><label class="check"><input type="checkbox" id="roll-mine"> My clips <span class="hint">(your edits stand in for the tracks they came from)</span></label></div>
+          <div class="row"><label>Items of at least <input type="number" id="roll-min" min="0" max="600" step="0.5"> min</label></div>
+          <div class="row"><label>Stings <select id="roll-lenop"><option value="">of any length</option><option value="max">no longer than</option><option value="min">at least</option></select> <input type="number" id="roll-len" min="1" max="3600" step="1"> s</label></div>
+          <div class="row"><button id="roll-all" class="small primary">🎲 Roll stings</button><button id="roll-clear" class="small">Remove rolled stings</button></div>
+          <p class="hint" id="roll-msg"></p>
+        </details>
+        <input type="file" id="cuefile" accept="audio/*,video/*" hidden>
       </div>
       <div class="card">
-        <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>Output</b><button id="full" class="small">Full screen (F)</button></div>
-        <div id="stage"><div class="idle">Video cues play here</div><video id="vid" playsinline></video></div>
+        <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>Output</b><span class="row"><button id="ext" class="small">To external monitor</button><button id="full" class="small">Full screen (F)</button></span></div>
+        <div id="stage"><div class="idle">Video cues play here</div><div class="extnote"><b>External playback activated</b><span>Videos play in the floating window: drag it to the other screen and double-click it for full screen.</span></div><video id="vid" playsinline></video></div>
       </div>
-      <p class="hint">Paired with timer room <b id="room"></b>. <button id="unpair" class="small">Unpair this computer</button></p>
+      <div class="card">
+        <b>Sound outputs</b>
+        <p class="hint" style="margin:4px 0 0">Cues play to the show output; the ▶ previews and the clip editor to the other, so you can listen on headphones during the show.</p>
+        <div id="ao-pick"></div>
+      </div>
+      <div class="card">
+        <b>Options</b>
+        <div class="row" style="margin-top:8px">
+          <label class="check"><input type="checkbox" id="cuectl"> Play and stop single cues of an item started here</label>
+          <span class="hint">Off: while an item runs from ▶ Start item, its own cues’ ▶ and ■ are locked (■ Stop item stops them). On: for rehearsals, every cue stays in your hands.</span>
+        </div>
+        <div class="lvsec">
+          <b>Levels</b> <span class="hint">Each output turns its cues down to its own loudness, so one isn’t louder than the next: measured as they play, in LUFS (−23 is broadcast’s level, −14 a music service’s). Never turned up: a quieter cue plays as recorded. Off: every cue as recorded (a ✂ trim still applies). A change applies at once, to what’s playing too.</span>
+          <div id="levels"></div>
+        </div>
+      </div>
+      <p class="hint" id="pairline">Paired with timer room <b id="room"></b>. <button id="unpair" class="small">Unpair this computer</button></p>
     </section>
   </main>
   <script src="features.js?v=4679249b"></script>
   <script src="remote-peer.js?v=fd06de67"></script>
   <script src="video-store.js?v=069f77d9"></script>
-  <script src="playout.js?v=46e798e6"></script>
+  <script src="audio-out.js?v=e41c465e" data-role="both"></script>
+  <script src="sting-clip.js?v=8ab12ac7"></script>
+  <script src="sting-library.js?v=8c93912b"></script>
+  <script src="sting-picker.js?v=8b880b60"></script>
+  <script src="sting-roll.js?v=32454fa7"></script>
+  <script src="playout.js?v=a45bd845"></script>
 </body>
 </html>
