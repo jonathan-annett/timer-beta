@@ -345,6 +345,9 @@ var StingClip = (function () {
 .sc-box canvas { display: block; width: 100%; background: #0a0a0a; border: 1px solid #2a2a2a; border-radius: 0.3rem; cursor: crosshair; }
 .sc-over { height: min(4.2rem, 9vh); margin-bottom: 0.4rem; }
 .sc-zoom { height: min(8rem, 17vh); }
+.sc-zrow { display: flex; gap: 0.5rem; align-items: stretch; }
+.sc-zrow .sc-zoom { flex: 1; min-width: 0; }
+.sc-vid { height: min(8rem, 17vh); aspect-ratio: 16 / 9; background: #000; border: 1px solid #2a2a2a; border-radius: 0.3rem; object-fit: contain; flex: none; }
 .sc-zcap { display: flex; gap: 0.6rem; align-items: center; color: #888; font-size: 0.8rem; margin: 0.1rem 0 0.2rem; min-height: 1.5rem; }
 .sc-box .sc-zcap button { padding: 0.05rem 0.5rem; font-size: 0.8rem; }
 .sc-box canvas.sc-grab { cursor: ew-resize; }
@@ -408,7 +411,7 @@ var StingClip = (function () {
         <div class="sc-head"><b>Choose the part to play</b><span class="sc-src"></span></div>
         <canvas class="sc-over" title="The whole track: drag across it to choose a part, or drag a start/end line${canLoop ? '; Shift+drag marks a loop' : ''}"></canvas>
         <div class="sc-zcap"><span class="sc-zlabel"></span><button class="sc-zall" hidden>Show the whole part</button></div>
-        <canvas class="sc-zoom" title="Close up: drag the start or end line"></canvas>
+        <div class="sc-zrow"><canvas class="sc-zoom" title="Close up: drag the start or end line"></canvas><video class="sc-vid" muted playsinline preload="auto" hidden title="The picture: as the part plays, else the frame at the edge you're working on"></video></div>
         <div class="sc-hint">Drag across the whole track to choose a part; drag a white line (the pointer becomes ↔) to move that edge.${canLoop ? ' Shift+drag marks a loop (orange); drag its ⟲ tab to put the repeats somewhere else.' : ''} ← → move the selected edge (Shift: 1 s, Alt: 0.01 s); ↑ ↓ in a time or fade box step it · Space plays · Enter saves · Esc cancels</div>
         <div class="sc-row">
           <label>Start <input class="sc-t" data-k="start" spellcheck="false" title="↑ ↓: 0.01 s (Shift: 0.1 s)"></label>
@@ -627,7 +630,36 @@ var StingClip = (function () {
         const [a, b] = zoomRange();
         drawWave(zoom, columnPeaks(a, b, Math.min(zoom.width, 1600)), a, b);
         fields();
+        vidSync();
       }
+      // A video's picture (the owner, 13 Nov 2026): beside the close-up, muted (the editor plays the sound, at its
+      // level). Playing: in step with it (sourceAt, so through loops too), put right only when 0.15 s out; still:
+      // the frame at the edge being worked on (else the start), one seek at a time, the latest wanted winning
+      const vid = $('.sc-vid'), isVideo = opts.media === 'video' && !!opts.src;
+      let vidUrl = null, vidWant = null;
+      if (isVideo) {
+        vidUrl = typeof opts.src === 'string' ? opts.src : URL.createObjectURL(opts.src);
+        vid.src = vidUrl; vid.hidden = false;
+        vid.addEventListener('seeked', () => { const t = vidWant; vidWant = null; if (t != null && !voice) vidAt(t); });
+        vid.addEventListener('loadedmetadata', () => vidSync());
+      }
+      function vidAt(t) {
+        if (vid.seeking) { vidWant = t; return; }
+        if (Math.abs(vid.currentTime - t) > 0.02) vid.currentTime = t;
+      }
+      function vidSync() {
+        if (!isVideo || vid.readyState < 1) return;
+        if (voice) {
+          const t = sourceAt(playOff + voice.time(), playSegs);
+          if (vid.paused) { vid.currentTime = t; vid.play().catch(() => {}); }
+          else if (Math.abs(vid.currentTime - t) > 0.15) vid.currentTime = t;
+        } else {
+          if (!vid.paused) vid.pause();
+          const k = TIMES.includes(active) && (!LOOPK[active] || loop) ? active : 'start';
+          vidAt(k === 'end' || k === 'lto' ? Math.max(0, get(k) - 0.04) : get(k));   // (an end: its last frame)
+        }
+      }
+      wrap.__video = () => (isVideo ? { src: !!vid.getAttribute('src'), paused: vid.paused, t: Math.round(vid.currentTime * 100) / 100 } : null);   // (tests)
       const redraw = () => { clamp(); draw(); };
 
       // Pointer: drag across the whole track = a new selection (Shift: a new loop); close up, drag the
@@ -830,7 +862,8 @@ var StingClip = (function () {
       function finish(result) {
         stopPlay();
         if (words) words.stop();
-        clearInterval(readT);
+        if (isVideo) { vid.pause(); vid.removeAttribute('src'); vid.load(); if (vidUrl && typeof opts.src !== 'string') URL.revokeObjectURL(vidUrl); }
+        clearInterval(readT); cancelAnimationFrame(loadRaf);
         document.removeEventListener('keydown', onKey, true);
         window.removeEventListener('resize', draw);
         wrap.remove();
@@ -893,25 +926,45 @@ var StingClip = (function () {
       ['keyup', 'keypress'].forEach(t => wrap.addEventListener(t, e => e.stopPropagation()));
       window.addEventListener('resize', draw);
 
-      // Reading a long file takes a while (a 1 GB, 51-minute video: about 30 s, all of its sound decoded): say so, and count
-      const big = opts.src && opts.src.size > 50e6 ? ` (${opts.src.size >= 1e9 ? (opts.src.size / 1e9).toFixed(1) + ' GB' : Math.round(opts.src.size / 1e6) + ' MB'}: a long file takes a while)` : '';
-      const readAt = Date.now(), readMsg = () => msg('Reading the track' + big + '…' + (Date.now() - readAt > 2000 ? ' ' + Math.round((Date.now() - readAt) / 1000) + ' s' : ''));
-      readMsg();
+      // Reading a long file takes a while (a 1 GB, 51-minute video: about 30 s, all of its sound decoded at once, so
+      // nothing to draw until it's done): say so and count, and move the waveform's place so it doesn't look stuck: a
+      // bar filling over the time this computer took for files before (clip_read_rate, bytes a second, from files over
+      // 20 MB), else a sweep
+      const RATE = 'clip_read_rate', size = opts.src && Number.isFinite(opts.src.size) ? opts.src.size : 0;
+      let rate = 0; try { rate = Number(localStorage.getItem(RATE)) || 0; } catch (_) { /* private mode */ }
+      const guess = size > 20e6 && rate > 0 ? size / rate : null;   // s
+      const big = size > 50e6 ? ` (${size >= 1e9 ? (size / 1e9).toFixed(1) + ' GB' : Math.round(size / 1e6) + ' MB'}: a long file takes a while)` : '';
+      const readAt = Date.now(), secs = () => (Date.now() - readAt) / 1000;
+      const readMsg = () => msg('Reading the track' + big + '…' + (secs() > 2 ? ' ' + Math.round(secs()) + ' s' + (guess ? ' of about ' + Math.max(Math.round(guess), Math.round(secs())) : '') : ''));
+      const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      let loadRaf = 0;
+      function loading() {
+        sizeCanvas(over);
+        const g = over.getContext('2d'), W = over.width, H = over.height, s = secs();
+        g.clearRect(0, 0, W, H);
+        g.fillStyle = 'rgba(74,168,255,0.28)';
+        if (guess) g.fillRect(0, 0, W * Math.min(0.97, s / guess), H);
+        else if (still) g.fillRect(0, 0, W, H);
+        else { const band = W * 0.25; g.fillRect(((s / 1.6) % 1) * (W + band) - band, 0, band, H); }
+        loadRaf = requestAnimationFrame(loading);
+      }
+      readMsg(); loading();
       const readT = setInterval(readMsg, 1000);
       decode(opts.src).then(b => {
-        clearInterval(readT);
+        clearInterval(readT); cancelAnimationFrame(loadRaf);
+        if (size > 20e6 && secs() > 0.5) try { const r = size / secs(); localStorage.setItem(RATE, String(Math.round(rate ? (rate + r) / 2 : r))); } catch (_) { /* private mode */ }
         buf = b;
         msg('');
         if (window.ClipWords && ClipWords.on()) {      // Transcribe and find words (a trial)
           $('.sc-words').hidden = false;
-          words = ClipWords.mount($('.sc-words'), { buf: b, key: ClipWords.keyOf(opts.src) || (opts.src && opts.src.size && opts.name ? opts.name + '|' + opts.src.size : null),
+          words = ClipWords.mount($('.sc-words'), { buf: b, name: opts.name, key: ClipWords.keyOf(opts.src) || (opts.src && opts.src.size && opts.name ? opts.name + '|' + opts.src.size : null),
             play: playFrom, setStart: t => { set('start', t); active = 'start'; redraw(); focusOn('start'); }, setEnd: t => { set('end', t); active = 'end'; redraw(); focusOn('end'); } });
         }
         redraw();
         focusOn('all');
         $('.sc-save').focus();
       }).catch(() => {
-        clearInterval(readT);
+        clearInterval(readT); cancelAnimationFrame(loadRaf);
         msg('This track can’t be opened here (its server doesn’t allow it, or the browser can’t read the file). Use a file from your computer instead.');
         $('.sc-save').disabled = true;
       });

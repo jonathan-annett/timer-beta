@@ -11,7 +11,7 @@
  * stopped one carries on from where it stopped.
  *
  *   ClipWords.on()                         the trial is on here
- *   ClipWords.mount(box, {buf, key, play(at), setStart(at), setEnd(at)}) → {stop()}
+ *   ClipWords.mount(box, {buf, key, name, play(at), setStart(at), setEnd(at)}) → {stop()}   (Save as text: name.txt, a line each: time, text)
  *   ClipWords.keyOf(src)                   a source's key (a File: name|size; a url; else null: not kept)
  * MIT Licensed
  */
@@ -82,6 +82,7 @@ var ClipWords = (function () {
     box.innerHTML = `<div class="cw-head"><button type="button" class="cw-go">Transcribe</button>` +
       `<select class="cw-model" title="A bigger model is more accurate and slower">${Object.entries(MODELS).map(([k, m]) => `<option value="${k}">${k.replace('.en', '')} (${'gpu' in navigator ? m.gpu : m.cpu})</option>`).join('')}</select>` +
       `<input class="cw-find" type="search" placeholder="Find words…" aria-label="Find words in the transcript" hidden>` +
+      `<button type="button" class="cw-save" hidden title="The transcript as a text file: each line's time, then what's said">Save as text</button>` +
       `<span class="cw-note">What’s said, so you can find the words: transcribed on this computer (English; the speech model is fetched once and kept by the browser).</span></div>` +
       `<div class="cw-lines"></div>`;
     const $ = s => box.querySelector(s), key = o.key ? 'words:' + o.key : null;
@@ -100,7 +101,7 @@ var ClipWords = (function () {
       $('.cw-lines').innerHTML = list.map(l => `<div class="cw-line${shown === l.at ? ' cw-now' : ''}" data-at="${l.at}" data-to="${l.to}"><button type="button" data-cw="play" title="Play from here">▶</button><span class="cw-t">${clock(l.at)}</span>` +
         `<span class="cw-text">${mark(l.text)}</span><button type="button" data-cw="start" title="The clip starts here">Start</button><button type="button" data-cw="end" title="The clip ends where this line does">End</button></div>`).join('')
         || (words.length && lines.length ? '<div class="cw-note">Not said, as far as it’s got.</div>' : '');
-      $('.cw-find').hidden = !lines.length;
+      $('.cw-find').hidden = $('.cw-save').hidden = !lines.length;
     }
     function status() {
       const speed = took && took.secs > 0 ? `: ${clock(took.of)} transcribed in ${clock(took.secs)} (${took.of / took.secs >= 1 ? (took.of / took.secs).toFixed(1) + '× faster than' : (took.secs / took.of).toFixed(1) + '× slower than'} real time, ${took.device === 'webgpu' ? 'graphics chip' : 'processor'})` : '';
@@ -171,6 +172,14 @@ var ClipWords = (function () {
       run().catch(err => { note('Couldn’t transcribe: ' + (err && err.message || err)); stopped = true; finish(); });
     });
     $('.cw-find').addEventListener('input', render);
+    $('.cw-save').addEventListener('click', e => {         // a text file: a line each, its time then the words (to compare, or keep)
+      e.currentTarget.blur();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([lines.map(l => clock(l.at) + '\t' + l.text).join('\n') + '\n'], { type: 'text/plain' }));
+      a.download = String(o.name || 'transcript').replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120) + ' transcript.txt';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    });
     $('.cw-lines').addEventListener('click', e => {
       const b = e.target.closest('button[data-cw]'), l = b && b.closest('.cw-line');
       if (!l) return;

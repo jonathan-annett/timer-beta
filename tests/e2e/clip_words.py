@@ -90,6 +90,46 @@ with sync_playwright() as p:
     n0 = pg.evaluate("window.__workers")
     pg.evaluate(OPEN, WAV); pg.wait_for_timeout(1500)
     check("the same file again: its transcript at once, no model loaded", pg.locator(".cw-line").count() == 3 and pg.evaluate("window.__workers") == n0 and pg.text_content(".cw-go") == "Transcribe again", [pg.locator(".cw-line").count(), pg.evaluate("window.__workers"), n0])
+    with pg.expect_download() as dl: pg.click(".cw-save")
+    txt = open(dl.value.path()).read()
+    check("Save as text: the transcript, a line each, its time then the words (named after the clip)", dl.value.suggested_filename == "Talk transcript.txt" and txt.splitlines() == ["0:01\tThis is part 1.", "0:28\tPlease welcome our keynote speaker.", "1:20\tThis is part 3."], [dl.value.suggested_filename, txt])
+    pg.keyboard.press("Escape")
+
+    # Reading a big file: a bar over the time this computer took before (clip_read_rate), the seconds counted
+    m = pg.evaluate("""() => { localStorage.clip_read_rate = String(1e6);   // (1 MB a second: about a minute for this one)
+      const n = 60e6, b = new ArrayBuffer(44 + n), v = new DataView(b), w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+      w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, 44100, true); v.setUint32(28, 88200, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n, true);
+      window.__clip = StingClip.open({ src: new File([b], 'Long.wav', { type: 'audio/wav' }), name: 'Long', media: 'audio' });
+      const c = document.querySelector('.sc-over'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let lit = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) lit++;
+      return { msg: document.querySelector('.sc-msg').textContent, lit, h: c.height }; }""")
+    pg.wait_for_timeout(2500)
+    check("a big file: its size said; the bar in the waveform's place starts filling (over this computer's time for files before)", m["msg"].startswith("Reading the track (60 MB: a long file takes a while)") and m["lit"] <= 2 * m["h"], m)
+    check("… then the waveform", pg.evaluate("document.querySelector('.sc-msg').textContent") == "")
+    pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+
+    # A video's picture beside the close-up (a short video made here: MediaRecorder, a canvas and a tone)
+    pg.evaluate("""async () => {
+      const c = document.createElement('canvas'); c.width = 160; c.height = 90; const g = c.getContext('2d');
+      const ac = new AudioContext(), o = ac.createOscillator(), d = ac.createMediaStreamDestination(); o.connect(d); o.start();
+      const st = new MediaStream([...c.captureStream(30).getVideoTracks(), ...d.stream.getAudioTracks()]);
+      const r = new MediaRecorder(st, { mimeType: 'video/webm' }), parts = []; r.ondataavailable = e => parts.push(e.data);
+      const t0 = performance.now(), paint = () => { const s = (performance.now() - t0) / 1000; g.fillStyle = 'hsl(' + (s * 90) + ',80%,50%)'; g.fillRect(0, 0, 160, 90); if (r.state === 'recording') requestAnimationFrame(paint); };
+      r.start(); paint(); await new Promise(res => setTimeout(res, 4000)); r.stop(); await new Promise(res => r.onstop = res); o.stop();
+      window.__webm = new File(parts, 'Clip.webm', { type: 'video/webm' });
+      window.__clip = StingClip.open({ src: window.__webm, name: 'Clip', media: 'video' }); }""")
+    pg.wait_for_timeout(2500)
+    vd = lambda: pg.evaluate("document.querySelector('.sc-wrap').__video()")
+    check("a video: its picture beside the close-up, still on its first frame", pg.is_visible(".sc-vid") and vd()["src"] and vd()["paused"] and vd()["t"] < 0.05, vd())
+    pg.click(".sc-play"); pg.wait_for_timeout(1200)
+    v1 = vd(); pl = pg.evaluate("document.querySelector('.sc-wrap').__playing()")
+    check("▶ Play the part: the picture plays in step with the sound", not v1["paused"] and 0.6 < v1["t"] < 2.0, [v1, pl])
+    pg.click(".sc-stop"); pg.wait_for_timeout(500)
+    check("■: still again, back on the start's frame", vd()["paused"] and vd()["t"] < 0.05, vd())
+    pg.fill(".sc-t[data-k=end]", "0:02.50"); pg.press(".sc-t[data-k=end]", "Tab"); pg.click(".sc-t[data-k=end]"); pg.keyboard.press("ArrowUp"); pg.wait_for_timeout(800)
+    check("working on the end: the picture shows the end's last frame", abs(vd()["t"] - 2.47) < 0.1, vd())
+    pg.screenshot(path=OUTDIR + "/clip_video.png")
     pg.keyboard.press("Escape")
     off = page(False)
     off.evaluate(OPEN, WAV); off.wait_for_timeout(1500)
