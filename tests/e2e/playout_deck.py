@@ -186,8 +186,14 @@ with sync_playwright() as p:
     full = po.evaluate("document.fullscreenElement && document.fullscreenElement.id")
     if full == "vdecks":
         k = po.evaluate("document.querySelector('#vdecks canvas').getBoundingClientRect().width")
-        check("⛶ Full screen: just the keys, as big as the screen allows", k > 100, k)
+        check("⛶ Full screen: the keys, as big as the screen allows", k > 80, k)   # (8 × 6 beside the 320 px column)
+        g = po.evaluate("""() => { const tr = document.getElementById('topright'), r = tr.getBoundingClientRect();
+          const right = Math.max(...[...document.querySelectorAll('#vdecks canvas')].map(c => c.getBoundingClientRect().right));
+          return {inside: tr.parentNode.id, shown: getComputedStyle(tr).display !== 'none', left: r.left, right, w: innerWidth}; }""")
+        check("… with the level box and what's playing (#topright) in a column of their own, clear of the keys",
+              g["inside"] == "vdecks" and g["shown"] and g["right"] <= g["left"] + 1 and g["left"] > g["w"] * 0.6, g)
         po.evaluate("document.exitFullscreen()"); po.wait_for_timeout(400)
+        check("… back from full screen: #topright where it was, on the page", po.evaluate("document.getElementById('topright').parentNode === document.body && document.getElementById('topright').nextElementSibling === document.querySelector('body > main')"))
     else: print("(full screen not available headless: skipped)")
     po.select_option("#deckmodel", "mini"); po.wait_for_timeout(200); po.select_option("#deckmodel", "c8x6"); po.wait_for_timeout(300)
     check("… still in the menu after another size", po.evaluate("localStorage.playout_deck_model") == "c8x6" and po.locator("#vdecks canvas").count() == 48)

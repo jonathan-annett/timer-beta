@@ -47,7 +47,7 @@ Each row: the main files, the tests (`tests/e2e/`), and the section of `docs/arc
 | Glasses | `glasses/` (TypeScript + Vite), plan `docs/glasses-g2-plan.md` | `glasses_pair`, `glasses_offer` | *Phone Remote Control* (glasses, device codes) |
 | Companion | its own repo (`../companion-module-sophtwhere-presentationtimer`) | `companion_link` | *Bitfocus Companion* |
 | Assist station (alpha) | `assist.html`, `assist*.js`; guide `docs/assist.md` | `assist_*`, `features_assist` | *Phone Remote Control* (assist) |
-| Playout, soundboard | `playout.html`, `playout.js`, `playout-deck.js`, `playout-phone.*`; guide `docs/playout.md` | `playout*` | *Phone Remote Control* (playout) |
+| Playout, soundboard | `playout.html`, `playout.js`, `playout-deck.js`, `playout-phone.*`, `panels.js`; guide `docs/playout.md` | `playout*` | *Phone Remote Control* (playout) |
 | Video player | `dropPlayer.js`, `video-library.js`, `video-store.js` | | *Video player* |
 | Stings, clips, levels, styles | `sting-*.js`, `stings.html`, `audio-out.js`, `clip-words.js`; guide `docs/stings.md` | `sting_*`, `runsheet_sting`, `runsheet_roll`, `playout_roll`, `audio_out`, `clip_words` | *Video player* (stings paragraphs) |
 | Touch | `touchcontrols.js` | | *Mobile / Touch* |

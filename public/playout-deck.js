@@ -408,6 +408,7 @@ var PlayoutDeck = (function () {
         });
         c.addEventListener('dragleave', () => c.classList.remove('drop', 'nodrop'));
         c.addEventListener('drop', e => {
+          if (!e.dataTransfer || ![...e.dataTransfer.types].includes('Files')) return;   // (a panel being moved: panels.js)
           e.preventDefault(); e.stopPropagation();
           c.classList.remove('drop', 'nodrop');
           if (can() && e.dataTransfer.files.length) dropFiles(slotOf(view, i), e.dataTransfer.files);
@@ -445,7 +446,7 @@ var PlayoutDeck = (function () {
     const isMedia = f => /^(audio|video)\//.test(f.type) || /\.(aif|aiff|aifc|wav|mp3|m4a|aac|ogg|oga|opus|flac|mp4|m4v|mov|webm)$/i.test(f.name);
     async function dropFiles(slot, files) {
       const list = [...files].filter(isMedia).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-      if (!list.length) { alert('Drop audio or video files on a key.'); return; }
+      if (!list.length) { alert('Those aren’t audio or video files.'); return; }
       const s = slots(screenModel), items = onSheet(), old = extraOf(s[slot]);
       if (items.has(s[slot])) return;                  // (an item's key: not taken)
       if (old && !confirm('Replace “' + old.name + '” on this key with “' + list[0].name + '”?')) return;
@@ -483,9 +484,12 @@ var PlayoutDeck = (function () {
       const pages = arranging ? Array.from({ length: g.pages }, (_, p) => p) : [screen.page];
       // On the page: as wide as the box (96 px a key at most); full screen (the Chromebook, a tablet): the whole screen
       const geo = modelOf(screenModel), full = document.fullscreenElement === host;
-      const W = full ? host.clientWidth : Math.min(host.clientWidth || 560, geo.cols * 96), H = full ? host.clientHeight : W * geo.rows / geo.cols;
+      // (full screen keeps a strip clear for the level box and what's playing, #topright: its padding)
+      const pad = full ? getComputedStyle(host) : null;
+      const W = full ? host.clientWidth - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight) : Math.min(host.clientWidth || 560, geo.cols * 96);
+      const H = full ? host.clientHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom) : W * geo.rows / geo.cols;
       if (views.length !== pages.length || views.some((v, j) => v.page !== pages[j] || v.model !== screenModel || v.w !== W || v.h !== H)) {
-        host.innerHTML = '';
+        host.querySelectorAll('.vd-page').forEach(n => n.remove());   // (not #topright, in here while full screen)
         views = pages.map(p => {
           const wrap = document.createElement('div'); wrap.className = 'vd-page';
           if (arranging && g.pages > 1) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = 'Page ' + (p + 1); wrap.appendChild(h); }
@@ -677,11 +681,16 @@ var PlayoutDeck = (function () {
         else { if (ask) alert('That isn’t a size I can make: from 2 × 2 up to 20 across and 11 down.'); e.target.value = screenModel; }
       });
     }
-    // Full screen: the keys alone (a tablet or a touch screen as the soundboard); ◀ ▶ still turn the page
+    // Full screen: the keys (a tablet or a touch screen as the soundboard); ◀ ▶ still turn the page. The level box and
+    // what's playing (#topright, fixed on the page) come in with them, or full screen would hide them (the owner, 14 Nov 2026)
     if ($('deckfull')) {
       $('deckfull').hidden = !document.fullscreenEnabled;
       $('deckfull').addEventListener('click', e => { e.currentTarget.blur(); arranging = false; $('vdecks').requestFullscreen().catch(() => {}); });
-      document.addEventListener('fullscreenchange', () => { views = []; renderScreen(); });
+      document.addEventListener('fullscreenchange', () => {
+        const tr = $('topright'), full = document.fullscreenElement === $('vdecks');
+        if (tr) { if (full) $('vdecks').appendChild(tr); else if (tr.parentNode !== document.body) document.body.insertBefore(tr, document.querySelector('body > main')); }
+        views = []; renderScreen();
+      });
       window.addEventListener('resize', () => { if (document.fullscreenElement === $('vdecks')) { views = []; renderScreen(); } });
     }
     if ($('deckarrange')) $('deckarrange').addEventListener('click', e => { e.currentTarget.blur(); arranging = !arranging; views = []; renderScreen(); });
@@ -713,6 +722,16 @@ var PlayoutDeck = (function () {
     if (share && share.on) host();                     // (sharing before this reload: phones come back)
     if ($('deckaddpage')) $('deckaddpage').addEventListener('click', e => { e.currentTarget.blur(); addPage(); });
     if ($('deckdelpage')) $('deckdelpage').addEventListener('click', e => { e.currentTarget.blur(); removePage(); });
+    // Add files to keys… (the owner, 14 Nov 2026: a tablet or phone can't drop files): as if dropped on the first empty key
+    if ($('deckaddfiles')) {
+      $('deckaddfiles').addEventListener('click', e => { e.currentTarget.blur(); $('deckfiles').click(); });
+      $('deckfiles').addEventListener('change', () => {
+        const files = [...$('deckfiles').files]; $('deckfiles').value = '';
+        if (!files.length) return;
+        const s = slots(screenModel), items = onSheet(), free = s.findIndex(id => !taken(id, items));
+        dropFiles(free < 0 ? s.length : free, files);
+      });
+    }
     // A file dropped anywhere else on the page would open in the tab (and the page would be gone)
     document.addEventListener('dragover', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files') && !e.defaultPrevented) { e.preventDefault(); e.dataTransfer.dropEffect = 'none'; } });
     document.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files.length && !e.defaultPrevented) e.preventDefault(); });

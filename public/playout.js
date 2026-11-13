@@ -1309,6 +1309,7 @@
     renderNow(countdown());
     renderClocks();
     renderLevelIcons();
+    scrollToLive();
   }
   // An item's start, for its row and its key (the owner, 13 Nov 2026): when it started, else when it's expected
   // (≈, from the timer: only when that isn't the plan), else planned; none for a sheet without times yet
@@ -1522,7 +1523,12 @@
   $('cuectl').checked = cueControl();
   $('cuectl').addEventListener('change', e => { store.set(CUE_CTL, e.target.checked ? '1' : '0'); render(); });
   $('fadeall').addEventListener('click', e => { e.currentTarget.blur(); fadeAll(FADE_MS); });
-  const toggleFull = () => { if (document.fullscreenElement) document.exitFullscreen(); else if (place === 'here') $('stage').requestFullscreen().catch(() => {}); };
+  const toggleFull = () => {
+    if (document.fullscreenElement) return document.exitFullscreen();
+    if (place !== 'here') return;
+    if (panelSet) panelSet.fold('output', false);      // (folded, #stage has no box: full screen would be black)
+    $('stage').requestFullscreen().catch(() => {});
+  };
   $('full').addEventListener('click', toggleFull);
   $('ext').addEventListener('click', e => { e.currentTarget.blur(); if (place === 'external') moveVideo('here'); else toExternal(); });
   document.addEventListener('keydown', e => {
@@ -1873,6 +1879,21 @@
       $('sb-name').value = ''; $('sb-len').value = ''; $('sb-name').focus();
     });
     $('sb-pastebtn').addEventListener('click', e => { e.currentTarget.blur(); $('sb-pastebox').hidden = !$('sb-pastebox').hidden; if (!$('sb-pastebox').hidden) $('sb-paste').focus(); });
+    // Add files… / Add a folder… (the owner, 14 Nov 2026: a tablet or phone can't drop): as a drop, an item per file in
+    // name order (a folder's files 3 deep, none starting with a dot). Phones and iPads can't pick a folder: files only there
+    const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    $('sb-adddir').hidden = !('webkitdirectory' in $('sb-dir')) || iOS || /Android/i.test(navigator.userAgent);
+    const picked = input => {
+      const list = [...input.files].map(f => ({ path: f.webkitRelativePath || f.name, file: f }))
+        .filter(x => MEDIA_FILE.test(x.file.name) && !x.path.split('/').some(n => n.startsWith('.')) && x.path.split('/').length <= 4);
+      input.value = '';
+      list.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' }));
+      if (list.length) addFiles(list.slice(0, MAX_ITEMS)); else alert('No audio or video files there.');
+    };
+    $('sb-addfiles').addEventListener('click', e => { e.currentTarget.blur(); $('sb-files').click(); });
+    $('sb-adddir').addEventListener('click', e => { e.currentTarget.blur(); $('sb-dir').click(); });
+    $('sb-files').addEventListener('change', () => { if ($('sb-files').files.length) picked($('sb-files')); });
+    $('sb-dir').addEventListener('change', () => { if ($('sb-dir').files.length) picked($('sb-dir')); });
     $('sb-paste').addEventListener('input', () => { const n = parseList($('sb-paste').value).length; $('sb-pastenote').textContent = n ? `${n} item${n === 1 ? '' : 's'}` : ''; });
     $('sb-pasteok').addEventListener('click', () => {
       const list = parseList($('sb-paste').value);
@@ -1902,6 +1923,37 @@
   }
   $('trysb').addEventListener('click', () => { location.href = /\/p\/?$/.test(location.pathname) ? location.pathname.replace(/p\/?$/, 's') : location.pathname + '?soundboard'; });
   $('trydemo').addEventListener('click', () => { location.href = location.pathname + '?demo'; });
+
+  // ─── Panels (the owner, 14 Nov 2026: a long run sheet buried the deck's keys and the output) ───
+  // The run sheet, Stream Deck, Output, Sound outputs and Options cards move (⠿) and fold (▾): panels.js, kept per
+  // mode (KEY). The run sheet's list scrolls in a box of its own, its height dragged by its corner (kept), unless
+  // Show all items; the item that comes up (the timer's, or one started here) is scrolled into the box's view.
+  const RS_ALL = KEY + 'rs_all', RS_H = KEY + 'items_h';
+  var upNext = null, panelSet = null;                  // (the item last scrolled to; the panels: var, render() and F may come first)
+  panelSet = window.Panels ? Panels.mount($('paired'), { key: KEY + 'panels', onChange: () => { if (deckBoard) deckBoard.changed(); upNext = null; scrollToLive(); } }) : null;
+  const showAll = on => { document.body.classList.toggle('rs-all', on); $('rs-all').setAttribute('aria-pressed', String(on)); };
+  showAll(store.get(RS_ALL) === '1');
+  $('rs-all').addEventListener('click', e => {
+    e.currentTarget.blur();
+    const on = store.get(RS_ALL) !== '1';
+    if (on) store.set(RS_ALL, '1'); else store.del(RS_ALL);
+    showAll(on); upNext = null; scrollToLive();
+  });
+  { const h = parseInt(store.get(RS_H), 10); if (h >= 60) $('items').style.height = h + 'px'; }
+  if (window.ResizeObserver) new ResizeObserver(() => {
+    const h = parseInt($('items').style.height, 10);   // (only once dragged: its own height)
+    if (h >= 60 && !document.body.classList.contains('rs-all')) store.set(RS_H, String(h));
+  }).observe($('items'));
+  function scrollToLive() {
+    const box = $('items'), want = (!following() && local ? local.item : show.cur) || null;
+    if (want === upNext || document.body.classList.contains('rs-all')) return;
+    const li = want && [...box.children].find(x => x.dataset.id === want);
+    if (want && (!li || !box.clientHeight)) return;    // (not drawn, folded or not shown yet: next time)
+    upNext = want;
+    if (!li) return;
+    const r = li.getBoundingClientRect(), b = box.getBoundingClientRect();
+    if (r.top < b.top || r.bottom > b.bottom) box.scrollTop += r.top - b.top - 8;
+  }
 
   // ─── One playout page per browser (the owner, 13 Nov 2026) ───
   // Playout, its demo and the soundboard share this browser's sound cards and decks, so one tab runs at a

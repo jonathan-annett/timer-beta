@@ -25,7 +25,15 @@
     #demobar { border-color: var(--warn); font-size: 14px; }   /* the demo (?demo): no timer */
     #demobar b:first-child { color: var(--warn); }
     /* Soundboard mode (?soundboard, /s): a run sheet of your own, no timer */
-    #vdecks:fullscreen { background: #000; display: flex; align-items: center; justify-content: center; }   /* the keys alone (⛶ Full screen) */
+    #vdecks:fullscreen { background: #000; display: flex; align-items: center; justify-content: center; box-sizing: border-box; }   /* the keys (⛶ Full screen) */
+    /* … with the level box and what's playing (#topright, moved in by playout-deck.js) in a strip kept clear for them,
+       so the keys don't move when something starts: a column on the right, or a band on top when it's taller than wide */
+    #vdecks:fullscreen { padding-right: min(30vw, 320px); }
+    #vdecks:fullscreen > #topright { position: absolute; top: 12px; right: 12px; width: calc(min(30vw, 320px) - 24px); max-width: none; }
+    @media (orientation: portrait) {
+      #vdecks:fullscreen { padding-right: 0; padding-top: min(30vh, 220px); }
+      #vdecks:fullscreen > #topright { width: auto; left: 12px; max-height: calc(min(30vh, 220px) - 24px); overflow: hidden; }
+    }
     #sbbar { border-color: var(--accent); font-size: 14px; }
     #sbbar b:first-child { color: var(--accent); }
     #sbbar #sb-name { width: min(22em, 50vw); }
@@ -61,6 +69,13 @@
 
     /* The run sheet and each item's cues */
     #items, #boardlist { list-style: none; margin: 0; padding: 0; }
+    /* Panels (panels.js; the owner, 14 Nov 2026): each card moves (⠿) and folds (▾); the run sheet scrolls in a box of
+       its own, sized by dragging its corner (playout_items_h), unless Show all items */
+    .phead .grow { flex: 1; }
+    .panel[data-panel=runsheet] > .pbody { margin-top: 6px; }
+    #items { max-height: 55vh; overflow: auto; resize: vertical; min-height: 6em; overscroll-behavior: contain; }
+    #items[style*=height] { max-height: none; }          /* (sized by hand: its height, kept) */
+    body.rs-all #items { max-height: none; height: auto !important; overflow: visible; resize: none; }
     #boardlist { margin-top: 10px; }
     #boardlist .ihead { gap: 10px; }
     #items > li { border-top: 1px solid var(--line); padding: 8px 4px; }
@@ -252,7 +267,11 @@
           <input id="sb-len" placeholder="20:00" size="8" aria-label="Its length" title="Its length: minutes (5), m:ss (3:30), h:mm:ss, or 90s / 3m (20 minutes if left empty)" autocomplete="off">
           <button class="small primary" id="sb-add">+ Add item</button>
           <button type="button" class="small" id="sb-pastebtn">Paste a list…</button>
-          <span class="hint">or drop a folder of audio or video files anywhere on this page</span>
+          <button type="button" class="small" id="sb-addfiles" title="An item for each audio or video file you choose (works on a tablet or phone too)">Add files…</button>
+          <button type="button" class="small" id="sb-adddir" title="An item for each audio or video file in a folder (and the folders in it, 3 deep)" hidden>Add a folder…</button>
+          <span class="hint">or drop files or a folder anywhere on this page</span>
+          <input type="file" id="sb-files" accept="audio/*,video/*,.aif,.aiff,.aifc,.flac,.opus,.oga,.mov" multiple hidden>
+          <input type="file" id="sb-dir" webkitdirectory multiple hidden>
         </form>
         <div class="row" id="sb-flowrow" style="margin-top:10px">
           <button type="button" class="small chip" id="sb-flow" aria-pressed="false">Playlist flow</button>
@@ -282,8 +301,9 @@
           <button id="stopall" class="small" title="Click: everything stops; hold: it fades, and stops where you let go">■ Stop all</button>
         </div>
       </div>
-      <div class="card">
-        <div class="row" style="justify-content:space-between"><b>Run sheet</b><span class="hint" id="rshint"></span></div>
+      <div class="card panel" data-panel="runsheet">
+        <div class="phead"><b class="ptitle">Run sheet</b><span class="hint" id="rshint"></span><span class="grow"></span><button type="button" class="small chip" id="rs-all" aria-pressed="false" title="Off: the list scrolls in a box of its own (drag its bottom right corner to size it). On: the whole list, the page scrolls">Show all items</button></div>
+        <div class="pbody">
         <ul id="items"></ul>
         <p id="orphans" class="hint" hidden><span id="orphantext"></span> <button id="orphanx" class="small">Remove them</button></p>
         <details id="rollpanel">
@@ -299,9 +319,11 @@
           <p class="hint" id="roll-msg"></p>
         </details>
         <input type="file" id="cuefile" accept="audio/*,video/*" hidden>
+        </div>
       </div>
-      <div class="card" id="deckcard">
-        <div class="row" style="justify-content:space-between"><b>Stream Deck</b><span class="row"><button id="phoneshow" class="small" title="These keys on a phone: scan a code with its camera">Show on a phone…</button><button id="deckconnect" class="small" title="Choose a deck in the browser’s list: it’s used here (quit the Elgato Stream Deck app first)">Connect a deck…</button></span></div>
+      <div class="card panel" id="deckcard" data-panel="deck">
+        <div class="phead"><b class="ptitle">Stream Deck</b><span class="grow"></span><span class="row"><button id="phoneshow" class="small" title="These keys on a phone: scan a code with its camera">Show on a phone…</button><button id="deckconnect" class="small" title="Choose a deck in the browser’s list: it’s used here (quit the Elgato Stream Deck app first)">Connect a deck…</button></span></div>
+        <div class="pbody">
         <div id="phonebox" hidden>
           <div id="ph-qr" hidden></div>
           <p id="ph-note" class="hint"></p>
@@ -310,7 +332,7 @@
           <div class="row"><button id="ph-again" class="small">Show the code again</button><button id="ph-new" class="small" title="Signs every phone out: the code shown before stops working">New code</button><button id="ph-stop" class="small" title="Phones lose these keys until Show on a phone… again">Stop sharing</button></div>
         </div>
         <p class="hint" style="margin:4px 0 6px">A key for each item with cues. <span class="t-only">With <b>Follow the timer</b> off, press</span><span class="b-only">Press</span> one to start its item (as ▶ Start item). On an item that’s playing, a tap stops it and holding the key fades it out over <input type="number" id="deckfade" min="0.2" max="10" step="0.1" aria-label="Fade seconds"> s (let go to stop it there). The last key does the same for everything; ◀ ▶ turn the page.<span class="t-only"> With Follow on, the keys show the run sheet and only stop or fade.</span> <label class="check xf"><input type="checkbox" id="deckxfade"> <b>Crossfade on release</b></label>: a key that starts something while others play fades them out over <input type="number" id="deckxfades" min="0.2" max="20" step="0.5" aria-label="Crossfade seconds"> s from the moment you let it go.
-          <b>Extra keys:</b> drop audio or video files from your computer onto an empty key below (several fill the keys after it), for anything that isn’t on the run sheet: they play when pressed<span class="t-only">, Follow or not</span>. <b>+ Page</b> adds a page of empty keys.</p>
+          <b>Extra keys:</b> drop audio or video files from your computer onto an empty key below (several fill the keys after it), or choose them with <b>Add files to keys…</b> (the first empty keys), for anything that isn’t on the run sheet: they play when pressed<span class="t-only">, Follow or not</span>. <b>+ Page</b> adds a page of empty keys.</p>
         <div id="decklist"></div>
         <div class="row" style="margin-top:8px">
           <label>On screen <select id="deckmodel" aria-label="Deck size on screen"><option value="mini">Stream Deck Mini</option><option value="mk2">Stream Deck MK.2</option><option value="xl">Stream Deck XL</option><option value="custom">Custom size…</option></select></label>
@@ -319,21 +341,29 @@
           <button id="deckorder" class="small" title="Forget the arrangement: keys in run sheet order again">Run sheet order</button>
           <button id="deckaddpage" class="small" title="A page of empty keys at the end (for this size of deck), to drop files on">+ Page</button>
           <button id="deckdelpage" class="small" title="Remove the last page (only when it’s empty)">− Page</button>
+          <button id="deckaddfiles" class="small" title="Audio or video files on the first empty keys, as if dropped there (on a tablet or phone too)">Add files to keys…</button>
+          <input type="file" id="deckfiles" accept="audio/*,video/*,.aif,.aiff,.aifc,.flac,.opus,.oga,.mov" multiple hidden>
         </div>
         <div id="vdecks"></div>
         <ul id="boardlist"></ul>
+        </div>
       </div>
-      <div class="card">
-        <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>Output</b><span class="row"><button id="ext" class="small">To external monitor</button><button id="full" class="small">Full screen (F)</button></span></div>
+      <div class="card panel" data-panel="output">
+        <div class="phead"><b class="ptitle">Output</b><span class="grow"></span><span class="row"><button id="ext" class="small">To external monitor</button><button id="full" class="small">Full screen (F)</button></span></div>
+        <div class="pbody" style="margin-top:8px">
         <div id="stage"><div class="idle">Video cues play here</div><div class="extnote"><b>External playback activated</b><span>Videos play in the floating window: drag it to the other screen and double-click it for full screen.</span></div><video id="vid" playsinline></video></div>
+        </div>
       </div>
-      <div class="card">
-        <b>Sound outputs</b>
+      <div class="card panel" data-panel="sound">
+        <div class="phead"><b class="ptitle">Sound outputs</b></div>
+        <div class="pbody">
         <p class="hint" style="margin:4px 0 0">Cues play to the show output; the ▶ previews and the clip editor to the other, so you can listen on headphones during the show.</p>
         <div id="ao-pick"></div>
+        </div>
       </div>
-      <div class="card">
-        <b>Options</b>
+      <div class="card panel" data-panel="options">
+        <div class="phead"><b class="ptitle">Options</b></div>
+        <div class="pbody">
         <div class="row" style="margin-top:8px">
           <label class="check"><input type="checkbox" id="cuectl"> Play and stop single cues of an item started here</label>
           <span class="hint">Off: while an item runs from ▶ Start item, its own cues’ ▶ and ■ are locked (■ Stop item stops them). On: for rehearsals, every cue stays in your hands.</span>
@@ -343,6 +373,7 @@
           <div class="row"><label class="check" title="On: a new level (a quieter cue added, or the quietest removed) is used at once, by what’s playing too. Off: it waits until you click the level box (or start ▶ Tone)"><input type="checkbox" id="lvauto" checked> Automatic levels</label>
             <span class="hint" id="lvautonote"></span></div>
           <div id="levels"></div>
+        </div>
         </div>
       </div>
       <p class="hint" id="pairline">Paired with timer room <b id="room"></b>. <button id="unpair" class="small">Unpair this computer</button></p>
@@ -361,7 +392,8 @@
   <script src="deck-face.js?v=095d2354"></script>
   <script src="virtual-deck.js?v=f112dd1e"></script>
   <script src="deck-hid.js?v=90c43672"></script>
-  <script src="playout-deck.js?v=741c006a"></script>
-  <script src="playout.js?v=e1d733b5"></script>
+  <script src="panels.js?v=407fa75f"></script>
+  <script src="playout-deck.js?v=0e93a270"></script>
+  <script src="playout.js?v=8d791e66"></script>
 </body>
 </html>
