@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  webhid-spike.html: SPIKE (14 Nov 2026), alpha only, removed before the next promotion.
+  A Stream Deck reached through the webhid iframe (https://webhid-alpha.timed-show.com/frame.html, allow="hid"): a
+  stand-in with the HIDDevice surface (RemoteHID) relays every call by postMessage, so deck-hid.js drives it as a
+  real deck. Times a full repaint through the iframe against the same through WebHID on this page, and logs key
+  presses as they arrive. ?frame=<url> to point it elsewhere. MIT Licensed
+-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>webhid spike</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 20px 16px; background: #0b0b0b; color: #ddd; font: 15px/1.5 "Helvetica Neue", Arial, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; }
+    button { font: inherit; color: #ddd; background: #1a1a1a; border: 1px solid #444; border-radius: 5px; padding: 4px 10px; cursor: pointer; margin: 2px 4px 2px 0; }
+    iframe { border: 1px dashed #4aa8ff; border-radius: 6px; width: 100%; height: 44px; background: #111; }
+    #log { white-space: pre-wrap; font: 13px/1.45 Menlo, monospace; background: #111; border: 1px solid #222; border-radius: 6px; padding: 10px; max-height: 50vh; overflow: auto; }
+    .hint { color: #888; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>webhid spike</h1>
+    <ol class="hint">
+      <li>Quit the Elgato Stream Deck app. Click <b>Connect a deck…</b> inside the dashed frame (that's the webhid site) and choose the deck.</li>
+      <li><b>Through the iframe</b>: draws every key and times it; press keys and watch them arrive below.</li>
+      <li><b>Directly</b>: the same with this page's own WebHID (asks for the deck again, as this page), to compare.</li>
+      <li>Open <a id="check" target="_blank">check.html</a> on the webhid site: if it lists the deck you allowed inside the frame, the grant belongs to the webhid site (shared by every page that embeds it).</li>
+    </ol>
+    <iframe id="frame" allow="hid" title="Stream Deck access"></iframe>
+    <p>
+      <button id="list" type="button">List decks</button>
+      <button id="viaframe" type="button">Through the iframe</button>
+      <button id="direct" type="button">Directly (this page)</button>
+      <button id="stop" type="button">Let go</button>
+    </p>
+    <div id="log"></div>
+  </main>
+  <script src="deck-hid.js?v=90c43672"></script>
+  <script>
+  (function () {
+    'use strict';
+    const FRAME = new URLSearchParams(location.search).get('frame') || 'https://webhid-alpha.timed-show.com/frame.html';
+    const ORIGIN = new URL(FRAME).origin;
+    const $ = id => document.getElementById(id);
+    const log = (...a) => { $('log').textContent += a.join(' ') + '\n'; $('log').scrollTop = 1e9; };
+    $('frame').src = FRAME;
+    $('check').href = ORIGIN + '/check.html';
+
+    // ─── RemoteHID: the HIDDevice surface, every call relayed to the frame ───
+    let seq = 0;
+    const waiting = new Map(), proxies = new Map();
+    const toBuf = d => (d instanceof ArrayBuffer ? d.slice(0) : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
+    function call(t, fields, transfer) {
+      return new Promise((res, rej) => {
+        const req = ++seq;
+        waiting.set(req, { res, rej });
+        $('frame').contentWindow.postMessage(Object.assign({ t, req }, fields), ORIGIN, transfer || []);
+      });
+    }
+    class RemoteHID extends EventTarget {
+      constructor(d) { super(); this.key = d.key; this.vendorId = d.vendorId; this.productId = d.productId; this.productName = d.productName; this.opened = d.opened; this.collections = []; }
+      async open() { const d = await call('open', { key: this.key }); this.opened = d.opened; }
+      async close() { const d = await call('close', { key: this.key }); this.opened = d.opened; }
+      async forget() { await call('forget', { key: this.key }); }
+      sendReport(id, data) { const b = toBuf(data); return call('send', { key: this.key, id, data: b }, [b]); }
+      sendFeatureReport(id, data) { const b = toBuf(data); return call('fset', { key: this.key, id, data: b }, [b]); }
+      async receiveFeatureReport(id) { return new DataView(await call('fget', { key: this.key, id })); }
+    }
+    const proxyOf = d => { let p = proxies.get(d.key); if (!p) { p = new RemoteHID(d); proxies.set(d.key, p); } else p.opened = d.opened; return p; };
+    window.addEventListener('message', e => {
+      if (e.origin !== ORIGIN || e.source !== $('frame').contentWindow) return;
+      const m = e.data;
+      if (m.t === 're') { const w = waiting.get(m.req); if (!w) return; waiting.delete(m.req); if (m.ok) w.res(m.value); else w.rej(new Error(m.error)); }
+      else if (m.t === 'input') { const p = proxies.get(m.key); if (!p) return; const ev = new Event('inputreport'); ev.reportId = m.id; ev.data = new DataView(m.data); ev.device = p; p.dispatchEvent(ev); }
+      else if (m.t === 'devices') log('frame: decks allowed:', m.list.map(d => d.productName).join(', ') || 'none');
+    });
+
+    // ─── Driving a deck: every key drawn, timed; presses logged ───
+    let deck = null;
+    const keys = { down: i => log('key', i, 'down', (performance.now() / 1000).toFixed(3)), up: i => log('key', i, 'up') };
+    async function paint(d, how) {
+      const c = document.createElement('canvas'); c.width = c.height = d.keySize;
+      const t0 = performance.now();
+      for (let i = 0; i < d.keys; i++) {
+        const g = c.getContext('2d');
+        g.fillStyle = 'hsl(' + (i * 360 / d.keys) + ',70%,35%)'; g.fillRect(0, 0, c.width, c.height);
+        g.fillStyle = '#fff'; g.font = 'bold ' + (c.width / 3) + 'px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(String(i), c.width / 2, c.height / 2);
+        await d.setKey(i, c);
+      }
+      const ms = performance.now() - t0;
+      log(how + ': ' + d.keys + ' keys drawn in ' + ms.toFixed(0) + ' ms (' + (ms / d.keys).toFixed(1) + ' ms a key)');
+    }
+    async function letGo() { if (deck) { const d = deck; deck = null; await d.close(); log('let go'); } }
+    $('list').addEventListener('click', async () => log('frame lists:', JSON.stringify(await call('list', {}))));
+    $('viaframe').addEventListener('click', async () => {
+      await letGo();
+      const l = (await call('list', {})).filter(d => DeckHID.isDeck(d));
+      if (!l.length) return log('No deck allowed in the frame yet: Connect a deck… inside it first.');
+      try {
+        const hid = proxyOf(l[0]);
+        const t0 = performance.now();
+        deck = await DeckHID.open(hid, keys);
+        log('through the iframe: ' + deck.info.name + ' opened in ' + (performance.now() - t0).toFixed(0) + ' ms, id ' + deck.id);
+        await paint(deck, 'through the iframe');
+      } catch (err) { log('through the iframe failed:', err.message); }
+    });
+    $('direct').addEventListener('click', async () => {
+      await letGo();
+      if (!navigator.hid) return log('No WebHID on this page.');
+      let hid = (await DeckHID.granted())[0];
+      if (!hid) { try { [hid] = await navigator.hid.requestDevice({ filters: DeckHID.filters() }); } catch (_) { /* cancelled */ } }
+      if (!hid) return log('No deck chosen.');
+      try {
+        const t0 = performance.now();
+        deck = await DeckHID.open(hid, keys);
+        log('directly: ' + deck.info.name + ' opened in ' + (performance.now() - t0).toFixed(0) + ' ms, id ' + deck.id);
+        await paint(deck, 'directly');
+      } catch (err) { log('directly failed:', err.message); }
+    });
+    $('stop').addEventListener('click', letGo);
+    window.addEventListener('pagehide', () => { if (deck) deck.reset(); });
+    window.__spike = { call, proxyOf, deck: () => deck, log: () => $('log').textContent };
+  })();
+  </script>
+</body>
+</html>
