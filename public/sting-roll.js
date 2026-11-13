@@ -104,8 +104,8 @@ var StingRoll = (function () {
         if (!edited.has('size:' + file.size)) add('size:' + file.size, { kind: 'folder', file, len: undefined, key, styles: fileStyles(key) });
       }
     }
-    if (narrowed(o)) for (const [song, vs] of [...songs]) {   // only the versions in those styles (a file: once listened to)
-      const keep = vs.filter(c => StingStyles.fitsAny(c.styles, o.styles));
+    if (narrowed(o)) for (const [song, vs] of [...songs]) {   // only the versions in those styles (a file: once listened to; not listened to here: yours count as in them)
+      const keep = vs.filter(c => (c.key && !StingStyles.canListen()) || StingStyles.fitsAny(c.styles, o.styles));
       if (keep.length) songs.set(song, keep); else songs.delete(song);
     }
     return songs;
@@ -119,7 +119,7 @@ var StingRoll = (function () {
       sv.songs.push({ own, lists });
       if (lists.length) sv.lists.push(lists[0]);
       for (const c of vs) if (c.key) sv.own.push({ key: c.key, get: c.file ? () => Promise.resolve(c.file) : () => StingLibrary.source(c.e, stock) });
-      if (own && !lists.length) { if (vs.some(c => c.key && c.styles === undefined)) sv.unheard++; else sv.failed++; }
+      if (own && !lists.length && StingStyles.canListen()) { if (vs.some(c => c.key && c.styles === undefined)) sv.unheard++; else sv.failed++; }
     }
     return sv;
   }
@@ -128,8 +128,9 @@ var StingRoll = (function () {
     const pl = (n, one, more) => n + ' ' + (n === 1 ? one : more);
     const parts = [];
     if (keys && keys.length) {
-      const fit = sv.songs.filter(s => s.lists.some(l => StingStyles.fitsAny(l, keys))), own = fit.filter(s => s.own).length;
-      parts.push(pl(fit.length, 'sting', 'stings') + ' in ' + (keys.length === 1 ? 'that style' : 'those styles') + (own ? ` (${own} your own)` : ''));
+      const mine = !StingStyles.canListen();         // (your own files taken as in them)
+      const fit = sv.songs.filter(s => (mine && s.own) || s.lists.some(l => StingStyles.fitsAny(l, keys))), own = fit.filter(s => s.own).length;
+      parts.push(pl(fit.length, 'sting', 'stings') + ' in ' + (keys.length === 1 ? 'that style' : 'those styles') + (own ? ` (${own} your own${mine ? ', taken as in ' + (keys.length === 1 ? 'it' : 'them') : ''})` : ''));
     }
     if (sv.unheard) parts.push(pl(sv.unheard, 'of your files', 'of your files') + ' not listened to yet');
     if (sv.failed) parts.push(pl(sv.failed, 'of your files', 'of your files') + ' couldn’t be listened to');
