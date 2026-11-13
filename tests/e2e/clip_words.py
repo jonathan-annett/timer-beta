@@ -109,6 +109,27 @@ with sync_playwright() as p:
     check("… then the waveform", pg.evaluate("document.querySelector('.sc-msg').textContent") == "")
     pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
 
+    # A long source's waveform kept for next time: drawn at once, the edges workable while the sound is read
+    BIG = """() => { const sr = 44100, n = sr * 600, b = new ArrayBuffer(44 + n * 2), v = new DataView(b), w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+      w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+      const d = new Int16Array(b, 44); for (let i = 0; i < n; i++) d[i] = ((i % 200) - 100) * 100 * (1 + Math.floor(i / sr / 60) % 3);
+      return new File([b], 'Ten minutes.wav', { type: 'audio/wav' }); }"""
+    pg.evaluate("f => { window.__big = (" + BIG + ")(); window.__clip = StingClip.open({ src: window.__big, name: 'Ten minutes', media: 'audio' }); }", None)
+    pg.wait_for_function("document.querySelector('.sc-msg').textContent === ''", timeout=30000); pg.wait_for_timeout(500)
+    kept = pg.evaluate("videoStore.get('wave:Ten minutes.wav|' + window.__big.size).then(w => w && [w.v, w.rate, Math.round(w.dur), w.peaks.length])")
+    check("a long source: its waveform kept, 100 points a second", kept == [1, 100, 600, 60000], kept)
+    pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+    seen = pg.evaluate("""async () => { window.__clip = StingClip.open({ src: window.__big, name: 'Ten minutes', media: 'audio' });
+      for (let i = 0; i < 100 && document.querySelector('.sc-play') && !document.querySelector('.sc-play').disabled; i++) await new Promise(r => setTimeout(r, 5));
+      const c = document.querySelector('.sc-over'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let wave = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] && d[i + 2] > 200) wave++;   // (blue: the waveform drawn)
+      return { playOff: document.querySelector('.sc-play').disabled, saveOff: document.querySelector('.sc-save').disabled, msg: document.querySelector('.sc-msg').textContent, wave }; }""")
+    check("opened again: the waveform at once (from last time), play and Save waiting for the sound", seen["playOff"] and seen["saveOff"] and seen["wave"] > 500 and "from last time" in seen["msg"], seen)
+    pg.wait_for_function("!document.querySelector('.sc-play').disabled", timeout=30000)
+    check("… then the sound read: play and Save back", not pg.is_disabled(".sc-save") and pg.text_content(".sc-msg") == "")
+    pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+
     # A video's picture beside the close-up (a short video made here: MediaRecorder, a canvas and a tone)
     pg.evaluate("""async () => {
       const c = document.createElement('canvas'); c.width = 160; c.height = 90; const g = c.getContext('2d');

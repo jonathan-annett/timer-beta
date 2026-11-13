@@ -409,6 +409,7 @@
       },
       fade(ms) { if (p) { fading = true; p.fade(ms); } },
       level(g) { if (p && !fading) p.gain.gain.setTargetAtTime(g, p.gain.context.currentTime, 0.03); },   // (a quick glide: no click)
+      sourceTime: () => (p ? StingClip.sourceAt(p.time(), StingClip.plan(c, c.duration || buf.duration).segs) : null),   // (where in the file: Mark start / end)
       gain: () => (p ? p.gain.gain.value : null),
       stop() { if (p) p.stop(); },
       release() {},
@@ -441,6 +442,7 @@
       fade(ms, db = true) { if (over) return; if (stopRamp) stopRamp(); stopRamp = rampEl(el, 0, ms, finish, db); },   // (live: even in dB)
       level(n) { if (over || !out) return; g = n; if (!stopRamp) el.volume = n; },   // (fading in: it ends at g)
       gain: () => el.volume,
+      sourceTime: () => (over ? null : el.currentTime),   // (where in the file: Mark start / end)
       stop() { finish(); },
       release() { try { el.pause(); el.removeAttribute('src'); el.load(); } catch (_) { /* gone */ } URL.revokeObjectURL(url); },
     };
@@ -720,11 +722,23 @@
     render();
   }
   // ✂: the part to play, fades, a loop, a trim (sting-clip.js's clip editor). The file isn't cut.
-  async function editCue(c) {
+  // Mark start / Mark end (the owner, 13 Nov 2026): a cue playing on its own (its ▶, or a key) → the editor, with that
+  // edge where it is now (the start half a second back, for the reaction), the close-up on it as First / Last 2 s do
+  const MARK_LEAD = 0.5;
+  function markCue(c, edge) {
+    const p = playing.get(c.id), t = p && p.voice.sourceTime ? p.voice.sourceTime() : null;
+    if (t == null || !Number.isFinite(t)) return;
+    stopCue(c.id);
+    const at = Math.round(Math.max(0, edge === 'start' ? t - MARK_LEAD : t) * 100) / 100, r = Object.assign({}, c);
+    if (edge === 'start') { r.start = at; if (r.end != null && r.end <= at + 0.1) delete r.end; }
+    else { r.end = at; if ((r.start || 0) >= at - 0.1) delete r.start; }
+    editCue(c, { region: r, focus: edge });
+  }
+  async function editCue(c, mark) {
     const blob = await fileOf(c);
     if (!blob) { alert('The file for “' + c.name + '” isn’t in this browser any more. Add the cue again.'); return; }
     const out = outKey(c);                             // (its loudness shown against its output's level)
-    const r = await StingClip.open({ src: blob, name: c.name, region: c, media: c.media, level: out ? { target: targetOf(out) } : undefined });
+    const r = await StingClip.open({ src: blob, name: c.name, region: mark ? mark.region : c, focus: mark && mark.focus, media: c.media, level: out ? { target: targetOf(out) } : undefined });
     const now = r && findCue(c.id);
     if (!now) return;
     now.c.name = String(r.name || now.c.name).slice(0, 200);
@@ -1174,9 +1188,11 @@
   }
   // A cue's row: ▶/■, when, its name, length, output, ✎ (when), ✂, ✕. o: {done, locked, flash, board (an extra key: no when)}
   function cueRow(c, o) {
-    const on = playing.has(c.id);
+    const on = playing.has(c.id), single = on && !playing.get(c.id).run && !o.locked;   // (played on its own: its ▶, or a key)
     return `<li data-cue="${esc(c.id)}" class="${o.done ? 'fired' : ''}${on ? ' playing' : ''}">` +
       `<button class="small${o.flash && on ? ' superseded' : ''}" data-act="${on ? 'stop' : 'fire'}"${o.locked ? ' disabled' : ''} title="${o.locked ? 'The item started here plays its cues: ■ Stop item stops them (Options: play and stop single cues)' : on ? 'Stop' : 'Play it now (on this computer)'}">${on ? '■' : '▶'}</button>` +
+      (single ? `<button class="small mark" data-act="markin" title="The clip starts here (half a second back, for your reaction): opens the editor on the start, to fine-tune">Mark start</button>` +
+        `<button class="small mark" data-act="markout" title="The clip ends here: opens the editor on the end, to fine-tune">Mark end</button>` : '') +
       `<span class="when">${o.board ? 'Its key' : esc(whenText(c))}</span><span class="fname"${c.rolled ? ' title="Picked at random: 🎲 on the item for another; ✂ makes it yours (a roll then leaves it alone)"' : ''}>${c.rolled ? '🎲' : c.media === 'video' ? '🎞' : '🎵'} ${esc(c.name)}</span>` +
       `<span class="clen">${StingClip.region(c) ? '✂ ' : ''}${lenText(c)}</span><span class="cclock" data-clock="${esc(c.id)}"></span>` + outMenu(c) +
       (o.board ? '' : `<button class="small" data-act="when" title="Change when it plays">✎</button>`) +
@@ -1210,6 +1226,7 @@
     else if (b.dataset.act === 'run') runLocal(itemId);
     else if (b.dataset.act === 'roll') { b.blur(); rollOne(itemId); }
     else if (b.dataset.act === 'endrun') { for (const x of cues[itemId] || []) stopCue(x.id); if (local && local.item === itemId) endLocal(); }
+    else if ((b.dataset.act === 'markin' || b.dataset.act === 'markout') && c) markCue(c, b.dataset.act === 'markin' ? 'start' : 'end');
     else if (b.dataset.act === 'up' || b.dataset.act === 'down') { b.blur(); moveItem(itemId, b.dataset.act === 'up' ? -1 : 1); }
     else if (b.dataset.act === 'delitem') removeItem(itemId);
   }

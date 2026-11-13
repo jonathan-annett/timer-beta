@@ -118,6 +118,31 @@ with sync_playwright() as p:
     check("… and it ends with its item, not 2 s later", playing() == [], playing())
     po.wait_for_timeout(400)
     check("nothing left to play: the box goes", clocks()["big"] is None, clocks()["big"])
+
+    # Mark start / Mark end (the owner, 13 Nov 2026): a cue playing on its own → the clip editor, that edge where it is now
+    cb = lambda cid, act: '#items li[data-cue="%s"] button[data-act=%s]' % (cid, act)
+    def at(sel):                                   # an editor time box's value (m:ss.ss) as seconds
+        m, x = po.input_value(sel).split(":"); return int(m) * 60 + float(x)
+    po.click(run(2)); po.wait_for_timeout(500)
+    check("a cue its item run plays: no Mark buttons (only cues played on their own)", po.locator(cb("c2", "markin")).count() == 0)
+    po.click("#stopall"); po.wait_for_timeout(300)
+    po.click(cb("c1", "fire")); t0 = _t.time(); po.wait_for_timeout(300)
+    check("a cue played on its own (its ▶): Mark start and Mark end beside its ■", po.is_visible(cb("c1", "markin")) and po.is_visible(cb("c1", "markout")))
+    po.wait_for_timeout(max(0, int((t0 + 2.5 - _t.time()) * 1000)))
+    po.click(cb("c1", "markin")); heard = _t.time() - t0
+    po.wait_for_function("document.querySelector('.sc-wrap') && document.querySelector('.sc-msg').textContent === ''", timeout=20000); po.wait_for_timeout(300)
+    st, zm = at(".sc-t[data-k=start]"), po.evaluate("document.querySelector('.sc-wrap').__zoom()")
+    check("Mark start: the cue stops, the editor opens with the start where it was, half a second back for the reaction", playing() == [] and abs(st - (heard - 0.5)) < 0.35, [playing(), st, heard])
+    check("… the close-up on the start, as First 2 s (1 s before, 5 s after)", po.text_content(".sc-zlabel").startswith("Close up on the start") and po.evaluate("document.activeElement !== null") and "sc-on" in (po.get_attribute(".sc-t[data-k=start]", "class") or ""), [po.text_content(".sc-zlabel"), zm])
+    po.click(".sc-cancel"); po.wait_for_timeout(300)
+    po.click(cb("c1", "fire")); t0 = _t.time(); po.wait_for_timeout(max(0, int((t0 + 3.5 - _t.time()) * 1000)))
+    po.click(cb("c1", "markout")); heard = _t.time() - t0
+    po.wait_for_function("document.querySelector('.sc-wrap') && document.querySelector('.sc-msg').textContent === ''", timeout=20000); po.wait_for_timeout(300)
+    en, zm = at(".sc-t[data-k=end]"), po.evaluate("document.querySelector('.sc-wrap').__zoom()")
+    check("Mark end: the end where it was (nothing taken off), the close-up on it, as Last 2 s", abs(en - heard) < 0.35 and po.text_content(".sc-zlabel").startswith("Close up on the end") and "sc-on" in (po.get_attribute(".sc-t[data-k=end]", "class") or ""), [en, heard, po.text_content(".sc-zlabel")])
+    po.click(".sc-save"); po.wait_for_timeout(500)
+    c1 = po.evaluate("window.__playout.cues()['demo-1'][0]")
+    check("… Save: the cue's clip ends there", abs(c1.get("end", 0) - en) < 0.02, c1)
     b.close()
 
 print("errors:", errs)

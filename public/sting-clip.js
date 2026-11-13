@@ -463,7 +463,12 @@ var StingClip = (function () {
       let trimDb = Math.round(20 * Math.log10(trim(opts.region)) * 10) / 10;   // the trim by ear, dB (≤ 0)
       let lufs = null, lufsKey = '', lufsT = 0;      // the clip's loudness as it plays, for lufsKey
 
-      const dur = () => (buf ? buf.duration : 0);
+      // A long source's waveform kept from before (the owner, 13 Nov 2026: reopening a 51-minute video meant 30 s of
+      // nothing): its outline at 100 points a second (videoStore 'wave:<key>', Uint8Array 0–255, ~360 KB an hour), drawn
+      // at once so the edges can be set while the sound is read; playing, previews and Save wait for the sound (buf)
+      let wave = null;
+      const ready = () => !!(buf || wave);
+      const dur = () => (buf ? buf.duration : wave ? wave.dur : 0);
       const endOf = () => (sel.end != null ? sel.end : dur());
       const atOf = () => (loop.at != null ? loop.at : loop.to);
       const TIMES = ['start', 'end', 'lfrom', 'lto', 'at'], LOOPK = { lfrom: 1, lto: 1, at: 1, plays: 1 };
@@ -542,6 +547,15 @@ var StingClip = (function () {
 
       // Waveform: the loudest sample per column (channels mixed)
       function columnPeaks(from, to, cols) {
+        if (!buf) {                                  // (from the kept outline, until the sound is read)
+          const R = wave.rate, P = wave.peaks, a = from * R, n = Math.max(1e-9, (to - from) * R / cols), out = new Float32Array(cols);
+          for (let x = 0; x < cols; x++) {
+            let m = 0; const i0 = Math.floor(a + x * n), i1 = Math.max(i0 + 1, Math.floor(a + (x + 1) * n));
+            for (let i = i0; i < i1 && i < P.length; i++) if (P[i] > m) m = P[i];
+            out[x] = m / 255;
+          }
+          return out;
+        }
         const sr = buf.sampleRate, a = Math.floor(from * sr), b = Math.ceil(to * sr), n = Math.max(1, (b - a) / cols), out = new Float32Array(cols);
         const chans = []; for (let c = 0; c < buf.numberOfChannels; c++) chans.push(buf.getChannelData(c));
         for (let x = 0; x < cols; x++) {
@@ -623,7 +637,7 @@ var StingClip = (function () {
       wrap.__zoom = () => zoomRange();               // (tests)
       wrap.__loop = () => (loop ? cleanLoop(loop) : null);
       function draw() {
-        if (!buf) return;
+        if (!ready()) return;
         if (sizeCanvas(over) || !peaks) peaks = columnPeaks(0, dur(), over.width);
         sizeCanvas(zoom);
         drawWave(over, peaks, 0, dur());
@@ -708,7 +722,7 @@ var StingClip = (function () {
       }
       for (const [cv, range] of [[over, () => [0, dur()]], [zoom, zoomRange]]) {
         cv.addEventListener('pointermove', e => {
-          if (!buf || e.buttons) return;
+          if (!ready() || e.buttons) return;
           const [a, b] = range(), h = onTab(cv, e) ? 'tab' : nearEdge(cv, e, a, b);
           cv.classList.toggle('sc-grab', !!h && h !== 'tab');
           cv.classList.toggle('sc-move', h === 'tab');
@@ -717,7 +731,7 @@ var StingClip = (function () {
         cv.addEventListener('pointerleave', () => { cv.classList.remove('sc-grab', 'sc-move'); if (hover) { hover = null; draw(); } });
       }
       over.addEventListener('pointerdown', e => {
-        if (!buf || e.button !== 0) return;          // (a right click: its menu would swallow the release)
+        if (!ready() || e.button !== 0) return;          // (a right click: its menu would swallow the release)
         over.setPointerCapture(e.pointerId);
         if (onTab(over, e)) return dragEdge(over, e, 'at', () => [0, dur()]);
         const k = nearEdge(over, e, 0, dur());
@@ -736,7 +750,7 @@ var StingClip = (function () {
         redraw();
       });
       zoom.addEventListener('pointerdown', e => {
-        if (!buf || e.button !== 0) return;
+        if (!ready() || e.button !== 0) return;
         zoom.setPointerCapture(e.pointerId);
         const [a, b] = zoomRange(), t = timeAt(zoom, e, a, b);
         if (onTab(zoom, e)) return dragEdge(zoom, e, 'at', () => [a, b]);
@@ -870,6 +884,7 @@ var StingClip = (function () {
         resolve(result);
       }
       function save() {
+        if (!buf && wave) { msg('Still reading the sound: Save once it’s ready (the edges you set are kept).'); return; }
         if (!buf) return finish(null);
         clamp();
         const c = cur(), chk = loopCheck(c, dur());
@@ -935,7 +950,8 @@ var StingClip = (function () {
       const guess = size > 20e6 && rate > 0 ? size / rate : null;   // s
       const big = size > 50e6 ? ` (${size >= 1e9 ? (size / 1e9).toFixed(1) + ' GB' : Math.round(size / 1e6) + ' MB'}: a long file takes a while)` : '';
       const readAt = Date.now(), secs = () => (Date.now() - readAt) / 1000;
-      const readMsg = () => msg('Reading the track' + big + '…' + (secs() > 2 ? ' ' + Math.round(secs()) + ' s' + (guess ? ' of about ' + Math.max(Math.round(guess), Math.round(secs())) : '') : ''));
+      const readMsg = () => msg((wave ? 'Reading the sound' : 'Reading the track') + big + '…' + (secs() > 2 ? ' ' + Math.round(secs()) + ' s' + (guess ? ' of about ' + Math.max(Math.round(guess), Math.round(secs())) : '') : '')
+        + (wave ? ' The waveform is from last time: set the start and end meanwhile; play and Save once it’s read.' : ''));
       const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
       let loadRaf = 0;
       function loading() {
@@ -950,8 +966,34 @@ var StingClip = (function () {
       }
       readMsg(); loading();
       const readT = setInterval(readMsg, 1000);
+      const waveKey = (() => { const k = window.ClipWords ? ClipWords.keyOf(opts.src) : (opts.src && opts.src.name && Number.isFinite(opts.src.size) ? opts.src.name + '|' + opts.src.size : typeof opts.src === 'string' ? opts.src : null);
+        return k || (opts.src && opts.src.size && opts.name ? opts.name + '|' + opts.src.size : null); })();
+      let firstLook = false;
+      const lookAtIt = () => {                       // (the first time there's something to see: the part, or the edge asked for)
+        if (firstLook) return; firstLook = true;
+        if (opts.focus === 'start' || opts.focus === 'end') { active = opts.focus; redraw(); focusOn(opts.focus); } else { redraw(); focusOn('all'); }
+      };
+      const PLAYS = ['.sc-play', '.sc-first', '.sc-last', '.sc-lead'];
+      if (waveKey && window.videoStore) window.videoStore.get('wave:' + waveKey).then(w => {
+        if (buf || !w || w.v !== 1 || !(w.peaks instanceof Uint8Array) || !(w.dur > 0)) return;
+        wave = w; cancelAnimationFrame(loadRaf); readMsg();
+        PLAYS.forEach(s => { $(s).disabled = true; $(s).title = 'Once the sound is read'; });
+        $('.sc-save').disabled = true;
+        lookAtIt();
+      }).catch(() => {});
       decode(opts.src).then(b => {
         clearInterval(readT); cancelAnimationFrame(loadRaf);
+        if (wave) { PLAYS.forEach(s => { $(s).disabled = false; $(s).title = ''; }); $('.sc-save').disabled = false; wave = null; peaks = null; }
+        if (waveKey && window.videoStore && b.duration >= 30) {   // keep its outline for next time (a long one: short ones are read quickly)
+          const R = 100, n = Math.ceil(b.duration * R), pk = new Uint8Array(n), sr = b.sampleRate, chans = [];
+          for (let c = 0; c < b.numberOfChannels; c++) chans.push(b.getChannelData(c));
+          for (let i = 0; i < n; i++) {
+            let m = 0; const s0 = Math.floor(i * sr / R), s1 = Math.min(b.length, Math.floor((i + 1) * sr / R));
+            for (const ch of chans) for (let k = s0; k < s1; k += 4) { const v = ch[k] < 0 ? -ch[k] : ch[k]; if (v > m) m = v; }
+            pk[i] = Math.min(255, Math.round(m * 255));
+          }
+          window.videoStore.put('wave:' + waveKey, { v: 1, dur: b.duration, rate: R, peaks: pk }).catch(() => {});
+        }
         if (size > 20e6 && secs() > 0.5) try { const r = size / secs(); localStorage.setItem(RATE, String(Math.round(rate ? (rate + r) / 2 : r))); } catch (_) { /* private mode */ }
         buf = b;
         msg('');
@@ -960,8 +1002,7 @@ var StingClip = (function () {
           words = ClipWords.mount($('.sc-words'), { buf: b, name: opts.name, key: ClipWords.keyOf(opts.src) || (opts.src && opts.src.size && opts.name ? opts.name + '|' + opts.src.size : null),
             play: playFrom, setStart: t => { set('start', t); active = 'start'; redraw(); focusOn('start'); }, setEnd: t => { set('end', t); active = 'end'; redraw(); focusOn('end'); } });
         }
-        redraw();
-        focusOn('all');
+        if (firstLook) redraw(); else lookAtIt();      // (worked on from the kept outline already: as it is, now exact)
         $('.sc-save').focus();
       }).catch(() => {
         clearInterval(readT); cancelAnimationFrame(loadRaf);
@@ -971,7 +1012,7 @@ var StingClip = (function () {
     });
   }
 
-  return { region, cleanLoop, plan, length, loopCheck, LIMITS, decode, render, wav, playable, play, preview, open, curveIn, curveOut,
+  return { region, cleanLoop, plan, sourceAt, length, loopCheck, LIMITS, decode, render, wav, playable, play, preview, open, curveIn, curveOut,
     loudness, toneBuffer, gainFor, trim, target, houseLevel, showLevel, LEVEL, TARGET_KEY, SHOW_KEY };
 })();
 if (typeof module !== 'undefined') module.exports = StingClip;
