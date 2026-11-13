@@ -9,7 +9,7 @@ OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exis
 # To finish … before the end (13 Nov 2026): it starts when it must to end n s before its item does; longer than
 # the item, it starts at once, joined partway, and still ends with it. The audio's clocks: each cue's (when it
 # ends, from its item's start; counting down while it runs), the item's (its last), and the box top right.
-import mimetypes, os, sys
+import json, mimetypes, os, sys
 from playwright.sync_api import sync_playwright
 BASE = "https://timer.sophtwhere.com/beta/"
 SETUP = """async () => {                     // three speakers: a tone each at the start (6 s, 6 s, 3 s)
@@ -143,6 +143,29 @@ with sync_playwright() as p:
     po.click(".sc-save"); po.wait_for_timeout(500)
     c1 = po.evaluate("window.__playout.cues()['demo-1'][0]")
     check("… Save: the cue's clip ends there", abs(c1.get("end", 0) - en) < 0.02, c1)
+
+    # ■ held, as on the deck (the owner, 13 Nov 2026): a click stops at once; held, it fades and stops where let go
+    gain = lambda cid: po.evaluate("window.__playout.gain(%s)" % json.dumps(cid))
+    def hold(sel, ms):
+        bx = po.locator(sel).bounding_box(); po.mouse.move(bx["x"] + bx["width"] / 2, bx["y"] + bx["height"] / 2)
+        po.mouse.down(); po.wait_for_timeout(ms)
+    po.click(cb("c2", "fire")); po.wait_for_timeout(600); g0 = gain("c2")
+    hold(cb("c2", "stop"), 1200)
+    check("a cue's ■ held: it fades (the button orange), still playing", playing() == ["c2"] and gain("c2") < g0 * 0.6 and po.evaluate("document.querySelector('#items li[data-cue=\"c2\"] button[data-act=stop]').classList.contains('fading')"), [playing(), g0, gain("c2")])
+    po.mouse.up(); po.wait_for_timeout(300)
+    check("… let go: stopped there", playing() == [] and po.evaluate("window.__playout.holding()") is None, playing())
+    po.click(cb("c2", "fire")); po.wait_for_timeout(500); po.click(cb("c2", "stop")); po.wait_for_timeout(200)
+    check("… a click: stopped at once", playing() == [], playing())
+    po.click(run(2)); po.wait_for_timeout(600)
+    hold('#items li[data-id="demo-2"] button[data-act=endrun]', 1200)
+    check("■ Stop item held: its cues fade", playing() == ["c2"] and gain("c2") < g0 * 0.6 and po.evaluate("window.__playout.local()") is None, [playing(), gain("c2")])
+    po.mouse.up(); po.wait_for_timeout(300)
+    check("… let go: stopped", playing() == [], playing())
+    po.click(cb("c1", "fire")); po.click(cb("c2", "fire")); po.wait_for_timeout(600)
+    hold("#stopall", 1200)
+    check("■ Stop all held: everything fades (orange)", sorted(playing()) == ["c1", "c2"] and gain("c1") < g0 * 0.6 and "fading" in po.get_attribute("#stopall", "class"), [playing(), gain("c1")])
+    po.mouse.up(); po.wait_for_timeout(300)
+    check("… let go: all stopped", playing() == [] and "fading" not in (po.get_attribute("#stopall", "class") or ""), playing())
     b.close()
 
 print("errors:", errs)

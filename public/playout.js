@@ -256,6 +256,7 @@
     }
     prepare();
     render();
+    measureMissing();
   }
   const sinceStart = () => show.age == null ? Infinity : show.age + (performance.now() - showAt);
   const following = () => !SOLO && store.get(FOLLOW) !== '0';   // (a demo or a soundboard has no timer to follow)
@@ -311,11 +312,13 @@
   let lastRun = null;                                  // the item started here last (it doesn't flash: see activeItems)
   let deckBoard = null;                                // the Stream Deck soundboard (playout-deck.js), below
   const localCd = () => { const e = performance.now() - local.t0; return { elapsed: e, remain: local.dur == null ? Infinity : local.dur * 1000 - e }; };
-  function runLocal(itemId, how) {                     // how (the playlist flow's): {flow, fadeIn (ms), silent}
+  function runLocal(itemId, how) {                     // how: the playlist flow's {flow, fadeIn (ms), silent}; keep: the deck fades the rest on release
     const it = show.items.find(x => x.id === itemId);
     if (flowOn()) {
-      if (!(how && how.flow)) for (const p of playing.values()) if (p.run && p.item && p.item !== itemId) p.voice.fade(FLOW_MS);   // a jump: what was playing fades
-      flow = { item: itemId, t0: performance.now(), heard: false, len: null, silent: (how && how.silent) || 0 };
+      if (!(how && (how.flow || how.keep))) for (const p of playing.values()) if (p.run && p.item && p.item !== itemId) p.voice.fade(FLOW_MS);   // a jump: what was playing fades
+      const played = flow ? flow.played : new Set();   // (this round's: 🔀 plays each once)
+      played.add(itemId);
+      flow = { item: itemId, t0: performance.now(), heard: false, len: null, silent: (how && how.silent) || 0, played, pick: null };
     }
     local = { item: itemId, t0: performance.now(), dur: it && it.d > 0 ? it.d : null, fired: new Set(), prev: new Map() };
     lastRun = itemId;
@@ -328,12 +331,28 @@
   // power, so the middle doesn't dip), the next starting that long before the last one's audio ends (half its length
   // for a short one). Starting another item (its key, ▶ Start item) jumps there: what was playing fades as a live fade
   // does, and the flow carries on from it. 🔁 Loop: after the last, the first. ■ Stop item, Stop all, Fade out and Esc end it.
-  const FLOW_MS = 5000, FLOW = KEY + 'flow', FLOW_LOOP = KEY + 'flow_loop';
+  // 🔀 Shuffle (the owner: someone will ask): the next at random from those not played this round (picked ahead, so
+  // the hint names it and it's ready); after them all, with 🔁 a new round (not the one just played), else the end.
+  const FLOW_MS = 5000, FLOW = KEY + 'flow', FLOW_LOOP = KEY + 'flow_loop', FLOW_SHUFFLE = KEY + 'flow_shuffle';
+  const MINIMAL = KEY + 'minimal';                     // Minimal run sheet view (the owner): the items without their cues; always with the flow on
   let flow = null;                                     // {item, t0, heard (its audio played), len (s, as first known), crossed, silent}
   const flowOn = () => SOUNDBOARD && store.get(FLOW) === '1';
   const flowLoop = () => store.get(FLOW_LOOP) === '1';
-  function flowNext(id) {                              // the next item with cues, in the list's order (🔁: round again)
+  const flowShuffle = () => store.get(FLOW_SHUFFLE) === '1';
+  function flowNext(id) {                              // the next item with cues, in the list's order (🔁: round again; 🔀: at random)
     const list = show.items.filter(it => !it.e), i = list.findIndex(it => it.id === id), has = it => (cues[it.id] || []).length > 0;
+    if (flowShuffle() && flow) {
+      const ok = x => x !== id && list.some(it => it.id === x && has(it)) && !flow.played.has(x);
+      if (flow.pick && ok(flow.pick)) return flow.pick;
+      let pool = list.filter(it => ok(it.id));
+      if (!pool.length && flowLoop()) {                // a new round: everything again, but not the one just played (unless it's the only one)
+        flow.played = new Set([id]);
+        pool = list.filter(it => ok(it.id));
+        if (!pool.length) pool = list.filter(it => it.id === id && has(it));
+      }
+      flow.pick = pool.length ? pool[Math.floor(Math.random() * pool.length)].id : null;
+      return flow.pick;
+    }
     for (let k = i + 1; k < list.length; k++) if (has(list[k])) return list[k].id;
     if (flowLoop()) for (let k = 0; k <= i; k++) if (has(list[k])) return list[k].id;
     return null;
@@ -364,6 +383,9 @@
     flow.crossed = true;
     const next = flowNext(flow.item);
     if (!next) return;                                 // (the last: it plays out)
+    const picture = [...playing.values()].some(p => p.video && p.run && p.item === flow.item);
+    if (picture && (cues[next] || []).some(c => c.media === 'video' && c.trigger === 'start')) return;   // a video into a video: one picture, no overlap (the owner): it plays to its end, then the next
+
     const ms = Math.max(200, left * 1000);
     for (const p of playing.values()) if (p.run && p.item === flow.item) p.voice.xfade(ms);
     runLocal(next, { flow: true, fadeIn: ms });
@@ -374,9 +396,16 @@
     const on = flowOn(), next = flow && flowNext(flow.item), it = next && show.items.find(x => x.id === next);
     $('sb-flow').setAttribute('aria-pressed', String(on));
     $('sb-loop').setAttribute('aria-pressed', String(flowLoop()));
-    $('sb-flowhint').textContent = !on ? 'plays the items one after another in this order, each crossfading into the next over 5 s; starting another item carries on from there.'
-      : flow ? (it ? 'Next: ' + titleOf(it) : 'This is the last: it plays out' + (flowLoop() ? '' : ' (🔁 to go round again)') + '.')
-      : 'On: start an item and the rest follow it, crossfading over 5 s.';
+    $('sb-shuffle').setAttribute('aria-pressed', String(flowShuffle()));
+    const min = on || store.get(MINIMAL) === '1', mb = $('sb-minimal');
+    document.body.classList.toggle('minimal', min);
+    mb.setAttribute('aria-pressed', String(min));
+    mb.classList.toggle('held', on);
+    mb.title = on ? 'On while Playlist flow is on' : 'Only the items, without their cues';
+    const sh = flowShuffle();
+    $('sb-flowhint').textContent = !on ? 'plays the items one after another ' + (sh ? 'in a random order (each once)' : 'in this order') + ', each crossfading into the next over 5 s; starting another item carries on from there.'
+      : flow ? (it ? 'Next: ' + titleOf(it) + (sh ? ' (shuffled)' : '') : 'This is the last' + (sh ? ' of this round' : '') + ': it plays out' + (flowLoop() ? '' : ' (🔁 to go round again)') + '.')
+      : 'On: start an item and the rest follow it' + (sh ? ' in a random order' : '') + ', crossfading over 5 s.';
   }
   function endFlow(itemId) { if (flow && flow.item === itemId) { flow = null; renderFlow(); } }   // (the operator stopped the item the flow is on)
   // Items playing as a whole: the one started here, and any whose run's cues still play (its run ended, or
@@ -527,6 +556,7 @@
   }
   const playing = new Map();                           // cue id → {voice, video}
   const starting = new Set();                          // cue ids whose play() is getting ready (its file read, decoded)
+  const measuring = { now: null, queue: new Set(), failed: new Set(), was: false };   // loudness: the cue being measured, those waiting, those that couldn't be
   const vid = $('vid');                                // video cues' element: in the Output box, or the floating window
   async function play(c, how) {                        // how.run: played by an item started here (how.item); how.offset: s into it (joined partway); how.fadeIn: ms
     starting.add(c.id);
@@ -577,8 +607,9 @@
   // loudness as they play), so every cue on it is as loud as the next. Not chosen: worked out from the cues on
   // it (the sheet's and the extra keys'). Automatic levels (on unless playout_levels_auto is '0'): a new
   // quietest (a cue added, measured or removed) is used at once (applyLevels(), from renderLevels() when a
-  // level moved: what's playing follows, and so does a tone); off, the level in use (held) stays until the
-  // operator says so. The level box (#levelbox, top right) shows each output's level and its biggest cut; a
+  // level moved), but a cue already playing keeps the level it started at (the owner, 13 Nov 2026: the next track
+  // may be quieter or louder, the one playing doesn't jump), a tone follows; off, the level in use (held) stays
+  // until the operator says so, and then what's playing glides to it (as it does for Level on/off and the switch). The level box (#levelbox, top right) shows each output's level and its biggest cut; a
   // click (or ▶ Tone on that output) means the desk is set for it (ack; automatic off: held = the new level
   // too). It flashes while a level differs from the one the desk was set for (or, automatic off, from the one
   // in use), amber while the desk was never set. Off: its cues as recorded (only a ✂ trim). ▶ Tone: the
@@ -606,8 +637,8 @@
   const gainOf = (c, out) => StingClip.gainFor(c, targetOf(out));
   const tones = new Map();                             // output → {v: the tone playing on it, ref: the level it was made at}
   let applied = '';                                    // the levels last applied (renderLevels: apply when they move)
-  function applyLevels() {
-    for (const p of playing.values()) if (p.out) p.voice.level(gainOf(p.c, p.out));
+  function applyLevels(byHand) {                       // byHand: the operator's own change (Level on/off, Automatic levels)
+    if (byHand || !autoLevels()) for (const p of playing.values()) if (p.out) p.voice.level(gainOf(p.c, p.out));   // (automatic: from each one's next play)
     for (const [k, tn] of [...tones]) {
       const t = targetOf(k);
       if (t == null) stopTone(k);
@@ -618,7 +649,7 @@
     levels[k] = Object.assign({}, levels[k]);
     if (v.off) levels[k].off = true; else delete levels[k].off;
     saveLevels();
-    applyLevels();
+    applyLevels(true);
     renderLevels();
   }
   // The desk is set for output k's level now (the level box clicked, or ▶ Tone): automatic off, it's used from now
@@ -632,7 +663,7 @@
     if (!on) for (const k of outputs().keys) { const q = quietOf(k); if (q != null) levels[k] = Object.assign({}, levels[k], { held: q }); }   // (the level in use now stays)
     store.set(AUTO, on ? '1' : '0');
     saveLevels();
-    renderLevels();                                    // (on: a level waiting is used at once)
+    renderLevels(true);                                // (on: a level waiting is used at once, by what's playing too)
   }
   function startTone(k) {
     if (playing.size) return;                          // (not while cues play: the owner, 13 Nov 2026)
@@ -752,14 +783,69 @@
       el.src = url;
     });
   }
-  // Its loudness as it plays (sting-clip.js), for levelling; the clip editor measures it too
-  async function measure(c) {
-    if (c.duration > StingClip.LIMITS.source) return;
+  // Its loudness as it plays (sting-clip.js), for levelling; the clip editor measures it too. One at a time in the order
+  // asked (a big folder: hundreds), each cue's row saying where it's up to (renderLevelIcons)
+  let measureChain = Promise.resolve();
+  function measure(c) {
+    if (measuring.queue.has(c.id) || measuring.now === c.id) return measureChain;
+    measuring.queue.add(c.id); renderLevelIcons();
+    return (measureChain = measureChain.then(() => measureNow(c.id)));
+  }
+  async function measureNow(id) {
+    measuring.queue.delete(id);
+    const f = findCue(id);
+    if (!f || Number.isFinite(f.c.lufs) || f.c.duration > StingClip.LIMITS.source) return renderLevelIcons();
+    measuring.now = id; renderLevelIcons();
     try {
-      const blob = await fileOf(c), l = blob && StingClip.loudness(StingClip.render(await StingClip.decode(blob), c));
-      const now = findCue(c.id);
-      if (now && Number.isFinite(l)) { now.c.lufs = l; saveCues(); renderLevels(); }
-    } catch (_) { /* no sound to measure, or unreadable: plays as it is */ }
+      const blob = await fileOf(f.c), l = blob && StingClip.loudness(StingClip.render(await StingClip.decode(blob), f.c));
+      const now = findCue(id);
+      if (now && Number.isFinite(l)) { now.c.lufs = l; measuring.failed.delete(id); saveCues(); } else measuring.failed.add(id);
+    } catch (_) { measuring.failed.add(id); }      // (no sound to measure, or unreadable: plays as it is)
+    measuring.now = null;
+    renderLevels(); renderLevelIcons();
+  }
+  function measureMissing() {                          // (the sheet's cues not measured yet: after a reload, or a big folder cut short)
+    for (const c of sheetCues()) if (outKey(c) && !Number.isFinite(c.lufs) && !(c.duration > StingClip.LIMITS.source) && !measuring.failed.has(c.id)) measure(c);
+  }
+  // Each cue's loudness in its row (the owner, 13 Nov 2026: in a big folder, which have been measured?): 🔉 its LUFS; on
+  // its output the quietest 🔈 (it sets the level) and the loudest 🔊 (turned down the most); ⏳ being measured, ⌛ waiting,
+  // — too long to measure, ⚠ couldn't be; nothing for a video with no sound
+  function renderLevelIcons() {
+    const spans = document.querySelectorAll('.clv[data-lv]');
+    if (spans.length) {
+      const all = sheetCues(), byId = new Map(Object.values(cues).flat().map(c => [c.id, c])), ext = {};
+      for (const c of all) {
+        const k = outKey(c);
+        if (!k || !Number.isFinite(c.lufs)) continue;
+        const e = ext[k] || (ext[k] = { lo: c, hi: c });
+        if (c.lufs < e.lo.lufs) e.lo = c;
+        if (c.lufs > e.hi.lufs) e.hi = c;
+      }
+      for (const el of spans) {
+        const c = byId.get(el.dataset.lv), k = c && outKey(c);
+        let t = '', tip = '', cls = 'clv';
+        if (!c || !k) { /* (no sound) */ }
+        else if (Number.isFinite(c.lufs)) {
+          const e = ext[k], lv = targetOf(k), cut = lv == null ? null : c.lufs - lv;
+          const turned = cut == null ? ' (its output plays as recorded)' : cut >= 0.05 ? ', turned down ' + cut.toFixed(1) + ' dB' : ', not turned down';
+          if (e && e.lo === c) { t = '🔈 '; cls += ' lo'; tip = (e.hi === c ? 'The only cue measured on its output' : 'The quietest on its output') + ': it sets the level'; }
+          else if (e && e.hi === c) { t = '🔊 '; cls += ' hi'; tip = 'The loudest on its output' + turned; }
+          else { t = '🔉 '; tip = 'Measured' + turned; }
+          t += dB(c.lufs); tip = dB(c.lufs) + ' LUFS as it plays. ' + tip;
+        }
+        else if (measuring.now === c.id) { t = '⏳'; cls += ' now'; tip = 'Measuring its loudness…'; }
+        else if (measuring.queue.has(c.id)) { t = '⌛'; cls += ' wait'; tip = 'Waiting to have its loudness measured'; }
+        else if (c.duration > StingClip.LIMITS.source) { t = '—'; tip = 'Over 10 minutes: its loudness isn’t measured, so it plays as recorded'; }
+        else if (measuring.failed.has(c.id)) { t = '⚠'; tip = 'Its loudness couldn’t be measured (no sound, or the file can’t be read): it plays as recorded'; }
+        else { t = '○'; cls += ' wait'; tip = 'Not measured yet'; }
+        if (el.textContent !== t) el.textContent = t;
+        if (el.title !== tip) el.title = tip;
+        if (el.className !== cls) el.className = cls;
+      }
+    }
+    const busy = !!(measuring.now || measuring.queue.size);
+    if (busy || measuring.was) renderLevels();         // (the level box counts them, and stops when they're done)
+    measuring.was = busy;
   }
   // A cue from the + sting dialog's choice (sting-picker.js; random stings make the same kind): the
   // file, or a copy of the stock sting or link, kept in this browser under a new id. song: its track
@@ -1035,10 +1121,10 @@
       waiting: !auto && q != null && t !== q,          // automatic off: a new level not used yet
       changed: q != null && ((ack != null && q !== ack) || (!auto && t != null && t !== q)), unset: q != null && ack == null };
   }
-  function renderLevels() {
+  function renderLevels(byHand) {
     const box = $('levels'), o = outputs(), all = o.all;
     const now = o.keys.map(k => k + '=' + targetOf(k)).join(',');
-    if (now !== applied) { applied = now; applyLevels(); }   // (a cue added, measured or removed moved a level)
+    if (now !== applied) { applied = now; applyLevels(byHand); }   // (a cue added, measured or removed moved a level)
     const a = document.activeElement;
     if (a && box.contains(a) && a.matches('input[type=number]')) return renderLevelBox(o);   // (a trim offset being typed: the rest on focusout)
     const auto = autoLevels();
@@ -1069,6 +1155,11 @@
   // The level box (top right, not scrolled; the owner, 13 Nov 2026): each output's level and its loudest cue's cut,
   // always (once there are cues). Neutral once the desk is set (a click on it, or ▶ Tone); amber while it never
   // was; flashing when a level changed since (automatic off: a new level waiting, used by the click)
+  function scanLine(o) {                              // a big folder being measured: how far it's got
+    if (!measuring.now && !measuring.queue.size) return '';
+    const want = o.all.filter(c => outKey(c) && !(c.duration > StingClip.LIMITS.source)), done = want.filter(c => Number.isFinite(c.lufs)).length;
+    return `<span class="lb-scan">⏳ Measuring loudness: ${done} of ${want.length}…</span>`;
+  }
   function renderLevelBox(o) {
     const box = $('levelbox');
     if (!box) return;
@@ -1076,14 +1167,14 @@
     if (box.hidden) return;
     const auto = autoLevels(), rows = o.keys.filter(k => quietOf(k) != null).map(k => levelFacts(k, o));
     const flash = rows.some(r => r.changed), unset = !flash && rows.some(r => r.unset), many = rows.length > 1;
-    const say = !rows.length ? (o.keys.every(k => levelOf(k).off) ? 'Levels off' : 'Levels: no cue measured yet')
+    const say = !rows.length ? (o.keys.every(k => levelOf(k).off) ? 'Levels off' : measuring.now || measuring.queue.size ? 'Levels: measuring the cues…' : 'Levels: no cue measured yet')
       : flash ? (auto ? 'Level changed: set the desk, then click here' : 'New level waiting: click to use it')
       : unset ? (auto ? 'Set the desk (▶ Tone), then click here' : 'Click to use this level') : '✓ Desk set for this level';
     const html = rows.map(r => `<span class="lb-row">${many ? `<span class="lb-name">${esc(outName(r.k, o))}</span>` : ''}` +
         `<span class="lb-lufs">${r.waiting && r.t != null ? dB(r.t) + ' → ' : ''}${dB(r.q)} <small>LUFS</small></span></span>` +
         `<span class="lb-cut">${r.cut == null ? 'as recorded for now' : r.cut >= 0.05 ? 'loudest cue turned down ' + r.cut.toFixed(1) + ' dB' : 'no cue turned down'}</span>` +
         `<span class="lb-trim">console trim ${r.waiting && r.t != null ? sdB(trimOf(r.k, r.t)) + ' → ' : ''}${sdB(trimOf(r.k, r.waiting ? r.q : r.t != null ? r.t : r.q))} dB</span>`).join('') +
-      `<span class="lb-say">${esc(say)}</span>`;
+      `<span class="lb-say">${esc(say)}</span>` + scanLine(o);
     if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
     box.className = !rows.length ? 'lb-ok' : flash ? 'lb-flash' : unset ? 'lb-unset' : 'lb-ok';
     box.disabled = !rows.length;
@@ -1179,6 +1270,7 @@
 
   function render() {
     if (deckBoard) deckBoard.changed();
+    $('stopall').classList.toggle('fading', !!(hold && hold.all));
     document.body.classList.toggle('manual', !following());
     renderPlace();
     renderLevels();
@@ -1194,7 +1286,7 @@
       const flash = active.has(it.id) && active.size > 1 && it.id !== lastRun;   // (rebuilt together, so they flash in step)
       const done = c => (i === curIdx && fired.has(c.id)) || (here && local.fired.has(c.id));
       const runBtn = !manual || it.e || !list.length ? ''
-        : active.has(it.id) ? `<button class="small runon${flash ? ' superseded' : ''}" data-act="endrun" title="${flash ? 'Still playing after another item started: stop it here, or let it play to its end' : here ? 'Stop this item’s cues, and the rest of them won’t play' : 'Stop this item’s cues still playing'}">■ Stop item</button>`
+        : active.has(it.id) ? `<button class="small runon${flash ? ' superseded' : ''}${hold && hold.item === it.id ? ' fading' : ''}" data-act="endrun" title="${flash ? 'Still playing after another item started: stop it here, or let it play to its end' : here ? 'Stop this item’s cues, and the rest of them won’t play (hold: they fade, and stop where you let go)' : 'Stop this item’s cues still playing (hold: they fade, and stop where you let go)'}">■ Stop item</button>`
         : `<button class="small" data-act="run" title="Its cues as if it started now: start cues at once, the others timed from now${it.d ? ' (its length: ' + mmss(it.d) + ')' : ''}">▶ Start item</button>`;
       return `<li data-id="${esc(it.id)}" class="${i === curIdx ? 'now' : curIdx >= 0 && i < curIdx ? 'done' : ''}${here ? ' here' : ''}">` +
         `<div class="ihead">${(st => (st ? `<span class="istart${st.late ? ' late' : ''}" title="${it.a != null ? 'Started' : st.late ? 'Expected to start (planned ' + (it.s != null ? clockOf(it.s) : 'no time') + ')' : 'Planned to start'}">${st.t}</span>` : ''))(startOf(it))}${nameHtml(it)}${i === curIdx ? '<span class="itag">now</span>' : ''}${here ? '<span class="itag ilocal"></span>' : ''}` +
@@ -1216,6 +1308,7 @@
       '<ul class="cues">' + extra.map(c => cueRow(c, { board: true })).join('') + '</ul></li>' : '';
     renderNow(countdown());
     renderClocks();
+    renderLevelIcons();
   }
   // An item's start, for its row and its key (the owner, 13 Nov 2026): when it started, else when it's expected
   // (≈, from the timer: only when that isn't the plan), else planned; none for a sheet without times yet
@@ -1274,11 +1367,11 @@
   function cueRow(c, o) {
     const on = playing.has(c.id), single = on && !playing.get(c.id).run && !o.locked;   // (played on its own: its ▶, or a key)
     return `<li data-cue="${esc(c.id)}" class="${o.done ? 'fired' : ''}${on ? ' playing' : ''}">` +
-      `<button class="small${o.flash && on ? ' superseded' : ''}" data-act="${on ? 'stop' : 'fire'}"${o.locked ? ' disabled' : ''} title="${o.locked ? 'The item started here plays its cues: ■ Stop item stops them (Options: play and stop single cues)' : on ? 'Stop' : 'Play it now (on this computer)'}">${on ? '■' : '▶'}</button>` +
+      `<button class="small${o.flash && on ? ' superseded' : ''}${on && hold && hold.cue === c.id ? ' fading' : ''}" data-act="${on ? 'stop' : 'fire'}"${o.locked ? ' disabled' : ''} title="${o.locked ? 'The item started here plays its cues: ■ Stop item stops them (Options: play and stop single cues)' : on ? 'Click: stop; hold: it fades, and stops where you let go' : 'Play it now (on this computer)'}">${on ? '■' : '▶'}</button>` +
       (single ? `<button class="small mark" data-act="markin" title="The clip starts here (half a second back, for your reaction): opens the editor on the start, to fine-tune">Mark start</button>` +
         `<button class="small mark" data-act="markout" title="The clip ends here: opens the editor on the end, to fine-tune">Mark end</button>` : '') +
       `<span class="when">${o.board ? 'Its key' : esc(whenText(c))}</span><span class="fname"${c.rolled ? ' title="Picked at random: 🎲 on the item for another; ✂ makes it yours (a roll then leaves it alone)"' : ''}>${c.rolled ? '🎲' : c.media === 'video' ? '🎞' : '🎵'} ${esc(c.name)}</span>` +
-      `<span class="clen">${StingClip.region(c) ? '✂ ' : ''}${lenText(c)}</span><span class="cclock" data-clock="${esc(c.id)}"></span>` + outMenu(c) +
+      `<span class="clen">${StingClip.region(c) ? '✂ ' : ''}${lenText(c)}</span><span class="clv" data-lv="${esc(c.id)}"></span><span class="cclock" data-clock="${esc(c.id)}"></span>` + outMenu(c) +
       (o.board ? '' : `<button class="small" data-act="when" title="Change when it plays">✎</button>`) +
       `<button class="small" data-act="edit" title="Choose the part to play, fades, a loop and its level (the file isn’t cut)">✂</button>` +
       `<button class="small" data-act="del" title="${o.board ? 'Remove it (its key is free again)' : 'Remove this cue'}">✕</button></li>`;
@@ -1300,6 +1393,7 @@
     const cueId = b.closest('li[data-cue]') && b.closest('li[data-cue]').dataset.cue;
     const c = cueId && (cues[itemId] || []).find(x => x.id === cueId);
     if ((b.dataset.act === 'fire' || b.dataset.act === 'stop') && local && local.item === itemId && !cueControl()) return;   // (locked: the item run has them)
+    if ((b.dataset.act === 'stop' || b.dataset.act === 'endrun') && heldClick()) return;   // (done as it was let go)
     if (b.dataset.act === 'fire' && c) play(c);        // by hand: always, followed or not
     else if (b.dataset.act === 'stop' && c) { endFlow(itemId); stopCue(c.id); }
     else if (b.dataset.act === 'edit' && c) editCue(c);
@@ -1314,6 +1408,35 @@
     else if (b.dataset.act === 'up' || b.dataset.act === 'down') { b.blur(); moveItem(itemId, b.dataset.act === 'up' ? -1 : 1); }
     else if (b.dataset.act === 'delitem') removeItem(itemId);
   }
+  // ■ on the page as on the deck (the owner, 13 Nov 2026): a click stops at once; held, it fades (over the deck's fade
+  // time) and stops where it's let go. A cue's ■, ■ Stop item and ■ Stop all; from the keyboard, a click: at once
+  const holdFadeMs = () => { const v = parseFloat(store.get('playout_deck_fade')); return (v >= 0.2 && v <= 10 ? v : 5) * 1000; };
+  let hold = null, holdUpAt = 0;                       // {ids, all, item, cue}; the click after a held press is skipped
+  function holdDown(e) {
+    const b = e.button === 0 && e.target.closest('button[data-act=stop], button[data-act=endrun], #stopall');
+    if (!b || b.disabled || hold) return;
+    const ms = holdFadeMs();
+    if (b.id === 'stopall') { fadeAll(ms); endLocal(); hold = { all: true }; }
+    else {
+      const itemId = b.closest('li[data-id]').dataset.id;
+      endFlow(itemId);
+      if (b.dataset.act === 'endrun') { if (local && local.item === itemId) endLocal(); hold = { ids: playingOf(itemId), item: itemId }; }
+      else { const cueId = b.closest('li[data-cue]').dataset.cue; hold = { ids: playing.has(cueId) ? [cueId] : [], cue: cueId }; }
+      for (const id of hold.ids) playing.get(id).voice.fade(ms);
+    }
+    render();
+  }
+  function holdUp() {
+    if (!hold) return;
+    const h = hold;
+    hold = null; holdUpAt = performance.now();
+    if (h.all) { stopAll(); endLocal(); } else h.ids.forEach(stopCue);
+    render();
+  }
+  const heldClick = () => performance.now() - holdUpAt < 500;
+  for (const el of [$('items'), $('boardlist'), $('stopall')]) el.addEventListener('pointerdown', holdDown);
+  window.addEventListener('pointerup', holdUp, true);   // (on the window: the list may be redrawn under the pointer)
+  window.addEventListener('pointercancel', holdUp, true);
   $('items').addEventListener('click', onListClick);
   $('boardlist').addEventListener('click', onListClick);   // (the extra keys' cues: ▶ ■ ✂ ✕)
   // A cue's output (from its next play)
@@ -1393,7 +1516,7 @@
   });
   $('follow').checked = following();
   $('follow').addEventListener('change', e => { store.set(FOLLOW, e.target.checked ? '1' : '0'); if (e.target.checked) { local = null; primeTimeCues(); } render(); });
-  $('stopall').addEventListener('click', () => { stopAll(); endLocal(); });
+  $('stopall').addEventListener('click', () => { if (heldClick()) return; stopAll(); endLocal(); });
   // Options: single cues of an item started here (off by default, the owner's call: the run plays them;
   // on for rehearsals). Applies at once, mid-run included
   $('cuectl').checked = cueControl();
@@ -1434,7 +1557,7 @@
     anyPlaying: () => !!(playing.size || tones.size || local),
     localItem: () => local && local.item,
     localText,
-    start: id => { if (!following()) runLocal(id); },
+    start: (id, onRelease) => { if (!following()) runLocal(id, onRelease ? { keep: true } : undefined); },   // (onRelease: Crossfade on release fades the rest)
     fadeItem(id, ms) { endFlow(id); if (local && local.item === id) endLocal(); const ids = playingOf(id); for (const x of ids) playing.get(x).voice.fade(ms); return ids; },
     fadeAll(ms) { endLocal(); const ids = [...playing.keys()]; fadeAll(ms); return ids; },
     stopIds: ids => { ids.forEach(id => { const q = playing.get(id); if (q && q.run) endFlow(q.item); }); ids.forEach(stopCue); },
@@ -1456,7 +1579,8 @@
 
   // Test hooks: what's playing, and the cues
   window.__playout = { playing: () => [...playing.keys()], cues: () => cues, show: () => show, fired: () => [...fired], ready: () => [...buffers.keys()],
-    local: () => local && { item: local.item, fired: [...local.fired] }, flow: () => flow && { item: flow.item, heard: flow.heard, crossed: !!flow.crossed }, names: () => names, active: () => [...activeItems()],
+    play: id => { const f = findCue(id); if (f) play(f.c); }, holding: () => hold && { ...hold },
+    local: () => local && { item: local.item, fired: [...local.fired] }, flow: () => flow && { item: flow.item, heard: flow.heard, crossed: !!flow.crossed }, flowPlayed: () => flow && [...flow.played], names: () => names, active: () => [...activeItems()],
     clocks: () => ({ big: $('bigclock').hidden ? null : $('bc-left').textContent + ' ' + $('bc-what').textContent, items: Object.fromEntries([...document.querySelectorAll('#items > li[data-id]')].map(li => [li.dataset.id, li.querySelector('.iclock').textContent])),
       cues: Object.fromEntries([...document.querySelectorAll('.cclock[data-clock]')].map(e => [e.dataset.clock, e.textContent])) }),
     gain: id => { const p = playing.get(id); return p ? p.voice.gain() : null; }, levels: () => levels, target: k => targetOf(k), tones: () => [...tones.keys()],
@@ -1764,11 +1888,13 @@
     $('sb-folder').addEventListener('change', () => { const l = [...$('sb-folder').files]; $('sb-folder').value = ''; if (l.length) findFiles(l); });
     $('sb-clear').addEventListener('click', e => { e.currentTarget.blur(); clearBoard(); });
     // Playlist flow and 🔁 Loop (chips: lit while on)
-    for (const [id, k] of [['sb-flow', FLOW], ['sb-loop', FLOW_LOOP]]) $(id).addEventListener('click', e => {
+    for (const [id, k] of [['sb-flow', FLOW], ['sb-shuffle', FLOW_SHUFFLE], ['sb-loop', FLOW_LOOP], ['sb-minimal', MINIMAL]]) $(id).addEventListener('click', e => {
+      if (k === MINIMAL && flowOn()) return e.currentTarget.blur();   // (the flow always shows it)
       const on = store.get(k) !== '1';
       if (on) store.set(k, '1'); else store.del(k);
       e.currentTarget.blur();
-      if (k === FLOW) flow = on && lastRun && activeItems().has(lastRun) ? { item: lastRun, t0: performance.now(), heard: false, len: null, silent: 0 } : null;   // (on: the item playing now flows on)
+      if (k === FLOW) flow = on && lastRun && activeItems().has(lastRun) ? { item: lastRun, t0: performance.now(), heard: false, len: null, silent: 0, played: new Set([lastRun]), pick: null } : null;   // (on: the item playing now flows on)
+      else if (flow) flow.pick = null;                 // (🔀 or 🔁 changed: the next picked again)
       renderFlow(); prepare();
     });
     renderFlow();

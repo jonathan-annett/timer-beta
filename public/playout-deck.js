@@ -151,12 +151,12 @@ var PlayoutDeck = (function () {
           const others = xfadeOn() && api.playingAll().length > 0;   // (crossfade on release: the rest fade when it's let go)
           if (x) {                                     // an extra key (or cue 1): plays; playing, down fades and up stops
             if (api.isPlaying(x.id)) b.presses.set(i, { item: id, ids: api.fadeCue(x.id, fadeSecs() * 1000) });
-            else { api.playCue(x.id); if (others) b.presses.set(i, { xfade: true, keep: x.id }); }
+            else { api.playCue(x.id); if (others) b.presses.set(i, { xfade: true, keep: x.id, sib: extraOf(id) ? null : id }); }   // (cue 1: its item's other cues play on, as with its ▶)
             return changed();
           }
           if (!id || !onSheet().has(id) || cueMode(model)) return;
           if (api.localItem() === id || api.playingIds(id).length) b.presses.set(i, { item: id, ids: api.fadeItem(id, fadeSecs() * 1000) });
-          else if (!api.following() && api.cuesOf(id).length) { api.start(id); if (others) b.presses.set(i, { xfade: true, started: id }); }
+          else if (!api.following() && api.cuesOf(id).length) { api.start(id, others); if (others) b.presses.set(i, { xfade: true, started: id }); }   // (others: they fade when it's let go, not before)
         }
       } else {
         const p = b.presses.get(i);
@@ -171,9 +171,9 @@ var PlayoutDeck = (function () {
     // Let go of a key that started something: everything else playing fades out (an item run here that isn't the new
     // one ends, so its later cues don't follow)
     function crossfade(p) {
-      const ms = xfadeSecs() * 1000, mine = new Set(p.keep ? [p.keep] : api.playingIds(p.started));
+      const ms = xfadeSecs() * 1000, mine = new Set(p.keep ? [p.keep, ...(p.sib ? api.playingIds(p.sib) : [])] : api.playingIds(p.started));
       const run = api.localItem();
-      if (run && run !== p.started) api.fadeItem(run, ms);
+      if (run && run !== p.started && run !== p.sib) api.fadeItem(run, ms);
       for (const id of api.playingAll()) if (!mine.has(id)) api.fadeCue(id, ms);
     }
 

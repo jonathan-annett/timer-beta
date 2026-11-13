@@ -342,12 +342,15 @@ with sync_playwright() as p:
     check("… console trim per output: the offset (0 dB) − its level", trim() == ["console trim %s dB" % S(-t), "console trim %s dB" % S(-t2)], trim())
     po.fill(lv("show", "input[data-lv=trim]"), str(t)); po.press(lv("show", "input[data-lv=trim]"), "Tab"); po.wait_for_timeout(300)
     check("a LUFS trim offset (calibrated: it reads 0.0 dB now): kept, the box and the row follow", trim()[0] == "console trim 0.0 dB" and stored()["show"].get("trim") == t and po.text_content(lv("show", ".lv-console")) == "console trim 0.0 dB", [trim(), stored()])
-    # a quieter cue arrives: the level follows, what's playing too, and the box flashes
+    # a quieter cue arrives: the level follows (what's playing keeps its own till its next play), and the box flashes
     qid = [c for c in po.evaluate("Object.values(window.__playout.cues()).flat().filter(c => !c.out)") if c.get("lufs") == quiet[1]][0]["id"]
     nudge = lambda d: po.evaluate("([id, d]) => { const c = Object.values(window.__playout.cues()).flat().find(x => x.id === id); c.lufs = c.lufs + d; }", [qid, d])
     t6 = round(quiet[1] - 6, 1)
     nudge(-6); rerender()
-    check("a quieter cue (6 dB down): the level drops with it, and what's playing follows", po.evaluate("window.__playout.target('show')") == t6 and abs(gain(ids["a"][0]) - want(t6, ids["a"][0])) < 0.01, [po.evaluate("window.__playout.target('show')"), gain(ids["a"][0])])
+    check("a quieter cue (6 dB down): the level drops with it; what's playing keeps the level it started at (it doesn't jump)", po.evaluate("window.__playout.target('show')") == t6 and abs(gain(ids["a"][0]) - want(t, ids["a"][0])) < 0.01, [po.evaluate("window.__playout.target('show')"), gain(ids["a"][0]), want(t, ids["a"][0])])
+    po.click('#items li[data-cue="%s"] button[data-act=stop]' % ids["a"][0]); po.wait_for_timeout(200)
+    po.click('#items li[data-cue="%s"] button[data-act=fire]' % ids["a"][0]); po.wait_for_timeout(600)
+    check("… played again: at the new level", abs(gain(ids["a"][0]) - want(t6, ids["a"][0])) < 0.01, [gain(ids["a"][0]), want(t6, ids["a"][0])])
     check("… the level box flashes: the level changed since the desk was set", box()["cls"] == "lb-flash" and "Level changed" in box()["text"] and (M(t6) + " LUFS") in box()["text"], box())
     check("… and the console trim goes up by as much (6 dB quieter: +6.0 dB on the desk)", trim()[0] == "console trim +6.0 dB", trim())
     po.click("#levelbox"); po.wait_for_timeout(300)
