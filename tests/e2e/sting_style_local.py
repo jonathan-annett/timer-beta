@@ -9,6 +9,7 @@ OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exis
 # the chips then count them and 🎲 picks them in their styles. My clips' own files too. The + sting dialog's
 # chips sit above the tabs and filter the folder's list as well. A reload doesn't listen again. A model that
 # doesn't load stops it without marking any file. Uses the real model (tests/e2e/.models: npm run test:setup).
+# (Listening is TimerFeatures.listen, alpha only; without it, as on beta, your files count as in the lit styles.)
 import base64, json, math, mimetypes, os, random, struct, sys, wave, io
 from playwright.sync_api import sync_playwright
 BASE = "https://timer.sophtwhere.com/beta/"
@@ -77,7 +78,7 @@ key = lambda name, data: name.split("/")[-1] + "|" + str(len(data))
 with sync_playwright() as p:
     b = p.chromium.launch(args=["--no-proxy-server", "--autoplay-policy=no-user-gesture-required"])
     c = b.new_context(ignore_https_errors=True, viewport={"width": 1100, "height": 1000})
-    c.add_init_script("window.TimerFeatures = { playout: true, stings: true, styles: true };")
+    c.add_init_script("window.TimerFeatures = { playout: true, stings: true, styles: true, listen: true };")
     c.route("**/*", handler(True))
     po = c.new_page(); po.on("pageerror", lambda e: errs.append("playout: " + str(e)))
     po.on("dialog", lambda d: d.dismiss())          # (OK to reuse? no)
@@ -139,7 +140,7 @@ with sync_playwright() as p:
 
     # a model that doesn't load: it stops, marking nothing
     c2 = b.new_context(ignore_https_errors=True)
-    c2.add_init_script("window.TimerFeatures = { playout: true, stings: true, styles: true };")
+    c2.add_init_script("window.TimerFeatures = { playout: true, stings: true, styles: true, listen: true };")
     c2.route("**/*", handler(False))
     p2 = c2.new_page(); p2.on("pageerror", lambda e: errs.append("playout2: " + str(e)))
     p2.goto(BASE + "playout.html?demo"); p2.wait_for_timeout(1000)
@@ -148,6 +149,32 @@ with sync_playwright() as p:
     p2.wait_for_function("StingStyles.listening().stopped", timeout=60000); p2.wait_for_timeout(1500)
     check("the model doesn't load: it stops and says so", p2.text_content("#roll-listen").startswith("Couldn’t listen to your files for their styles: the style model didn’t load"), p2.text_content("#roll-listen"))
     check("… no file marked as couldn't (they'll be listened to when it can)", json.loads(p2.evaluate("localStorage.sting_styles_local || '{\"files\":{}}'"))["files"] == {}, p2.evaluate("localStorage.sting_styles_local"))
+
+    # beta (the owner, 14 Nov 2026): no listening, so the model is never fetched or run in the page; your own
+    # files count as in whichever styles are lit (a folder chosen alongside the chips: the user says they match)
+    asked = []
+    c3 = b.new_context(ignore_https_errors=True, viewport={"width": 1100, "height": 1000})
+    c3.add_init_script("window.TimerFeatures = { playout: true, stings: true, styles: true };")
+    c3.route("**/*", handler(True))
+    p3 = c3.new_page(); p3.on("pageerror", lambda e: errs.append("playout3: " + str(e)))
+    p3.on("request", lambda r: asked.append(r.url) if ("/models/" in r.url or r.url.startswith(ORT) or "sting-styles-worker" in r.url) else None)
+    p3.goto(BASE + "playout.html?demo"); p3.wait_for_timeout(1000)
+    p3.evaluate(SET_FOLDER, B64)
+    p3.click("#rollpanel summary"); p3.wait_for_timeout(300)
+    p3.check("#roll-folder"); p3.wait_for_timeout(800)
+    k3 = p3.evaluate("document.querySelector('#roll-chips .ss-chip').dataset.k")   # (the stock sting's)
+    p3.click('#roll-chips .ss-chip[data-k="%s"]' % k3); p3.wait_for_timeout(600)
+    hint3 = p3.text_content("#roll-stylehint")
+    check("beta: the folder ticked, nothing listened to (no note; the model never fetched)", p3.text_content("#roll-listen") == "" and asked == [] and p3.evaluate("StingStyles.listening().total") == 0, [p3.text_content("#roll-listen"), asked])
+    check("… a style lit: your files taken as in it", "your own, taken as in it" in hint3, hint3)
+    p3.click('#items li[data-id="demo-1"] button[data-act=add]')
+    p3.click('#items li[data-id="demo-1"] form.addcue button.primary'); p3.wait_for_timeout(800)
+    p3.click('.sting-tab[data-mode=custom]'); p3.wait_for_timeout(200)
+    p3.click('#sting-chips .ss-chip[data-k="%s"]' % k3); p3.wait_for_timeout(300)
+    o3 = p3.evaluate("[...document.querySelectorAll('#sting-folder option')].map(o => o.textContent)")
+    check("… + sting with the style lit: every file of the folder still listed", len(o3) == 6 and p3.text_content("#sting-listen") == "", o3)
+    check("… and still nothing of the model fetched", asked == [], asked)
+    p3.click(".sting-dlg .sting-cancel")
     b.close()
 
 print("errors:", errs)

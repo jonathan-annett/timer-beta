@@ -1916,9 +1916,11 @@
     const go = () => { if (started) return; started = true; $('othertab').hidden = true; store.set('playout_page_mode', MODE); run(); };
     const ask = opts => navigator.locks.request('playout-page', opts, lock => { if (!lock) return; go(); return new Promise(() => {}); });   // (held until the page goes)
     const stolen = err => { if (started && err && err.name === 'AbortError') { stopAll(); location.reload(); } };   // (another tab took over)
+    const say = () => { $('othertabtext').textContent = (MODE_NAME[store.get('playout_page_mode')] || 'Playout') + ' is running in another tab of this browser.'; };
+    addEventListener('storage', e => { if (e.key === 'playout_page_mode' && !started) say(); });   // (a tab that just took over may write its mode after we read it)
     ask({ ifAvailable: true }).then(() => {
       if (started) return;
-      $('othertabtext').textContent = (MODE_NAME[store.get('playout_page_mode')] || 'Playout') + ' is running in another tab of this browser.';
+      say();
       $('othertab').hidden = false;
       ask({}).catch(stolen);                           // (it takes over by itself when that tab closes)
     }).catch(stolen);

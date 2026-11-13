@@ -210,8 +210,12 @@ var StingStyles = (function () {
     const wait = 1000 - (Date.now() - lastTell);
     if (wait <= 0) go(); else tellT = setTimeout(go, wait);
   }
+  // Listening to your own files runs the model here: only with that trial (alpha). Without it (beta) your own files
+  // have no styles and count as in whichever styles are lit (the owner, 14 Nov 2026: a folder chosen alongside the
+  // chips is the user saying these match)
+  const canListen = () => !!(window.TimerFeatures && TimerFeatures.listen);
   function listen(items) {
-    if (stopped) return;                           // (the model didn't load: not again until a reload)
+    if (stopped || !canListen()) return;           // (the model didn't load: not again until a reload)
     let n = 0;
     for (const it of items || []) if (it && it.key && !queued.has(it.key) && localOf(it.key) === undefined) { queued.add(it.key); queue.push(it); n++; }
     if (!n) return;
@@ -259,7 +263,7 @@ var StingStyles = (function () {
   const compact = (scores, n) => ranked(scores, n || 20).map(i => [i, Math.round(scores[i] * 1000) / 1000]);
   function expand(list) { const s = new Float32Array(400); for (const [i, v] of list || []) if (i >= 0 && i < 400) s[i] = v; return s; }
 
-  return { LABELS, STYLES, MODEL, THRESHOLD, FLOOR, CREDIT, analyse, ranked, tags, match, compact, expand, best, fits, top, nameOf, valid, fitsAny, bestAny, chips, isKey,
+  return { LABELS, STYLES, MODEL, THRESHOLD, FLOOR, CREDIT, canListen, analyse, ranked, tags, match, compact, expand, best, fits, top, nameOf, valid, fitsAny, bestAny, chips, isKey,
     localKey, localOf, listen, listening, listenNote, onLocal: fn => { localFns.add(fn); return () => localFns.delete(fn); },
     get modelUrl() { return modelUrl; }, set modelUrl(u) { modelUrl = new URL(u, location.href).href; } };
 })();

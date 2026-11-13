@@ -282,9 +282,10 @@ var StingPicker = (function () {
     const fileOf = (name, size) => (styled ? SS.localOf(SS.localKey(name, size)) : undefined);
     const mineStyles = e => (e.file ? fileOf(e.file, e.size) : (stockSt.find(x => (e.stock ? x.name === e.stock : x.url === e.url) && x.styles) || {}).styles);
     const styleTag = (list, b) => { const st = b ? b.i : Array.isArray(list) ? SS.top(list) : -1; return st >= 0 ? ' · ' + esc(SS.nameOf(st)) : ''; };
-    function rank(rows) {                          // with chips lit: only those in them, best first (each with the style it matched)
-      if (!lit()) return rows;
-      return rows.map(r => Object.assign(r, { b: SS.bestAny(r.s, styleKeys) })).filter(r => r.b && r.b.score >= SS.FLOOR).sort((a, b) => b.b.score - a.b.score);
+    function rank(rows, own) {                     // with chips lit: only those in them, best first (each with the style it matched);
+      if (!lit()) return rows;                     // own(row): a file of yours, which counts as in them when it isn't listened to here
+      const mine = r => !SS.canListen() && own && own(r), sc = r => (r.b ? r.b.score : -1);
+      return rows.map(r => Object.assign(r, { b: SS.bestAny(r.s, styleKeys) })).filter(r => mine(r) || (r.b && r.b.score >= SS.FLOOR)).sort((a, b) => sc(b) - sc(a));
     }
 
     // the stock list: whole tracks a better clip replaces left out; with a style typed, only the stings in it,
@@ -309,7 +310,7 @@ var StingPicker = (function () {
     }
     function fillMine() {
       const keep = mineSel.value;
-      mineSel.innerHTML = rank(mine.map((e, i) => ({ e, i, s: styled ? mineStyles(e) : undefined }))).map(({ e, i, s, b }) => {
+      mineSel.innerHTML = rank(mine.map((e, i) => ({ e, i, s: styled ? mineStyles(e) : undefined })), r => !!r.e.file).map(({ e, i, s, b }) => {
         const l = StingClip.length(e, e.duration);
         return `<option value="${i}"${mineOk[i] ? '' : ' disabled'}>${esc(e.name)}${l ? ' · ' + fmtDur(Math.max(1, Math.round(l))) : ''}${styled ? styleTag(s, b) : ''}${mineOk[i] ? '' : ' (its file isn’t on this computer)'}</option>`;
       }).join('');
@@ -317,16 +318,16 @@ var StingPicker = (function () {
       if (ok.some(o => o.value === keep)) mineSel.value = keep; else if (ok.length) mineSel.value = ok[0].value;
       $d('#sting-minerow').style.display = mineSel.options.length ? '' : 'none';
       $d('#sting-mnone').style.display = mineSel.options.length ? 'none' : '';
-      $d('#sting-mnone').textContent = mine.length ? 'None of your clips is in the styles lit (a file not listened to yet sits out).' : 'No clips yet. In the sting library, choose just the part of a track you want, with fades: of a stock sting or a file of your own.';
+      $d('#sting-mnone').textContent = mine.length ? 'None of your clips is in the styles lit' + (SS && SS.canListen() ? ' (a file not listened to yet sits out).' : '.') : 'No clips yet. In the sting library, choose just the part of a track you want, with fades: of a stock sting or a file of your own.';
     }
     function fillFolder() {
       const box = $d('#sting-folderbox');
       box.hidden = !folder;
       if (!folder) return;
-      const keep = folderSel.value, rows = rank(folder.files.map((f, i) => ({ f, i, s: styled && f.k ? SS.localOf(f.k) : undefined }))), ex = excluded();
+      const keep = folderSel.value, rows = rank(folder.files.map((f, i) => ({ f, i, s: styled && f.k ? SS.localOf(f.k) : undefined })), () => true), ex = excluded();
       folderSel.innerHTML = rows.map(({ f, i, s, b }) => `<option value="${i}">${esc(noExt(f.path))}${styled ? styleTag(s, b) : ''}${f.k && ex[f.k] ? ' · not picked at random' : ''}</option>`).join('');
       if ([...folderSel.options].some(o => o.value === keep)) folderSel.value = keep;
-      const unheard = lit() ? folder.files.filter(f => !f.k || SS.localOf(f.k) === undefined).length : 0;
+      const unheard = lit() && SS.canListen() ? folder.files.filter(f => !f.k || SS.localOf(f.k) === undefined).length : 0;
       $d('#sting-foldername').textContent = !folder.files.length ? `No audio or video files in “${folder.name}”.`
         : (lit() ? (rows.length ? `In “${folder.name}”, in the styles lit` : `Nothing in “${folder.name}” in the styles lit`) + (unheard ? ` (${unheard} not listened to yet)` : '') + (rows.length ? ':' : '.')
           : `In “${folder.name}”${folder.files.length >= FOLDER_MAX ? ' (the first ' + FOLDER_MAX + ')' : ''}:`);
@@ -386,7 +387,7 @@ var StingPicker = (function () {
       $d('#sting-listen').textContent = SS.listenNote();
     }
     async function listenOwn() {                   // the folder's files and my clips' files: listened to (unless known)
-      if (!styled) return keyAll();
+      if (!styled || !SS.canListen()) return keyAll();
       const items = [];
       await keyAll();
       if (folder) for (const f of folder.files) if (f.k) items.push({ key: f.k, get: () => (f.file ? Promise.resolve(f.file) : f.handle.getFile()) });

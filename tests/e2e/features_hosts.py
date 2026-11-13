@@ -8,11 +8,11 @@ OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exis
 import os, mimetypes, sys
 from playwright.sync_api import sync_playwright
 EXPECT = {
-    "alpha.timed-show.com":      {"glasses": True,  "assist": True,  "stings": True,  "playout": True, "styles": True},
-    "beta.timed-show.com":       {"glasses": True,  "assist": False, "stings": True, "playout": True, "styles": False},
-    "timer-beta.sophtwhere.com": {"glasses": True,  "assist": False, "stings": True, "playout": True, "styles": False},
-    "timer.sophtwhere.com":      {"glasses": False, "assist": False, "stings": False, "playout": False, "styles": False},
-    "example.com":               {"glasses": False, "assist": False, "stings": False, "playout": False, "styles": False},
+    "alpha.timed-show.com":      {"glasses": True,  "assist": True,  "stings": True,  "playout": True, "styles": True,  "listen": True},
+    "beta.timed-show.com":       {"glasses": True,  "assist": False, "stings": True, "playout": True, "styles": True,  "listen": False},
+    "timer-beta.sophtwhere.com": {"glasses": True,  "assist": False, "stings": True, "playout": True, "styles": True,  "listen": False},
+    "timer.sophtwhere.com":      {"glasses": False, "assist": False, "stings": False, "playout": False, "styles": False, "listen": False},
+    "example.com":               {"glasses": False, "assist": False, "stings": False, "playout": False, "styles": False, "listen": False},
 }
 def h(route, req):
     path = req.url.split("://", 1)[1].split("/", 1)[1].split("?")[0].split("#")[0] if "/" in req.url.split("://", 1)[1] else ""
@@ -27,7 +27,7 @@ with sync_playwright() as p:
     t = c.new_page()
     for host, want in EXPECT.items():
         t.goto("https://%s/runsheet.html" % host)   # a page that loads features.js and nothing that needs a server
-        got = t.evaluate("({glasses: !!TimerFeatures.glasses, assist: !!TimerFeatures.assist, stings: !!TimerFeatures.stings, playout: !!TimerFeatures.playout, styles: !!TimerFeatures.styles})")
+        got = t.evaluate("({glasses: !!TimerFeatures.glasses, assist: !!TimerFeatures.assist, stings: !!TimerFeatures.stings, playout: !!TimerFeatures.playout, styles: !!TimerFeatures.styles, listen: !!TimerFeatures.listen})")
         ok = got == want
         print(("ok   " if ok else "FAIL ") + host + ": " + str(got))
         if not ok: errs.append(host)
