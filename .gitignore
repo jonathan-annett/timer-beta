@@ -3,3 +3,4 @@ node_modules/
 .wrangler/
 .dev.vars
 __pycache__/
+tests/e2e/.models/

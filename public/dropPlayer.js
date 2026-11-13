@@ -238,10 +238,11 @@
       const p = s.el.play();
       // A clip: fade in, and fade out at its end (on the player window's own timers: it's on show)
       if (r.fadeIn || r.end != null) {
+        const t0 = Date.now();
         const t = win.setInterval(() => {
           if (playing !== s) { win.clearInterval(t); return; }
-          if (r.fadeIn && s.el.volume < s.volume) s.el.volume = Math.min(s.volume, s.el.volume + s.volume * 50 / r.fadeIn);
-          if (r.end != null && s.el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { win.clearInterval(t); fadeOut(r.fadeOut || 30); }
+          if (r.fadeIn && s.el.volume < s.volume) s.el.volume = Math.min(s.volume, s.volume * curveIn((Date.now() - t0) / r.fadeIn, !!r.fadeDb));   // (its own curve)
+          if (r.end != null && s.el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { win.clearInterval(t); fadeOut(r.fadeOut || 30, !!r.fadeDb); }
         }, 50);
       }
       if (p && p.catch) p.catch(err => {
@@ -321,7 +322,10 @@
 
   // A walk-up sting fades out (Next), then unloads; nothing else is touched. Runs on the player
   // window's own timers: it's on show, so not slowed like a background tab.
-  function fadeOut(ms) {
+  // Fade curves (sting-clip.js): even in dB for live fades and clips that say so; else a straight line
+  const curveOut = (t, db) => (window.StingClip ? StingClip.curveOut(t, db) : Math.max(0, 1 - t));
+  const curveIn = (t, db) => (window.StingClip ? StingClip.curveIn(t, db) : Math.min(1, t));
+  function fadeOut(ms, db = true) {                  // (live: even in dB; a clip's own end: its curve)
     const s = playing;
     if (!s || !s.sting || !isOpen()) return false;
     const steps = Math.max(1, Math.round((ms || 1000) / 50)), from = s.el.volume;
@@ -329,7 +333,7 @@
     const t = win.setInterval(() => {
       n++;
       if (playing !== s) { win.clearInterval(t); return; }
-      s.el.volume = Math.max(0, from * (1 - n / steps));
+      s.el.volume = Math.max(0, from * curveOut(n / steps, db));
       if (n >= steps) { win.clearInterval(t); release(s); playing = null; arrange(); notify(); }
     }, 50);
     return true;
@@ -348,7 +352,7 @@
       n++;
       if (playing !== s) { win.clearInterval(t); s.ending = false; s.el.volume = v0; return; }
       const k = Math.max(0, 1 - n / steps);
-      s.el.volume = v0 * k; s.el.style.opacity = String(k);
+      s.el.volume = v0 * curveOut(n / steps, true); s.el.style.opacity = String(k);   // (the sound even in dB; the picture straight)
       if (n >= steps) { win.clearInterval(t); s.el.pause(); s.el.volume = v0; s.ending = false; onEnded(s.el); }
     }, 50);
     return true;

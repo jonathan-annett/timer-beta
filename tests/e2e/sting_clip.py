@@ -103,9 +103,30 @@ with sync_playwright() as p:
     e.keyboard.press("Space"); e.wait_for_timeout(400)
     check("Space plays the part, not Next", t.evaluate("JSON.parse(localStorage.runsheet_state || '{}').index") == before)
     e.screenshot(path=OUTDIR + "/clip_editor.png")
+    check("a new clip: Linear fades unticked (its fades even in dB)", not e.is_checked(".sc-linear"))
     e.click(".sc-save"); e.wait_for_timeout(500)
     s = sheet()["a"]
     check("the sting keeps its part", s and s.get("start") == 2 and s.get("end") == 3.6 and s.get("fadeOut") == 200, s)
+    check("… and its fades' curve (fadeDb)", s.get("fadeDb") is True, s)
+    # fade curves (13 Nov 2026): even in dB (0 → −60 dB) unless a clip's fades were linear (before, or Linear fades ticked)
+    cv = e.evaluate("""() => {
+      const r = x => Math.round(x * 10000) / 10000, ctx = new OfflineAudioContext(1, 8000, 8000), buf = ctx.createBuffer(1, 8000, 8000);
+      buf.getChannelData(0).fill(1);
+      const mid = s => { const o = StingClip.render(buf, s).getChannelData(0); return r(o[o.length - 1 - 2000]); };   // half way through a 0.5 s fade out
+      return { db: r(StingClip.curveOut(0.5, true)), lin: StingClip.curveOut(0.5, false), dbIn: r(StingClip.curveIn(0.5, true)),
+        renderDb: mid({ start: 0, end: 1, fadeOut: 500, fadeDb: true }), renderLin: mid({ start: 0, end: 1, fadeOut: 500 }),
+        old: StingClip.region({ fadeOut: 200 }).fadeDb === undefined, kept: StingClip.region({ fadeOut: 200, fadeDb: true }).fadeDb, noFades: StingClip.region({ fadeDb: true }) };
+    }""")
+    check("the curves: half way through, −30 dB (even in dB) or half (linear)", cv["db"] == 0.0316 and cv["lin"] == 0.5 and cv["dbIn"] == 0.0316, cv)
+    check("… a clip renders with its own curve; older clips (no flag) stay linear", cv["renderDb"] == 0.0316 and cv["renderLin"] == 0.5 and cv["old"] and cv["kept"] is True and cv["noFades"] is None, cv)
+    e.evaluate("""async () => { const ctx = new OfflineAudioContext(1, 8000, 8000), b = ctx.createBuffer(1, 8000, 8000); b.getChannelData(0).fill(0.5);
+      window.__oldClip = StingClip.open({ src: new Blob([StingClip.wav(b)], { type: 'audio/wav' }), name: 'Old', region: { start: 0.2, end: 0.8, fadeOut: 200 } }); }"""); e.wait_for_timeout(800)
+    check("an older clip (fades, no flag) opens with Linear fades ticked: it sounds as it did", e.is_checked(".sc-linear"))
+    e.click(".sc-cancel"); e.wait_for_timeout(300)
+    live = e.evaluate("""async () => { const ctx = new OfflineAudioContext(1, 48000, 48000), b = ctx.createBuffer(1, 48000 * 4, 48000); b.getChannelData(0).fill(0.3);
+      const v = StingClip.play(b, { role: 'preview' }); v.gain.gain.value = 1; await new Promise(r => setTimeout(r, 100));
+      v.fade(1000); await new Promise(r => setTimeout(r, 500)); const g = v.gain.gain.value; v.stop(); return Math.round(g * 1000) / 1000; }""")
+    check("a live fade (Fade out, Esc, the deck): even in dB, about −30 dB half way (a straight line would be half)", 0.015 < live < 0.07, live)
     check("the cell shows the part's length and a lit ✂", "2 s" in e.inner_text(row("a") + " td.vid") and e.locator(row("a") + " .vtrim.on").count() == 1)
 
     t.evaluate("window.runsheet.next()"); t.wait_for_timeout(700)

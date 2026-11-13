@@ -28,4 +28,11 @@ cd "$ROOT/glasses"
 npm ci
 npm run build
 
+echo "== Style tags: MTG's Discogs-EffNet model (CC BY-NC-SA 4.0) and onnxruntime-web, for sting_styles.py (not committed)"
+M="$E2E/.models"; mkdir -p "$M/ort"
+[ -s "$M/discogs-effnet-bsdynamic-1.onnx" ] || curl -fsSL -o "$M/discogs-effnet-bsdynamic-1.onnx" https://essentia.upf.edu/models/feature-extractors/discogs-effnet/discogs-effnet-bsdynamic-1.onnx
+for f in ort.min.js ort-wasm-simd-threaded.mjs ort-wasm-simd-threaded.wasm; do
+  [ -s "$M/ort/$f" ] || curl -fsSL -o "$M/ort/$f" "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/$f"
+done
+
 echo "== test setup done"

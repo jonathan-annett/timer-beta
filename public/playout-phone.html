@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  playout-phone.html
+  A playout computer's Stream Deck keys on a phone (its Stream Deck box: Show on a phone…, a QR code of
+  playout-phone.html#r=<room>&k=<key>[&s=<server>]&dm=<size>). See playout-phone.js.
+  MIT Licensed
+-->
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#000000">
+  <title>Playout keys</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; color: #ccc; font: 14px "Helvetica Neue", Arial, sans-serif; overflow: hidden;
+      user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    .top { position: fixed; top: 0; left: 0; right: 0; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 10px;
+      padding-top: env(safe-area-inset-top); background: #0b0b0b; border-bottom: 1px solid #222; box-sizing: content-box; }
+    #status { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #888; }
+    #status.ok { color: #7fdc7f; } #status.warn { color: #ffcc33; }
+    select, button { font: inherit; color: #ddd; background: #1a1a1a; border: 1px solid #333; border-radius: 5px; padding: 4px 8px; }
+    #deck { position: fixed; left: 0; right: 0; bottom: 0; top: calc(45px + env(safe-area-inset-top)); display: flex; align-items: center; justify-content: center; }
+    #keys { display: grid; grid-template-columns: repeat(var(--cols, 5), var(--key, 40px)); grid-auto-rows: var(--key, 40px);
+      column-gap: var(--col-gap, 6px); row-gap: var(--row-gap, 6px); touch-action: none; }
+    #keys canvas { width: var(--key, 40px); height: var(--key, 40px); border-radius: 14%; display: block; transition: transform .06s; touch-action: none; }
+    #keys canvas.down { transform: scale(0.9); }
+    #keys canvas { outline: 1px solid #1c1c1c; outline-offset: 1px; }   /* (an empty key is black: where it is) */
+    #cover { position: fixed; left: 0; right: 0; bottom: 0; top: calc(45px + env(safe-area-inset-top)); display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 12px; padding: 24px; box-sizing: border-box; background: #000; text-align: center; line-height: 1.45; }
+    #pincode { font: bold 1.9em "Helvetica Neue", Arial, sans-serif; letter-spacing: .2em; color: #fff; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <span id="status">Connecting…</span>
+    <select id="model" aria-label="Deck size"><option value="mini">Mini</option><option value="mk2">MK.2</option><option value="xl">XL</option></select>
+    <button id="full" title="Full screen" hidden>⛶</button>
+  </div>
+  <div id="deck"><div id="keys"></div></div>
+  <div id="cover"><p id="covermsg">Connecting to the playout computer…</p><div id="pincode"></div></div>
+  <script src="remote-peer.js?v=fd06de67"></script>
+  <script src="deck-face.js?v=095d2354"></script>
+  <script src="virtual-deck.js?v=f112dd1e"></script>
+  <script src="playout-phone.js?v=0bef3f68"></script>
+</body>
+</html>

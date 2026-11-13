@@ -4,6 +4,8 @@
  * play, with fades, without cutting the file. A sting (or a library entry) may carry
  *   start, end    seconds into the source (end missing = to its end)
  *   fadeIn, fadeOut   milliseconds
+ *   fadeDb            true: the fades even in dB (0 to −60 dB, then silence: smooth); absent: a straight
+ *                     line in volume, as every clip made before 13 Nov 2026 (the editor's Linear fades)
  *   loop          {from, to, plays, at?}: a region (s into the source, anywhere in it) that plays
  *                 `plays` times where it is (plays − 1 copies straight after it), to make a short
  *                 sting longer; moved (at: s into the source), `plays` copies go in at `at` and the
@@ -28,7 +30,7 @@
  *   wav(buf)           an AudioBuffer → a 16-bit WAV Blob
  *   playable(file)     → Promise<File>: an AIFF as WAV (Chrome and Edge can't play or decode AIFF), samples
  *                      untouched; any other file as it is. Called as a file is chosen, never on a listing
- *   play(buf, {loop})  plays an AudioBuffer (loop: over and over until stopped) → {stop(), ended: Promise, time()}
+ *   play(buf, {loop, offset})  plays an AudioBuffer (loop: over and over until stopped; offset: from that many seconds in) → {stop(), ended: Promise, time()}
  *   preview(src, s)    decode, render and play (the stock dialog's ▶) → {stop()}
  *   open({src, name, region, media, original, hideOriginal, saveLabel, level})  the clip editor: waveform (whole track + zoomed on the
  *                      selection), start/end handles, fades, a loop, loudness and trim, play (levelled: to level.target,
@@ -79,10 +81,17 @@ var StingClip = (function () {
     if (at != null && at >= 0 && at <= 86400) o.at = at;
     return o;
   }
+  // Fade curves (the owner, 13 Nov 2026): t from 0 to 1 through the fade → its gain. db: even in dB, 0 to
+  // −60 dB and then silence, which sounds steady; else a straight line in volume (clips made before, and
+  // ticked Linear fades), which sounds as if little happens until the end. Live fades (Fade out, Esc, the
+  // deck) are always even in dB.
+  const curveOut = (t, db) => (t >= 1 ? 0 : t <= 0 ? 1 : db ? Math.pow(10, -3 * t) : 1 - t);
+  const curveIn = (t, db) => (t <= 0 ? 0 : t >= 1 ? 1 : db ? Math.pow(10, -3 * (1 - t)) : t);
   function region(s) {
     if (!s) return null;
     const r = { start: num(s.start), end: num(s.end), fadeIn: num(s.fadeIn) || 0, fadeOut: num(s.fadeOut) || 0 }, lp = cleanLoop(s.loop);
     if (lp) r.loop = lp;
+    if (s.fadeDb === true && (r.fadeIn || r.fadeOut)) r.fadeDb = true;
     return r.start != null || r.end != null || r.fadeIn || r.fadeOut || lp ? r : null;
   }
   function plan(s, dur) {
@@ -119,7 +128,8 @@ var StingClip = (function () {
     return await new Promise((res, rej) => { const p = audio().decodeAudioData(data, res, rej); if (p && p.then) p.then(res, rej); });
   }
 
-  function render(buf, s) {
+  // win: [from, to] in s of the clip as it plays: only that much made (the editor's First / Last 2 s of a long part)
+  function render(buf, s, win) {
     const r = region(s) || { fadeIn: 0, fadeOut: 0 }, sr = buf.sampleRate, n = buf.length;
     let segs = plan(s, buf.duration).segs.map(g => {
       const a = Math.max(0, Math.min(n, Math.round(g[0] * sr)));
@@ -127,22 +137,26 @@ var StingClip = (function () {
     }).filter(g => g[1] > g[0]);
     if (!segs.length) { const a = Math.max(0, Math.min(n - 1, Math.round((r.start || 0) * sr))); segs = [[a, a + 1]]; }
     const total = segs.reduce((t, g) => t + g[1] - g[0], 0), xf = Math.round(SEAM * sr);
-    const out = audio().createBuffer(buf.numberOfChannels, total, sr);
+    const W0 = win ? Math.max(0, Math.min(total - 1, Math.round(win[0] * sr))) : 0, W1 = win ? Math.max(W0 + 1, Math.min(total, Math.round(win[1] * sr))) : total;
+    const out = audio().createBuffer(buf.numberOfChannels, W1 - W0, sr);
     const fi = Math.min(total, Math.round(r.fadeIn / 1000 * sr)), fo = Math.min(total, Math.round(r.fadeOut / 1000 * sr));
     for (let c = 0; c < buf.numberOfChannels; c++) {
       const src = buf.getChannelData(c), to = out.getChannelData(c);
-      let o = 0;
+      let o = 0;                                     // (o, k: samples of the whole clip; to[] holds W0…W1 of it)
       segs.forEach((g, i) => {
-        to.set(src.subarray(g[0], g[1]), o);
-        const prev = i ? segs[i - 1][1] : g[0];
-        if (prev !== g[0]) {                         // a join: cross from what followed the last piece into this one
-          const m = Math.min(xf, g[1] - g[0]);
-          for (let j = 0; j < m; j++) { const w = j / m; to[o + j] = to[o + j] * w + (src[prev + j] || 0) * (1 - w); }
+        const len = g[1] - g[0], a = Math.max(o, W0), b = Math.min(o + len, W1);
+        if (b > a) {
+          to.set(src.subarray(g[0] + a - o, g[0] + b - o), a - W0);
+          const prev = i ? segs[i - 1][1] : g[0];
+          if (prev !== g[0]) {                       // a join: cross from what followed the last piece into this one
+            const m = Math.min(xf, len);
+            for (let j = Math.max(0, a - o); j < Math.min(m, b - o); j++) { const w = j / m, k = o + j - W0; to[k] = to[k] * w + (src[prev + j] || 0) * (1 - w); }
+          }
         }
-        o += g[1] - g[0];
+        o += len;
       });
-      for (let i = 0; i < fi; i++) to[i] *= i / fi;
-      for (let i = 0; i < fo; i++) to[to.length - 1 - i] *= i / fo;
+      for (let k = W0; k < Math.min(fi, W1); k++) to[k - W0] *= curveIn(k / fi, r.fadeDb);
+      for (let k = Math.max(W0, total - fo); k < W1; k++) to[k - W0] *= curveOut(1 - (total - 1 - k) / fo, r.fadeDb);
     }
     return out;
   }
@@ -295,17 +309,19 @@ var StingClip = (function () {
     let done;
     const ended = new Promise(r => { done = r; });
     node.onended = () => { try { node.disconnect(); gain.disconnect(); } catch (_) { /* gone */ } done(); };
-    const t0 = c.currentTime;
-    node.start();
+    const off = !loop && opts && opts.offset > 0 ? Math.min(opts.offset, buf.duration) : 0;   // (s into it: joining partway)
+    const t0 = c.currentTime - off;
+    node.start(0, off);
     return {
       gain, ended, duration: buf.duration,
       time: () => (loop ? (c.currentTime - t0) % buf.duration : Math.min(buf.duration, c.currentTime - t0)),
       stop(at) { try { node.stop(at); } catch (_) { /* stopped */ } },
-      fade(ms) {                                       // fades out from here, then stops
-        const now = c.currentTime, end = now + ms / 1000;
-        gain.gain.setValueAtTime(gain.gain.value, now);
-        gain.gain.linearRampToValueAtTime(0, end);
-        try { node.stop(end); } catch (_) { /* stopped */ }
+      fade(ms) {                                       // fades out from here (even in dB, to −60 dB), then stops
+        const now = c.currentTime, end = now + ms / 1000, v = gain.gain.value;
+        gain.gain.cancelScheduledValues(now);
+        gain.gain.setValueAtTime(v, now);
+        if (v > 1e-6) gain.gain.exponentialRampToValueAtTime(v / 1000, end);
+        try { node.stop(v > 1e-6 ? end : now); } catch (_) { /* stopped */ }
       },
     };
   }
@@ -334,6 +350,9 @@ var StingClip = (function () {
 .sc-box canvas { display: block; width: 100%; background: #0a0a0a; border: 1px solid #2a2a2a; border-radius: 0.3rem; cursor: crosshair; }
 .sc-over { height: min(4.2rem, 9vh); margin-bottom: 0.4rem; }
 .sc-zoom { height: min(8rem, 17vh); }
+.sc-zrow { display: flex; gap: 0.5rem; align-items: stretch; }
+.sc-zrow .sc-zoom { flex: 1; min-width: 0; }
+.sc-vid { height: min(8rem, 17vh); aspect-ratio: 16 / 9; background: #000; border: 1px solid #2a2a2a; border-radius: 0.3rem; object-fit: contain; flex: none; }
 .sc-zcap { display: flex; gap: 0.6rem; align-items: center; color: #888; font-size: 0.8rem; margin: 0.1rem 0 0.2rem; min-height: 1.5rem; }
 .sc-box .sc-zcap button { padding: 0.05rem 0.5rem; font-size: 0.8rem; }
 .sc-box canvas.sc-grab { cursor: ew-resize; }
@@ -341,9 +360,13 @@ var StingClip = (function () {
 .sc-row input.sc-ms::-webkit-inner-spin-button { opacity: 1; }
 .sc-hint { color: #777; font-size: 0.8rem; margin: 0.3rem 0 0.6rem; }
 .sc-row { display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center; margin: 0.5rem 0; }
+.sc-punch { display: inline-flex; gap: 0.4rem; }   /* Mark start / Mark end: a pair, lit while it plays */
+.sc-punch button:not(:disabled) { border-color: #c0508e; }
 .sc-row label { color: #aaa; display: inline-flex; gap: 0.4rem; align-items: center; }
 .sc-row input { font: inherit; width: 6.5rem; padding: 0.25rem 0.4rem; background: #1a1a1a; color: #eee; border: 1px solid #333; border-radius: 0.3rem; font-variant-numeric: tabular-nums; }
 .sc-row input.sc-ms { width: 4.5rem; }
+.sc-row label.sc-lin { color: #aaa; }
+.sc-row label.sc-lin input { width: auto; margin: 0 0.3em 0 0; vertical-align: middle; }
 .sc-row input.sc-name { width: 18rem; }
 .sc-row input.sc-on { border-color: #4aa8ff; }
 .sc-row input[type=checkbox] { width: auto; }
@@ -395,14 +418,15 @@ var StingClip = (function () {
         <div class="sc-head"><b>Choose the part to play</b><span class="sc-src"></span></div>
         <canvas class="sc-over" title="The whole track: drag across it to choose a part, or drag a start/end line${canLoop ? '; Shift+drag marks a loop' : ''}"></canvas>
         <div class="sc-zcap"><span class="sc-zlabel"></span><button class="sc-zall" hidden>Show the whole part</button></div>
-        <canvas class="sc-zoom" title="Close up: drag the start or end line"></canvas>
-        <div class="sc-hint">Drag across the whole track to choose a part; drag a white line (the pointer becomes ↔) to move that edge.${canLoop ? ' Shift+drag marks a loop (orange); drag its ⟲ tab to put the repeats somewhere else.' : ''} ← → move the selected edge (Shift: 1 s, Alt: 0.01 s); ↑ ↓ in a time or fade box step it · Space plays · Enter saves · Esc cancels</div>
+        <div class="sc-zrow"><canvas class="sc-zoom" title="Close up: drag the start or end line"></canvas><video class="sc-vid" muted playsinline preload="auto" hidden title="The picture: as the part plays, else the frame at the edge you're working on"></video></div>
+        <div class="sc-hint">Drag across the whole track to choose a part; drag a white line (the pointer becomes ↔) to move that edge.${canLoop ? ' Shift+drag marks a loop (orange); drag its ⟲ tab to put the repeats somewhere else.' : ''} ← → move the selected edge (Shift: 1 s, Alt: 0.01 s); ↑ ↓ in a time or fade box step it · Space plays · I / O mark the start / end as it plays · Enter saves · Esc cancels</div>
         <div class="sc-row">
           <label>Start <input class="sc-t" data-k="start" spellcheck="false" title="↑ ↓: 0.01 s (Shift: 0.1 s)"></label>
           <label>End <input class="sc-t" data-k="end" spellcheck="false" title="↑ ↓: 0.01 s (Shift: 0.1 s)"></label>
           <span>Plays for <span class="sc-len"></span></span>
           <label>Fade in <input class="sc-ms" data-k="fadeIn" type="number" min="0" step="10" title="↑ ↓ or the arrows: 10 ms (Shift: 100 ms)"> ms</label>
           <label>Fade out <input class="sc-ms" data-k="fadeOut" type="number" min="0" step="10" title="↑ ↓ or the arrows: 10 ms (Shift: 100 ms)"> ms</label>
+          <label class="sc-lin" title="Ticked: the fades are a straight line in volume (as clips made before 13 Nov 2026), which sounds as if little happens until the end. Unticked: even in dB, which sounds smooth"><input type="checkbox" class="sc-linear"> Linear fades</label>
         </div>
         <div class="sc-row sc-levelrow">
           <span>Loudness <span class="sc-loud">…</span></span>
@@ -421,9 +445,10 @@ var StingClip = (function () {
         </div>
         <div class="sc-lnote"></div>
         <div class="sc-row">
-          <button class="sc-play">▶ Play the part</button><button class="sc-first" title="Its first 2 seconds, with the fade in">▶ First 2 s</button><button class="sc-last" title="The 2 seconds before the fade out begins, then the fade (or just the last 2 seconds)">▶ Last 2 s</button><button class="sc-lead" title="From 2 seconds before the start: hear the lead-in">▶ From 2 s before</button><button class="sc-stop">■</button>
+          <button class="sc-play">▶ Play the part</button><button class="sc-first" title="Its first 2 seconds, with the fade in">▶ First 2 s</button><button class="sc-last" title="The 2 seconds before the fade out begins, then the fade (or just the last 2 seconds)">▶ Last 2 s</button><button class="sc-lead" title="From 2 seconds before the start: hear the lead-in">▶ From 2 s before</button><button class="sc-playon" title="From 2 seconds before the start straight on to the end of the track (not stopping at the part’s end): mark the start and the end as you hear them">▶ Play on</button><button class="sc-stop">■</button><span class="sc-punch"><button class="sc-markin" disabled title="As it plays: the clip starts here (half a second back, for your reaction); it plays on (key: I)">Mark start</button><button class="sc-markout" disabled title="As it plays: the clip ends here; it stops (key: O)">Mark end</button></span>
           <label>Name <input class="sc-name" spellcheck="false"></label>
         </div>
+        <div class="sc-words" hidden></div>
         <div class="sc-row sc-hide" hidden><label><input type="checkbox" class="sc-hideorig"> Hide the whole “<span class="sc-orig"></span>” from + sting (its clips are offered instead)</label></div>
         <div class="sc-msg"></div>
         <div class="sc-btns"><button class="sc-whole">Whole track</button><button class="sc-addloop" title="Repeat part of the track to make the sting longer">⟲ Add a loop</button><button class="sc-wav" title="Make this edit a WAV file of its own (for edits too long to keep as a clip): add it as the sting’s file">⬇ Save as WAV</button><span class="sc-grow"></span><button class="sc-cancel">Cancel</button><button class="sc-save sc-primary">Save</button></div>
@@ -439,11 +464,18 @@ var StingClip = (function () {
       let buf = null, peaks = null, voice = null, playSegs = [], playOff = 0, active = 'start', raf = 0, hover = null;
       const r0 = region(opts.region) || {};
       const sel = { start: r0.start || 0, end: r0.end, fadeIn: r0.fadeIn || 0, fadeOut: r0.fadeOut || 0 };
+      // Even in dB unless it's a clip whose fades were made linear (before 13 Nov 2026, or Linear fades ticked)
+      let fadeDb = r0.fadeIn || r0.fadeOut ? !!r0.fadeDb : true;
       let loop = canLoop && r0.loop ? Object.assign({}, r0.loop) : null;
       let trimDb = Math.round(20 * Math.log10(trim(opts.region)) * 10) / 10;   // the trim by ear, dB (≤ 0)
       let lufs = null, lufsKey = '', lufsT = 0;      // the clip's loudness as it plays, for lufsKey
 
-      const dur = () => (buf ? buf.duration : 0);
+      // A long source's waveform kept from before (the owner, 13 Nov 2026: reopening a 51-minute video meant 30 s of
+      // nothing): its outline at 100 points a second (videoStore 'wave:<key>', Uint8Array 0–255, ~360 KB an hour), drawn
+      // at once so the edges can be set while the sound is read; playing, previews and Save wait for the sound (buf)
+      let wave = null;
+      const ready = () => !!(buf || wave);
+      const dur = () => (buf ? buf.duration : wave ? wave.dur : 0);
       const endOf = () => (sel.end != null ? sel.end : dur());
       const atOf = () => (loop.at != null ? loop.at : loop.to);
       const TIMES = ['start', 'end', 'lfrom', 'lto', 'at'], LOOPK = { lfrom: 1, lto: 1, at: 1, plays: 1 };
@@ -454,7 +486,7 @@ var StingClip = (function () {
         else if (k === 'trimdb') trimDb = Math.round(Math.max(-40, Math.min(0, v)) * 10) / 10;
         else sel[k] = v;
       }
-      const cur = () => { const c = { start: sel.start, end: endOf(), fadeIn: sel.fadeIn, fadeOut: sel.fadeOut }; if (loop) c.loop = cleanLoop(loop); return c; };
+      const cur = () => { const c = { start: sel.start, end: endOf(), fadeIn: sel.fadeIn, fadeOut: sel.fadeOut }; if (fadeDb) c.fadeDb = true; if (loop) c.loop = cleanLoop(loop); return c; };
       function clamp() {
         const d = dur();
         sel.start = Math.max(0, Math.min(sel.start, d - 0.05));
@@ -522,6 +554,15 @@ var StingClip = (function () {
 
       // Waveform: the loudest sample per column (channels mixed)
       function columnPeaks(from, to, cols) {
+        if (!buf) {                                  // (from the kept outline, until the sound is read)
+          const R = wave.rate, P = wave.peaks, a = from * R, n = Math.max(1e-9, (to - from) * R / cols), out = new Float32Array(cols);
+          for (let x = 0; x < cols; x++) {
+            let m = 0; const i0 = Math.floor(a + x * n), i1 = Math.max(i0 + 1, Math.floor(a + (x + 1) * n));
+            for (let i = i0; i < i1 && i < P.length; i++) if (P[i] > m) m = P[i];
+            out[x] = m / 255;
+          }
+          return out;
+        }
         const sr = buf.sampleRate, a = Math.floor(from * sr), b = Math.ceil(to * sr), n = Math.max(1, (b - a) / cols), out = new Float32Array(cols);
         const chans = []; for (let c = 0; c < buf.numberOfChannels; c++) chans.push(buf.getChannelData(c));
         for (let x = 0; x < cols; x++) {
@@ -556,7 +597,11 @@ var StingClip = (function () {
         // fades as ramps over the selection
         g.strokeStyle = 'rgba(255,204,51,0.8)'; g.lineWidth = dpr;
         g.beginPath();
-        g.moveTo(x(sel.start), H); g.lineTo(x(sel.start + sel.fadeIn / 1000), 2); g.lineTo(x(endOf() - sel.fadeOut / 1000), 2); g.lineTo(x(endOf()), H);
+        const a0 = sel.start, a1 = sel.start + sel.fadeIn / 1000, b0 = endOf() - sel.fadeOut / 1000, b1 = endOf(), yOf = v => H - (H - 2) * v;
+        g.moveTo(x(a0), H);
+        for (let k = 1; k <= 24; k++) g.lineTo(x(a0 + (a1 - a0) * k / 24), yOf(curveIn(k / 24, fadeDb)));
+        g.lineTo(x(b0), 2);
+        for (let k = 1; k <= 24; k++) g.lineTo(x(b0 + (b1 - b0) * k / 24), yOf(curveOut(k / 24, fadeDb)));
         g.stroke();
         g.fillStyle = '#fff';
         for (const k of ['start', 'end']) g.fillRect(x(get(k)) - edge(k) / 2, 0, edge(k), H);
@@ -579,11 +624,13 @@ var StingClip = (function () {
       // 6 s at a standard scale, a left edge 1 s in from the left or a right edge 1 s in from the right
       let zmode = 'all';
       const LEFT = { start: 1, lfrom: 1, at: 1 }, RIGHT = { end: 1, lto: 1 };
-      const LABELS = { start: 'Close up on the start: 1 s before, 5 s after', end: 'Close up on the end: 5 s before, 1 s after',
+      let findAt = 0;                                // (the words found: clip-words.js's ▶ — the close-up there)
+      const LABELS = { find: 'Close up on the words: 1 s before, 5 s after', start: 'Close up on the start: 1 s before, 5 s after', end: 'Close up on the end: 5 s before, 1 s after',
         lfrom: 'Close up on the loop’s start: 1 s before, 5 s after', lto: 'Close up on the loop’s end: 5 s before, 1 s after',
         at: 'Close up on where the repeats go in: 1 s before, 5 s after', all: 'Close up: the whole part' };
       const zoomRange = () => {
         if (LOOPK[zmode] && !loop) zmode = 'all';
+        if (zmode === 'find') { const a = Math.max(0, Math.min(findAt - 1, dur() - 6)); return [a, Math.min(dur(), a + 6)]; }
         if (LEFT[zmode]) { const a = Math.max(0, Math.min(get(zmode) - 1, dur() - 6)); return [a, Math.min(dur(), a + 6)]; }
         if (RIGHT[zmode]) { const b = Math.min(dur(), Math.max(get(zmode) + 1, 6)); return [Math.max(0, b - 6), b]; }
         const len = endOf() - sel.start, pad = Math.max(0.5, len * 0.25); return [Math.max(0, sel.start - pad), Math.min(dur(), endOf() + pad)];
@@ -597,14 +644,44 @@ var StingClip = (function () {
       wrap.__zoom = () => zoomRange();               // (tests)
       wrap.__loop = () => (loop ? cleanLoop(loop) : null);
       function draw() {
-        if (!buf) return;
+        $('.sc-markin').disabled = $('.sc-markout').disabled = !voice;   // (punch in / out: while it plays)
+        if (!ready()) return;
         if (sizeCanvas(over) || !peaks) peaks = columnPeaks(0, dur(), over.width);
         sizeCanvas(zoom);
         drawWave(over, peaks, 0, dur());
         const [a, b] = zoomRange();
         drawWave(zoom, columnPeaks(a, b, Math.min(zoom.width, 1600)), a, b);
         fields();
+        vidSync();
       }
+      // A video's picture (the owner, 13 Nov 2026): beside the close-up, muted (the editor plays the sound, at its
+      // level). Playing: in step with it (sourceAt, so through loops too), put right only when 0.15 s out; still:
+      // the frame at the edge being worked on (else the start), one seek at a time, the latest wanted winning
+      const vid = $('.sc-vid'), isVideo = opts.media === 'video' && !!opts.src;
+      let vidUrl = null, vidWant = null;
+      if (isVideo) {
+        vidUrl = typeof opts.src === 'string' ? opts.src : URL.createObjectURL(opts.src);
+        vid.src = vidUrl; vid.hidden = false;
+        vid.addEventListener('seeked', () => { const t = vidWant; vidWant = null; if (t != null && !voice) vidAt(t); });
+        vid.addEventListener('loadedmetadata', () => vidSync());
+      }
+      function vidAt(t) {
+        if (vid.seeking) { vidWant = t; return; }
+        if (Math.abs(vid.currentTime - t) > 0.02) vid.currentTime = t;
+      }
+      function vidSync() {
+        if (!isVideo || vid.readyState < 1) return;
+        if (voice) {
+          const t = sourceAt(playOff + voice.time(), playSegs);
+          if (vid.paused) { vid.currentTime = t; vid.play().catch(() => {}); }
+          else if (Math.abs(vid.currentTime - t) > 0.15) vid.currentTime = t;
+        } else {
+          if (!vid.paused) vid.pause();
+          const k = TIMES.includes(active) && (!LOOPK[active] || loop) ? active : 'start';
+          vidAt(k === 'end' || k === 'lto' ? Math.max(0, get(k) - 0.04) : get(k));   // (an end: its last frame)
+        }
+      }
+      wrap.__video = () => (isVideo ? { src: !!vid.getAttribute('src'), paused: vid.paused, t: Math.round(vid.currentTime * 100) / 100 } : null);   // (tests)
       const redraw = () => { clamp(); draw(); };
 
       // Pointer: drag across the whole track = a new selection (Shift: a new loop); close up, drag the
@@ -653,7 +730,7 @@ var StingClip = (function () {
       }
       for (const [cv, range] of [[over, () => [0, dur()]], [zoom, zoomRange]]) {
         cv.addEventListener('pointermove', e => {
-          if (!buf || e.buttons) return;
+          if (!ready() || e.buttons) return;
           const [a, b] = range(), h = onTab(cv, e) ? 'tab' : nearEdge(cv, e, a, b);
           cv.classList.toggle('sc-grab', !!h && h !== 'tab');
           cv.classList.toggle('sc-move', h === 'tab');
@@ -662,7 +739,7 @@ var StingClip = (function () {
         cv.addEventListener('pointerleave', () => { cv.classList.remove('sc-grab', 'sc-move'); if (hover) { hover = null; draw(); } });
       }
       over.addEventListener('pointerdown', e => {
-        if (!buf || e.button !== 0) return;          // (a right click: its menu would swallow the release)
+        if (!ready() || e.button !== 0) return;          // (a right click: its menu would swallow the release)
         over.setPointerCapture(e.pointerId);
         if (onTab(over, e)) return dragEdge(over, e, 'at', () => [0, dur()]);
         const k = nearEdge(over, e, 0, dur());
@@ -681,7 +758,7 @@ var StingClip = (function () {
         redraw();
       });
       zoom.addEventListener('pointerdown', e => {
-        if (!buf || e.button !== 0) return;
+        if (!ready() || e.button !== 0) return;
         zoom.setPointerCapture(e.pointerId);
         const [a, b] = zoomRange(), t = timeAt(zoom, e, a, b);
         if (onTab(zoom, e)) return dragEdge(zoom, e, 'at', () => [a, b]);
@@ -744,9 +821,10 @@ var StingClip = (function () {
           w0 = p.loop.inAt - 2; w1 = p.loop.inAt + p.loop.copies * p.loop.len + 2;
         }
         const L = length(piece, dur()) || 0;
-        if (L > LIMITS.download) return msg('Too long to play here (' + clock(L) + ').');
+        if (how === 'lead' && L > LIMITS.download) w1 = 12;   // (a long part: its lead-in and the first 10 s)
         w0 = Math.max(0, Math.min(w0, L)); w1 = w1 == null ? L : Math.min(L, Math.max(w0, w1));
-        const full = render(buf, piece), out = w0 > 0 || w1 < L ? slice(full, w0, w1) : full;
+        if (w1 - w0 > LIMITS.download) return msg('Too long to play here (' + clock(L) + ').');
+        const out = render(buf, piece, w0 > 0 || w1 < L ? [w0, w1] : null);   // (only what's played: a long part's First / Last 2 s too)
         playSegs = plan(piece, dur()).segs; playOff = w0;
         playing = { from: r2(sourceAt(w0, playSegs)), to: r2(sourceAt(w1, playSegs)) };
         const v = voice = play(out);
@@ -755,6 +833,45 @@ var StingClip = (function () {
         const tick = () => { if (voice !== v) return; draw(); raf = requestAnimationFrame(tick); };
         tick();
       }
+      // Play on (the owner, 13 Nov 2026: punch in / punch out as it plays): from 2 s before the start straight on to
+      // the end of the track, the source as it is (no part, no fades; played from the decoded track, no copy: long ones too)
+      function playOn() {
+        stopPlay();
+        if (!buf) return;
+        const t = Math.max(0, sel.start - 2), v = voice = play(buf, { offset: t });
+        v.gain.gain.value = levelGain();
+        playSegs = [[0, dur()]]; playOff = 0;          // (its time() counts from the track's start)
+        playing = { from: r2(t), to: r2(dur()) };
+        v.ended.then(() => { if (voice === v) { voice = null; draw(); } });
+        const tick = () => { if (voice !== v) return; draw(); raf = requestAnimationFrame(tick); };
+        tick();
+      }
+      // Mark start / Mark end as it plays (any ▶): the playhead's place in the track, the start half a second back for
+      // the reaction; after the start it plays on (listen for the end), the end stops it
+      const MARK_LEAD = 0.5;
+      function mark(edge) {
+        if (!voice) return;
+        const t = sourceAt(playOff + voice.time(), playSegs);
+        if (edge === 'start') { set('start', Math.max(0, t - MARK_LEAD)); if (sel.end != null && sel.end <= sel.start + 0.1) sel.end = null; }
+        else { if (t <= sel.start + 0.1) return msg('That’s before the start: Mark start first.'); set('end', t); stopPlay(); msg(''); }
+        active = edge; redraw(); focusOn(edge);
+      }
+      // From t in the source, 20 s at most, the close-up there (Transcribe: a line's ▶)
+      function playFrom(t) {
+        stopPlay();
+        if (!buf) return;
+        t = Math.max(0, Math.min(t, dur() - 0.05));
+        const t1 = Math.min(dur(), t + 20);
+        findAt = t; focusOn('find');
+        const v = voice = play(slice(buf, t, t1));
+        v.gain.gain.value = levelGain();
+        playSegs = [[t, t1]]; playOff = 0;
+        playing = { from: r2(t), to: r2(t1) };
+        v.ended.then(() => { if (voice === v) { voice = null; draw(); } });
+        const tick = () => { if (voice !== v) return; draw(); raf = requestAnimationFrame(tick); };
+        tick();
+      }
+      let words = null;                              // (clip-words.js, a trial: the transcript)
       let playing = null;                            // (tests: what's playing, from–to in the source)
       wrap.__playing = () => (voice ? playing : null);
       $('.sc-play').addEventListener('click', () => { focusOn('all'); playPart(); });
@@ -763,6 +880,9 @@ var StingClip = (function () {
       $('.sc-zall').addEventListener('click', () => focusOn('all'));
       $('.sc-lead').addEventListener('click', () => playPart('lead'));
       $('.sc-stop').addEventListener('click', stopPlay);
+      $('.sc-playon').addEventListener('click', () => { focusOn('all'); playOn(); });
+      $('.sc-markin').addEventListener('click', () => mark('start'));
+      $('.sc-markout').addEventListener('click', () => mark('end'));
       $('.sc-whole').addEventListener('click', () => { sel.start = 0; sel.end = null; sel.fadeIn = sel.fadeOut = 0; zmode = 'all'; redraw(); focusOn('all'); });
       $('.sc-addloop').addEventListener('click', () => {
         if (!buf) return;
@@ -790,12 +910,16 @@ var StingClip = (function () {
 
       function finish(result) {
         stopPlay();
+        if (words) words.stop();
+        if (isVideo) { vid.pause(); vid.removeAttribute('src'); vid.load(); if (vidUrl && typeof opts.src !== 'string') URL.revokeObjectURL(vidUrl); }
+        clearInterval(readT); cancelAnimationFrame(loadRaf);
         document.removeEventListener('keydown', onKey, true);
         window.removeEventListener('resize', draw);
         wrap.remove();
         resolve(result);
       }
       function save() {
+        if (!buf && wave) { msg('Still reading the sound: Save once it’s ready (the edges you set are kept).'); return; }
         if (!buf) return finish(null);
         clamp();
         const c = cur(), chk = loopCheck(c, dur());
@@ -803,10 +927,13 @@ var StingClip = (function () {
         const whole = sel.start <= 0 && sel.end == null && !sel.fadeIn && !sel.fadeOut && !loop;
         finish({ name: $('.sc-name').value.trim().slice(0, 200) || opts.name || 'Sting',
           start: whole ? null : sel.start, end: whole ? null : endOf(), fadeIn: sel.fadeIn || null, fadeOut: sel.fadeOut || null,
+          fadeDb: fadeDb && (sel.fadeIn || sel.fadeOut) ? true : null,
           loop: c.loop || null, sourceLength: dur(),
           lufs: measure(), volume: trimDb < 0 ? Math.round(Math.pow(10, trimDb / 20) * 10000) / 10000 : null,
           hideOriginal: opts.original ? $('.sc-hideorig').checked : undefined });
       }
+      $('.sc-linear').checked = !fadeDb;
+      $('.sc-linear').addEventListener('change', e => { fadeDb = !e.target.checked; e.target.blur(); redraw(); });
       $('.sc-cancel').addEventListener('click', () => finish(null));
       $('.sc-save').addEventListener('click', save);
       // Keys stay in here (the run sheet editor's Space is Next; the timer's keys are everywhere)
@@ -814,6 +941,10 @@ var StingClip = (function () {
         if (e.metaKey) return;
         const typing = e.target.closest && e.target.closest('input');
         e.stopImmediatePropagation();
+        if (e.target.closest && e.target.closest('.sc-words')) {   // (finding words: keys are the box's, not Save; Esc clears it first)
+          if (e.key !== 'Escape') return;
+          if (e.target.value) { e.preventDefault(); e.target.value = ''; e.target.dispatchEvent(new Event('input')); return; }
+        }
         if (e.key === 'Escape') { e.preventDefault(); finish(null); return; }
         if (e.key === 'Enter') { if (typing) e.target.dispatchEvent(new Event('change')); e.preventDefault(); save(); return; }
         if (typing && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && e.target.dataset.k) {
@@ -831,6 +962,7 @@ var StingClip = (function () {
         }
         if (typing) return;
         if (e.key === ' ') { e.preventDefault(); if (voice) stopPlay(); else playPart(); return; }
+        if ((e.key === 'i' || e.key === 'I' || e.key === 'o' || e.key === 'O') && !e.ctrlKey && !e.altKey) { e.preventDefault(); mark(e.key.toLowerCase() === 'i' ? 'start' : 'end'); return; }
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
           e.preventDefault();
           if (LOOPK[active] && !loop) active = 'start';
@@ -845,21 +977,78 @@ var StingClip = (function () {
       ['keyup', 'keypress'].forEach(t => wrap.addEventListener(t, e => e.stopPropagation()));
       window.addEventListener('resize', draw);
 
-      msg('Reading the track…');
+      // Reading a long file takes a while (a 1 GB, 51-minute video: about 30 s, all of its sound decoded at once, so
+      // nothing to draw until it's done): say so and count, and move the waveform's place so it doesn't look stuck: a
+      // bar filling over the time this computer took for files before (clip_read_rate, bytes a second, from files over
+      // 20 MB), else a sweep
+      const RATE = 'clip_read_rate', size = opts.src && Number.isFinite(opts.src.size) ? opts.src.size : 0;
+      let rate = 0; try { rate = Number(localStorage.getItem(RATE)) || 0; } catch (_) { /* private mode */ }
+      const guess = size > 20e6 && rate > 0 ? size / rate : null;   // s
+      const big = size > 50e6 ? ` (${size >= 1e9 ? (size / 1e9).toFixed(1) + ' GB' : Math.round(size / 1e6) + ' MB'}: a long file takes a while)` : '';
+      const readAt = Date.now(), secs = () => (Date.now() - readAt) / 1000;
+      const readMsg = () => msg((wave ? 'Reading the sound' : 'Reading the track') + big + '…' + (secs() > 2 ? ' ' + Math.round(secs()) + ' s' + (guess ? ' of about ' + Math.max(Math.round(guess), Math.round(secs())) : '') : '')
+        + (wave ? ' The waveform is from last time: set the start and end meanwhile; play and Save once it’s read.' : ''));
+      const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      let loadRaf = 0;
+      function loading() {
+        sizeCanvas(over);
+        const g = over.getContext('2d'), W = over.width, H = over.height, s = secs();
+        g.clearRect(0, 0, W, H);
+        g.fillStyle = 'rgba(74,168,255,0.28)';
+        if (guess) g.fillRect(0, 0, W * Math.min(0.97, s / guess), H);
+        else if (still) g.fillRect(0, 0, W, H);
+        else { const band = W * 0.25; g.fillRect(((s / 1.6) % 1) * (W + band) - band, 0, band, H); }
+        loadRaf = requestAnimationFrame(loading);
+      }
+      readMsg(); loading();
+      const readT = setInterval(readMsg, 1000);
+      const waveKey = (() => { const k = window.ClipWords ? ClipWords.keyOf(opts.src) : (opts.src && opts.src.name && Number.isFinite(opts.src.size) ? opts.src.name + '|' + opts.src.size : typeof opts.src === 'string' ? opts.src : null);
+        return k || (opts.src && opts.src.size && opts.name ? opts.name + '|' + opts.src.size : null); })();
+      let firstLook = false;
+      const lookAtIt = () => {                       // (the first time there's something to see: the part, or the edge asked for)
+        if (firstLook) return; firstLook = true;
+        if (opts.focus === 'start' || opts.focus === 'end') { active = opts.focus; redraw(); focusOn(opts.focus); } else { redraw(); focusOn('all'); }
+      };
+      const PLAYS = ['.sc-play', '.sc-first', '.sc-last', '.sc-lead', '.sc-playon'];
+      if (waveKey && window.videoStore) window.videoStore.get('wave:' + waveKey).then(w => {
+        if (buf || !w || w.v !== 1 || !(w.peaks instanceof Uint8Array) || !(w.dur > 0)) return;
+        wave = w; cancelAnimationFrame(loadRaf); readMsg();
+        PLAYS.forEach(s => { $(s).disabled = true; $(s).title = 'Once the sound is read'; });
+        $('.sc-save').disabled = true;
+        lookAtIt();
+      }).catch(() => {});
       decode(opts.src).then(b => {
+        clearInterval(readT); cancelAnimationFrame(loadRaf);
+        if (wave) { PLAYS.forEach(s => { $(s).disabled = false; $(s).title = ''; }); $('.sc-save').disabled = false; wave = null; peaks = null; }
+        if (waveKey && window.videoStore && b.duration >= 30) {   // keep its outline for next time (a long one: short ones are read quickly)
+          const R = 100, n = Math.ceil(b.duration * R), pk = new Uint8Array(n), sr = b.sampleRate, chans = [];
+          for (let c = 0; c < b.numberOfChannels; c++) chans.push(b.getChannelData(c));
+          for (let i = 0; i < n; i++) {
+            let m = 0; const s0 = Math.floor(i * sr / R), s1 = Math.min(b.length, Math.floor((i + 1) * sr / R));
+            for (const ch of chans) for (let k = s0; k < s1; k += 4) { const v = ch[k] < 0 ? -ch[k] : ch[k]; if (v > m) m = v; }
+            pk[i] = Math.min(255, Math.round(m * 255));
+          }
+          window.videoStore.put('wave:' + waveKey, { v: 1, dur: b.duration, rate: R, peaks: pk }).catch(() => {});
+        }
+        if (size > 20e6 && secs() > 0.5) try { const r = size / secs(); localStorage.setItem(RATE, String(Math.round(rate ? (rate + r) / 2 : r))); } catch (_) { /* private mode */ }
         buf = b;
         msg('');
-        redraw();
-        focusOn('all');
+        if (window.ClipWords && ClipWords.on()) {      // Transcribe and find words (a trial)
+          $('.sc-words').hidden = false;
+          words = ClipWords.mount($('.sc-words'), { buf: b, name: opts.name, key: ClipWords.keyOf(opts.src) || (opts.src && opts.src.size && opts.name ? opts.name + '|' + opts.src.size : null),
+            play: playFrom, setStart: t => { set('start', t); active = 'start'; redraw(); focusOn('start'); }, setEnd: t => { set('end', t); active = 'end'; redraw(); focusOn('end'); } });
+        }
+        if (firstLook) redraw(); else lookAtIt();      // (worked on from the kept outline already: as it is, now exact)
         $('.sc-save').focus();
       }).catch(() => {
+        clearInterval(readT); cancelAnimationFrame(loadRaf);
         msg('This track can’t be opened here (its server doesn’t allow it, or the browser can’t read the file). Use a file from your computer instead.');
         $('.sc-save').disabled = true;
       });
     });
   }
 
-  return { region, cleanLoop, plan, length, loopCheck, LIMITS, decode, render, wav, playable, play, preview, open,
+  return { region, cleanLoop, plan, sourceAt, length, loopCheck, LIMITS, decode, render, wav, playable, play, preview, open, curveIn, curveOut,
     loudness, toneBuffer, gainFor, trim, target, houseLevel, showLevel, LEVEL, TARGET_KEY, SHOW_KEY };
 })();
 if (typeof module !== 'undefined') module.exports = StingClip;

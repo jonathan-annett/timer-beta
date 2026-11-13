@@ -16,10 +16,27 @@
     button:hover { background: #2c2c2c; }
     button.primary { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
     button.small { padding: 2px 8px; font-size: 13px; }
+    button.chip { border-radius: 999px; padding: 2px 12px; }   /* a switch: lit while on */
+    button.chip[aria-pressed=true] { background: #0b3d5c; border-color: #4aa8ff; color: #fff; }
+    button.chip.held { cursor: default; }                /* lit by Playlist flow: not a switch then */
+    body.minimal #items .cues, body.minimal #boardlist .cues { display: none; }   /* Minimal run sheet view: the items, not their cues */
     button:disabled { opacity: .4; cursor: default; }
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
     #demobar { border-color: var(--warn); font-size: 14px; }   /* the demo (?demo): no timer */
     #demobar b:first-child { color: var(--warn); }
+    /* Soundboard mode (?soundboard, /s): a run sheet of your own, no timer */
+    #vdecks:fullscreen { background: #000; display: flex; align-items: center; justify-content: center; }   /* the keys alone (⛶ Full screen) */
+    #sbbar { border-color: var(--accent); font-size: 14px; }
+    #sbbar b:first-child { color: var(--accent); }
+    #sbbar #sb-name { width: min(22em, 50vw); }
+    #sbbar input { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 4px 6px; }
+    #sb-paste { width: 100%; box-sizing: border-box; margin-top: 8px; font: 13px/1.4 monospace; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 6px; }
+    #sb-missing { margin: 8px 0 0; }
+    .b-only { display: none; } body.soundboard .b-only { display: inline; } body.soundboard .t-only { display: none; }
+    .iorder { display: inline-flex; gap: 2px; }
+    .ilen input { width: 5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    #sbdrop { position: fixed; inset: 0; z-index: 30; background: rgba(11, 61, 92, .55); border: 3px dashed var(--accent); display: flex; align-items: center; justify-content: center; pointer-events: none; }
+    #sbdrop span { background: var(--panel); color: #fff; padding: 14px 20px; border-radius: 10px; font-size: 18px; }
 
     /* Pairing by code (as the overlay) */
     #code { font: bold 44px/1.1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .3em; text-align: center; width: 100%; max-width: 360px;
@@ -43,22 +60,81 @@
     .hint { color: var(--dim); font-size: 13px; }
 
     /* The run sheet and each item's cues */
-    #items { list-style: none; margin: 0; padding: 0; }
+    #items, #boardlist { list-style: none; margin: 0; padding: 0; }
+    #boardlist { margin-top: 10px; }
+    #boardlist .ihead { gap: 10px; }
     #items > li { border-top: 1px solid var(--line); padding: 8px 4px; }
     #items > li.now { background: #10243a; border-radius: 6px; }
     #items > li.done .iname { color: var(--dim); }
     #items > li.here { box-shadow: inset 3px 0 0 var(--warn); }   /* an item run here (Follow off: ▶ Start item) */
     .itag.ilocal { color: var(--warn); font-variant-numeric: tabular-nums; }
+    /* An item playing (▶ Start item): its ■ Stop item green, as a cue's output menu while it plays. Still
+       playing after another item started: it flashes, with its playing cues' ■ (all rebuilt at once: in step) */
+    button.runon { color: var(--ok); border-color: var(--ok); }
+    button.fading, button.runon.fading { background: #9a5200; border-color: #c87a20; color: #fff; }   /* ■ held: fading (the deck's orange) */
+    @keyframes po-flash { 0%, 49.9% { background: var(--ok); border-color: var(--ok); color: #000; } 50%, 100% { background: #222; border-color: var(--ok); color: var(--ok); } }
+    button.superseded { animation: po-flash .4s infinite; opacity: 1; font-weight: bold; }
+    @media (prefers-reduced-motion: reduce) { button.superseded { animation: none; background: var(--ok); border-color: var(--ok); color: #000; } }
     .ihead { display: flex; gap: 10px; align-items: baseline; }
     .iname { font-weight: bold; color: #fff; flex: 1; }
     .idur { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+    .istart { color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; flex: none; }   /* its start: planned, ≈ expected, or when it started */
+    .istart.late { color: var(--warn); }
+    .iclock, .cues .cclock { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }   /* when its audio ends */
+    .iclock.live, .cues .cclock.live { color: var(--ok); }
+    /* Top right, not scrolled: the level box (always, once there are cues), and under it what the audio playing has left */
+    #topright { position: fixed; top: 10px; right: max(10px, env(safe-area-inset-right)); z-index: 20; display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+      max-width: min(40vw, 320px); pointer-events: none; }
+    @media (max-width: 1400px) { main > h1, main > p.sub { margin-right: 190px; } }   /* (clear of it) */
+    #bigclock { display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+      background: rgba(10, 30, 14, .92); border: 1px solid var(--ok); border-radius: 8px; padding: 6px 12px; max-width: 100%; box-sizing: border-box; }
+    /* The level box (the owner, 13 Nov 2026): each output's level (its quietest cue) and the biggest cut. Click it when
+       the desk is set (with Automatic levels off, that applies a new level): neutral; set for nothing yet: amber;
+       the level changed since: flashing */
+    #levelbox { pointer-events: auto; font: inherit; text-align: right; cursor: pointer; border-radius: 8px; padding: 6px 12px; max-width: 100%; box-sizing: border-box;
+      background: rgba(21, 21, 21, .94); border: 1px solid var(--line); color: var(--text); display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+    #levelbox .lb-row { display: flex; gap: 8px; align-items: baseline; justify-content: flex-end; white-space: nowrap; }
+    #levelbox .lb-name { font-size: 12px; color: var(--dim); }
+    #levelbox .lb-lufs { font: bold 20px/1.1 "Helvetica Neue", Arial, sans-serif; font-variant-numeric: tabular-nums; }
+    #levelbox .lb-lufs small { font-size: 11px; font-weight: normal; }
+    #levelbox .lb-cut { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+    #levelbox .lb-trim { font-size: 13px; font-weight: bold; font-variant-numeric: tabular-nums; }   /* what to set the desk's digital trim to */
+    #levelbox .lb-say { font-size: 12px; }
+    #levelbox.lb-ok .lb-say { color: var(--dim); }
+    #levelbox.lb-unset { border-color: var(--warn); }
+    #levelbox.lb-unset .lb-say { color: var(--warn); }
+    #levelbox.lb-flash { animation: lb-flash .5s steps(1, end) infinite; border-color: #ffcc00; }
+    #levelbox.lb-flash .lb-name, #levelbox.lb-flash .lb-cut { color: inherit; }
+    @keyframes lb-flash { 0% { background: #ffcc00; color: #000; } 50% { background: #c0102a; color: #fff; } }
+    @media (prefers-reduced-motion: reduce) { #levelbox.lb-flash { animation: none; background: #ffcc00; color: #000; } }
+    #levelbox:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #bc-left { font: bold 30px/1 "Helvetica Neue", Arial, sans-serif; color: var(--ok); font-variant-numeric: tabular-nums; }
+    #bc-left::before { content: "♪ "; font-size: 20px; }
+    #bc-what { font-size: 12px; color: var(--text); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .itag { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+    /* An item's own text (✎ on an item): the first line in place of its name, the rest as notes */
+    .inotes { white-space: pre-wrap; overflow-wrap: anywhere; color: #f0e2a8; font-size: 14px; margin: 2px 0 0; }
+    #items > li.done .inotes { color: var(--dim); }
+    .irenamed { color: var(--warn); font-size: 13px; margin: 2px 0 0; }
+    .irenamed b { color: var(--warn); }
+    form.iedit { margin: 6px 0 4px; }
+    form.iedit textarea { display: block; width: 100%; field-sizing: content; min-height: 2.1em; max-height: 50vh; resize: vertical;
+      font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 4px 6px; }
+    form.iedit textarea:focus { outline: none; border-color: var(--accent); }
+    form.iedit .row { margin-top: 6px; gap: 8px; }
     .cues { list-style: none; margin: 6px 0 0; padding: 0 0 0 14px; }
     .cues li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; padding: 2px 0; }
     .cues li > form.addcue { flex-basis: 100%; margin: 2px 0 4px 2em; }   /* ✎: when it plays */
     .cues .when { color: var(--dim); min-width: 11em; }
     .cues .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cues .clen { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .cues .clv { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 4.6em; cursor: default; }   /* its loudness: 🔉 measured, 🔈 quietest, 🔊 loudest */
+    .cues .clv.lo, .cues .clv.hi { color: var(--text); }
+    .cues .clv.wait { opacity: .45; }
+    .cues .clv.now { animation: po-pulse 1s ease-in-out infinite alternate; }
+    @keyframes po-pulse { from { opacity: 1; } to { opacity: .35; } }
+    @media (prefers-reduced-motion: reduce) { .cues .clv.now { animation: none; } }
+    #levelbox .lb-scan { display: block; font-size: 12px; opacity: .85; }
     .cues select.cout { flex: 0 1 auto; min-width: 0; max-width: 13em; font: inherit; font-size: 12px; background: #111; color: var(--dim); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
     .cues select.cout.own { color: var(--text); border-color: var(--accent); }   /* not the Show output */
     .cues select.cout.busy { opacity: 1; color: var(--ok); border-color: var(--ok); cursor: not-allowed; }   /* in use: locked until it ends */
@@ -68,11 +144,38 @@
     form.addcue select, form.addcue input[type=text] { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 3px 6px; }
     form.addcue input[type=text] { width: 5.5em; }
 
+    /* Stream Deck: the soundboard (playout-deck.js) and the same keys on the page (virtual-deck.js) */
+    #phonebox { margin: 8px 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #111; }
+    #ph-qr { display: inline-block; background: #fff; padding: 10px; border-radius: 6px; line-height: 0; }
+    #ph-note { margin: 6px 0; }
+    .ph-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 3px 0; font-size: 14px; }
+    .ph-row .ok { color: var(--ok); }
+    .ph-pin { width: 4.2em; font: 18px/1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .15em; text-align: center; background: #000; color: #fff; border: 1px solid var(--accent); border-radius: 5px; padding: 3px; }
+    .dk-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 3px 0; font-size: 14px; }
+    .dk-name { flex: 1 1 14em; }
+    .dk-state { color: var(--dim); font-size: 13px; }
+    .dk-state.ok { color: var(--ok); } .dk-state.bad { color: var(--bad); }
+    #deckxfades { width: 4.5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    label.check.xf { display: inline-flex; }
+    #deckfade { width: 4.5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    #deckmodel { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    #vdecks { margin-top: 10px; user-select: none; }
+    .vd-page + .vd-page { margin-top: 12px; }
+    .vd-keys { display: grid; grid-template-columns: repeat(var(--cols, 5), var(--key, 40px)); grid-auto-rows: var(--key, 40px);
+      column-gap: var(--col-gap, 6px); row-gap: var(--row-gap, 6px); touch-action: none; }
+    .vd-keys canvas { width: var(--key, 40px); height: var(--key, 40px); border-radius: 14%; display: block; cursor: pointer; transition: transform .06s; }
+    .vd-keys canvas.down { transform: scale(0.92); }
+    .vd-keys canvas.idle { cursor: default; }
+    #vdecks.arranging canvas { cursor: grab; outline: 1px dashed #444; outline-offset: 2px; }
+    #vdecks.arranging canvas.drop, #vdecks canvas.drop { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #vdecks canvas.nodrop { outline: 2px solid var(--bad); outline-offset: 2px; }
+
     /* Random stings (under the run sheet) */
     #rollpanel { color: var(--text); font-size: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
     #rollpanel summary { color: var(--dim); cursor: pointer; }
     #rollpanel > * + * { margin-top: 6px; }
     #rollpanel input[type=checkbox] { width: auto; padding: 0; }   /* (not the pairing server box's: details input) */
+    .roll-stylehead { margin-bottom: 4px; }
     #rollpanel input[type=number] { width: 4.5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
     #rollpanel select { font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
     #rollpanel input:disabled { opacity: .4; }
@@ -82,10 +185,13 @@
     .lvsec { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
     #levels { margin-top: 8px; }
     .lv-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 4px 0; font-size: 14px; }
+    .lvsec.waiting { background: rgba(255, 204, 51, .08); border: 1px solid var(--warn); border-radius: 8px; padding: 12px; }   /* Automatic levels off, a new level waiting */
+    .lv-row.waiting .lv-note { color: var(--warn); }
+    .lv-trim input { width: 5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
+    .lv-console { font-weight: bold; font-variant-numeric: tabular-nums; }
     .lv-what { flex: 0 0 13em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .lv-what.own { color: var(--accent); }   /* a cue's own sound card */
-    .lv-num input { width: 5em; font: inherit; background: #111; color: var(--text); border: 1px solid #333; border-radius: 4px; padding: 2px 4px; }
-    .lv-num input:disabled { opacity: .4; }
+    .lv-trim input:disabled { opacity: .4; }
     .lv-note { font-size: 12px; flex: 1 1 14em; }
 
     /* Output: video cues play here (full screen it, or capture this window into the vision mixer) */
@@ -104,9 +210,20 @@
   </style>
 </head>
 <body>
+  <div id="sbdrop" hidden><span>Drop to add an item for each audio or video file (folders too)</span></div>
+  <div id="topright">
+    <button type="button" id="levelbox" hidden></button>
+    <div id="bigclock" hidden title="What the audio playing has left (the one that ends last)"><span id="bc-left"></span><span id="bc-what"></span></div>
+  </div>
   <main>
     <h1>Playout</h1>
     <p class="sub">Plays your own audio and video as the timer's run sheet moves on: at an item's start, when its time is up, or at a time into it. Everything plays on this computer; the timer only starts the items.</p>
+
+    <section id="othertab" class="card center" hidden>
+      <p id="othertabtext" style="font-size:18px">Playout is running in another tab of this browser.</p>
+      <p class="hint">One tab at a time: they would share the sound cards and the Stream Decks. This one takes over by itself when that tab closes.</p>
+      <button id="othertake" class="primary">Use this tab instead</button>
+    </section>
 
     <section id="enter" class="card center" hidden>
       <p>On the timer, open <b>share</b> and click <b>Pair a computer</b>. Type the 6-digit code it shows:</p>
@@ -115,7 +232,7 @@
       <details><summary>Pairing server</summary>
         <input id="server" spellcheck="false" aria-label="Pairing server address">
       </details>
-      <p class="hint" style="margin-top:14px">No timer to hand? <button id="trydemo" class="small" type="button">Try the demo</button></p>
+      <p class="hint" style="margin-top:14px">No timer to hand? <button id="trydemo" class="small" type="button">Try the demo</button> or use it on its own: <button id="trysb" class="small" type="button" title="Your own list of items and their audio or video, with the Stream Deck keys: no timer needed">Soundboard mode</button></p>
     </section>
 
     <section id="paired" hidden>
@@ -124,6 +241,33 @@
           <span><b>Demo</b> · ten made-up speakers, 20 minutes each, and no timer. Add cues with <b>+ cue</b>, then start an item with <b>▶ Start item</b> or play a cue with ▶.</span>
           <span class="row"><button id="demonames" class="small" title="Other names for the ten speakers (their cues stay)">New speakers</button><button id="demoleave" class="small">Leave the demo</button></span>
         </div>
+      </div>
+      <div id="sbbar" class="card" hidden>
+        <div class="row" style="justify-content:space-between">
+          <span><b>Soundboard</b> · start an item with <b>▶ Start item</b> or its key, or play a cue with ▶.</span>
+          <span class="row"><button id="sb-save" class="small" title="Save this soundboard to a file: its items, their cues’ settings, notes and the keys’ arrangement (not the audio and video files themselves)">Save…</button><button id="sb-load" class="small" title="Open a soundboard saved with Save… (it replaces this one)">Load…</button><button id="sb-clear" class="small" title="Every item, its cues and the extra keys go, with their files">Clear run sheet…</button><button id="sb-leave" class="small">Leave soundboard mode</button></span>
+        </div>
+        <form id="sb-addform" class="row" style="margin-top:10px">
+          <input id="sb-name" placeholder="Name" maxlength="200" aria-label="The item’s name" autocomplete="off">
+          <input id="sb-len" placeholder="20:00" size="8" aria-label="Its length" title="Its length: minutes (5), m:ss (3:30), h:mm:ss, or 90s / 3m (20 minutes if left empty)" autocomplete="off">
+          <button class="small primary" id="sb-add">+ Add item</button>
+          <button type="button" class="small" id="sb-pastebtn">Paste a list…</button>
+          <span class="hint">or drop a folder of audio or video files anywhere on this page</span>
+        </form>
+        <div class="row" id="sb-flowrow" style="margin-top:10px">
+          <button type="button" class="small chip" id="sb-flow" aria-pressed="false">Playlist flow</button>
+          <button type="button" class="small chip" id="sb-shuffle" aria-pressed="false" title="In a random order: each item once, then (with 🔁 Loop) a new round">🔀 Shuffle</button>
+          <button type="button" class="small chip" id="sb-loop" aria-pressed="false" title="After the last item, the first again (shuffled: a new round)">🔁 Loop</button>
+          <button type="button" class="small chip" id="sb-minimal" aria-pressed="false" title="Only the items, without their cues">Minimal run sheet view</button>
+          <span class="hint" id="sb-flowhint">plays the items one after another in this order, each crossfading into the next over 5 s; starting another item carries on from there.</span>
+        </div>
+        <div id="sb-pastebox" hidden>
+          <textarea id="sb-paste" rows="6" spellcheck="false" placeholder="One item per line: its name, then its length if you like&#10;Welcome, 5&#10;Keynote	45&#10;Walk-on music 3:30"></textarea>
+          <div class="row"><button type="button" class="small primary" id="sb-pasteok">Add these</button><button type="button" class="small" id="sb-pastecancel">Cancel</button><span class="hint" id="sb-pastenote"></span></div>
+        </div>
+        <p id="sb-missing" class="warn" hidden><span id="sb-missingtext"></span> <button type="button" class="small" id="sb-find" title="Choose a folder: the files are matched by name and size">Find files…</button></p>
+        <input type="file" id="sb-file" accept=".json,application/json" hidden>
+        <input type="file" id="sb-folder" webkitdirectory multiple hidden>
       </div>
       <div id="pinwait" class="card center" hidden>
         <p id="pinmsg">The timer asks who this is. Tell the person at the timer this number (or read it to them over the phone). One wrong try disconnects this computer.</p>
@@ -135,7 +279,7 @@
           <label class="check"><input type="checkbox" id="follow" checked> Follow the timer</label>
           <span id="follow-note" class="hint">Cues play by themselves as the run sheet moves on. Off: they only play when you press ▶.</span>
           <button id="fadeall" class="small" title="Everything playing fades out over 3 seconds">Fade out (Esc)</button>
-          <button id="stopall" class="small">■ Stop all</button>
+          <button id="stopall" class="small" title="Click: everything stops; hold: it fades, and stops where you let go">■ Stop all</button>
         </div>
       </div>
       <div class="card">
@@ -150,10 +294,34 @@
           <div><label class="check"><input type="checkbox" id="roll-mine"> My clips <span class="hint">(your edits stand in for the tracks they came from)</span></label></div>
           <div class="row"><label>Items of at least <input type="number" id="roll-min" min="0" max="600" step="0.5"> min</label></div>
           <div class="row"><label>Stings <select id="roll-lenop"><option value="">of any length</option><option value="max">no longer than</option><option value="min">at least</option></select> <input type="number" id="roll-len" min="1" max="3600" step="1"> s</label></div>
+          <div id="roll-stylerow" hidden><div class="roll-stylehead">Only these styles <span class="hint">(any of the ones lit; none lit: any style)</span></div><div id="roll-chips"></div><div class="hint" id="roll-stylehint"></div><div class="hint" id="roll-listen"></div></div>
           <div class="row"><button id="roll-all" class="small primary">🎲 Roll stings</button><button id="roll-clear" class="small">Remove rolled stings</button></div>
           <p class="hint" id="roll-msg"></p>
         </details>
         <input type="file" id="cuefile" accept="audio/*,video/*" hidden>
+      </div>
+      <div class="card" id="deckcard">
+        <div class="row" style="justify-content:space-between"><b>Stream Deck</b><span class="row"><button id="phoneshow" class="small" title="These keys on a phone: scan a code with its camera">Show on a phone…</button><button id="deckconnect" class="small" title="Choose a deck in the browser’s list: it’s used here (quit the Elgato Stream Deck app first)">Connect a deck…</button></span></div>
+        <div id="phonebox" hidden>
+          <div id="ph-qr" hidden></div>
+          <p id="ph-note" class="hint"></p>
+          <div id="ph-pending"></div>
+          <div id="ph-list"></div>
+          <div class="row"><button id="ph-again" class="small">Show the code again</button><button id="ph-new" class="small" title="Signs every phone out: the code shown before stops working">New code</button><button id="ph-stop" class="small" title="Phones lose these keys until Show on a phone… again">Stop sharing</button></div>
+        </div>
+        <p class="hint" style="margin:4px 0 6px">A key for each item with cues. <span class="t-only">With <b>Follow the timer</b> off, press</span><span class="b-only">Press</span> one to start its item (as ▶ Start item). On an item that’s playing, a tap stops it and holding the key fades it out over <input type="number" id="deckfade" min="0.2" max="10" step="0.1" aria-label="Fade seconds"> s (let go to stop it there). The last key does the same for everything; ◀ ▶ turn the page.<span class="t-only"> With Follow on, the keys show the run sheet and only stop or fade.</span> <label class="check xf"><input type="checkbox" id="deckxfade"> <b>Crossfade on release</b></label>: a key that starts something while others play fades them out over <input type="number" id="deckxfades" min="0.2" max="20" step="0.5" aria-label="Crossfade seconds"> s from the moment you let it go.
+          <b>Extra keys:</b> drop audio or video files from your computer onto an empty key below (several fill the keys after it), for anything that isn’t on the run sheet: they play when pressed<span class="t-only">, Follow or not</span>. <b>+ Page</b> adds a page of empty keys.</p>
+        <div id="decklist"></div>
+        <div class="row" style="margin-top:8px">
+          <label>On screen <select id="deckmodel" aria-label="Deck size on screen"><option value="mini">Stream Deck Mini</option><option value="mk2">Stream Deck MK.2</option><option value="xl">Stream Deck XL</option><option value="custom">Custom size…</option></select></label>
+          <button id="deckfull" class="small" title="Just the keys, on the whole screen (a tablet or a touch screen as the soundboard): Esc to come back" hidden>⛶ Full screen</button>
+          <button id="deckarrange" class="small" title="Every page of keys: drag a key onto another to swap them (kept for this size of deck)">Arrange keys</button>
+          <button id="deckorder" class="small" title="Forget the arrangement: keys in run sheet order again">Run sheet order</button>
+          <button id="deckaddpage" class="small" title="A page of empty keys at the end (for this size of deck), to drop files on">+ Page</button>
+          <button id="deckdelpage" class="small" title="Remove the last page (only when it’s empty)">− Page</button>
+        </div>
+        <div id="vdecks"></div>
+        <ul id="boardlist"></ul>
       </div>
       <div class="card">
         <div class="row" style="justify-content:space-between;margin-bottom:8px"><b>Output</b><span class="row"><button id="ext" class="small">To external monitor</button><button id="full" class="small">Full screen (F)</button></span></div>
@@ -171,21 +339,29 @@
           <span class="hint">Off: while an item runs from ▶ Start item, its own cues’ ▶ and ■ are locked (■ Stop item stops them). On: for rehearsals, every cue stays in your hands.</span>
         </div>
         <div class="lvsec">
-          <b>Levels</b> <span class="hint">Each output turns its cues down to its own loudness, so one isn’t louder than the next: measured as they play, in LUFS (−23 is broadcast’s level, −14 a music service’s). Never turned up: a quieter cue plays as recorded. Off: every cue as recorded (a ✂ trim still applies). A change applies at once, to what’s playing too.</span>
+          <b>Levels</b> <span class="hint">Each output plays every cue as loud as its quietest one, so no cue is louder than the next: the louder ones are turned down to it (measured as they play, in LUFS; nothing is ever turned up). Off: every cue as recorded (a ✂ trim still applies). The level box (top right) shows it: set the desk (▶ Tone helps), then click the box; it flashes when the level changes. <b>Console trim</b> = the LUFS trim offset − the level: set the offset once so it reads what your desk's digital trim sounds right at, and from then on set the desk's trim to it when the level changes. No trim on the channel? A compressor's makeup gain does the same, with the compressor itself out of the way (a 1:1 ratio, or a threshold it never reaches).</span>
+          <div class="row"><label class="check" title="On: a new level (a quieter cue added, or the quietest removed) is used at once, by what’s playing too. Off: it waits until you click the level box (or start ▶ Tone)"><input type="checkbox" id="lvauto" checked> Automatic levels</label>
+            <span class="hint" id="lvautonote"></span></div>
           <div id="levels"></div>
         </div>
       </div>
       <p class="hint" id="pairline">Paired with timer room <b id="room"></b>. <button id="unpair" class="small">Unpair this computer</button></p>
     </section>
   </main>
-  <script src="features.js?v=ee73e8c2"></script>
+  <script src="features.js?v=eac83447"></script>
   <script src="remote-peer.js?v=fd06de67"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="audio-out.js?v=e41c465e" data-role="both"></script>
-  <script src="sting-clip.js?v=8ab12ac7"></script>
-  <script src="sting-library.js?v=8c93912b"></script>
-  <script src="sting-picker.js?v=8b880b60"></script>
-  <script src="sting-roll.js?v=32454fa7"></script>
-  <script src="playout.js?v=a4d0ed4d"></script>
+  <script src="sting-clip.js?v=5056cf83"></script>
+  <script src="clip-words.js?v=eaa0957d"></script>
+  <script src="sting-library.js?v=db93145a"></script>
+  <script src="sting-picker.js?v=486056af"></script>
+  <script src="sting-styles.js?v=a7cb8fe0"></script>
+  <script src="sting-roll.js?v=08da6f76"></script>
+  <script src="deck-face.js?v=095d2354"></script>
+  <script src="virtual-deck.js?v=f112dd1e"></script>
+  <script src="deck-hid.js?v=90c43672"></script>
+  <script src="playout-deck.js?v=741c006a"></script>
+  <script src="playout.js?v=513c66b4"></script>
 </body>
 </html>

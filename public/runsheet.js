@@ -969,8 +969,25 @@
 
   // sheetChanged(): the sheet in localStorage was rewritten by this window (the remote editor,
   // remote-control.js); the storage event that the editor window's writes give doesn't fire then.
+  // Each item's start, for the playout computers' feed (remote-control.js playoutData; the owner, 13 Nov 2026:
+  // the start on their keys): planned (s; none for a sheet without times before its first Next), expected
+  // (x: from the item running now, projections(); to the minute, and only when it isn't the planned one) and
+  // actual (a: the log), as times on the timer's clock (ms). Steady: a list only changes with the show.
+  function times() {
+    const out = {}, proj = projections(), started = new Map();
+    state.log.forEach(e => { if (e.id !== 'end') started.set(e.id, e.actual); });
+    norm.items.forEach((it, i) => {
+      if (it.hidden || i === norm.endIdx) return;
+      const r = {}, s = plannedStartMs(i), x = proj && i > state.index ? proj.get(i) : null;
+      if (s != null) r.s = s;
+      if (x != null && (s == null || Math.abs(x - s) >= 60000)) r.x = Math.round(x / 60000) * 60000;
+      if (started.has(it.id)) r.a = started.get(it.id);
+      if (r.s != null || r.x != null || r.a != null) out[it.id] = r;
+    });
+    return out;
+  }
   window.runsheet = { next, back, goTo, reset: resetShow, setActive, announce: f => announce(f), open: openEditor, openWindow, isActive, sheetChanged: onSheetChanged, flash, restart: restartCountdown,
-    curDuration, curEnd, liveName, standbyStart, setAutostart, startShifted, shiftPolicy };
+    curDuration, curEnd, liveName, standbyStart, setAutostart, startShifted, shiftPolicy, times };
   // The dashboard's "Auto start at …" box; blurred after a click so Space goes back to the timer
   if ($('rs_auto')) $('rs_auto').addEventListener('change', e => { setAutostart(e.target.checked); e.target.blur(); });
 

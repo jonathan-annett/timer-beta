@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLAP Clip Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: two panes. Left: library, free-text search and ranked results. Right: the selected clip
+   (player, match timeline, auto-tags, similar clips). Stacks to one column on phones. */
+:root {
+  --bg: #edf1f1;
+  --panel: #ffffff;
+  --ink: #142124;
+  --muted: #586b70;
+  --line: #d3dcdd;
+  --accent: #0f7f86;       /* teal: sets this demo apart from the Discogs one */
+  --accent-ink: #ffffff;
+  --accent-soft: #d7eced;
+  --bar: #2d4f73;
+  --bar-track: #e1e8e9;
+  --ok: #2f7d4f;
+  --warn: #a15c00;
+  --bad: #b23a2e;
+  --font-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101718; --panel: #172123; --ink: #e5eeef; --muted: #96aaae; --line: #2a3a3d;
+    --accent: #3fb8bf; --accent-ink: #082224; --accent-soft: #163c3f; --bar: #7fa6d6; --bar-track: #233135;
+    --ok: #6cc290; --warn: #e2a24d; --bad: #ef7a6c; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 40px;
+}
+[hidden] { display: none !important; }
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+h1 { font-family: var(--font-display); font-stretch: 78%; font-weight: 800; font-size: clamp(30px, 5vw, 44px); line-height: 1; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h1 span { color: var(--accent); }
+.sub { margin: 6px 0 0; color: var(--muted); max-width: 64ch; }
+.head-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.status { display: flex; align-items: center; gap: 8px; font-family: var(--font-data); font-size: 12.5px; color: var(--muted); padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); max-width: 100%; }
+.status span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex: none; }
+.status.ready .dot { background: var(--ok); }
+.status.error .dot { background: var(--bad); }
+
+.settings { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 13px; color: var(--muted); justify-content: flex-end; }
+.settings label { display: flex; align-items: center; gap: 6px; }
+.settings select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; max-width: 100%; }
+.settings select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.grid { display: grid; grid-template-columns: minmax(0, 370px) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 840px) { .grid { grid-template-columns: minmax(0, 1fr); } .head-right { align-items: flex-start; } .settings { justify-content: flex-start; } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.label { font-family: var(--font-display); font-stretch: 90%; font-weight: 700; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+
+.drop { border: 2px dashed var(--line); border-radius: 8px; padding: 20px 16px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.drop:hover, .drop:focus-visible, .drop.over { border-color: var(--accent); background: var(--accent-soft); outline: none; }
+.drop strong { font-family: var(--font-display); font-stretch: 85%; font-size: 19px; font-weight: 700; }
+.drop small { color: var(--muted); }
+.drop input { display: none; }
+
+.search { display: flex; flex-direction: column; gap: 8px; }
+.search input { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--ink); }
+.search input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.suggest { display: flex; flex-wrap: wrap; gap: 6px; }
+.suggest button { font: inherit; font-size: 12.5px; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+.suggest button:hover { border-color: var(--accent); }
+.suggest button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 0; }
+
+.lib { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lib button { width: 100%; text-align: left; font: inherit; color: inherit; background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; }
+.lib button:hover { border-color: var(--muted); }
+.lib button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lib button[aria-current="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.lib .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib .meta { font-family: var(--font-data); font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.lib .meta b { color: var(--accent); font-weight: 500; }
+.lib .tags { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib .rank { grid-column: 1 / -1; height: 4px; background: var(--bar-track); border-radius: 2px; overflow: hidden; }
+.lib .rank div { height: 100%; background: var(--accent); }
+.lib .busy { color: var(--warn); }
+.empty { color: var(--muted); font-size: 13.5px; margin: 0; }
+
+.track-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; align-items: baseline; }
+.track-head h2 { font-family: var(--font-display); font-stretch: 82%; font-weight: 700; font-size: 26px; line-height: 1.15; margin: 0; overflow-wrap: anywhere; min-width: 0; }
+.track-head .meta { font-family: var(--font-data); font-size: 12.5px; color: var(--muted); }
+
+.player { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.play { width: 42px; height: 42px; border-radius: 50%; border: none; background: var(--accent); color: var(--accent-ink); cursor: pointer; display: grid; place-items: center; flex: none; }
+.play:hover { filter: brightness(1.08); }
+.play:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.play:disabled { opacity: .5; cursor: wait; }
+.play svg { width: 16px; height: 16px; fill: currentColor; }
+.ptime { font-family: var(--font-data); font-size: 13px; font-variant-numeric: tabular-nums; }
+.jump { font: inherit; font-size: 13px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+.jump:hover { border-color: var(--accent); }
+.jump:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.timeline { display: flex; flex-direction: column; gap: 8px; }
+.tl-wrap { display: grid; grid-template-columns: minmax(90px, 190px) minmax(0, 1fr); gap: 6px 10px; align-items: stretch; }
+.tl-labels { display: flex; flex-direction: column; }
+.tl-labels div { height: 24px; font-size: 12px; line-height: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.tl-labels div.q { color: var(--ink); font-weight: 600; }
+.tl-canvas { position: relative; cursor: pointer; min-width: 0; }
+canvas { width: 100%; display: block; border-radius: 4px; }
+.playhead { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink); border-radius: 1px; pointer-events: none; left: 0; }
+.axis { display: flex; justify-content: space-between; font-family: var(--font-data); font-size: 11px; color: var(--muted); grid-column: 2; }
+
+.cats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 18px; }
+.bars { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) 46px; gap: 3px 10px; align-items: center; }
+.row .txt { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .val { font-family: var(--font-data); font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.row .track { grid-column: 1 / -1; height: 6px; background: var(--bar-track); border-radius: 3px; overflow: hidden; }
+.row .fill { height: 100%; background: var(--bar); border-radius: 3px; }
+.row.top .fill { background: var(--accent); }
+.row.top .val { color: var(--ink); }
+
+.sim { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sim button { width: 100%; font: inherit; color: inherit; background: transparent; border: none; border-bottom: 1px solid var(--line); padding: 6px 0; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; text-align: left; }
+.sim button:hover .n { color: var(--accent); }
+.sim button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sim .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sim .v { font-family: var(--font-data); font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.progress { display: flex; flex-direction: column; gap: 6px; }
+.progress .track { height: 6px; background: var(--bar-track); border-radius: 3px; overflow: hidden; }
+.progress .fill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.progress p { margin: 0; font-family: var(--font-data); font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.howto div { border-top: 2px solid var(--line); padding-top: 10px; }
+.howto h3 { margin: 0 0 4px; font-family: var(--font-display); font-stretch: 85%; font-size: 16px; }
+.howto p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.note { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-size: 13.5px; color: var(--muted); background: var(--bg); }
+.note b { color: var(--ink); font-weight: 600; }
+.note code { font-family: var(--font-data); font-size: 12.5px; color: var(--ink); }
+
+footer { color: var(--muted); font-size: 12.5px; max-width: 92ch; }
+footer a { color: inherit; }
+.err { color: var(--bad); font-size: 13.5px; margin: 0; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>CLAP Clip <span>Search</span></h1>
+      <p class="sub">Drop audio clips to embed them with CLAP, then search them with any description: a genre, a mood, an instrument or a sound effect. Everything runs in your browser; clips are never uploaded.</p>
+    </div>
+    <div class="head-right">
+      <div class="status" id="status" role="status"><span class="dot"></span><span id="statusText">Starting…</span></div>
+      <div class="settings">
+        <label for="modelSel">Model
+          <select id="modelSel">
+            <option value="Xenova/larger_clap_music_and_speech">LAION CLAP, music + speech</option>
+            <option value="Xenova/clap-htsat-unfused">LAION CLAP, general sounds</option>
+          </select>
+        </label>
+        <label for="runSel">Run on
+          <select id="runSel">
+            <option value="wasm:q8">CPU, 8-bit (smaller download)</option>
+            <option value="webgpu:fp32">GPU, WebGPU (faster, bigger download)</option>
+          </select>
+        </label>
+        <label for="segSel">Per clip
+          <select id="segSel">
+            <option value="6">6 windows (fast)</option>
+            <option value="12" selected>12 windows</option>
+            <option value="60">Every 10 s (thorough)</option>
+          </select>
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="panel" aria-label="Library and search">
+      <label class="drop" id="drop" tabindex="0">
+        <strong>Drop audio files here</strong>
+        <small>MP3, WAV, M4A, OGG or FLAC · or click to choose · several at once is fine</small>
+        <input type="file" id="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.flac" multiple>
+      </label>
+      <div class="progress" id="progress" hidden>
+        <div class="track"><div class="fill" id="progFill"></div></div>
+        <p id="progText">Working…</p>
+      </div>
+      <div class="search">
+        <p class="label"><label for="q">Describe what you want</label></p>
+        <input id="q" type="search" placeholder="e.g. tense suspense sting, upbeat disco, applause" autocomplete="off">
+        <div class="suggest" id="suggest"></div>
+        <p class="hint">Any wording works. Scores are cosine similarity: compare them within one search, not between searches.</p>
+      </div>
+      <p class="label" id="libLabel">Clips (0)</p>
+      <ul class="lib" id="lib"></ul>
+      <p class="empty" id="libEmpty">Nothing analysed yet. Clips stay in this tab only.</p>
+    </section>
+
+    <section class="panel" id="detail" aria-live="polite"></section>
+  </div>
+
+  <footer>
+    Built on <a href="https://huggingface.co/docs/transformers.js" target="_blank" rel="noopener">Transformers.js</a> running LAION's <a href="https://github.com/LAION-AI/CLAP" target="_blank" rel="noopener">CLAP</a> models (ONNX conversions by Xenova). The model files come from Hugging Face on first use, then the browser caches them. Each clip is resampled to 48 kHz mono and embedded in 10-second windows; the clip's embedding is the normalised mean of its windows. If the page stays on "Starting…" when opened straight from disk, serve the folder instead, for example with <code>python3 -m http.server</code>, and open <code>http://localhost:8000</code>. LAION-CLAP code and weights are released under permissive terms (Apache-2.0 / CC0); check the model cards before shipping.
+  </footer>
+</div>
+
+<!-- ======================================================================================
+     CLAP WORKER (module worker, started from a Blob by the main script)
+     Owns the models. One message type per job; replies carry the same `id`.
+       → {type:'load', model, device, dtype}          ← {type:'load-progress', loaded, total} … {type:'ready'} | {type:'error', id:'load', message}
+       → {type:'audio', id, segments: Float32Array[]} ← {type:'audio-progress', id, done, total} … {type:'audio', id, embeds: Float32Array(n*512)}
+       → {type:'text', id, texts: string[]}           ← {type:'text', id, embeds: Float32Array(n*512)}
+     All embeddings are returned L2-normalised, so cosine similarity = dot product.
+     ====================================================================================== -->
+<script type="text/plain" id="worker-src">
+import { env, AutoTokenizer, AutoFeatureExtractor, ClapTextModelWithProjection, ClapAudioModelWithProjection }
+  from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/dist/transformers.min.js';
+
+env.allowLocalModels = false;            // always fetch from the Hugging Face Hub (then browser cache)
+
+let M = null;                            // { tok, fe, text, audio, dim }
+// Separate queues for the two models so a text search isn't stuck behind a long audio job.
+let audioQ = Promise.resolve(), textQ = Promise.resolve();
+
+function l2(v, off, dim) {
+  let s = 0; for (let i = 0; i < dim; i++) s += v[off + i] * v[off + i];
+  s = Math.sqrt(s) || 1; for (let i = 0; i < dim; i++) v[off + i] /= s;
+}
+
+async function load({ model, device, dtype }) {
+  const files = new Map();
+  const progress = p => {
+    if (p.status === 'progress' && p.total) {
+      files.set(p.file + '|' + p.name, [p.loaded, p.total]);
+      let l = 0, t = 0; for (const [a, b] of files.values()) { l += a; t += b; }
+      postMessage({ type: 'load-progress', loaded: l, total: t });
+    }
+  };
+  const opts = { device, dtype, progress_callback: progress };
+  const [tok, fe, text, audio] = await Promise.all([
+    AutoTokenizer.from_pretrained(model, { progress_callback: progress }),
+    AutoFeatureExtractor.from_pretrained(model, { progress_callback: progress }),
+    ClapTextModelWithProjection.from_pretrained(model, opts),
+    ClapAudioModelWithProjection.from_pretrained(model, opts),
+  ]);
+  // Transformers.js 3.x doesn't implement CLAP's "fusion" truncation and throws on it, even for
+  // audio that needs no truncating. We only ever pass windows of <= 10 s, so no truncation happens
+  // and "rand_trunc" is exactly equivalent to non-fused inference.
+  fe.config.truncation = 'rand_trunc';
+  M = { tok, fe, text, audio, dim: 0 };
+  postMessage({ type: 'ready' });
+}
+
+async function embedAudio({ id, segments }) {
+  let out = null, dim = 0;
+  for (let k = 0; k < segments.length; k++) {
+    const feats = await M.fe(segments[k]);                       // { input_features: [1, 1, 1001, 64] }
+    const { audio_embeds } = await M.audio(feats);               // [1, dim]
+    if (!out) { dim = audio_embeds.dims[1]; out = new Float32Array(segments.length * dim); }
+    out.set(audio_embeds.data, k * dim); l2(out, k * dim, dim);
+    postMessage({ type: 'audio-progress', id, done: k + 1, total: segments.length });
+  }
+  postMessage({ type: 'audio', id, embeds: out, dim }, [out.buffer]);
+}
+
+async function embedText({ id, texts }) {
+  const inputs = M.tok(texts, { padding: true, truncation: true });
+  const { text_embeds } = await M.text(inputs);                 // [n, dim]
+  const dim = text_embeds.dims[1], out = Float32Array.from(text_embeds.data);
+  for (let i = 0; i < texts.length; i++) l2(out, i * dim, dim);
+  postMessage({ type: 'text', id, embeds: out, dim }, [out.buffer]);
+}
+
+self.onmessage = e => {
+  const msg = e.data;
+  const fail = err => postMessage({ type: 'error', id: msg.id ?? msg.type, message: String(err && err.message || err) });
+  if (msg.type === 'load') load(msg).catch(fail);
+  else if (msg.type === 'audio') audioQ = audioQ.then(() => embedAudio(msg)).catch(fail);
+  else if (msg.type === 'text') textQ = textQ.then(() => embedText(msg)).catch(fail);
+};
+</script>
+
+<script>
+/* =====================================================================================
+   CLAP CLIP SEARCH: INTEGRATION GUIDE
+   =====================================================================================
+   What it does
+     Audio clip -> one 512-number CLAP embedding (plus one per 10 s window).
+     Text query -> one 512-number CLAP embedding, in the same space.
+     Search = rank clips by cosine similarity to the query (a dot product, since all
+     embeddings are L2-normalised). "More like this" = clip-to-clip similarity, same maths.
+     Auto-tags = similarity to a fixed list of descriptive phrases (zero-shot tagging).
+
+   Which parts to reuse
+     WORKER (the <script id="worker-src"> block): model loading and embedding. Self-contained.
+     CORE: AUDIO PREP   decodeTo48k(), windowStarts(), analyse()   (file -> track embedding)
+     CORE: SEARCH       embedTexts(), dot(), rankTracks(), windowScores()
+     VOCAB              the auto-tag phrase list; edit freely, it costs one text batch at startup.
+     PLAYBACK, RENDERING, EVENTS are demo UI.
+
+   Audio pipeline
+     1. Decode with Web Audio and resample to 48 kHz mono with OfflineAudioContext.
+     2. Cut 10 s windows (480 000 samples). Clips <= 10 s are one window; the feature
+        extractor fills the rest by repeating the clip ("repeatpad"), CLAP's training setup.
+        Longer clips get back-to-back windows, the last aligned to the end; if that is
+        more than the "Per clip" setting allows, the windows are spread evenly instead.
+     3. Each window -> ClapFeatureExtractor (64-band log-mel, 1001 frames) -> audio model
+        -> 512-d embedding, L2-normalised.
+     4. Clip embedding = mean of window embeddings, re-normalised.
+
+   Storage for a soundboard / clip database
+     Store the 512-d clip embedding per clip (2 KB as float32, 512 B as int8 if you quantise),
+     optionally the per-window embeddings if you want "jump to the matching part".
+     Search needs the text model at query time: run it in the browser (this worker) or
+     on a server. Ranking is brute-force dot products: fine to ~100k clips in JS; past
+     that, use a vector index (pgvector, Qdrant, sqlite-vec...).
+     Embeddings from different models are NOT comparable: store the model id with them
+     and re-embed everything if you switch.
+
+   Interpreting scores
+     Cosine similarities for CLAP typically fall around 0.0-0.5. They rank well within one
+     query, but the absolute value varies by query, so prefer "top N" over a fixed cut-off.
+     CLAP responds to descriptive phrases ("upbeat disco with funky bass") better than to
+     single words; it is weaker than a dedicated classifier on fine genre distinctions.
+
+   Model files and sizes (first load, then cached by the browser)
+     larger_clap_music, 8-bit: ~ 160 MB (text model ~125 MB, audio ~ 35 MB). The text model
+     is RoBERTa-base; if you only search on a server you can skip it in the browser.
+     Window cost on CPU (WASM, 8-bit): roughly 0.5-2 s per 10 s window on a laptop.
+   ===================================================================================== */
+(function () {
+  "use strict";
+  const SR = 48000, WIN = 10 * SR;   // fixed by CLAP's training
+
+  // ---------- VOCAB: zero-shot tag phrases, grouped for display ----------
+  // `p` is what CLAP sees; descriptive phrases work better than bare words.
+  const VOCAB = [
+    ["Genre", [
+      ["Rock", "rock music"], ["Hard rock / metal", "hard rock with heavy distorted guitars"], ["Punk", "fast punk rock"],
+      ["Pop", "catchy pop song"], ["Disco", "disco music with four on the floor beat"], ["Funk", "funk music with slap bass"],
+      ["Soul / R&B", "soul and r&b music"], ["Hip hop", "hip hop beat"], ["Jazz", "jazz music"], ["Blues", "blues music"],
+      ["Reggae", "reggae music with offbeat guitar"], ["Country", "country music"], ["Folk", "acoustic folk music"],
+      ["Classical", "classical orchestral music"], ["EDM", "electronic dance music"], ["House", "house music"],
+      ["Techno", "techno music"], ["Ambient", "ambient music"], ["Latin", "latin music"], ["Film score", "cinematic film score"]]],
+    ["Mood", [
+      ["Upbeat", "upbeat happy music"], ["Sad", "sad melancholic music"], ["Tense", "tense suspenseful music"],
+      ["Calm", "calm relaxing music"], ["Triumphant", "epic triumphant music"], ["Dark", "dark ominous music"],
+      ["Romantic", "romantic music"], ["Playful", "playful comedic music"], ["Energetic", "high energy music"],
+      ["Dreamy", "dreamy atmospheric music"]]],
+    ["Instruments", [
+      ["Piano", "solo piano"], ["Acoustic guitar", "acoustic guitar"], ["Electric guitar", "distorted electric guitar"],
+      ["Brass", "brass fanfare"], ["Strings", "string section"], ["Synth", "synthesizer"], ["Drums", "drum beat"],
+      ["Vocals", "singing vocals"], ["Choir", "choir"], ["Saxophone", "saxophone"]]],
+    ["Sound effects", [
+      ["Applause", "the sound of applause"], ["Cheering", "a crowd cheering"], ["Laughter", "people laughing"],
+      ["Whoosh", "a whoosh sound effect"], ["Explosion", "an explosion"], ["Drum roll", "a drum roll"],
+      ["Cymbal crash", "a cymbal crash"], ["Buzzer", "a game show buzzer"], ["Bell / chime", "a bell chime"],
+      ["Ticking clock", "a clock ticking"], ["Speech", "a person speaking"], ["Silence", "silence"]]],
+  ];
+  const TAGS = [];                       // flat list: { cat, label, p }
+  VOCAB.forEach(function (c) { c[1].forEach(function (t) { TAGS.push({ cat: c[0], label: t[0], p: t[1] }); }); });
+  const SUGGEST = ["tense suspense sting", "upbeat disco", "hard rock guitar riff", "applause", "smooth jazz with saxophone", "sad piano", "game show fanfare", "whoosh"];
+
+  const $ = function (id) { return document.getElementById(id); };
+  const state = { tracks: [], selected: null, query: "", qEmbed: null, ready: false, tagEmbeds: null, dim: 512 };
+  const queue = []; let busy = false;
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function fmtTime(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
+  function setStatus(text, cls) { $("statusText").textContent = text; $("status").className = "status" + (cls ? " " + cls : ""); }
+  function setProgress(frac, text) { $("progress").hidden = false; $("progFill").style.width = Math.round(frac * 100) + "%"; $("progText").textContent = text; }
+  function mb(n) { return (n / 1048576).toFixed(0); }
+
+  // ---------- WORKER BRIDGE ----------
+  let worker = null, nextId = 1;
+  const pending = new Map();             // id -> { resolve, reject, onProgress }
+  function startWorker() {
+    if (worker) worker.terminate();
+    pending.forEach(function (p) { p.reject(new Error("Model was switched")); }); pending.clear();
+    const url = URL.createObjectURL(new Blob([$("worker-src").textContent], { type: "text/javascript" }));
+    worker = new Worker(url, { type: "module" });
+    worker.onmessage = function (e) {
+      const m = e.data;
+      if (m.type === "load-progress") { setStatus("Downloading model " + mb(m.loaded) + " / " + mb(m.total) + " MB"); return; }
+      if (m.type === "ready") { onReady(); return; }
+      const p = pending.get(m.id);
+      if (m.type === "error") {
+        if (m.id === "load") { onLoadError(m.message); return; }
+        if (p) { pending.delete(m.id); p.reject(new Error(m.message)); }
+        return;
+      }
+      if (!p) return;
+      if (m.type === "audio-progress") { if (p.onProgress) p.onProgress(m.done, m.total); return; }
+      pending.delete(m.id); p.resolve(m);
+    };
+    worker.onerror = function (e) { onLoadError((e && e.message) || "The worker couldn't start. Serve this page over http(s) rather than opening the file directly."); };
+  }
+  function call(msg, transfer, onProgress) {
+    return new Promise(function (resolve, reject) {
+      const id = nextId++; msg.id = id;
+      pending.set(id, { resolve: resolve, reject: reject, onProgress: onProgress });
+      worker.postMessage(msg, transfer || []);
+    });
+  }
+  function loadModel() {
+    state.ready = false; state.tagEmbeds = null; state.qEmbed = null;
+    setStatus("Loading model…");
+    startWorker();
+    const run = $("runSel").value.split(":");
+    worker.postMessage({ type: "load", model: $("modelSel").value, device: run[0], dtype: run[1] });
+  }
+
+  // ---------- CORE: SEARCH ----------
+  // texts -> array of normalised Float32Array(dim)
+  async function embedTexts(texts) {
+    const r = await call({ type: "text", texts: texts });
+    const out = [];
+    for (let i = 0; i < texts.length; i++) out.push(r.embeds.subarray(i * r.dim, (i + 1) * r.dim));
+    return out;
+  }
+  function dot(a, b) { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; }
+  // Clips ranked by similarity to a query embedding: [{ t, score }], best first.
+  function rankTracks(q) {
+    return state.tracks.filter(function (t) { return t.embed; })
+      .map(function (t) { return { t: t, score: dot(t.embed, q) }; })
+      .sort(function (a, b) { return b.score - a.score; });
+  }
+  // Per-window similarity, for "where in the clip does it match".
+  function windowScores(t, q) { return t.windows.map(function (w) { return dot(w, q); }); }
+  function tagScores(t) { return TAGS.map(function (tag, i) { return { tag: tag, score: dot(t.embed, state.tagEmbeds[i]) }; }); }
+
+  // ---------- CORE: AUDIO PREP ----------
+  async function decodeTo48k(file) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    let ab;
+    try { ab = await ctx.decodeAudioData(await file.arrayBuffer()); } finally { try { ctx.close(); } catch (e) {} }
+    const len = Math.max(1, Math.ceil(ab.duration * SR));
+    const off = new OfflineAudioContext(1, len, SR);       // downmixes + resamples
+    const src = off.createBufferSource();
+    src.buffer = ab; src.connect(off.destination); src.start(0);
+    const out = await off.startRendering();
+    return { audio: out.getChannelData(0), duration: ab.duration };
+  }
+  // Start sample of each 10 s window. Back-to-back if they fit in `max`, else spread evenly.
+  function windowStarts(n, max) {
+    if (n <= WIN) return [0];
+    const need = Math.ceil(n / WIN), last = n - WIN, s = [];
+    if (need <= max) { for (let k = 0; k < need - 1; k++) s.push(k * WIN); s.push(last); return s; }
+    for (let k = 0; k < max; k++) s.push(Math.round(k * last / (max - 1)));
+    return s;
+  }
+  async function analyse(file, label) {
+    setProgress(0.03, "Decoding " + label);
+    const { audio, duration } = await decodeTo48k(file);
+    if (duration < 0.25) throw new Error("it's too short (under a quarter of a second).");
+    const starts = windowStarts(audio.length, parseInt($("segSel").value, 10));
+    const segs = starts.map(function (s) { return audio.slice(s, Math.min(audio.length, s + WIN)); });
+    const t0 = performance.now();
+    const r = await call({ type: "audio", segments: segs }, segs.map(function (s) { return s.buffer; }), function (done, total) {
+      setProgress(0.08 + 0.92 * done / total, "Embedding window " + done + "/" + total + " · " + label);
+    });
+    const dim = r.dim, windows = [], mean = new Float32Array(dim);
+    for (let k = 0; k < starts.length; k++) {
+      const w = r.embeds.subarray(k * dim, (k + 1) * dim); windows.push(w);
+      for (let i = 0; i < dim; i++) mean[i] += w[i];
+    }
+    let n = 0; for (let i = 0; i < dim; i++) n += mean[i] * mean[i]; n = Math.sqrt(n) || 1;
+    for (let i = 0; i < dim; i++) mean[i] /= n;
+    return {
+      embed: mean, windows: windows, duration: duration,
+      winStart: starts.map(function (s) { return s / SR; }), winLen: Math.min(10, duration),
+      secs: (performance.now() - t0) / 1000
+    };
+  }
+
+  // Demo queue: one file at a time.
+  async function pump() {
+    if (busy || !state.ready) return;
+    busy = true;
+    let i = 0;
+    while (queue.length) {
+      const t = queue.shift(); const total = i + queue.length + 1;
+      const label = (total > 1 ? "(" + (i + 1) + "/" + total + ") " : "") + t.name;
+      t.status = "busy"; renderLibrary();
+      try {
+        Object.assign(t, await analyse(t.file, label));
+        t.status = "done"; t.error = null;
+      } catch (e) {
+        if (!state.ready) { t.status = "queued"; if (queue.indexOf(t) < 0) queue.unshift(t); break; }   // model switched mid-job
+        console.error(e); t.status = "error"; t.error = "Couldn't analyse " + t.name + ": " + (e.message || e);
+      }
+      const sel = selectedTrack();
+      if (t.status === "done" && (!sel || sel.status !== "done")) state.selected = t.id;   // show the first finished clip
+      renderAll(); i++;
+    }
+    if (!queue.length) $("progress").hidden = true;
+    busy = false;
+  }
+  function addFiles(list) {
+    const files = Array.from(list || []).filter(function (f) { return /^audio\//.test(f.type) || /\.(mp3|wav|m4a|aac|ogg|oga|flac|opus)$/i.test(f.name); });
+    if (!files.length) { showError("Those files don't look like audio. Drop MP3, WAV, M4A, OGG or FLAC."); return; }
+    files.forEach(function (f) {
+      const t = { id: Math.random().toString(36).slice(2), file: f, name: f.name, status: "queued", embed: null };
+      state.tracks.unshift(t); queue.push(t);
+    });
+    if (!state.selected) state.selected = state.tracks[0].id;
+    if (!state.ready) setProgress(0, "Queued " + queue.length + " file(s) · waiting for the model");
+    renderAll(); pump();
+  }
+
+  // ---------- model lifecycle ----------
+  async function onReady() {
+    try {
+      setStatus("Preparing tags…");
+      const parts = [];
+      for (let i = 0; i < TAGS.length; i += 16) parts.push.apply(parts, await embedTexts(TAGS.slice(i, i + 16).map(function (t) { return t.p; })));
+      state.tagEmbeds = parts; state.dim = parts[0].length; state.ready = true;
+      setStatus("Ready · " + $("modelSel").selectedOptions[0].textContent, "ready");
+      if (state.query) runSearch();
+      renderAll(); pump();
+    } catch (e) { onLoadError(e.message || String(e)); }
+  }
+  function onLoadError(msg) {
+    console.error(msg);
+    state.ready = false;
+    setStatus("Couldn't load the model", "error");
+    showError("Couldn't load the model: " + msg + ". Check that you're online and that this page is served over http(s), then try another model or “CPU, 8-bit” in the settings.");
+  }
+  function switchModel() {
+    // Embeddings from different models live in different spaces: re-embed every clip.
+    state.tracks.forEach(function (t) { t.embed = null; t.windows = null; if (t.status !== "error") t.status = "queued"; });
+    queue.length = 0; state.tracks.slice().reverse().forEach(function (t) { if (t.status === "queued") queue.push(t); });
+    resetPlayer(); renderAll(); loadModel();
+  }
+
+  // ---------- search ----------
+  let searchSeq = 0;
+  async function runSearch() {
+    const q = state.query.trim(); const seq = ++searchSeq;
+    if (!q) { state.qEmbed = null; renderAll(); return; }
+    if (!state.ready) { renderLibrary(); return; }
+    try {
+      const e = (await embedTexts([q]))[0];
+      if (seq !== searchSeq) return;
+      state.qEmbed = e; renderAll();
+    } catch (err) { showError("Search failed: " + (err.message || err)); }
+  }
+
+  // ---------- DEMO: PLAYBACK ----------
+  const player = { id: null, buf: null, ctx: null, src: null, t0: 0, off: 0, playing: false, loading: false, raf: 0 };
+  const ICON_PLAY = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z"/></svg>';
+  const ICON_PAUSE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z"/></svg>';
+  function audioCtx() { if (!player.ctx) player.ctx = new (window.AudioContext || window.webkitAudioContext)(); return player.ctx; }
+  function selectedTrack() { return state.tracks.find(function (x) { return x.id === state.selected; }); }
+  function curTime() { return player.playing ? Math.min(player.buf ? player.buf.duration : 0, player.off + (player.ctx.currentTime - player.t0)) : player.off; }
+  function stopSource() { const s = player.src; player.src = null; if (s) { try { s.stop(); } catch (e) {} s.disconnect(); } }
+  function resetPlayer() { stopSource(); cancelAnimationFrame(player.raf); player.id = null; player.buf = null; player.off = 0; player.playing = false; player.loading = false; }
+  async function loadBuffer(t) {
+    if (player.id === t.id && player.buf) return true;
+    resetPlayer(); player.id = t.id; player.loading = true; updatePlayerUI();
+    try {
+      const ab = await audioCtx().decodeAudioData(await t.file.arrayBuffer());
+      if (player.id !== t.id) return false;
+      player.buf = ab; return true;
+    } finally { if (player.id === t.id) { player.loading = false; updatePlayerUI(); } }
+  }
+  function startAt(sec) {
+    stopSource();
+    const ctx = audioCtx(); if (ctx.state === "suspended") ctx.resume();
+    const s = ctx.createBufferSource(); s.buffer = player.buf; s.connect(ctx.destination);
+    s.onended = function () { if (player.src === s) { player.src = null; player.playing = false; player.off = 0; updatePlayerUI(); } };
+    sec = Math.max(0, Math.min(sec, player.buf.duration - 0.05));
+    s.start(0, sec); player.src = s; player.t0 = ctx.currentTime; player.off = sec; player.playing = true; loop();
+  }
+  function pause() { if (!player.playing) return; player.off = curTime(); stopSource(); player.playing = false; updatePlayerUI(); }
+  async function togglePlay() {
+    const t = selectedTrack(); if (!t) return;
+    if (player.playing && player.id === t.id) { pause(); return; }
+    audioCtx();
+    try { if (!(await loadBuffer(t))) return; } catch (e) { showError("Couldn't play " + t.name + "."); return; }
+    startAt(player.off); updatePlayerUI();
+  }
+  async function seek(sec) {
+    const t = selectedTrack(); if (!t) return;
+    audioCtx();
+    if (player.id !== t.id || !player.buf) { try { if (!(await loadBuffer(t))) return; } catch (e) { return; } }
+    startAt(sec); updatePlayerUI();
+  }
+  function loop() { cancelAnimationFrame(player.raf); const step = function () { updatePlayerUI(); if (player.playing) player.raf = requestAnimationFrame(step); }; player.raf = requestAnimationFrame(step); }
+  function updatePlayerUI() {
+    const t = selectedTrack(); const btn = $("playBtn"); if (!t || !btn) return;
+    const mine = player.id === t.id, time = mine ? curTime() : 0;
+    btn.disabled = mine && player.loading;
+    btn.innerHTML = mine && player.playing ? ICON_PAUSE : ICON_PLAY;
+    btn.setAttribute("aria-label", mine && player.playing ? "Pause" : "Play");
+    $("playTime").textContent = (mine && player.loading) ? "Decoding…" : fmtTime(time) + " / " + fmtTime(t.duration);
+    const ph = $("playhead");
+    if (ph) { const f = time / t.duration; ph.hidden = !(mine && time > 0); ph.style.left = (Math.min(1, f) * 100) + "%"; }
+  }
+
+  // ---------- DEMO: RENDERING ----------
+  function showError(msg) { const p = document.createElement("p"); p.className = "err"; p.textContent = msg; $("detail").prepend(p); }
+
+  function renderLibrary() {
+    const q = state.query.trim();
+    let items;
+    if (q && state.qEmbed) {
+      const ranked = rankTracks(state.qEmbed);
+      const top = ranked.length ? ranked[0].score : 1, bottom = ranked.length ? ranked[ranked.length - 1].score : 0;
+      items = ranked.map(function (x) { return { t: x.t, score: x.score, rel: ranked.length > 1 ? (x.score - bottom) / ((top - bottom) || 1) : 1 }; });
+      state.tracks.forEach(function (t) { if (!t.embed) items.push({ t: t }); });
+      $("libLabel").textContent = "Best matches for “" + q + "”";
+    } else {
+      items = state.tracks.map(function (t) { return { t: t }; });
+      $("libLabel").textContent = q && !state.ready ? "Search runs once the model is ready" : "Clips (" + state.tracks.length + ")";
+    }
+    $("libEmpty").hidden = state.tracks.length > 0;
+    $("lib").innerHTML = items.map(function (x) {
+      const t = x.t;
+      let meta, sub;
+      if (t.status === "done") {
+        meta = x.score != null ? "<b>" + x.score.toFixed(3) + "</b>" : fmtTime(t.duration);
+        sub = state.tagEmbeds ? topTagsText(t) : "";
+      } else if (t.status === "error") { meta = '<span class="busy">failed</span>'; sub = t.error; }
+      else { meta = '<span class="busy">' + (t.status === "busy" ? "analysing" : "queued") + "</span>"; sub = "Waiting for analysis"; }
+      return '<li><button type="button" data-id="' + t.id + '" aria-current="' + (t.id === state.selected) + '"><span class="name">' + esc(t.name) + '</span><span class="meta">' + meta + '</span><span class="tags">' + esc(sub) + "</span>" +
+        (x.rel != null ? '<span class="rank"><div style="width:' + Math.max(3, x.rel * 100).toFixed(0) + '%"></div></span>' : "") + "</button></li>";
+    }).join("");
+  }
+  function topTagsText(t) {
+    const out = [];
+    VOCAB.slice(0, 3).forEach(function (c) {
+      let best = null;
+      tagScores(t).forEach(function (s) { if (s.tag.cat === c[0] && (!best || s.score > best.score)) best = s; });
+      if (best) out.push(best.tag.label);
+    });
+    return out.join(" · ");
+  }
+
+  function renderIntro() {
+    $("detail").innerHTML =
+      '<p class="label">How to try it</p>' +
+      '<div class="howto">' +
+        '<div><h3>1. Add clips</h3><p>Drop a mix of music and stings. Each clip becomes one CLAP embedding, a point in a space shared with text.</p></div>' +
+        '<div><h3>2. Describe</h3><p>Type a description. Clips are ranked by how close they sit to your words. Try moods and sound effects, not just genres.</p></div>' +
+        '<div><h3>3. Judge</h3><p>Open a clip to hear where it matches best, which tags CLAP picks for it, and which other clips it sounds like.</p></div>' +
+      '</div>' +
+      '<div class="note"><b>First load downloads the model</b> from Hugging Face: about 160 MB for the default music model on CPU. After that the browser cache makes it quick. Clips can be dropped while it downloads; they wait in the queue.</div>';
+  }
+
+  function bars(list, maxScore, minScore) {
+    return list.map(function (s, i) {
+      const w = Math.max(2, 100 * (s.score - minScore) / ((maxScore - minScore) || 1));
+      return '<div class="row' + (i === 0 ? " top" : "") + '"><span class="txt">' + esc(s.tag.label) + '</span><span class="val">' + s.score.toFixed(3) + '</span><div class="track"><div class="fill" style="width:' + w.toFixed(1) + '%"></div></div></div>';
+    }).join("");
+  }
+
+  function renderDetail() {
+    const t = selectedTrack();
+    if (player.id && (!t || player.id !== t.id)) resetPlayer();
+    if (!t) { renderIntro(); return; }
+    if (t.status !== "done") {
+      $("detail").innerHTML = '<div class="track-head"><h2>' + esc(t.name) + '</h2><span class="meta">' + (t.status === "error" ? "failed" : t.status === "busy" ? "analysing…" : "queued") + "</span></div>" +
+        (t.error ? '<p class="err">' + esc(t.error) + "</p>" : '<p class="hint">Results appear here when this clip has been analysed.</p>');
+      return;
+    }
+    const scores = state.tagEmbeds ? tagScores(t) : [];
+    const all = scores.map(function (s) { return s.score; });
+    const gMax = Math.max.apply(null, all), gMin = Math.min.apply(null, all);
+    const cats = VOCAB.map(function (c) {
+      const list = scores.filter(function (s) { return s.tag.cat === c[0]; }).sort(function (a, b) { return b.score - a.score; }).slice(0, 4);
+      return '<div class="bars"><p class="label">' + esc(c[0]) + "</p>" + bars(list, gMax, gMin) + "</div>";
+    }).join("");
+
+    // timeline rows: the current query (if any) + the best tag in each category
+    const rows = [];
+    if (state.qEmbed && state.query.trim()) rows.push({ label: "“" + state.query.trim() + "”", q: state.qEmbed, isQ: true });
+    VOCAB.forEach(function (c) {
+      let best = null; scores.forEach(function (s, i) { if (s.tag.cat === c[0] && (!best || s.score > best.s)) best = { s: s.score, i: i }; });
+      if (best) rows.push({ label: TAGS[best.i].label, q: state.tagEmbeds[best.i] });
+    });
+
+    let bestAt = null;
+    if (state.qEmbed && state.query.trim()) {
+      const ws = windowScores(t, state.qEmbed); let k = 0; ws.forEach(function (v, i) { if (v > ws[k]) k = i; });
+      bestAt = { sec: t.winStart[k], score: ws[k] };
+    }
+    const similar = state.tracks.filter(function (o) { return o !== t && o.embed; })
+      .map(function (o) { return { o: o, s: dot(o.embed, t.embed) }; }).sort(function (a, b) { return b.s - a.s; }).slice(0, 5);
+
+    $("detail").innerHTML =
+      '<div class="track-head"><h2>' + esc(t.name) + '</h2><span class="meta">' + fmtTime(t.duration) + " · " + t.windows.length + " window" + (t.windows.length > 1 ? "s" : "") + " · " + t.secs.toFixed(1) + " s to analyse</span></div>" +
+      '<div class="player"><button type="button" class="play" id="playBtn" aria-label="Play">' + ICON_PLAY + '</button><span class="ptime" id="playTime">0:00 / ' + fmtTime(t.duration) + "</span>" +
+        (bestAt ? '<button type="button" class="jump" id="jumpBtn">Play best match for “' + esc(state.query.trim()) + "” at " + fmtTime(bestAt.sec) + "</button>" : "") + "</div>" +
+      '<div class="timeline"><p class="label">Where it matches</p>' +
+        '<div class="tl-wrap"><div class="tl-labels">' + rows.map(function (r) { return '<div class="' + (r.isQ ? "q" : "") + '">' + esc(r.label) + "</div>"; }).join("") + '</div>' +
+        '<div class="tl-canvas" id="tlBox"><canvas id="tl" height="' + (24 * rows.length) + '"></canvas><div class="playhead" id="playhead" hidden></div></div>' +
+        '<div class="axis"><span>0:00</span><span>' + fmtTime(t.duration / 2) + "</span><span>" + fmtTime(t.duration) + "</span></div></div>" +
+        '<p class="hint">Each block is a 10-second window; darker means closer to that row\'s description, scaled per row. Click to play from there.' + (state.query.trim() ? "" : " Type a search to add it as the top row.") + "</p></div>" +
+      '<div><p class="label">Auto-tags (similarity to built-in phrases)</p></div><div class="cats">' + cats + "</div>" +
+      '<div><p class="label">Sounds most like</p>' + (similar.length ? '<ul class="sim">' + similar.map(function (x) { return '<li><button type="button" data-id="' + x.o.id + '"><span class="n">' + esc(x.o.name) + '</span><span class="v">' + x.s.toFixed(3) + "</span></button></li>"; }).join("") + "</ul>" : '<p class="hint">Add more clips to see which ones sound alike.</p>') + "</div>";
+
+    drawTimeline(t, rows);
+    $("playBtn").addEventListener("click", togglePlay);
+    if (bestAt) $("jumpBtn").addEventListener("click", function () { seek(bestAt.sec); });
+    $("tlBox").addEventListener("click", function (e) {
+      const r = e.currentTarget.getBoundingClientRect();
+      const sec = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * t.duration;
+      // Snap to the start of the window under the cursor, so you hear what was scored.
+      let k = 0; t.winStart.forEach(function (s, i) { if (s <= sec) k = i; });
+      seek(sec - t.winStart[k] < t.winLen ? t.winStart[k] : sec);
+    });
+    const sim = $("detail").querySelector(".sim");
+    if (sim) sim.addEventListener("click", function (e) { const b = e.target.closest("button[data-id]"); if (b) { state.selected = b.getAttribute("data-id"); renderAll(); } });
+    updatePlayerUI();
+  }
+
+  function drawTimeline(t, rows) {
+    const c = $("tl"); if (!c) return;
+    const dpr = window.devicePixelRatio || 1, w = c.clientWidth || 600, rowH = 24, h = rowH * rows.length;
+    c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); c.style.height = h + "px";
+    const g = c.getContext("2d"); g.scale(dpr, dpr);
+    const cs = getComputedStyle(document.documentElement);
+    const accent = cs.getPropertyValue("--accent").trim(), track = cs.getPropertyValue("--bar-track").trim();
+    g.fillStyle = track; g.fillRect(0, 0, w, h);
+    rows.forEach(function (r, ri) {
+      const ws = windowScores(t, r.q), hi = Math.max.apply(null, ws), lo = Math.min.apply(null, ws);
+      ws.forEach(function (v, k) {
+        // The last window is aligned to the end and may overlap the previous one: draw only its new part.
+        const from = k > 0 ? Math.max(t.winStart[k], t.winStart[k - 1] + t.winLen) : t.winStart[k];
+        const x0 = w * from / t.duration, x1 = w * Math.min(t.duration, t.winStart[k] + t.winLen) / t.duration;
+        g.globalAlpha = ws.length > 1 ? 0.15 + 0.85 * (v - lo) / ((hi - lo) || 1) : 0.7;
+        g.fillStyle = accent; g.fillRect(x0, ri * rowH + 2, Math.max(1, x1 - x0 - 1), rowH - 4);
+      });
+    });
+    g.globalAlpha = 1;
+  }
+
+  function renderAll() { renderLibrary(); renderDetail(); }
+
+  // ---------- DEMO: EVENTS ----------
+  const drop = $("drop");
+  ["dragenter", "dragover"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
+  ["dragleave", "drop"].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("over"); }); });
+  drop.addEventListener("drop", function (e) { addFiles(e.dataTransfer && e.dataTransfer.files); });
+  drop.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file").click(); } });
+  window.addEventListener("dragover", function (e) { e.preventDefault(); });
+  window.addEventListener("drop", function (e) { if (!drop.contains(e.target)) { e.preventDefault(); addFiles(e.dataTransfer && e.dataTransfer.files); } });
+  $("file").addEventListener("change", function (e) { addFiles(e.target.files); e.target.value = ""; });
+  let qTimer;
+  $("q").addEventListener("input", function (e) { state.query = e.target.value; clearTimeout(qTimer); qTimer = setTimeout(runSearch, 250); });
+  $("suggest").innerHTML = SUGGEST.map(function (s) { return '<button type="button">' + esc(s) + "</button>"; }).join("");
+  $("suggest").addEventListener("click", function (e) { const b = e.target.closest("button"); if (!b) return; $("q").value = state.query = b.textContent; runSearch(); });
+  $("lib").addEventListener("click", function (e) { const b = e.target.closest("button[data-id]"); if (!b) return; state.selected = b.getAttribute("data-id"); renderAll(); });
+  ["modelSel", "runSel"].forEach(function (id) { $(id).addEventListener("change", switchModel); });
+  let rz; window.addEventListener("resize", function () { clearTimeout(rz); rz = setTimeout(renderDetail, 150); });
+  try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderDetail); } catch (e) {}
+
+  renderAll();
+  loadModel();
+})();
+</script>
+</body>
+</html>
