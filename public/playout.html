@@ -101,6 +101,17 @@
     #topright { position: fixed; top: 10px; right: max(10px, env(safe-area-inset-right)); z-index: 20; display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
       max-width: min(40vw, 320px); pointer-events: none; }
     @media (max-width: 1400px) { main > h1, main > p.sub { margin-right: 190px; } }   /* (clear of it) */
+    /* Rehearsal transport (the owner, 14 Nov 2026): under the clock, folded behind its badge (folded again on every
+       load, so it isn't used by accident in a show): the cue the clock shows, paused, restarted, or found a spot in */
+    #tp { pointer-events: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 100%; }
+    #tp-badge { font: inherit; font-size: 12px; background: rgba(21, 21, 21, .94); color: var(--dim); border: 1px solid var(--line); border-radius: 12px; padding: 2px 10px; cursor: pointer; }
+    #tp-badge[aria-expanded=true] { color: var(--text); border-color: var(--warn); }
+    #tp-box { background: rgba(21, 21, 21, .96); border: 1px solid var(--warn); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; width: 280px; max-width: 100%; box-sizing: border-box; }
+    #tp-name { font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #tp-box .tp-row { display: flex; gap: 6px; align-items: center; }
+    #tp-pos { flex: 1; min-width: 0; }
+    #tp-time { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    #tp-pause.on { border-color: var(--warn); color: var(--warn); }
     #bigclock { display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
       background: rgba(10, 30, 14, .92); border: 1px solid var(--ok); border-radius: 8px; padding: 6px 12px; max-width: 100%; box-sizing: border-box; }
     /* The level box (the owner, 13 Nov 2026): each output's level (its quietest cue) and the biggest cut. Click it when
@@ -229,6 +240,14 @@
   <div id="topright">
     <button type="button" id="levelbox" hidden></button>
     <div id="bigclock" hidden title="What the audio playing has left (the one that ends last)"><span id="bc-left"></span><span id="bc-what"></span></div>
+    <div id="tp" hidden>
+      <button type="button" id="tp-badge" aria-expanded="false" title="For rehearsals: pause what's playing, start it again, or find a spot in it">⏯ Rehearsal ▸</button>
+      <div id="tp-box" hidden>
+        <div id="tp-name"></div>
+        <div class="tp-row"><button type="button" class="small" id="tp-pause">⏸ Pause</button><button type="button" class="small" id="tp-restart" title="From the beginning">⟲ Restart</button><button type="button" class="small" id="tp-last" title="Its last 10 seconds">⏭ Last 10 s</button></div>
+        <div class="tp-row"><input type="range" id="tp-pos" min="0" step="0.1" value="0" aria-label="Where in it"><span id="tp-time"></span></div>
+      </div>
+    </div>
   </div>
   <main>
     <h1>Playout</h1>
@@ -383,7 +402,7 @@
   <script src="remote-peer.js?v=fd06de67"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="audio-out.js?v=e41c465e" data-role="both"></script>
-  <script src="sting-clip.js?v=5056cf83"></script>
+  <script src="sting-clip.js?v=2b1d691b"></script>
   <script src="clip-words.js?v=eaa0957d"></script>
   <script src="sting-library.js?v=db93145a"></script>
   <script src="sting-picker.js?v=7e222083"></script>
@@ -393,7 +412,7 @@
   <script src="virtual-deck.js?v=f112dd1e"></script>
   <script src="deck-hid.js?v=90c43672"></script>
   <script src="panels.js?v=407fa75f"></script>
-  <script src="playout-deck.js?v=0e93a270"></script>
-  <script src="playout.js?v=8d791e66"></script>
+  <script src="playout-deck.js?v=9970cee7"></script>
+  <script src="playout.js?v=06df0aaa"></script>
 </body>
 </html>

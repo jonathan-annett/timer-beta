@@ -490,9 +490,26 @@
     return stop;
   }
   // A voice's level(g) sets its gain while it plays (its output's level changed), not while it fades out
+  // Rehearsal transport (pos, len, pause, resume, seek): a source can't pause, so it's stopped and started again at
+  // the offset; gen keeps the stopped one's end from counting as the cue's
   function bufferVoice(c, buf, onEnd, out, off, xin) {   // xin: ms, faded in (the playlist flow's crossfade)
-    let p = null, fading = false, riseEnd = 0;
+    let p = null, fading = false, riseEnd = 0, gen = 0, paused = null;
+    const watch = q => { const g = ++gen; q.ended.then(() => { if (g === gen) onEnd(); }); };
+    const restart = at => {                            // (a 30 ms rise: no click)
+      p = StingClip.play(buf, { role: out, offset: at });
+      if (p.refused) { p = null; onEnd(); return; }
+      const t = p.gain.context.currentTime; p.gain.gain.setValueAtTime(0, t); p.gain.gain.linearRampToValueAtTime(gainOf(c, out), t + 0.03);
+      watch(p);
+    };
+    const halt = () => { gen++; if (p) p.stop(); };
     return {
+      memory: true,
+      pos: () => (paused != null ? paused : p ? p.time() : 0),
+      len: () => buf.duration,
+      paused: () => paused != null,
+      pause() { if (!p || paused != null || fading) return; paused = p.time(); halt(); },
+      resume() { if (paused == null) return; const at = paused; paused = null; restart(at); },
+      seek(at) { at = Math.max(0, Math.min(buf.duration - 0.05, at)); if (paused != null) paused = at; else if (p && !fading) { halt(); restart(at); } },
       play() {
         p = StingClip.play(buf, { role: out, offset: off });
         if (p.refused) { p = null; return false; }
@@ -502,11 +519,12 @@
           setTimeout(() => { if (p && !fading) p.gain.gain.setTargetAtTime(gainOf(c, out), p.gain.context.currentTime, 0.03); }, xin + 50);   // (its level now)
         } else p.gain.gain.value = gainOf(c, out);
         if (off && !xin) { const t = p.gain.context.currentTime; p.gain.gain.setValueAtTime(0, t); p.gain.gain.linearRampToValueAtTime(gainOf(c, out), t + 0.15); }   // (joined partway: no click)
-        p.ended.then(onEnd);
+        watch(p);
         return true;
       },
-      fade(ms) { if (p) { fading = true; p.fade(ms); } },
+      fade(ms) { if (paused != null) return onEnd(); if (p) { fading = true; p.fade(ms); } },   // (paused: nothing to hear, so it's over)
       xfade(ms) {                                      // out over ms, equal power, then stopped (the playlist flow)
+        if (paused != null) return onEnd();
         if (!p || fading) return;
         fading = true;
         const g = p.gain.gain, t = p.gain.context.currentTime, v = g.value;
@@ -515,7 +533,7 @@
       level(g) { if (p && !fading && p.gain.context.currentTime >= riseEnd) p.gain.gain.setTargetAtTime(g, p.gain.context.currentTime, 0.03); },   // (a quick glide: no click)
       sourceTime: () => (p ? StingClip.sourceAt(p.time(), StingClip.plan(c, c.duration || buf.duration).segs) : null),   // (where in the file: Mark start / end)
       gain: () => (p ? p.gain.gain.value : null),
-      stop() { if (p) p.stop(); },
+      stop() { gen++; if (p) p.stop(); },
       release() {},
     };
   }
@@ -525,7 +543,14 @@
     let stopEnd = null, stopRamp = null, over = false, g = 0;
     el.src = url;
     const finish = () => { if (over) return; over = true; if (stopEnd) stopEnd(); if (stopRamp) stopRamp(); el.pause(); onEnd(); };
+    let paused = false;
     const v = {
+      pos: () => Math.max(0, el.currentTime - (r.start || 0)),
+      len: () => (r.end != null ? r.end : el.duration || 0) - (r.start || 0),
+      paused: () => paused,
+      pause() { if (over || paused) return; paused = true; el.pause(); },
+      resume() { if (over || !paused) return; paused = false; el.play().catch(() => {}); },
+      seek(at) { if (over) return; el.currentTime = (r.start || 0) + Math.max(0, Math.min(v.len() - 0.05, at)); },
       async play() {
         if (start) await new Promise(res => { if (el.readyState >= 1) res(); else { el.addEventListener('loadedmetadata', res, { once: true }); el.addEventListener('error', res, { once: true }); } });   // (unreadable: play() says so)
         if (over) return false;
@@ -544,7 +569,7 @@
         });
         return true;
       },
-      fade(ms, db = true) { if (over) return; if (stopRamp) stopRamp(); stopRamp = rampEl(el, 0, ms, finish, db); },   // (live: even in dB)
+      fade(ms, db = true) { if (over) return; if (paused) return finish(); if (stopRamp) stopRamp(); stopRamp = rampEl(el, 0, ms, finish, db); },   // (live: even in dB; paused: nothing to hear, so it's over)
       xfade(ms) { v.fade(ms, 'power'); },              // (the playlist flow: equal power)
       level(n) { if (over || !out) return; g = n; if (!stopRamp) el.volume = n; },   // (fading in: it ends at g)
       gain: () => el.volume,
@@ -1330,6 +1355,7 @@
   }
   function cueLeft(c, it, run) {                       // s, or null (nothing to count: played, or no length known)
     const p = playing.get(c.id), len = lenOf(c), d = (it && it.d) || 0;
+    if (p && p.voice.paused && p.voice.paused()) return Math.max(0, p.voice.len() - p.voice.pos());   // (paused: held)
     if (p) return p.endsAt == null ? null : Math.max(0, (p.endsAt - performance.now()) / 1000);
     if (!len) return null;
     if (!run) return c.trigger === 'start' ? len : c.trigger === 'elapsed' ? c.at + len : !d ? null
@@ -1359,11 +1385,63 @@
       const ic = li.querySelector('.iclock');
       if (ic) { const t = clockText(last); if (ic.textContent !== t) ic.textContent = t; ic.classList.toggle('live', live); }
     }
+    renderTransport();
     const box = $('bigclock');
     if (!box) return;
     box.hidden = !big;
     if (big) { const t = clockText(big.left).slice(2); if ($('bc-left').textContent !== t) $('bc-left').textContent = t; if ($('bc-what').textContent !== big.what) $('bc-what').textContent = big.what; }
   }
+  // Rehearsal transport (the owner, 14 Nov 2026): the badge under the clock opens Pause / Restart / Last 10 s and a
+  // slider, for the playing cue that ends last (the one the clock shows), kept while it plays. Folded on every load.
+  // Paused, its clock holds; a fade or Stop all still ends it. The slider moves the cue when let go of.
+  let tpId = null, tpDrag = false;
+  function tpTarget() {
+    if (tpId && playing.has(tpId)) return tpId;
+    let best = null, most = -1;
+    for (const [id, p] of playing) {
+      if (!p.voice.pos) continue;
+      const left = cueLeft(p.c, null, null);
+      if (left != null && left > most) { most = left; best = id; }
+    }
+    return best;
+  }
+  function renderTransport() {
+    const box = $('tp'); if (!box) return;
+    const id = tpTarget(), p = id && playing.get(id);
+    box.hidden = !p;
+    if (!p) { tpId = null; if (!$('tp-box').hidden) tpFold(); return; }   // (its cue over: folded, not left open for the next)
+    if (!$('tp-box').hidden) tpId = id;               // (open: it stays on this cue)
+    const len = p.voice.len(), pos = Math.min(len, p.voice.pos()), paused = p.voice.paused();
+    $('tp-name').textContent = p.c.name;
+    $('tp-pause').textContent = paused ? '▶ Resume' : '⏸ Pause'; $('tp-pause').classList.toggle('on', paused);
+    const r = $('tp-pos');
+    if (+r.max !== Math.round(len * 10) / 10) r.max = String(Math.round(len * 10) / 10);
+    if (!tpDrag) r.value = String(pos);
+    $('tp-time').textContent = mmss(tpDrag ? +r.value : pos) + ' / ' + mmss(len);
+  }
+  function tpDo(fn) {
+    const id = tpTarget(), p = id && playing.get(id);
+    if (!p) return;
+    tpId = id;
+    fn(p.voice);
+    if (!p.voice.paused()) p.endsAt = performance.now() + Math.max(0, p.voice.len() - p.voice.pos()) * 1000;   // (its clock)
+    renderClocks();
+  }
+  function tpFold(open = false) {
+    $('tp-box').hidden = !open; $('tp-badge').setAttribute('aria-expanded', String(open));
+    $('tp-badge').textContent = open ? '⏯ Rehearsal ▾' : '⏯ Rehearsal ▸';
+  }
+  $('tp-badge').addEventListener('click', e => {
+    const open = $('tp-box').hidden; e.currentTarget.blur();
+    tpFold(open); tpId = open ? tpTarget() : null; renderTransport();
+  });
+  $('tp-pause').addEventListener('click', e => { e.currentTarget.blur(); tpDo(v => (v.paused() ? v.resume() : v.pause())); });
+  $('tp-restart').addEventListener('click', e => { e.currentTarget.blur(); tpDo(v => v.seek(0)); });
+  $('tp-last').addEventListener('click', e => { e.currentTarget.blur(); tpDo(v => v.seek(Math.max(0, v.len() - 10))); });
+  $('tp-pos').addEventListener('input', () => { tpDrag = true; renderTransport(); });
+  $('tp-pos').addEventListener('change', e => { tpDrag = false; const at = +e.currentTarget.value; e.currentTarget.blur(); tpDo(v => v.seek(at)); });
+  $('tp-pos').addEventListener('keydown', e => e.stopPropagation());   // (its arrows move it, not the page's keys)
+
   // A cue's row: ▶/■, when, its name, length, output, ✎ (when), ✂, ✕. o: {done, locked, flash, board (an extra key: no when)}
   function cueRow(c, o) {
     const on = playing.has(c.id), single = on && !playing.get(c.id).run && !o.locked;   // (played on its own: its ▶, or a key)
@@ -1591,6 +1669,7 @@
       cues: Object.fromEntries([...document.querySelectorAll('.cclock[data-clock]')].map(e => [e.dataset.clock, e.textContent])) }),
     gain: id => { const p = playing.get(id); return p ? p.voice.gain() : null; }, levels: () => levels, target: k => targetOf(k), tones: () => [...tones.keys()],
     levelBox: () => ({ shown: !$('levelbox').hidden, cls: $('levelbox').className, text: $('levelbox').textContent }),
+    transport: () => { const id = tpTarget(), p = id && playing.get(id); return { shown: !$('tp').hidden, open: !$('tp-box').hidden, id, pos: p ? p.voice.pos() : null, len: p ? p.voice.len() : null, paused: p ? p.voice.paused() : null, memory: p ? !!p.voice.memory : null }; },
     video: () => ({ where: vid.ownerDocument === document ? 'here' : 'external', paused: vid.paused, t: vid.currentTime, src: !!vid.getAttribute('src') }) };
 
   // ─── Demo (?demo, or /p?demo on the hosted site; the owner, 12 Nov 2026: to show the idea without a

@@ -138,6 +138,8 @@ var PlayoutDeck = (function () {
     const boards = new Set();                          // every {model(), page, presses} that presses keys
     const fading = (id, on) => [...boards].some(b => [...b.presses.values()].some(p => p.item === id || (p.all && p.ids.length && on)));
     function handle(b, i, down) {
+      const ed = editNow();
+      if ((ed || b.edOnly) && !(!down && b.presses.has(i))) { if (down) editPress(b.model(), i, ed); return changed(); }
       const model = b.model(), s = slots(model), g = geometry(model, s.length), k = keyAt(model, s.length, Math.min(b.page, g.pages - 1), i);
       if (down) {
         if (k.kind === 'prev') b.page = Math.max(0, Math.min(b.page, g.pages - 1) - 1);
@@ -212,7 +214,72 @@ var PlayoutDeck = (function () {
       else if (on) { bg = COLOURS.play; cap = 'playing'; }
       return { bg, fg: '#fff', rs: { cap, body: c.name || '(no name)', foot: len ? mmss(Math.max(1, len)) : '' }, press: true, slot: true, a: 'empty' };
     }
-    function faces(model, page) {
+    // ─── The clip editor's keys (the owner, 14 Nov 2026: clips cut from the deck while looking at the screen) ───
+    // While StingClip's editor is open on this page (✂ on a cue), every board shows its keys instead of the items:
+    // the play buttons, Mark start / Mark end, the edges nudged by a step, Save and Cancel (StingClip.editing().act).
+    // A phone set to Clip editor keys (edOnly: a size that fits it) shows them all the time, dim while no editor is open.
+    // Layouts: the XL and MK.2 by hand, the Mini two pages (more ▶ / ◀ back), any other size the FLOW in order
+    // (pages with more ▶ when it doesn't fit).
+    const editNow = () => (window.StingClip && StingClip.editing ? StingClip.editing() : null);
+    const EDIT = {
+      xl: ['part', 'first', 'last', 'lead', 'playon', 'stop', 'markin', 'markout',
+        'start-', 'start+', 'startT', 'step', 'endT', 'end-', 'end+', null,
+        null, null, null, null, null, null, null, null,
+        null, null, null, null, null, null, 'cancel', 'save'],
+      mk2: ['part', 'first', 'last', 'playon', 'stop', 'start-', 'start+', 'step', 'end-', 'end+', 'markin', 'markout', 'lead', 'cancel', 'save'],
+      mini: [['toggle', 'markin', 'markout', 'cancel', 'save', 'more'], ['start-', 'start+', 'step', 'end-', 'end+', 'back']],
+    };
+    const FLOW = ['part', 'first', 'last', 'lead', 'playon', 'stop', 'markin', 'markout', 'step', 'start-', 'startT', 'start+', 'end-', 'endT', 'end+', 'cancel', 'save'];   // (in threes: a phone's 3 or 6 across)
+    const edPage = {};                                 // model → the page of its editor keys (the Mini's, a small grid's)
+    function editKeys(model) {                         // → the actions on each key of the page shown
+      const K = modelOf(model).keyCount;
+      if (model === 'xl' || model === 'mk2') return EDIT[model];
+      const pages = model === 'mini' ? EDIT.mini : [];
+      if (!pages.length) {
+        if (K >= FLOW.length) pages.push(FLOW.concat(new Array(K - FLOW.length).fill(null)));
+        else for (let n = 0; n < FLOW.length; n += K - 1) pages.push(FLOW.slice(n, n + K - 1));
+        if (pages.length > 1) pages.forEach((p, j) => { while (p.length < K - 1) p.push(null); p.push(j < pages.length - 1 ? 'more' : 'back'); });
+      }
+      return pages[Math.min(edPage[model] || 0, pages.length - 1)];
+    }
+    const t2 = x => (x == null ? '' : Math.floor(x / 60) + ':' + (x % 60).toFixed(2).padStart(5, '0'));
+    function editFace(a, ed) {
+      if (!a) return { bg: '#000', fg: '#000', press: false, a: 'empty' };
+      const st = ed ? ed.state() : null, live = !!st && st.ready, playing = !!st && st.playing;
+      const step = st ? (st.step >= 1 ? '1 s' : st.step + ' s') : '';
+      const F = {
+        part: ['play', '▶ Part', ''], first: ['play', 'First 2 s', ''], last: ['play', 'Last 2 s', ''], lead: ['play', '2 s before', 'the start'], playon: ['play', 'Play on', 'from 2 s before'],
+        stop: ['', '■ Stop', ''], toggle: ['', playing ? '■ Stop' : '▶ Part', ''],
+        markin: ['mark', 'Start', 'as it plays'], markout: ['mark', 'End', 'as it plays'],
+        'start-': ['start', '−', step], 'start+': ['start', '+', step], 'end-': ['end', '−', step], 'end+': ['end', '+', step],
+        step: ['nudge by', step, 'tap: change'], startT: ['start', st ? t2(st.start) : '', ''], endT: ['end', st ? t2(st.end) : '', ''],
+        save: ['clip', 'Save', ''], cancel: ['clip', 'Cancel', ''], more: ['keys', 'more ▶', ''], back: ['keys', '◀ back', ''],
+      }[a];
+      if (!ed) return { bg: '#0d0d0d', fg: '#3a3a3a', rs: { cap: F[0], body: F[1] || '—', foot: '' }, press: false };   // (a phone kept for the editor)
+      const info = a === 'startT' || a === 'endT', mark = a === 'markin' || a === 'markout';
+      const bg = a === 'save' ? '#13602a' : a === 'cancel' ? '#3a1212' : mark ? COLOURS.mark : a === 'stop' || (a === 'toggle' && playing) ? COLOURS.all
+        : a.startsWith('start') || a.startsWith('end') ? (st.active === a.replace(/[-+T]$/, '') ? '#0b3d5c' : '#1c2a3a') : a === 'more' || a === 'back' || a === 'step' ? COLOURS.page : COLOURS.cue;
+      const can = info ? false : mark ? playing : a === 'stop' ? playing : a === 'more' || a === 'back' || a === 'cancel' || a === 'step' ? true : live;
+      return { bg, fg: can || info ? '#fff' : '#777', rs: { cap: F[0], body: F[1], foot: F[2] }, press: can };
+    }
+    function editFaces(model, ed) {
+      const f = editKeys(model).map(a => editFace(a, ed));
+      if (!ed && f[0] && f[0].rs) f[0].rs.foot = 'no editor open';   // (said once)
+      return f;
+    }
+    function editPress(model, i, ed) {
+      const a = editKeys(model)[i];
+      if (!a) return;
+      if (a === 'more' || a === 'back') { edPage[model] = a === 'more' ? (edPage[model] || 0) + 1 : 0; return; }
+      if (ed) ed.act(a);
+    }
+    if (window.StingClip && StingClip.onEdit) StingClip.onEdit(() => { for (const k of Object.keys(edPage)) delete edPage[k]; changed(); });
+    let editTick = '';                                 // (the editor's state shown on the keys: redrawn when it changes)
+    setInterval(() => { const ed = editNow(); const j = ed ? JSON.stringify(ed.state()) : ''; if (j !== editTick) { editTick = j; if (ed) draw(); } }, 150);
+
+    function faces(model, page, edOnly) {
+      const ed = editNow();
+      if (ed || edOnly) return editFaces(model, ed);
       const s = slots(model), g = geometry(model, s.length), items = onSheet();
       page = Math.min(page, g.pages - 1);
       const busy = api.anyPlaying();
@@ -570,6 +637,8 @@ var PlayoutDeck = (function () {
       if (!m || typeof m !== 'object') return;
       if (m.t === 'hello') {
         if (modelOf(m.model)) p.model = m.model;
+        p.edOnly = m.editor === true;                  // (Clip editor keys: a phone kept for the clip editor)
+        if (p.b) p.b.edOnly = p.edOnly;
         if (p.ok) { p.sent = []; return draw(); }
         const known = typeof m.token === 'string' && tokens().find(x => x.t === m.token);
         if (known) return letIn(p, known);
@@ -579,7 +648,7 @@ var PlayoutDeck = (function () {
       } else if (p.ok && m.t === 'relink' && p.peer.mode === 'server' && !(p.relinked > Date.now() - 5000)) {
         p.relinked = Date.now(); p.peer.restart();     // (its network changed: another go at a direct link)
       } else if (p.ok && m.t === 'model' && modelOf(m.model)) {
-        p.model = m.model; p.sent = []; changed();
+        p.model = m.model; p.edOnly = p.b.edOnly = m.editor === true; p.sent = []; changed();
       } else if (p.ok && (m.t === 'kd' || m.t === 'ku') && Number.isInteger(m.i) && m.i >= 0 && m.i < modelOf(p.model).keyCount) {
         handle(p.b, m.i, m.t === 'kd');
       }
@@ -607,13 +676,13 @@ var PlayoutDeck = (function () {
     }
     function letIn(p, tok) {
       p.ok = true; p.token = tok.t; p.name = tok.name || p.name; p.pin = null;
-      p.b = { page: 0, presses: new Map(), model: () => p.model };
+      p.b = { page: 0, presses: new Map(), model: () => p.model, edOnly: !!p.edOnly };
       boards.add(p.b); p.sent = [];
       changed(); renderPhones();
     }
     function sendFaces(p) {                            // the faces that changed, 8 a message (the server's 16 KB limit)
       const m = modelOf(p.model), full = !p.sent.length, k = {};
-      const f = faces(p.model, p.b.page).map(x => (x.give ? { bg: '#000', fg: '#000', press: false, a: 'empty' } : x));   // (a phone has no deck to give)
+      const f = faces(p.model, p.b.page, p.b.edOnly).map(x => (x.give ? { bg: '#000', fg: '#000', press: false, a: 'empty' } : x));   // (a phone has no deck to give)
       if (full) p.sent = [];
       f.forEach((face, i) => { const j = JSON.stringify(face); if (p.sent[i] !== j) { p.sent[i] = j; k[i] = face; } });
       const keys = Object.keys(k);

@@ -36,6 +36,11 @@
  *                      selection), start/end handles, fades, a loop, loudness and trim, play (levelled: to level.target,
  *                      LUFS or null = not levelled, when given), Save as WAV →
  *                      Promise<{name, start, end, fadeIn, fadeOut, loop, lufs, volume, hideOriginal} | null>;
+ *   editing()          the clip editor open in this page, to drive from elsewhere (a Stream Deck: playout-deck.js), or null:
+ *                      {name(), state() → {ready, playing, start, end, step, active, video}, act(name)}; act takes
+ *                      part, first, last, lead, playon, stop, toggle (▶ the part or ■), markin, markout, start-, start+,
+ *                      end-, end+ (by the step), step (0.01 → 0.1 → 1 s), save, cancel
+ *   onEdit(fn)         fn() as an editor opens or closes → off()
  *   loudness(buf)      integrated loudness (LUFS, BS.1770) or null (silence)
  *   gainFor(s, target) what a sting with {lufs, volume} plays at: down to the target, never up (target null: its trim only)
  *   target()           the show's level (Level this show…, localStorage SHOW_KEY) or the house level (TARGET_KEY, −23)
@@ -408,6 +413,10 @@ var StingClip = (function () {
     return segs.length ? segs[segs.length - 1][1] : 0;
   }
 
+  // The editor open now (one at a time: it's modal), for a Stream Deck to drive (editing(), onEdit(fn))
+  let editor = null;
+  const editWatch = new Set();
+  const editChanged = () => { for (const fn of editWatch) try { fn(); } catch (_) { /* one listener's trouble */ } };
   function open(opts) {
     return new Promise(resolve => {
       if (!document.getElementById('sc-css')) { const st = document.createElement('style'); st.id = 'sc-css'; st.textContent = CSS; document.head.appendChild(st); }
@@ -908,7 +917,28 @@ var StingClip = (function () {
         msg('Saved “' + name + '” to your downloads: add it as the sting’s file (+ sting → Custom file, or From a file… in the sting library).');
       });
 
+      // Driven from elsewhere (the playout page's Stream Decks: the owner, 14 Nov 2026), as its buttons and keys are
+      const STEPS = [0.01, 0.1, 1];
+      let step = 0.1;
+      const nudge = (k, d) => { if (!ready()) return; set(k, get(k) + d * step); active = k; redraw(); focusOn(k); };
+      const click = c => { const b = $(c); if (b && !b.disabled && !b.hidden) b.click(); };
+      const ACTS = {
+        part: () => click('.sc-play'), first: () => click('.sc-first'), last: () => click('.sc-last'), lead: () => click('.sc-lead'),
+        playon: () => click('.sc-playon'), stop: () => stopPlay(), toggle: () => (voice ? stopPlay() : click('.sc-play')),
+        markin: () => mark('start'), markout: () => mark('end'),
+        'start-': () => nudge('start', -1), 'start+': () => nudge('start', 1), 'end-': () => nudge('end', -1), 'end+': () => nudge('end', 1),
+        step: () => { step = STEPS[(STEPS.indexOf(step) + 1) % STEPS.length]; },
+        save: () => save(), cancel: () => finish(null),
+      };
+      const me = {
+        name: () => $('.sc-name').value.trim() || opts.name || '',
+        state: () => ({ ready: !!buf, playing: !!voice, start: sel.start, end: ready() ? endOf() : null, step, active, video: !canLoop }),
+        act(a) { if (editor === me && ACTS[a]) ACTS[a](); },
+      };
+      editor = me; editChanged();
+
       function finish(result) {
+        if (editor === me) { editor = null; editChanged(); }
         stopPlay();
         if (words) words.stop();
         if (isVideo) { vid.pause(); vid.removeAttribute('src'); vid.load(); if (vidUrl && typeof opts.src !== 'string') URL.revokeObjectURL(vidUrl); }
@@ -1048,7 +1078,9 @@ var StingClip = (function () {
     });
   }
 
-  return { region, cleanLoop, plan, sourceAt, length, loopCheck, LIMITS, decode, render, wav, playable, play, preview, open, curveIn, curveOut,
+  const editing = () => editor;
+  const onEdit = fn => { editWatch.add(fn); return () => editWatch.delete(fn); };
+  return { region, cleanLoop, plan, sourceAt, length, loopCheck, LIMITS, decode, render, wav, playable, play, preview, open, editing, onEdit, curveIn, curveOut,
     loudness, toneBuffer, gainFor, trim, target, houseLevel, showLevel, LEVEL, TARGET_KEY, SHOW_KEY };
 })();
 if (typeof module !== 'undefined') module.exports = StingClip;

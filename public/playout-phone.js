@@ -33,7 +33,10 @@
   const tokenKey = 'playout_phone_token_' + link.r;
 
   // ─── The keys ───
-  let model = VirtualDeck.shape(store.get(MODEL)) ? store.get(MODEL) : 'mk2';
+  // Clip editor keys (the owner, 14 Nov 2026): a grid that fits this screen (its keys as big as they can be, worked out again
+  // as it turns), kept for the playout page's clip editor: its keys while one is open, dim the rest of the time (editor: true)
+  let editor = store.get(MODEL) === 'edit';
+  let model = editor ? 'mk2' : VirtualDeck.shape(store.get(MODEL)) ? store.get(MODEL) : 'mk2';
   const down = new Set();
   const vd = VirtualDeck.create($('keys'), {
     bind(c, i) {                                       // down and up both go (a tap stops, a hold fades)
@@ -52,22 +55,40 @@
     const box = $('deck').getBoundingClientRect();
     vd.layout(Math.max(100, box.width - 16), Math.max(80, box.height - 16), 0.18);
   }
+  // The editor's keys (playout-deck.js FLOW: 17) as big as this screen allows: the grid whose keys come out largest
+  const EDIT_KEYS = 17;
+  function fitted() {
+    const box = $('deck').getBoundingClientRect(), W = box.width - 16, H = box.height - 16;
+    let best = null;
+    for (let cols = 2; cols <= 9; cols++) {
+      const rows = Math.ceil(EDIT_KEYS / cols);
+      if (rows < 2 || rows > 11) continue;
+      const key = Math.min(W / (cols + (cols - 1) * 0.18), H / (rows + (rows - 1) * 0.18));
+      if (!best || key > best.key) best = { key, cols, rows };
+    }
+    return 'c' + best.cols + 'x' + best.rows;
+  }
   function setModel(m) {
     const g = VirtualDeck.shape(m);
     if (!g) return;
+    if (editor) { model = m; $('model').value = 'edit'; vd.setModel(m); layout(); return; }
     if (g.custom && ![...$('model').options].some(o => o.value === m)) {   // (a custom size: an entry of its own)
       const o = document.createElement('option'); o.value = m; o.textContent = g.cols + ' × ' + g.rows; $('model').appendChild(o);
     }
     model = m; $('model').value = m;
     vd.setModel(m); layout();
   }
-  setModel(model);
-  window.addEventListener('resize', layout);
+  setModel(editor ? fitted() : model);
+  window.addEventListener('resize', () => {
+    if (editor && fitted() !== model) { setModel(fitted()); if (peer) peer.send({ t: 'model', model, editor }); }
+    layout();
+  });
   $('model').addEventListener('change', e => {
     e.target.blur();
     store.set(MODEL, e.target.value);
-    setModel(e.target.value);
-    if (peer) peer.send({ t: 'model', model });
+    editor = e.target.value === 'edit';
+    setModel(editor ? fitted() : e.target.value);
+    if (peer) peer.send({ t: 'model', model, editor });
   });
   if (document.fullscreenEnabled) {
     $('full').hidden = false;
@@ -95,7 +116,7 @@
       relay: msg => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'up', msg })); },
       onMessage, onModeChange: showMode,
     });
-    peer.send({ t: 'hello', token: store.get(tokenKey) || undefined, model });
+    peer.send({ t: 'hello', token: store.get(tokenKey) || undefined, model, editor });
     showMode();
   }
   function connect() {
@@ -144,12 +165,12 @@
     } else if (m.t === 'pin-ok') {
       if (typeof m.token === 'string') store.set(tokenKey, m.token);
       pinCode = null;
-      peer.send({ t: 'hello', token: store.get(tokenKey) || undefined, model });
+      peer.send({ t: 'hello', token: store.get(tokenKey) || undefined, model, editor });
     } else if (m.t === 'pin-rejected') gone('The playout computer didn’t let this phone in. Scan its code again to try again.');
     else if (m.t === 'revoked') gone('The playout computer took these keys away. Scan its code again to use them.');
     else if (m.t === 'deck' && m.k && typeof m.k === 'object') {
       if (!ok) { ok = true; cover(null); keepAwake(); }
-      if (VirtualDeck.shape(m.model) && m.model !== vd.model) setModel(m.model);
+      if (VirtualDeck.shape(m.model) && m.model !== vd.model && !editor) setModel(m.model);   // (Clip editor keys: its own fitted size)
       for (const [i, f] of Object.entries(m.k)) vd.setFace(Number(i), f);
     }
     showMode();
@@ -157,5 +178,5 @@
   RemotePeer.retryOnNetworkChange(() => { if (peer && peer.mode === 'server') peer.send({ t: 'relink' }); });
   connect();
 
-  window.__pphone = { faces: () => vd.faces.map(f => (f && f.rs ? f.rs.body + (f.rs.cap ? ' | ' + f.rs.cap : '') : '')), bgs: () => vd.faces.map(f => f && f.bg), ok: () => ok, model: () => vd.model };
+  window.__pphone = { faces: () => vd.faces.map(f => (f && f.rs ? f.rs.body + (f.rs.cap ? ' | ' + f.rs.cap : '') : '')), bgs: () => vd.faces.map(f => f && f.bg), ok: () => ok, model: () => vd.model, editor: () => editor };
 })();
