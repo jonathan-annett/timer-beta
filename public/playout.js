@@ -504,6 +504,7 @@
     const halt = () => { gen++; if (p) p.stop(); };
     return {
       memory: true,
+      fading: () => fading,                            // (fading out: the keys show it)
       pos: () => (paused != null ? paused : p ? p.time() : 0),
       len: () => buf.duration,
       paused: () => paused != null,
@@ -543,8 +544,9 @@
     let stopEnd = null, stopRamp = null, over = false, g = 0;
     el.src = url;
     const finish = () => { if (over) return; over = true; if (stopEnd) stopEnd(); if (stopRamp) stopRamp(); el.pause(); onEnd(); };
-    let paused = false;
+    let paused = false, out0 = false;
     const v = {
+      fading: () => out0,                              // (fading out: the keys show it)
       pos: () => Math.max(0, el.currentTime - (r.start || 0)),
       len: () => (r.end != null ? r.end : el.duration || 0) - (r.start || 0),
       paused: () => paused,
@@ -565,11 +567,11 @@
         if (xin) stopRamp = rampEl(el, g, xin, () => { stopRamp = null; el.volume = g; }, 'power');
         else if (r.fadeIn || off) stopRamp = rampEl(el, g, off ? 150 : r.fadeIn, () => { stopRamp = null; el.volume = g; }, !off && !!r.fadeDb);   // (g: its level now; its own fade: its curve)
         if (r.end != null) stopEnd = tickEvery(50, () => {   // the end of the part: faded out there
-          if (el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { stopEnd(); stopEnd = null; v.fade(r.fadeOut || 30, !!r.fadeDb); }   // (its own fade: its curve)
+          if (el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { stopEnd(); stopEnd = null; v.fade(r.fadeOut || 30, !!r.fadeDb, true); }   // (its own fade: its curve; not a fade anyone started)
         });
         return true;
       },
-      fade(ms, db = true) { if (over) return; if (paused) return finish(); if (stopRamp) stopRamp(); stopRamp = rampEl(el, 0, ms, finish, db); },   // (live: even in dB; paused: nothing to hear, so it's over)
+      fade(ms, db = true, own = false) { if (over) return; if (paused) return finish(); if (!own) out0 = true; if (stopRamp) stopRamp(); stopRamp = rampEl(el, 0, ms, finish, db); },   // (live: even in dB; paused: nothing to hear, so it's over)
       xfade(ms) { v.fade(ms, 'power'); },              // (the playlist flow: equal power)
       level(n) { if (over || !out) return; g = n; if (!stopRamp) el.volume = n; },   // (fading in: it ends at g)
       gain: () => el.volume,
@@ -1334,6 +1336,7 @@
     renderNow(countdown());
     renderClocks();
     renderLevelIcons();
+    if (recentId) markRecent(recentId);
     scrollToLive();
   }
   // An item's start, for its row and its key (the owner, 13 Nov 2026): when it started, else when it's expected
@@ -1435,9 +1438,26 @@
     const open = $('tp-box').hidden; e.currentTarget.blur();
     tpFold(open); tpId = open ? tpTarget() : null; renderTransport();
   });
-  $('tp-pause').addEventListener('click', e => { e.currentTarget.blur(); tpDo(v => (v.paused() ? v.resume() : v.pause())); });
-  $('tp-restart').addEventListener('click', e => { e.currentTarget.blur(); tpDo(v => v.seek(0)); });
-  $('tp-last').addEventListener('click', e => { e.currentTarget.blur(); tpDo(v => v.seek(Math.max(0, v.len() - 10))); });
+  // The same from a phone's Clip editor keys (playout-deck.js: api.transport / transportAct): pause (a toggle), restart,
+  // last (10 s), back / fwd (10 s), edit (its file in the clip editor, paused so it doesn't play over the editor; its item
+  // outlined and in view)
+  function transportAct(a) {
+    const id = tpTarget(), p = id && playing.get(id);
+    if (!p) return;
+    if (a === 'edit') {
+      tpDo(v => v.pause());
+      const f = findCue(p.c.id); if (f) markRecent(f.item, true);
+      editCue(p.c);
+      return;
+    }
+    tpDo(v => (a === 'pause' ? (v.paused() ? v.resume() : v.pause()) : a === 'restart' ? v.seek(0) : a === 'last' ? v.seek(Math.max(0, v.len() - 10))
+      : a === 'back' ? v.seek(Math.max(0, v.pos() - 10)) : a === 'fwd' ? v.seek(Math.min(v.len() - 0.5, v.pos() + 10)) : null));
+  }
+  function transportState() {
+    const id = tpTarget(), p = id && playing.get(id);
+    return p ? { id, name: p.c.name, pos: p.voice.pos(), len: p.voice.len(), paused: p.voice.paused(), left: cueLeft(p.c, null, null) } : null;
+  }
+  for (const [b, a] of [['tp-pause', 'pause'], ['tp-restart', 'restart'], ['tp-last', 'last'], ['tp-edit', 'edit']]) $(b).addEventListener('click', e => { e.currentTarget.blur(); transportAct(a); });
   $('tp-pos').addEventListener('input', () => { tpDrag = true; renderTransport(); });
   $('tp-pos').addEventListener('change', e => { tpDrag = false; const at = +e.currentTarget.value; e.currentTarget.blur(); tpDo(v => v.seek(at)); });
   $('tp-pos').addEventListener('keydown', e => e.stopPropagation());   // (its arrows move it, not the page's keys)
@@ -1516,6 +1536,16 @@
   for (const el of [$('items'), $('boardlist'), $('stopall')]) el.addEventListener('pointerdown', holdDown);
   window.addEventListener('pointerup', holdUp, true);   // (on the window: the list may be redrawn under the pointer)
   window.addEventListener('pointercancel', holdUp, true);
+  // The item last clicked (anywhere in it: a button, a cue, the item itself), or opened in the clip editor from the
+  // transport: outlined (li.recent) so it's easy to come back to (the owner, 14 Nov 2026). On this page only, not kept.
+  var recentId = null;                                // (var: render(), above, may come first)
+  function markRecent(id, show) {
+    recentId = id;
+    for (const li of document.querySelectorAll('#items > li[data-id], #boardlist > li[data-id]')) li.classList.toggle('recent', li.dataset.id === id);
+    const li = show && [...document.querySelectorAll('#items > li[data-id], #boardlist > li[data-id]')].find(x => x.dataset.id === id);
+    if (li) li.scrollIntoView({ block: 'nearest' });
+  }
+  for (const l of [$('items'), $('boardlist')]) l.addEventListener('pointerdown', e => { const li = e.target.closest('li[data-id]'); if (li && l.contains(li)) markRecent(li.dataset.id); }, true);
   $('items').addEventListener('click', onListClick);
   $('boardlist').addEventListener('click', onListClick);   // (the extra keys' cues: ▶ ■ ✂ ✕)
   // A cue's output (from its next play)
@@ -1630,6 +1660,7 @@
   const playingOf = id => (cues[id] || []).filter(c => playing.has(c.id)).map(c => c.id);
   if (window.PlayoutDeck && window.DeckHID) deckBoard = PlayoutDeck.create({
     store, prefix: KEY, soundboard: SOUNDBOARD,
+    transport: transportState, transportAct,
     items: () => show.items.filter(it => !it.e),
     cuesOf: id => cues[id] || [],
     title: titleOf,
@@ -1649,6 +1680,7 @@
     // The extra keys: files dropped on a key (cues[BOARD]); they play by hand, Follow or not
     board: () => cues[BOARD] || [],
     isPlaying: id => playing.has(id),
+    isFading: id => { const p = playing.get(id); return !!(p && p.voice.fading && p.voice.fading()); },
     playCue: id => { const c = Object.values(cues).flat().find(x => x.id === id); if (c) play(c); },   // (an extra key's, or an item's cue 1: as its ▶)
     cueLocked: id => !!(local && local.item === id && !cueControl()),   // (as its cues' ▶ ■: the item run has them)
     playingAll: () => [...playing.keys()],             // (crossfade on release: what else is playing)

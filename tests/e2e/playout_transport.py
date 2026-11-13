@@ -76,6 +76,15 @@ with sync_playwright() as p:
         po.click("#stopall"); po.wait_for_timeout(500)
         check(f"[{kind}] paused, then ■ Stop all: over, the transport gone and folded", po.evaluate("window.__playout.playing()") == [] and not tp()["shown"] and not tp()["open"], [po.evaluate("window.__playout.playing()"), tp()])
 
+    # ✂ Edit: paused, its file in the clip editor
+    po.evaluate("window.__playout.play(%r)" % cue(0)); po.wait_for_timeout(1000)
+    po.click("#tp-badge"); po.click("#tp-edit"); po.wait_for_timeout(2500)
+    ed = po.evaluate("StingClip.editing() && StingClip.editing().name()")
+    check("✂ Edit: it pauses, and its file opens in the clip editor", tp()["paused"] and ed == items[0]["n"] and po.is_visible(".sc-box"), [tp(), ed])
+    po.evaluate("StingClip.editing().act('cancel')"); po.wait_for_timeout(300)
+    check("… closed again: still paused, to resume", tp()["paused"] and po.evaluate("StingClip.editing()") is None, tp())
+    po.click("#stopall"); po.wait_for_timeout(300)
+
     # a fade while paused ends it at once (nothing to hear), either kind
     for i, kind in ((0, "held in memory"), (1, "streamed")):
         po.evaluate("window.__playout.play(%r)" % cue(i)); po.wait_for_timeout(1000)

@@ -82,6 +82,11 @@
     #items > li.now { background: #10243a; border-radius: 6px; }
     #items > li.done .iname { color: var(--dim); }
     #items > li.here { box-shadow: inset 3px 0 0 var(--warn); }   /* an item run here (Follow off: ▶ Start item) */
+    /* Where the operator is (the owner, 14 Nov 2026): the item under the mouse, and the one last clicked (or opened in
+       the clip editor) outlined, so it's easy to come back to; over the other colours, never instead of them */
+    #items > li:hover, #boardlist > li:hover { background-color: rgba(255, 255, 255, .045); border-radius: 6px; }
+    #items > li.now:hover { background-color: #13304d; }
+    #items > li.recent, #boardlist > li.recent { outline: 2px solid rgba(74, 168, 255, .75); outline-offset: -2px; border-radius: 6px; }
     .itag.ilocal { color: var(--warn); font-variant-numeric: tabular-nums; }
     /* An item playing (▶ Start item): its ■ Stop item green, as a cue's output menu while it plays. Still
        playing after another item started: it flashes, with its playing cues' ■ (all rebuilt at once: in step) */
@@ -108,7 +113,7 @@
     #tp-badge[aria-expanded=true] { color: var(--text); border-color: var(--warn); }
     #tp-box { background: rgba(21, 21, 21, .96); border: 1px solid var(--warn); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; width: 280px; max-width: 100%; box-sizing: border-box; }
     #tp-name { font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #tp-box .tp-row { display: flex; gap: 6px; align-items: center; }
+    #tp-box .tp-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
     #tp-pos { flex: 1; min-width: 0; }
     #tp-time { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     #tp-pause.on { border-color: var(--warn); color: var(--warn); }
@@ -244,7 +249,7 @@
       <button type="button" id="tp-badge" aria-expanded="false" title="For rehearsals: pause what's playing, start it again, or find a spot in it">⏯ Rehearsal ▸</button>
       <div id="tp-box" hidden>
         <div id="tp-name"></div>
-        <div class="tp-row"><button type="button" class="small" id="tp-pause">⏸ Pause</button><button type="button" class="small" id="tp-restart" title="From the beginning">⟲ Restart</button><button type="button" class="small" id="tp-last" title="Its last 10 seconds">⏭ Last 10 s</button></div>
+        <div class="tp-row"><button type="button" class="small" id="tp-pause">⏸ Pause</button><button type="button" class="small" id="tp-restart" title="From the beginning">⟲ Restart</button><button type="button" class="small" id="tp-last" title="Its last 10 seconds">⏭ Last 10 s</button><button type="button" class="small" id="tp-edit" title="Pause it and open its file in the clip editor (✂): a new cut plays from its next start">✂ Edit</button></div>
         <div class="tp-row"><input type="range" id="tp-pos" min="0" step="0.1" value="0" aria-label="Where in it"><span id="tp-time"></span></div>
       </div>
     </div>
@@ -412,7 +417,7 @@
   <script src="virtual-deck.js?v=f112dd1e"></script>
   <script src="deck-hid.js?v=90c43672"></script>
   <script src="panels.js?v=407fa75f"></script>
-  <script src="playout-deck.js?v=9970cee7"></script>
-  <script src="playout.js?v=06df0aaa"></script>
+  <script src="playout-deck.js?v=5e77e5a0"></script>
+  <script src="playout.js?v=0d061605"></script>
 </body>
 </html>

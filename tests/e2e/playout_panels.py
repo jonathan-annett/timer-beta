@@ -54,6 +54,19 @@ with sync_playwright() as p:
     check("an item started: scrolled into the box's view", (po.evaluate("window.__playout.local()") or {}).get("item") == "demo-10" and seen["inside"] and seen["top"] > 0, [po.evaluate("window.__playout.local()"), seen])
     po.click("#stopall"); po.wait_for_timeout(300)
 
+    # where the operator is: the item under the mouse, the last one clicked outlined (kept through redraws)
+    po.hover('#items li[data-id="demo-3"] .ihead'); po.wait_for_timeout(150)
+    bg = lambda id: po.evaluate("getComputedStyle(document.querySelector('#items li[data-id=\"%s\"]')).backgroundColor" % id)
+    check("the item under the mouse: highlighted", bg("demo-3") != bg("demo-4"), [bg("demo-3"), bg("demo-4")])
+    po.click('#items li[data-id="demo-3"] .ihead .idur'); po.wait_for_timeout(150)
+    rec = lambda: po.evaluate("[...document.querySelectorAll('#items > li.recent')].map(li => li.dataset.id)")
+    check("a click in an item: outlined as the last one worked on", rec() == ["demo-3"], rec())
+    po.click('#items li[data-id="demo-5"] button[data-act=name]'); po.keyboard.press("Escape"); po.wait_for_timeout(300)
+    check("… a button in another: the outline moves there", rec() == ["demo-5"], rec())
+    po.evaluate("document.querySelector('#items li[data-id=\"demo-10\"] button[data-act=run]').click()"); po.wait_for_timeout(500)
+    check("… kept when the list is drawn again", "demo-5" in rec(), rec())
+    po.click("#stopall"); po.wait_for_timeout(300)
+
     # Show all items: the whole list, the page scrolls
     po.click("#rs-all"); po.wait_for_timeout(200)
     bx = box()

@@ -136,10 +136,19 @@ var PlayoutDeck = (function () {
 
     // ─── Presses (a real deck's, or the page's keys): down, then up ───
     const boards = new Set();                          // every {model(), page, presses} that presses keys
-    const fading = (id, on) => [...boards].some(b => [...b.presses.values()].some(p => p.item === id || (p.all && p.ids.length && on)));
+    // Fading: a key held, or (the owner, 14 Nov 2026) any of its audio fading out, whatever started it (Fade out, Esc, ■ All
+    // held, the playlist flow, a ■ held on the page): orange either way
+    const fadingAudio = id => { const x = extraOf(id); return (x ? [x] : api.cuesOf(id)).some(c => api.isFading && api.isFading(c.id)); };
+    const fading = (id, on) => (on && fadingAudio(id)) || [...boards].some(b => [...b.presses.values()].some(p => p.item === id || (p.all && p.ids.length && on)));
+    // Stopped by a key let go (the owner, 14 Nov 2026): that key flashes black on white for a moment, on every board, so
+    // it's clear it did stop. flashes: what (an item or extra key's slot id, 'all', 'tstop') → until (performance.now())
+    const FLASH_MS = 350, flashes = new Map();
+    function flash(what) { flashes.set(what, performance.now() + FLASH_MS); setTimeout(() => changed(), FLASH_MS + 20); }
+    const flashed = what => { const t = flashes.get(what); if (t && t > performance.now()) return true; flashes.delete(what); return false; };
+    const lit = f => Object.assign({}, f, { bg: '#fff', fg: '#000' });
     function handle(b, i, down) {
-      const ed = editNow();
-      if ((ed || b.edOnly) && !(!down && b.presses.has(i))) { if (down) editPress(b.model(), i, ed); return changed(); }
+      const ed = editNow(), t = !ed && b.edOnly ? tpNow() : null;
+      if ((ed || b.edOnly) && !(!down && b.presses.has(i))) { if (down) { if (t) transportPress(b, i, t); else editPress(b.model(), i, ed); } return changed(); }
       const model = b.model(), s = slots(model), g = geometry(model, s.length), k = keyAt(model, s.length, Math.min(b.page, g.pages - 1), i);
       if (down) {
         if (k.kind === 'prev') b.page = Math.max(0, Math.min(b.page, g.pages - 1) - 1);
@@ -165,7 +174,8 @@ var PlayoutDeck = (function () {
         if (!p) return;
         b.presses.delete(i);
         if (p.xfade) crossfade(p);
-        else if (p.all) api.stopAll(); else api.stopIds(p.ids);
+        else if (p.all) { api.stopAll(); if (p.ids.length) flash('all'); }   // (something there when it was pressed: stopped now)
+        else { api.stopIds(p.ids); if (p.ids.length) flash(p.tp ? 'tstop' : p.item); }
       }
       changed();
     }
@@ -273,26 +283,59 @@ var PlayoutDeck = (function () {
       if (a === 'more' || a === 'back') { edPage[model] = a === 'more' ? (edPage[model] || 0) + 1 : 0; return; }
       if (ed) ed.act(a);
     }
+    // A phone kept for the editor, while no editor is open but something plays: the rehearsal transport (the owner, 14 Nov
+    // 2026: walk away from the console in a rehearsal, work with the talent on stage and run the playback from the phone).
+    // In threes: what's playing, where, ⏯; −10 s, ⟲ Restart, +10 s; ⏭ Last 10 s, ✂ Edit, ■ Stop (a tap stops, a hold fades)
+    const TP = ['tinfo', 'tpos', 'tpause', 'tback', 'trestart', 'tfwd', 'tlast', 'tedit', 'tstop'];
+    let tpLast = null;                                 // (what it showed last: kept up for the ■ Stop flash once it's over)
+    const tpNow = () => { const t = api.transport ? api.transport() : null; if (t) tpLast = t; return t || (flashed('tstop') ? tpLast : null); };
+    function transportFaces(model, t) {
+      const K = modelOf(model).keyCount;
+      return Array.from({ length: K }, (_, i) => {
+        const a = TP[i];
+        if (!a) return { bg: '#000', fg: '#000', press: false, a: 'empty' };
+        const F = {
+          tinfo: [t.paused ? COLOURS.here : COLOURS.play, t.paused ? 'paused' : 'playing', t.name || '', t.left != null ? mmss(Math.ceil(t.left)) + ' left' : '', false],
+          tpos: ['#1c2a3a', 'at', mmss(Math.floor(t.pos)), 'of ' + mmss(Math.round(t.len)), false],
+          tpause: [t.paused ? COLOURS.here : COLOURS.cue, 'rehearsal', t.paused ? '▶ Resume' : '⏸ Pause', '', true],
+          tback: [COLOURS.page, 'jump', '−10 s', '', true], tfwd: [COLOURS.page, 'jump', '+10 s', '', true],
+          trestart: [COLOURS.page, 'from the top', '⟲ Restart', '', true], tlast: [COLOURS.page, 'jump', '⏭ Last 10 s', '', true],
+          tedit: [COLOURS.mark, 'clip editor', '✂ Edit', 'pauses it', true], tstop: [COLOURS.all, 'tap: stop', '■ Stop', 'hold: fade', true],
+        }[a];
+        const f = { bg: F[0], fg: '#fff', rs: { cap: F[1], body: F[2], foot: F[3] }, press: F[4] };
+        return a === 'tstop' && flashed('tstop') ? lit(f) : f;
+      });
+    }
+    function transportPress(b, i, t) {
+      const a = TP[i];
+      if (a === 'tstop') b.presses.set(i, { ids: api.fadeCue(t.id, fadeSecs() * 1000), tp: true });   // (up: stopped there)
+      else if (a && a !== 'tinfo' && a !== 'tpos') api.transportAct({ tpause: 'pause', tback: 'back', tfwd: 'fwd', trestart: 'restart', tlast: 'last', tedit: 'edit' }[a]);
+    }
     if (window.StingClip && StingClip.onEdit) StingClip.onEdit(() => { for (const k of Object.keys(edPage)) delete edPage[k]; changed(); });
     let editTick = '';                                 // (the editor's state shown on the keys: redrawn when it changes)
-    setInterval(() => { const ed = editNow(); const j = ed ? JSON.stringify(ed.state()) : ''; if (j !== editTick) { editTick = j; if (ed) draw(); } }, 150);
+    setInterval(() => {
+      const ed = editNow(), t = !ed && [...phones.values()].some(p => p.ok && p.b.edOnly) ? tpNow() : null;
+      const j = ed ? JSON.stringify(ed.state()) : t ? JSON.stringify([t.id, t.paused, Math.floor(t.pos), t.left != null && Math.ceil(t.left)]) : '';
+      if (j !== editTick) { editTick = j; draw(); }
+    }, 150);
 
     function faces(model, page, edOnly) {
-      const ed = editNow();
+      const ed = editNow(), t = !ed && edOnly ? tpNow() : null;
+      if (t) return transportFaces(model, t);
       if (ed || edOnly) return editFaces(model, ed);
       const s = slots(model), g = geometry(model, s.length), items = onSheet();
       page = Math.min(page, g.pages - 1);
       const busy = api.anyPlaying();
       return Array.from({ length: g.K }, (_, i) => {
         const k = keyAt(model, s.length, page, i);
-        if (k.kind === 'all') return { bg: busy ? COLOURS.allOn : COLOURS.all, fg: '#fff', rs: { cap: 'tap: stop', body: '■ All', foot: 'hold: fade' }, press: true };
+        if (k.kind === 'all') { const f = { bg: busy ? COLOURS.allOn : COLOURS.all, fg: '#fff', rs: { cap: 'tap: stop', body: '■ All', foot: 'hold: fade' }, press: true }; return flashed('all') ? lit(f) : f; }
         if (k.kind === 'prev') return { bg: COLOURS.page, fg: '#fff', rs: { cap: 'page', body: '◀', foot: (page + 1) + ' / ' + g.pages }, press: page > 0 };
         if (k.kind === 'next') return { bg: COLOURS.page, fg: '#fff', rs: { cap: 'page', body: '▶', foot: (page + 1) + ' / ' + g.pages }, press: g.wrap ? g.pages > 1 : page < g.pages - 1 };
         if (k.kind === 'give') { const ok = timerFree(); return { bg: ok ? '#2a2200' : '#0d0d0d', fg: ok ? '#ffcc33' : '#444', rs: { cap: 'deck', body: '→ timer', foot: ok ? '' : timer.open ? 'it has one' : 'no timer page' }, press: false, a: 'empty', give: true }; }   // (on a deck only: not the page's keys)
         if (k.kind === 'markin' || k.kind === 'markout') return { bg: COLOURS.mark, fg: '#fff', rs: { cap: 'mark', body: k.kind === 'markin' ? 'Start' : 'End', foot: api.cueName(k.cue) }, press: true };
         if (k.kind === 'mode') { const cm = cueMode(model); return { bg: cm ? COLOURS.cue : COLOURS.page, fg: '#fff', rs: { cap: 'keys play', body: cm ? 'Cue 1' : 'Item', foot: cm ? 'tap: items' : 'tap: cue 1' }, press: true }; }
-        const x = extraOf(s[k.slot]);
-        return x ? extraFace(s[k.slot], x) : itemFace(s[k.slot], items, cueMode(model));
+        const x = extraOf(s[k.slot]), f = x ? extraFace(s[k.slot], x) : itemFace(s[k.slot], items, cueMode(model));
+        return s[k.slot] && flashed(s[k.slot]) ? lit(f) : f;
       });
     }
 
@@ -870,6 +913,7 @@ var PlayoutDeck = (function () {
       listed: () => listed,
       phoneLink: () => share && phoneLink(),
       phones: () => [...phones.values()].map(p => ({ id: p.id, ok: p.ok, pin: p.pin, name: p.name, model: p.model, page: p.b && p.b.page })),
+      phoneFace: (n, i) => { const p = [...phones.values()].filter(x => x.ok)[n]; const f = p && faces(p.model, p.b.page, p.b.edOnly)[i]; return f ? [f.bg, f.fg] : null; },
     };
     // The arrangement read again (a soundboard loaded from a file, or cleared, wrote it)
     function reloadLayout() {
