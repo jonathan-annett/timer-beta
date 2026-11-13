@@ -341,7 +341,7 @@ Copy the contents of `public/` to any static web host. It must be served over **
 
 ## Development
 
-No build step: it's plain HTML, CSS and JavaScript. See [`CLAUDE.md`](CLAUDE.md) for the architecture, conventions and known issues before changing anything.
+No build step: it's plain HTML, CSS and JavaScript. See [`CLAUDE.md`](CLAUDE.md) for the conventions and [`docs/architecture.md`](docs/architecture.md) for the architecture and known issues before changing anything.
 
 ## Licence
 

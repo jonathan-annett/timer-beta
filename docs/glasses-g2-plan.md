@@ -17,7 +17,7 @@ Decisions since this plan was written (they override the sections below):
   phone page), typed in the share panel's **Glasses** box: always as a presenter's (the owner: on one phone
   it's a solo presenter; shows with an operator use the share code and its role choice). No
   proximity number (only the wearer can read the code). The link comes sealed for the glasses' key and
-  waits on the server until the Even app is back. Pairing server protocol 7 (*Device codes* in CLAUDE.md).
+  waits on the server until the Even app is back. Pairing server protocol 7 (*Device codes* in `docs/architecture.md`).
   The share panel's Glasses box (`TimerFeatures.glasses`) is on for alpha, localhost and beta (since 10 Nov 2026, with the real app's 0.1.22; the glasses' codes live on beta's server). Still open for one-phone use:
   the timer runs only while its browser is in front (sharing now keeps the screen on); whether the Even
   app keeps the glasses' socket in the background is untested.
@@ -47,7 +47,7 @@ Decisions since this plan was written (they override the sections below):
   along the top, the message (2 lines max) and the countdown centred, started | ends at along the
   bottom; Next corner ignored), three or more taps in a burst fire Next (*Next...* flashes), fewer do
   nothing. The phone page asks for a role before pairing (*I'm the presenter / operator*); the
-  timer's request row and device list decide (see CLAUDE.md, Phone Remote Control).
+  timer's request row and device list decide (see `docs/architecture.md`, Phone Remote Control).
 - **Operator menu (0.1.13):** Next item, Back (undo Next), Pause / resume, Reset show, Auto start
   on / off, Minimal view on / off (the four corner items hidden); Next fires on the 3rd tap (4th / 5th
   as set on the phone page) at once; standby shows on the glasses (presenter: in the corner; operator:
@@ -136,7 +136,7 @@ github.com/fabioglimb/even-toolkit (bridge/layout/gesture helpers).
 ## Design: a third kind of view-only display
 
 The app is architecturally the same as `public/remote.html` in countdown mode (see
-*Phone Remote Control* in CLAUDE.md). It:
+*Phone Remote Control* in `docs/architecture.md`). It:
 
 1. Opens a WebSocket to the pairing server (`wss://<timer host>:8443/`, `remote-server.js`) and
    sends `{type:'join', room, key: <view key>}`. The server answers `joined{id, hostOnline,

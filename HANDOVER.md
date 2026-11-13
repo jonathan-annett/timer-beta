@@ -13,7 +13,8 @@ In active development; used at real events.
 ## Where everything is
 | Path | What |
 |---|---|
-| `CLAUDE.md` | **Read first.** Architecture, conventions, every subsystem in detail |
+| `CLAUDE.md` | **Read first.** The rules and a map of the subsystems |
+| `docs/architecture.md` | Every subsystem in detail (the map in `CLAUDE.md` points at its sections) |
 | `public/` | The static site (timer, presenter, phone remote, overlay, run sheet editor, assist station…) |
 | `remote-server.js` | Standalone pairing server (wss, port 8443) for shared devices; `deploy/` has its systemd unit |
 | `tests/e2e/` | Playwright (Python) end-to-end scripts, `run_all.sh`, `server.sh`; see its `README.md` |
@@ -44,7 +45,7 @@ Branches: `alpha` = development, `main` = released.
 from the private repo; see its HANDOVER.md. Nothing in this repo deploys anything when tests run.
 
 ## Decisions and invariants
-See `CLAUDE.md`, *Conventions to Follow*. The main ones: no build step in `public/`; visual state only
+See `CLAUDE.md`, *Rules*. The main ones: no build step in `public/`; visual state only
 via classes on `<html>`; `timeProvider.now()`, never `Date.now()`, in timer logic; integrations chain
 `timerAPI` and send commands only through `processTimerApiMessage`; phone commands only through the
 `ALLOWED` map; run `node tools/stamp-versions.mjs` after changing any `.js`/`.css` in `public/`;
