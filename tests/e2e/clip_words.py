@@ -8,7 +8,7 @@ OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exis
 # silence that isn't sent at all. Lines with their times; Find words; ▶ plays from a line (the close-up there);
 # Start / End set the clip's edges; Enter in the box doesn't save, Esc clears it first; the transcript is kept for
 # the file and shown next time without the model; without the trial, nothing.
-import io, math, mimetypes, os, struct, sys, wave, base64
+import io, math, mimetypes, os, struct, sys, time, wave, base64
 from playwright.sync_api import sync_playwright
 BASE = "https://timer.sophtwhere.com/beta/"
 FAKE_ASR = b"""let n = 0;
@@ -128,6 +128,37 @@ with sync_playwright() as p:
     check("opened again: the waveform at once (from last time), play and Save waiting for the sound", seen["playOff"] and seen["saveOff"] and seen["wave"] > 500 and "from last time" in seen["msg"], seen)
     pg.wait_for_function("!document.querySelector('.sc-play').disabled", timeout=30000)
     check("… then the sound read: play and Save back", not pg.is_disabled(".sc-save") and pg.text_content(".sc-msg") == "")
+    pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
+
+    # A part too long to hold (from a marked start to the end of a long file): First / Last 2 s still play, only that much made
+    pg.evaluate("""() => { const sr = 8000, n = sr * 670, b = new ArrayBuffer(44 + n * 2), v = new DataView(b), w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+      w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+      const d = new Int16Array(b, 44); for (let i = 0; i < n; i++) d[i] = Math.round(8000 * Math.sin(i / 3));
+      window.__eleven = new File([b], 'Eleven.wav', { type: 'audio/wav' });
+      window.__clip = StingClip.open({ src: window.__eleven, name: 'Eleven', media: 'audio', region: { start: 60, fadeOut: 500 }, focus: 'start' }); }""")
+    pg.wait_for_function("document.querySelector('.sc-msg').textContent === ''", timeout=60000); pg.wait_for_timeout(300)
+    pl = lambda: pg.evaluate("document.querySelector('.sc-wrap').__playing()")
+    pg.click(".sc-first"); pg.wait_for_timeout(300)
+    check("a part over 10 minutes (a start marked in an 11-minute file): ▶ First 2 s plays its first 2 s", pl() == {"from": 60, "to": 62} and pg.text_content(".sc-msg") == "", [pl(), pg.text_content(".sc-msg")])
+    pg.click(".sc-last"); pg.wait_for_timeout(300)
+    check("… ▶ Last 2 s: 2 s before its fade out, then the fade", pl() == {"from": 667.5, "to": 670}, pl())
+    pg.click(".sc-lead"); pg.wait_for_timeout(300)
+    check("… ▶ From 2 s before: the lead-in and its first 10 s", pl() == {"from": 58, "to": 70}, pl())
+    pg.click(".sc-stop"); pg.click(".sc-play"); pg.wait_for_timeout(300)
+    check("… ▶ Play the part: too long to hold, said so", pl() is None and pg.text_content(".sc-msg").startswith("Too long to play here (10:10)"), pg.text_content(".sc-msg"))
+
+    # Punch in / punch out as it plays (the owner): ▶ Play on goes straight on past the part's end; I / O mark the edges
+    secs = lambda k: (lambda m, x: int(m) * 60 + float(x))(*pg.input_value(".sc-t[data-k=%s]" % k).split(":"))
+    check("Mark start / Mark end: off while nothing plays", pg.is_disabled(".sc-markin") and pg.is_disabled(".sc-markout"))
+    pg.click(".sc-playon"); t0 = time.time(); pg.wait_for_timeout(200)
+    check("▶ Play on: from 2 s before the start straight on to the end of the track (a long one too); the Mark buttons on", pl() == {"from": 58, "to": 670} and not pg.is_disabled(".sc-markin"), pl())
+    pg.wait_for_timeout(int(max(0, t0 + 1.5 - time.time()) * 1000)); heard = time.time() - t0; pg.keyboard.press("i"); pg.wait_for_timeout(200)
+    st = secs("start")
+    check("I (Mark start): the start where it played, half a second back; it plays on", abs(st - (58 + heard - 0.5)) < 0.35 and pl() is not None and pg.text_content(".sc-zlabel").startswith("Close up on the start"), [st, 58 + heard - 0.5, pl()])
+    pg.wait_for_timeout(int(max(0, t0 + 4 - time.time()) * 1000)); heard = time.time() - t0; pg.click(".sc-markout"); pg.wait_for_timeout(200)
+    en = secs("end")
+    check("Mark end: the end where it played (nothing taken off); it stops there", abs(en - (58 + heard)) < 0.35 and pl() is None and pg.is_disabled(".sc-markout") and pg.text_content(".sc-zlabel").startswith("Close up on the end"), [en, 58 + heard, pl()])
     pg.keyboard.press("Escape"); pg.wait_for_timeout(300)
 
     # A video's picture beside the close-up (a short video made here: MediaRecorder, a canvas and a tone)

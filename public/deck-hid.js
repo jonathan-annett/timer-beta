@@ -120,10 +120,11 @@ var DeckHID = (function () {
   // ─── Claims: which page drives a deck on this computer ───
   const CLAIMS = 'deck_claims';
   function claims() { try { const v = JSON.parse(localStorage.getItem(CLAIMS) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; } }
-  const ownerOf = id => (claims()[id] === 'playout' ? 'playout' : 'timer');
+  // 'playout': the playout page's; 'none': set aside there (Disconnect: neither page drives it); else the timer's
+  const ownerOf = id => { const v = claims()[id]; return v === 'playout' || v === 'none' ? v : 'timer'; };
   function setOwner(id, who) {
     const c = claims();
-    if (who === 'playout') c[id] = 'playout'; else delete c[id];
+    if (who === 'playout' || who === 'none') c[id] = who; else delete c[id];
     try { localStorage.setItem(CLAIMS, JSON.stringify(c)); } catch (_) { /* private mode */ }
   }
   const onClaims = fn => window.addEventListener('storage', e => { if (e.key === CLAIMS) fn(); });

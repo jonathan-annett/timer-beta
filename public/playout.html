@@ -16,6 +16,8 @@
     button:hover { background: #2c2c2c; }
     button.primary { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
     button.small { padding: 2px 8px; font-size: 13px; }
+    button.chip { border-radius: 999px; padding: 2px 12px; }   /* a switch: lit while on */
+    button.chip[aria-pressed=true] { background: #0b3d5c; border-color: #4aa8ff; color: #fff; }
     button:disabled { opacity: .4; cursor: default; }
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
     #demobar { border-color: var(--warn); font-size: 14px; }   /* the demo (?demo): no timer */
@@ -242,6 +244,11 @@
           <button type="button" class="small" id="sb-pastebtn">Paste a list…</button>
           <span class="hint">or drop a folder of audio or video files anywhere on this page</span>
         </form>
+        <div class="row" id="sb-flowrow" style="margin-top:10px">
+          <button type="button" class="small chip" id="sb-flow" aria-pressed="false">Playlist flow</button>
+          <button type="button" class="small chip" id="sb-loop" aria-pressed="false" title="After the last item, the first again">🔁 Loop</button>
+          <span class="hint" id="sb-flowhint">plays the items one after another in this order, each crossfading into the next over 5 s; starting another item carries on from there.</span>
+        </div>
         <div id="sb-pastebox" hidden>
           <textarea id="sb-paste" rows="6" spellcheck="false" placeholder="One item per line: its name, then its length if you like&#10;Welcome, 5&#10;Keynote	45&#10;Walk-on music 3:30"></textarea>
           <div class="row"><button type="button" class="small primary" id="sb-pasteok">Add these</button><button type="button" class="small" id="sb-pastecancel">Cancel</button><span class="hint" id="sb-pastenote"></span></div>
@@ -333,7 +340,7 @@
   <script src="remote-peer.js?v=fd06de67"></script>
   <script src="video-store.js?v=069f77d9"></script>
   <script src="audio-out.js?v=e41c465e" data-role="both"></script>
-  <script src="sting-clip.js?v=a9e242c0"></script>
+  <script src="sting-clip.js?v=5056cf83"></script>
   <script src="clip-words.js?v=eaa0957d"></script>
   <script src="sting-library.js?v=db93145a"></script>
   <script src="sting-picker.js?v=486056af"></script>
@@ -341,8 +348,8 @@
   <script src="sting-roll.js?v=08da6f76"></script>
   <script src="deck-face.js?v=095d2354"></script>
   <script src="virtual-deck.js?v=f112dd1e"></script>
-  <script src="deck-hid.js?v=63066317"></script>
-  <script src="playout-deck.js?v=b8ff00ff"></script>
-  <script src="playout.js?v=4924400b"></script>
+  <script src="deck-hid.js?v=90c43672"></script>
+  <script src="playout-deck.js?v=742f5879"></script>
+  <script src="playout.js?v=f26dd2ac"></script>
 </body>
 </html>

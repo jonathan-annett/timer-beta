@@ -128,7 +128,8 @@ var StingClip = (function () {
     return await new Promise((res, rej) => { const p = audio().decodeAudioData(data, res, rej); if (p && p.then) p.then(res, rej); });
   }
 
-  function render(buf, s) {
+  // win: [from, to] in s of the clip as it plays: only that much made (the editor's First / Last 2 s of a long part)
+  function render(buf, s, win) {
     const r = region(s) || { fadeIn: 0, fadeOut: 0 }, sr = buf.sampleRate, n = buf.length;
     let segs = plan(s, buf.duration).segs.map(g => {
       const a = Math.max(0, Math.min(n, Math.round(g[0] * sr)));
@@ -136,22 +137,26 @@ var StingClip = (function () {
     }).filter(g => g[1] > g[0]);
     if (!segs.length) { const a = Math.max(0, Math.min(n - 1, Math.round((r.start || 0) * sr))); segs = [[a, a + 1]]; }
     const total = segs.reduce((t, g) => t + g[1] - g[0], 0), xf = Math.round(SEAM * sr);
-    const out = audio().createBuffer(buf.numberOfChannels, total, sr);
+    const W0 = win ? Math.max(0, Math.min(total - 1, Math.round(win[0] * sr))) : 0, W1 = win ? Math.max(W0 + 1, Math.min(total, Math.round(win[1] * sr))) : total;
+    const out = audio().createBuffer(buf.numberOfChannels, W1 - W0, sr);
     const fi = Math.min(total, Math.round(r.fadeIn / 1000 * sr)), fo = Math.min(total, Math.round(r.fadeOut / 1000 * sr));
     for (let c = 0; c < buf.numberOfChannels; c++) {
       const src = buf.getChannelData(c), to = out.getChannelData(c);
-      let o = 0;
+      let o = 0;                                     // (o, k: samples of the whole clip; to[] holds W0…W1 of it)
       segs.forEach((g, i) => {
-        to.set(src.subarray(g[0], g[1]), o);
-        const prev = i ? segs[i - 1][1] : g[0];
-        if (prev !== g[0]) {                         // a join: cross from what followed the last piece into this one
-          const m = Math.min(xf, g[1] - g[0]);
-          for (let j = 0; j < m; j++) { const w = j / m; to[o + j] = to[o + j] * w + (src[prev + j] || 0) * (1 - w); }
+        const len = g[1] - g[0], a = Math.max(o, W0), b = Math.min(o + len, W1);
+        if (b > a) {
+          to.set(src.subarray(g[0] + a - o, g[0] + b - o), a - W0);
+          const prev = i ? segs[i - 1][1] : g[0];
+          if (prev !== g[0]) {                       // a join: cross from what followed the last piece into this one
+            const m = Math.min(xf, len);
+            for (let j = Math.max(0, a - o); j < Math.min(m, b - o); j++) { const w = j / m, k = o + j - W0; to[k] = to[k] * w + (src[prev + j] || 0) * (1 - w); }
+          }
         }
-        o += g[1] - g[0];
+        o += len;
       });
-      for (let i = 0; i < fi; i++) to[i] *= curveIn(i / fi, r.fadeDb);
-      for (let i = 0; i < fo; i++) to[to.length - 1 - i] *= curveOut(1 - i / fo, r.fadeDb);
+      for (let k = W0; k < Math.min(fi, W1); k++) to[k - W0] *= curveIn(k / fi, r.fadeDb);
+      for (let k = Math.max(W0, total - fo); k < W1; k++) to[k - W0] *= curveOut(1 - (total - 1 - k) / fo, r.fadeDb);
     }
     return out;
   }
@@ -355,6 +360,8 @@ var StingClip = (function () {
 .sc-row input.sc-ms::-webkit-inner-spin-button { opacity: 1; }
 .sc-hint { color: #777; font-size: 0.8rem; margin: 0.3rem 0 0.6rem; }
 .sc-row { display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center; margin: 0.5rem 0; }
+.sc-punch { display: inline-flex; gap: 0.4rem; }   /* Mark start / Mark end: a pair, lit while it plays */
+.sc-punch button:not(:disabled) { border-color: #c0508e; }
 .sc-row label { color: #aaa; display: inline-flex; gap: 0.4rem; align-items: center; }
 .sc-row input { font: inherit; width: 6.5rem; padding: 0.25rem 0.4rem; background: #1a1a1a; color: #eee; border: 1px solid #333; border-radius: 0.3rem; font-variant-numeric: tabular-nums; }
 .sc-row input.sc-ms { width: 4.5rem; }
@@ -412,7 +419,7 @@ var StingClip = (function () {
         <canvas class="sc-over" title="The whole track: drag across it to choose a part, or drag a start/end line${canLoop ? '; Shift+drag marks a loop' : ''}"></canvas>
         <div class="sc-zcap"><span class="sc-zlabel"></span><button class="sc-zall" hidden>Show the whole part</button></div>
         <div class="sc-zrow"><canvas class="sc-zoom" title="Close up: drag the start or end line"></canvas><video class="sc-vid" muted playsinline preload="auto" hidden title="The picture: as the part plays, else the frame at the edge you're working on"></video></div>
-        <div class="sc-hint">Drag across the whole track to choose a part; drag a white line (the pointer becomes ↔) to move that edge.${canLoop ? ' Shift+drag marks a loop (orange); drag its ⟲ tab to put the repeats somewhere else.' : ''} ← → move the selected edge (Shift: 1 s, Alt: 0.01 s); ↑ ↓ in a time or fade box step it · Space plays · Enter saves · Esc cancels</div>
+        <div class="sc-hint">Drag across the whole track to choose a part; drag a white line (the pointer becomes ↔) to move that edge.${canLoop ? ' Shift+drag marks a loop (orange); drag its ⟲ tab to put the repeats somewhere else.' : ''} ← → move the selected edge (Shift: 1 s, Alt: 0.01 s); ↑ ↓ in a time or fade box step it · Space plays · I / O mark the start / end as it plays · Enter saves · Esc cancels</div>
         <div class="sc-row">
           <label>Start <input class="sc-t" data-k="start" spellcheck="false" title="↑ ↓: 0.01 s (Shift: 0.1 s)"></label>
           <label>End <input class="sc-t" data-k="end" spellcheck="false" title="↑ ↓: 0.01 s (Shift: 0.1 s)"></label>
@@ -438,7 +445,7 @@ var StingClip = (function () {
         </div>
         <div class="sc-lnote"></div>
         <div class="sc-row">
-          <button class="sc-play">▶ Play the part</button><button class="sc-first" title="Its first 2 seconds, with the fade in">▶ First 2 s</button><button class="sc-last" title="The 2 seconds before the fade out begins, then the fade (or just the last 2 seconds)">▶ Last 2 s</button><button class="sc-lead" title="From 2 seconds before the start: hear the lead-in">▶ From 2 s before</button><button class="sc-stop">■</button>
+          <button class="sc-play">▶ Play the part</button><button class="sc-first" title="Its first 2 seconds, with the fade in">▶ First 2 s</button><button class="sc-last" title="The 2 seconds before the fade out begins, then the fade (or just the last 2 seconds)">▶ Last 2 s</button><button class="sc-lead" title="From 2 seconds before the start: hear the lead-in">▶ From 2 s before</button><button class="sc-playon" title="From 2 seconds before the start straight on to the end of the track (not stopping at the part’s end): mark the start and the end as you hear them">▶ Play on</button><button class="sc-stop">■</button><span class="sc-punch"><button class="sc-markin" disabled title="As it plays: the clip starts here (half a second back, for your reaction); it plays on (key: I)">Mark start</button><button class="sc-markout" disabled title="As it plays: the clip ends here; it stops (key: O)">Mark end</button></span>
           <label>Name <input class="sc-name" spellcheck="false"></label>
         </div>
         <div class="sc-words" hidden></div>
@@ -637,6 +644,7 @@ var StingClip = (function () {
       wrap.__zoom = () => zoomRange();               // (tests)
       wrap.__loop = () => (loop ? cleanLoop(loop) : null);
       function draw() {
+        $('.sc-markin').disabled = $('.sc-markout').disabled = !voice;   // (punch in / out: while it plays)
         if (!ready()) return;
         if (sizeCanvas(over) || !peaks) peaks = columnPeaks(0, dur(), over.width);
         sizeCanvas(zoom);
@@ -813,9 +821,10 @@ var StingClip = (function () {
           w0 = p.loop.inAt - 2; w1 = p.loop.inAt + p.loop.copies * p.loop.len + 2;
         }
         const L = length(piece, dur()) || 0;
-        if (L > LIMITS.download) return msg('Too long to play here (' + clock(L) + ').');
+        if (how === 'lead' && L > LIMITS.download) w1 = 12;   // (a long part: its lead-in and the first 10 s)
         w0 = Math.max(0, Math.min(w0, L)); w1 = w1 == null ? L : Math.min(L, Math.max(w0, w1));
-        const full = render(buf, piece), out = w0 > 0 || w1 < L ? slice(full, w0, w1) : full;
+        if (w1 - w0 > LIMITS.download) return msg('Too long to play here (' + clock(L) + ').');
+        const out = render(buf, piece, w0 > 0 || w1 < L ? [w0, w1] : null);   // (only what's played: a long part's First / Last 2 s too)
         playSegs = plan(piece, dur()).segs; playOff = w0;
         playing = { from: r2(sourceAt(w0, playSegs)), to: r2(sourceAt(w1, playSegs)) };
         const v = voice = play(out);
@@ -823,6 +832,29 @@ var StingClip = (function () {
         v.ended.then(() => { if (voice === v) { voice = null; draw(); } });
         const tick = () => { if (voice !== v) return; draw(); raf = requestAnimationFrame(tick); };
         tick();
+      }
+      // Play on (the owner, 13 Nov 2026: punch in / punch out as it plays): from 2 s before the start straight on to
+      // the end of the track, the source as it is (no part, no fades; played from the decoded track, no copy: long ones too)
+      function playOn() {
+        stopPlay();
+        if (!buf) return;
+        const t = Math.max(0, sel.start - 2), v = voice = play(buf, { offset: t });
+        v.gain.gain.value = levelGain();
+        playSegs = [[0, dur()]]; playOff = 0;          // (its time() counts from the track's start)
+        playing = { from: r2(t), to: r2(dur()) };
+        v.ended.then(() => { if (voice === v) { voice = null; draw(); } });
+        const tick = () => { if (voice !== v) return; draw(); raf = requestAnimationFrame(tick); };
+        tick();
+      }
+      // Mark start / Mark end as it plays (any ▶): the playhead's place in the track, the start half a second back for
+      // the reaction; after the start it plays on (listen for the end), the end stops it
+      const MARK_LEAD = 0.5;
+      function mark(edge) {
+        if (!voice) return;
+        const t = sourceAt(playOff + voice.time(), playSegs);
+        if (edge === 'start') { set('start', Math.max(0, t - MARK_LEAD)); if (sel.end != null && sel.end <= sel.start + 0.1) sel.end = null; }
+        else { if (t <= sel.start + 0.1) return msg('That’s before the start: Mark start first.'); set('end', t); stopPlay(); msg(''); }
+        active = edge; redraw(); focusOn(edge);
       }
       // From t in the source, 20 s at most, the close-up there (Transcribe: a line's ▶)
       function playFrom(t) {
@@ -848,6 +880,9 @@ var StingClip = (function () {
       $('.sc-zall').addEventListener('click', () => focusOn('all'));
       $('.sc-lead').addEventListener('click', () => playPart('lead'));
       $('.sc-stop').addEventListener('click', stopPlay);
+      $('.sc-playon').addEventListener('click', () => { focusOn('all'); playOn(); });
+      $('.sc-markin').addEventListener('click', () => mark('start'));
+      $('.sc-markout').addEventListener('click', () => mark('end'));
       $('.sc-whole').addEventListener('click', () => { sel.start = 0; sel.end = null; sel.fadeIn = sel.fadeOut = 0; zmode = 'all'; redraw(); focusOn('all'); });
       $('.sc-addloop').addEventListener('click', () => {
         if (!buf) return;
@@ -927,6 +962,7 @@ var StingClip = (function () {
         }
         if (typing) return;
         if (e.key === ' ') { e.preventDefault(); if (voice) stopPlay(); else playPart(); return; }
+        if ((e.key === 'i' || e.key === 'I' || e.key === 'o' || e.key === 'O') && !e.ctrlKey && !e.altKey) { e.preventDefault(); mark(e.key.toLowerCase() === 'i' ? 'start' : 'end'); return; }
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
           e.preventDefault();
           if (LOOPK[active] && !loop) active = 'start';
@@ -973,7 +1009,7 @@ var StingClip = (function () {
         if (firstLook) return; firstLook = true;
         if (opts.focus === 'start' || opts.focus === 'end') { active = opts.focus; redraw(); focusOn(opts.focus); } else { redraw(); focusOn('all'); }
       };
-      const PLAYS = ['.sc-play', '.sc-first', '.sc-last', '.sc-lead'];
+      const PLAYS = ['.sc-play', '.sc-first', '.sc-last', '.sc-lead', '.sc-playon'];
       if (waveKey && window.videoStore) window.videoStore.get('wave:' + waveKey).then(w => {
         if (buf || !w || w.v !== 1 || !(w.peaks instanceof Uint8Array) || !(w.dur > 0)) return;
         wave = w; cancelAnimationFrame(loadRaf); readMsg();

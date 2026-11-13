@@ -287,6 +287,7 @@
     for (const c of curCues()) if (test(c) && !fired.has(c.id)) { fired.add(c.id); play(c, { offset: joinAt(c, cd ? cd.remain : Infinity) }); }
   }
   function tick() {
+    if (flow) tickFlow();
     if (local) tickLocal();
     if (place === 'external' && (!ext || ext.closed)) extGone();   // (closed without a pagehide)
     renderClocks();
@@ -310,14 +311,74 @@
   let lastRun = null;                                  // the item started here last (it doesn't flash: see activeItems)
   let deckBoard = null;                                // the Stream Deck soundboard (playout-deck.js), below
   const localCd = () => { const e = performance.now() - local.t0; return { elapsed: e, remain: local.dur == null ? Infinity : local.dur * 1000 - e }; };
-  function runLocal(itemId) {
+  function runLocal(itemId, how) {                     // how (the playlist flow's): {flow, fadeIn (ms), silent}
     const it = show.items.find(x => x.id === itemId);
+    if (flowOn()) {
+      if (!(how && how.flow)) for (const p of playing.values()) if (p.run && p.item && p.item !== itemId) p.voice.fade(FLOW_MS);   // a jump: what was playing fades
+      flow = { item: itemId, t0: performance.now(), heard: false, len: null, silent: (how && how.silent) || 0 };
+    }
     local = { item: itemId, t0: performance.now(), dur: it && it.d > 0 ? it.d : null, fired: new Set(), prev: new Map() };
     lastRun = itemId;
-    for (const c of cues[itemId] || []) if (c.trigger === 'start') { local.fired.add(c.id); play(c, { run: true, item: itemId }); }
+    for (const c of cues[itemId] || []) if (c.trigger === 'start') { local.fired.add(c.id); play(c, { run: true, item: itemId, fadeIn: how && how.fadeIn }); }
+    if (flow) prepare();                               // (the next one's clips ready for its crossfade)
     render();
   }
+  // ─── Playlist flow (soundboard mode; the owner, 13 Nov 2026) ───
+  // On: the items play one after another in the list's order, each crossfading into the next over FLOW_MS (equal
+  // power, so the middle doesn't dip), the next starting that long before the last one's audio ends (half its length
+  // for a short one). Starting another item (its key, ▶ Start item) jumps there: what was playing fades as a live fade
+  // does, and the flow carries on from it. 🔁 Loop: after the last, the first. ■ Stop item, Stop all, Fade out and Esc end it.
+  const FLOW_MS = 5000, FLOW = KEY + 'flow', FLOW_LOOP = KEY + 'flow_loop';
+  let flow = null;                                     // {item, t0, heard (its audio played), len (s, as first known), crossed, silent}
+  const flowOn = () => SOUNDBOARD && store.get(FLOW) === '1';
+  const flowLoop = () => store.get(FLOW_LOOP) === '1';
+  function flowNext(id) {                              // the next item with cues, in the list's order (🔁: round again)
+    const list = show.items.filter(it => !it.e), i = list.findIndex(it => it.id === id), has = it => (cues[it.id] || []).length > 0;
+    for (let k = i + 1; k < list.length; k++) if (has(list[k])) return list[k].id;
+    if (flowLoop()) for (let k = 0; k <= i; k++) if (has(list[k])) return list[k].id;
+    return null;
+  }
+  function tickFlow() {
+    const it = flowOn() && show.items.find(x => x.id === flow.item);
+    if (!it) { flow = null; return; }
+    const run = runOf(flow.item);
+    let left = 0, unknown = false, busy = false;       // (its audio still to end: playing, getting ready, or yet to fire)
+    for (const c of cues[flow.item] || []) {
+      const p = playing.get(c.id);
+      if (starting.has(c.id) && !p) { busy = unknown = true; continue; }
+      if (p ? !(p.run && p.item === flow.item) : !(run && !run.done(c))) continue;   // (a cue played on its own isn't the flow's)
+      busy = true;
+      if (p) flow.heard = true;
+      const l = cueLeft(c, it, run);
+      if (l == null) unknown = true; else left = Math.max(left, l);
+    }
+    if (!busy) {                                       // over (a length not known, or nothing played): the next, as it is
+      const next = flowNext(flow.item), silent = flow.heard ? 0 : flow.silent + 1;
+      if (!next || silent > show.items.length) { flow = null; renderFlow(); return; }   // (the end, or nothing would play: its output gone…)
+      runLocal(next, { flow: true, silent });
+      return;
+    }
+    if (!flow.heard || unknown || flow.crossed) return;
+    if (flow.len == null) flow.len = left;
+    if (left > Math.min(FLOW_MS / 1000, flow.len / 2)) return;
+    flow.crossed = true;
+    const next = flowNext(flow.item);
+    if (!next) return;                                 // (the last: it plays out)
+    const ms = Math.max(200, left * 1000);
+    for (const p of playing.values()) if (p.run && p.item === flow.item) p.voice.xfade(ms);
+    runLocal(next, { flow: true, fadeIn: ms });
+  }
   function endLocal() { if (local) { local = null; render(); } }
+  function renderFlow() {
+    if (!SOUNDBOARD) return;
+    const on = flowOn(), next = flow && flowNext(flow.item), it = next && show.items.find(x => x.id === next);
+    $('sb-flow').setAttribute('aria-pressed', String(on));
+    $('sb-loop').setAttribute('aria-pressed', String(flowLoop()));
+    $('sb-flowhint').textContent = !on ? 'plays the items one after another in this order, each crossfading into the next over 5 s; starting another item carries on from there.'
+      : flow ? (it ? 'Next: ' + titleOf(it) : 'This is the last: it plays out' + (flowLoop() ? '' : ' (🔁 to go round again)') + '.')
+      : 'On: start an item and the rest follow it, crossfading over 5 s.';
+  }
+  function endFlow(itemId) { if (flow && flow.item === itemId) { flow = null; renderFlow(); } }   // (the operator stopped the item the flow is on)
   // Items playing as a whole: the one started here, and any whose run's cues still play (its run ended, or
   // another item started since: the owner, 12 Nov 2026). Each keeps ■ Stop item, green; with more than one,
   // all but the last started flash (and their playing cues' ■ with them): several items at once, on purpose?
@@ -373,6 +434,7 @@
   function prepare() {
     const i = show.items.findIndex(x => x.id === show.cur);
     const ids = i >= 0 ? [show.items[i], show.items[i + 1]] : [show.items[0]];
+    if (flow) { const n = flowNext(flow.item); ids.push(show.items.find(x => x.id === n)); }   // (the playlist flow's next)
     const want = new Set();
     for (const list of [...ids.map(it => (it && cues[it.id]) || []), cues[BOARD] || []]) for (const c of list) { outKey(c); if (inMemory(c)) { want.add(clipKey(c)); bufferOf(c); } }
     for (const k of [...buffers.keys()]) if (!want.has(k)) buffers.delete(k);
@@ -383,32 +445,45 @@
     catch (_) { iv = setInterval(fn, ms); }
     return () => { if (w) w.terminate(); else clearInterval(iv); };
   }
-  // A volume ramp: to 0 or from 0, a fade (db: even in dB: StingClip.curveOut / curveIn; else a straight line); else straight
+  // A volume ramp: to 0 or from 0, a fade (db: even in dB: StingClip.curveOut / curveIn; 'power': equal power, the
+  // playlist flow's crossfade; else a straight line); else straight
+  const powerOut = t => Math.cos(Math.min(1, t) * Math.PI / 2), powerIn = t => Math.sin(Math.min(1, t) * Math.PI / 2);
+  function powerCurve(from, to) { const a = new Float32Array(64); for (let i = 0; i < 64; i++) a[i] = to === 0 ? from * powerOut(i / 63) : to * powerIn(i / 63); return a; }
   function rampEl(el, to, ms, done, db) {
-    const steps = Math.max(1, Math.round(ms / 50)), from = el.volume;
+    const steps = Math.max(1, Math.round(ms / 50)), from = el.volume, pw = db === 'power';
     let n = 0;
     const stop = tickEvery(50, () => {
       n++;
-      const t = n / steps, v = to === 0 ? from * StingClip.curveOut(t, db) : from === 0 ? to * StingClip.curveIn(t, db) : from + (to - from) * t;
+      const t = n / steps, v = to === 0 ? from * (pw ? powerOut(t) : StingClip.curveOut(t, db)) : from === 0 ? to * (pw ? powerIn(t) : StingClip.curveIn(t, db)) : from + (to - from) * t;
       el.volume = Math.max(0, Math.min(1, v));
       if (n >= steps) { stop(); if (done) done(); }
     });
     return stop;
   }
   // A voice's level(g) sets its gain while it plays (its output's level changed), not while it fades out
-  function bufferVoice(c, buf, onEnd, out, off) {
-    let p = null, fading = false;
+  function bufferVoice(c, buf, onEnd, out, off, xin) {   // xin: ms, faded in (the playlist flow's crossfade)
+    let p = null, fading = false, riseEnd = 0;
     return {
       play() {
         p = StingClip.play(buf, { role: out, offset: off });
         if (p.refused) { p = null; return false; }
-        p.gain.gain.value = gainOf(c, out);
-        if (off) { const t = p.gain.context.currentTime; p.gain.gain.setValueAtTime(0, t); p.gain.gain.linearRampToValueAtTime(gainOf(c, out), t + 0.15); }   // (joined partway: no click)
+        if (xin) {
+          const t = p.gain.context.currentTime;
+          try { p.gain.gain.setValueCurveAtTime(powerCurve(0, gainOf(c, out)), t, xin / 1000); riseEnd = t + xin / 1000; } catch (_) { p.gain.gain.value = gainOf(c, out); }
+          setTimeout(() => { if (p && !fading) p.gain.gain.setTargetAtTime(gainOf(c, out), p.gain.context.currentTime, 0.03); }, xin + 50);   // (its level now)
+        } else p.gain.gain.value = gainOf(c, out);
+        if (off && !xin) { const t = p.gain.context.currentTime; p.gain.gain.setValueAtTime(0, t); p.gain.gain.linearRampToValueAtTime(gainOf(c, out), t + 0.15); }   // (joined partway: no click)
         p.ended.then(onEnd);
         return true;
       },
       fade(ms) { if (p) { fading = true; p.fade(ms); } },
-      level(g) { if (p && !fading) p.gain.gain.setTargetAtTime(g, p.gain.context.currentTime, 0.03); },   // (a quick glide: no click)
+      xfade(ms) {                                      // out over ms, equal power, then stopped (the playlist flow)
+        if (!p || fading) return;
+        fading = true;
+        const g = p.gain.gain, t = p.gain.context.currentTime, v = g.value;
+        try { g.cancelScheduledValues(t); g.setValueCurveAtTime(powerCurve(v, 0), t, ms / 1000); p.stop(t + ms / 1000); } catch (_) { p.fade(ms); }
+      },
+      level(g) { if (p && !fading && p.gain.context.currentTime >= riseEnd) p.gain.gain.setTargetAtTime(g, p.gain.context.currentTime, 0.03); },   // (a quick glide: no click)
       sourceTime: () => (p ? StingClip.sourceAt(p.time(), StingClip.plan(c, c.duration || buf.duration).segs) : null),   // (where in the file: Mark start / end)
       gain: () => (p ? p.gain.gain.value : null),
       stop() { if (p) p.stop(); },
@@ -416,7 +491,7 @@
     };
   }
   // (over: stopped, or another cue took the element, while play() waited: it then leaves it alone)
-  function elementVoice(c, el, url, onEnd, out, off) {
+  function elementVoice(c, el, url, onEnd, out, off, xin) {   // xin: ms, faded in (the playlist flow's crossfade)
     const r = StingClip.region(c) || {}, start = (r.start || 0) + (off || 0);   // (off: joined partway)
     let stopEnd = null, stopRamp = null, over = false, g = 0;
     el.src = url;
@@ -427,19 +502,21 @@
         if (over) return false;
         if (start) el.currentTime = start;
         g = out ? gainOf(c, out) : 0;                  // (no sound: a video's picture only)
-        el.volume = r.fadeIn || off ? 0 : g;
+        el.volume = r.fadeIn || off || xin ? 0 : g;
         el.onended = finish;
         if (window.AudioOut && out) await AudioOut.media(el, out);
         if (over) return false;
         await el.play();
         if (over) return false;
-        if (r.fadeIn || off) stopRamp = rampEl(el, g, off ? 150 : r.fadeIn, () => { stopRamp = null; el.volume = g; }, !off && !!r.fadeDb);   // (g: its level now; its own fade: its curve)
+        if (xin) stopRamp = rampEl(el, g, xin, () => { stopRamp = null; el.volume = g; }, 'power');
+        else if (r.fadeIn || off) stopRamp = rampEl(el, g, off ? 150 : r.fadeIn, () => { stopRamp = null; el.volume = g; }, !off && !!r.fadeDb);   // (g: its level now; its own fade: its curve)
         if (r.end != null) stopEnd = tickEvery(50, () => {   // the end of the part: faded out there
           if (el.currentTime >= r.end - (r.fadeOut || 0) / 1000) { stopEnd(); stopEnd = null; v.fade(r.fadeOut || 30, !!r.fadeDb); }   // (its own fade: its curve)
         });
         return true;
       },
       fade(ms, db = true) { if (over) return; if (stopRamp) stopRamp(); stopRamp = rampEl(el, 0, ms, finish, db); },   // (live: even in dB)
+      xfade(ms) { v.fade(ms, 'power'); },              // (the playlist flow: equal power)
       level(n) { if (over || !out) return; g = n; if (!stopRamp) el.volume = n; },   // (fading in: it ends at g)
       gain: () => el.volume,
       sourceTime: () => (over ? null : el.currentTime),   // (where in the file: Mark start / end)
@@ -449,8 +526,13 @@
     return v;
   }
   const playing = new Map();                           // cue id → {voice, video}
+  const starting = new Set();                          // cue ids whose play() is getting ready (its file read, decoded)
   const vid = $('vid');                                // video cues' element: in the Output box, or the floating window
-  async function play(c, how) {                        // how.run: played by an item started here (how.item); how.offset: s into it (joined partway)
+  async function play(c, how) {                        // how.run: played by an item started here (how.item); how.offset: s into it (joined partway); how.fadeIn: ms
+    starting.add(c.id);
+    try { await playNow(c, how); } finally { starting.delete(c.id); }
+  }
+  async function playNow(c, how) {
     const out = outKey(c);
     if (out && window.AudioOut && !AudioOut.ok(out)) {   // its output isn't there: an audio cue doesn't play,
       AudioOut.warn(out);                                // a video plays without its sound (audio-out.js mutes it)
@@ -462,10 +544,10 @@
     stopCue(c.id);
     if (tones.size) { for (const k of [...tones.keys()]) stopTone(k); renderLevels(); }   // (no 1 kHz under a cue: the owner, 13 Nov 2026)
     if (c.media === 'video') for (const [id, q] of playing) if (q.video) stopCue(id);   // one video on the output at a time
-    const off = how && how.offset > 0 ? how.offset : 0;
+    const off = how && how.offset > 0 ? how.offset : 0, xin = how && how.fadeIn > 0 ? how.fadeIn : 0;
     const p = { video: c.media === 'video', run: !!(how && how.run), item: how && how.item, c, out, endsAt: null };
     const onEnd = () => { if (playing.get(c.id) === p) stopCue(c.id); };
-    p.voice = memory ? bufferVoice(c, memory, onEnd, out, off) : elementVoice(c, p.video ? vid : new Audio(), URL.createObjectURL(blob), onEnd, out, off);
+    p.voice = memory ? bufferVoice(c, memory, onEnd, out, off, xin) : elementVoice(c, p.video ? vid : new Audio(), URL.createObjectURL(blob), onEnd, out, off, xin);
     playing.set(c.id, p);
     if (p.video) $('stage').querySelector('.idle').hidden = true;
     render();
@@ -483,6 +565,7 @@
     render();
   }
   function stopAll() {
+    if (flow) { flow = null; renderFlow(); }
     for (const id of [...playing.keys()]) stopCue(id);
     if (tones.size) { for (const k of [...tones.keys()]) stopTone(k); renderLevels(); }
   }
@@ -649,7 +732,7 @@
     retime(itemId, now.c);
     render();
   }
-  function fadeAll(ms) { for (const p of playing.values()) p.voice.fade(ms); for (const tn of tones.values()) tn.v.fade(ms); }
+  function fadeAll(ms) { if (flow) { flow = null; renderFlow(); } for (const p of playing.values()) p.voice.fade(ms); for (const tn of tones.values()) tn.v.fade(ms); }
 
   // ─── Cues (made here, kept here) ──────────────────────────────────────────
   // To finish (the owner, 13 Nov 2026): starts when it needs to, to end n s before the item does (0: at its end)
@@ -1099,6 +1182,7 @@
     document.body.classList.toggle('manual', !following());
     renderPlace();
     renderLevels();
+    renderFlow();                                      // (its next follows the list)
     const items = show.items;
     $('rshint').textContent = !show.on ? 'The timer isn’t in run sheet mode' : show.fin ? 'The show has finished' : '';
     const curIdx = items.findIndex(x => x.id === show.cur);
@@ -1217,7 +1301,7 @@
     const c = cueId && (cues[itemId] || []).find(x => x.id === cueId);
     if ((b.dataset.act === 'fire' || b.dataset.act === 'stop') && local && local.item === itemId && !cueControl()) return;   // (locked: the item run has them)
     if (b.dataset.act === 'fire' && c) play(c);        // by hand: always, followed or not
-    else if (b.dataset.act === 'stop' && c) stopCue(c.id);
+    else if (b.dataset.act === 'stop' && c) { endFlow(itemId); stopCue(c.id); }
     else if (b.dataset.act === 'edit' && c) editCue(c);
     else if (b.dataset.act === 'when' && c) whenForm(b.closest('li[data-cue]'), c, 'Save', (trigger, at) => retimeCue(itemId, c, trigger, at));
     else if (b.dataset.act === 'del' && c) { if (confirm('Remove the cue “' + c.name + '”?')) removeCue(itemId, c.id); }
@@ -1225,7 +1309,7 @@
     else if (b.dataset.act === 'name') openName(itemId);
     else if (b.dataset.act === 'run') runLocal(itemId);
     else if (b.dataset.act === 'roll') { b.blur(); rollOne(itemId); }
-    else if (b.dataset.act === 'endrun') { for (const x of cues[itemId] || []) stopCue(x.id); if (local && local.item === itemId) endLocal(); }
+    else if (b.dataset.act === 'endrun') { endFlow(itemId); for (const x of cues[itemId] || []) stopCue(x.id); if (local && local.item === itemId) endLocal(); }
     else if ((b.dataset.act === 'markin' || b.dataset.act === 'markout') && c) markCue(c, b.dataset.act === 'markin' ? 'start' : 'end');
     else if (b.dataset.act === 'up' || b.dataset.act === 'down') { b.blur(); moveItem(itemId, b.dataset.act === 'up' ? -1 : 1); }
     else if (b.dataset.act === 'delitem') removeItem(itemId);
@@ -1351,9 +1435,9 @@
     localItem: () => local && local.item,
     localText,
     start: id => { if (!following()) runLocal(id); },
-    fadeItem(id, ms) { if (local && local.item === id) endLocal(); const ids = playingOf(id); for (const x of ids) playing.get(x).voice.fade(ms); return ids; },
+    fadeItem(id, ms) { endFlow(id); if (local && local.item === id) endLocal(); const ids = playingOf(id); for (const x of ids) playing.get(x).voice.fade(ms); return ids; },
     fadeAll(ms) { endLocal(); const ids = [...playing.keys()]; fadeAll(ms); return ids; },
-    stopIds: ids => ids.forEach(stopCue),
+    stopIds: ids => { ids.forEach(id => { const q = playing.get(id); if (q && q.run) endFlow(q.item); }); ids.forEach(stopCue); },
     stopAll: () => { stopAll(); endLocal(); },
     // The extra keys: files dropped on a key (cues[BOARD]); they play by hand, Follow or not
     board: () => cues[BOARD] || [],
@@ -1361,7 +1445,10 @@
     playCue: id => { const c = Object.values(cues).flat().find(x => x.id === id); if (c) play(c); },   // (an extra key's, or an item's cue 1: as its ▶)
     cueLocked: id => !!(local && local.item === id && !cueControl()),   // (as its cues' ▶ ■: the item run has them)
     playingAll: () => [...playing.keys()],             // (crossfade on release: what else is playing)
-    fadeCue: (id, ms) => { const p = playing.get(id); if (p) p.voice.fade(ms); return p ? [id] : []; },
+    markable: () => { let id = null; for (const [k, p] of playing) if (!p.run) id = k; return id; },   // (the newest cue playing on its own: the XL's Mark keys)
+    cueName: id => { const f = findCue(id); return f ? f.c.name : ''; },
+    mark: (id, edge) => { const f = findCue(id); if (f) markCue(f.c, edge); },
+    fadeCue: (id, ms) => { const p = playing.get(id); if (p && p.run) endFlow(p.item); if (p) p.voice.fade(ms); return p ? [id] : []; },
     async addFiles(files) { const ids = []; for (const f of files) { const c = await addCue(BOARD, { file: f }, 'start', 0); if (c) ids.push(c.id); } return ids; },
     removeExtra: id => removeCue(BOARD, id),
     server: defaultServer,                             // (a phone's keys: this page hosts a room there)
@@ -1369,7 +1456,7 @@
 
   // Test hooks: what's playing, and the cues
   window.__playout = { playing: () => [...playing.keys()], cues: () => cues, show: () => show, fired: () => [...fired], ready: () => [...buffers.keys()],
-    local: () => local && { item: local.item, fired: [...local.fired] }, names: () => names, active: () => [...activeItems()],
+    local: () => local && { item: local.item, fired: [...local.fired] }, flow: () => flow && { item: flow.item, heard: flow.heard, crossed: !!flow.crossed }, names: () => names, active: () => [...activeItems()],
     clocks: () => ({ big: $('bigclock').hidden ? null : $('bc-left').textContent + ' ' + $('bc-what').textContent, items: Object.fromEntries([...document.querySelectorAll('#items > li[data-id]')].map(li => [li.dataset.id, li.querySelector('.iclock').textContent])),
       cues: Object.fromEntries([...document.querySelectorAll('.cclock[data-clock]')].map(e => [e.dataset.clock, e.textContent])) }),
     gain: id => { const p = playing.get(id); return p ? p.voice.gain() : null; }, levels: () => levels, target: k => targetOf(k), tones: () => [...tones.keys()],
@@ -1676,6 +1763,15 @@
     $('sb-find').addEventListener('click', e => { e.currentTarget.blur(); $('sb-folder').click(); });
     $('sb-folder').addEventListener('change', () => { const l = [...$('sb-folder').files]; $('sb-folder').value = ''; if (l.length) findFiles(l); });
     $('sb-clear').addEventListener('click', e => { e.currentTarget.blur(); clearBoard(); });
+    // Playlist flow and 🔁 Loop (chips: lit while on)
+    for (const [id, k] of [['sb-flow', FLOW], ['sb-loop', FLOW_LOOP]]) $(id).addEventListener('click', e => {
+      const on = store.get(k) !== '1';
+      if (on) store.set(k, '1'); else store.del(k);
+      e.currentTarget.blur();
+      if (k === FLOW) flow = on && lastRun && activeItems().has(lastRun) ? { item: lastRun, t0: performance.now(), heard: false, len: null, silent: 0 } : null;   // (on: the item playing now flows on)
+      renderFlow(); prepare();
+    });
+    renderFlow();
     $('sb-leave').addEventListener('click', () => { stopAll(); location.href = /\/s\/?$/.test(location.pathname) ? location.pathname.replace(/s\/?$/, 'p') : location.pathname; });
   }
   $('trysb').addEventListener('click', () => { location.href = /\/p\/?$/.test(location.pathname) ? location.pathname.replace(/p\/?$/, 's') : location.pathname + '?soundboard'; });

@@ -9,7 +9,7 @@ OUTDIR = _os.environ.get('E2E_OUT', '/tmp/timer-e2e'); _os.makedirs(OUTDIR, exis
 # Save… / Load… a file (on the same computer the media stays; elsewhere Find files… matches it by name and size);
 # Clear run sheet… empties it; its own storage. And one playout page per browser: a second tab is covered
 # (Use this tab instead takes over; the first takes over again when the second closes).
-import io, json, math, mimetypes, os, struct, sys, wave
+import io, json, math, mimetypes, os, struct, sys, time, wave
 from playwright.sync_api import sync_playwright
 BASE = "https://timer.sophtwhere.com/beta/"
 def h(route, req):
@@ -124,6 +124,48 @@ with sync_playwright() as p:
     check("… and they play", len(po.evaluate("window.__playout.playing()")) == 1)
     po.click("#stopall")
 
+    # Playlist flow (the owner, 13 Nov 2026): the items one after another, crossfading over 5 s (half a short one); 🔁 Loop
+    po.click("#sb-clear"); po.wait_for_timeout(800)
+    FLOW = {"A.wav": tone(12, 330), "B.wav": tone(12, 440), "C.wav": tone(12, 550)}   # (12 s each: the next from 5 s before the end)
+    po.evaluate(DROP, [[[n, B64(d)] for n, d in FLOW.items()], "#items"])
+    po.wait_for_function("window.__playout.show().items.length === 3", timeout=15000); po.wait_for_timeout(800)
+    ids = po.evaluate("window.__playout.show().items.map(x => x.id)")
+    cue = lambda i: po.evaluate("window.__playout.cues()[%s][0].id" % json.dumps(ids[i]))
+    ca, cb, cc = cue(0), cue(1), cue(2)
+    gain = lambda cid: po.evaluate("window.__playout.gain(%s)" % json.dumps(cid))
+    fl = lambda: po.evaluate("window.__playout.flow()")
+    now = lambda: sorted(po.evaluate("window.__playout.playing()"))
+    run = lambda i: po.click('#items li[data-id="%s"] button[data-act=run]' % ids[i])
+    until = lambda t: po.wait_for_timeout(max(0, int((t - time.time()) * 1000)))
+    check("Playlist flow and 🔁 Loop: chips, off to begin with", po.get_attribute("#sb-flow", "aria-pressed") == "false" and po.get_attribute("#sb-loop", "aria-pressed") == "false")
+    po.click("#sb-flow")
+    check("… Playlist flow on: lit, and says what it does", po.get_attribute("#sb-flow", "aria-pressed") == "true" and po.evaluate("localStorage.playout_board_flow") == "1" and po.text_content("#sb-flowhint").startswith("On: start an item"), po.text_content("#sb-flowhint"))
+    run(0); t0 = time.time(); po.wait_for_timeout(1000)
+    check("an item started: the flow on it, the next named", fl() == {"item": ids[0], "heard": True, "crossed": False} and po.text_content("#sb-flowhint") == "Next: B" and now() == [ca], [fl(), po.text_content("#sb-flowhint"), now()])
+    until(t0 + 8); g1 = [gain(ca), gain(cb)]; until(t0 + 10); g2 = [gain(ca), gain(cb)]
+    check("5 s before its end: the next starts, one fading out as the other fades in", fl()["item"] == ids[1] and now() == sorted([ca, cb])
+          and g1[1] is not None and g2[0] < g1[0] and g2[1] > g1[1], [fl(), now(), g1, g2])
+    until(t0 + 13)
+    check("… then only the next plays, at its level", now() == [cb] and gain(cb) > 0.9 * g1[0], [now(), gain(cb), g1])
+    run(2); po.wait_for_timeout(700)
+    gc1, gb1 = gain(cc), gain(cb); po.wait_for_timeout(500); gc2, gb2 = gain(cc), gain(cb)
+    check("starting another item jumps there: it plays at once at its level, the one before fades", fl()["item"] == ids[2] and None not in (gc1, gc2, gb1, gb2) and abs(gc1 - gc2) < 0.02 and gc1 > 0.1 and gb2 < gb1, [fl(), now(), gc1, gc2, gb1, gb2])
+    check("… the last: it plays out", po.text_content("#sb-flowhint").startswith("This is the last: it plays out"), po.text_content("#sb-flowhint"))
+    t1 = time.time(); until(t1 + 12.5)
+    check("… and the flow ends with it (🔁 off)", fl() is None and now() == [], [fl(), now()])
+    po.click("#sb-loop")
+    check("🔁 Loop on: lit", po.get_attribute("#sb-loop", "aria-pressed") == "true" and po.evaluate("localStorage.playout_board_flow_loop") == "1")
+    run(2); t2 = time.time(); po.wait_for_timeout(800)
+    check("… the last item's next is the first", po.text_content("#sb-flowhint") == "Next: A", po.text_content("#sb-flowhint"))
+    until(t2 + 8.5)
+    check("… and after it, round again", fl() and fl()["item"] == ids[0] and ca in now(), [fl(), now()])
+    po.locator("#sbbar").screenshot(path=OUTDIR + "/playout_flow.png")
+    po.click("#stopall"); po.wait_for_timeout(300)
+    check("Stop all ends the flow", fl() is None and now() == [])
+    po.click("#sb-flow"); run(0); t3 = time.time(); until(t3 + 8.5)
+    check("Playlist flow off: an item plays alone", now() == [ca] and fl() is None and po.get_attribute("#sb-flow", "aria-pressed") == "false", [now(), fl()])
+    po.click("#stopall"); po.wait_for_timeout(200)
+
     # one playout page per browser
     p2 = c.new_page(); p2.on("pageerror", lambda e: errs.append("second tab: " + str(e)))
     p2.goto(BASE + "playout.html?demo"); p2.wait_for_timeout(1000)
@@ -132,7 +174,7 @@ with sync_playwright() as p:
     check("Use this tab instead: it runs (the demo)", p2.is_hidden("#othertab") and p2.is_visible("#demobar"))
     check("… and the first tab steps down: covered", po.is_visible("#othertab") and "The playout demo is running" in po.text_content("#othertabtext"), po.text_content("#othertabtext"))
     p2.close(); po.wait_for_timeout(1500)
-    check("the other tab closed: the first takes over by itself", po.is_hidden("#othertab") and po.is_visible("#sbbar") and len(items()) == 7)
+    check("the other tab closed: the first takes over by itself", po.is_hidden("#othertab") and po.is_visible("#sbbar") and len(items()) == 3)   # (the playlist flow's three)
 
     po.click("#sb-leave"); po.wait_for_timeout(800)
     check("Leave soundboard mode: the pairing screen", po.url.endswith("playout.html") and po.is_visible("#enter"), po.url)

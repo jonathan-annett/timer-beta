@@ -56,7 +56,7 @@ var PlayoutDeck = (function () {
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const mmss = sec => { sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0'); };
-  const COLOURS = { extra: '#2e1f45', idle: '#1c2a3a', cue: '#123a3c', none: '#121212', here: '#7a5c00', play: '#13602a', fade: '#9a5200', now: '#0b3d5c', done: '#181818', all: '#3a1212', allOn: '#8a1a1a', page: '#262626' };
+  const COLOURS = { mark: '#5a1f44', extra: '#2e1f45', idle: '#1c2a3a', cue: '#123a3c', none: '#121212', here: '#7a5c00', play: '#13602a', fade: '#9a5200', now: '#0b3d5c', done: '#181818', all: '#3a1212', allOn: '#8a1a1a', page: '#262626' };
 
   function create(api) {
     const LAYOUT = api.prefix + 'deck_layout', FADE = 'playout_deck_fade', MODEL = 'playout_deck_model', XLMODE = 'playout_deck_xl_mode';
@@ -119,8 +119,19 @@ var PlayoutDeck = (function () {
       return { K, paged, per, pages: Math.max(1, Math.ceil(n / per)), role: g.role, keys: g.keys };
     }
     function keyAt(model, n, page, i) {
-      const g = geometry(model, n);
+      const g = geometry(model, n), m = markKeys(model, g);
+      if (m && (i === m[0] || i === m[1])) return { kind: i === m[0] ? 'markin' : 'markout', cue: m[2] };
       return g.role[i] ? { kind: g.role[i] } : { kind: 'item', slot: page * g.per + g.keys.indexOf(i) };
+    }
+    // Mark start / Mark end (the owner, 13 Nov 2026): on an XL in Cue 1, while a cue plays on its own, the two keys just
+    // before Item / Cue 1 (whatever they are, but never ■ All or → timer) mark its clip, as the page's buttons do
+    function markKeys(model, g) {
+      if (!cueMode(model) || !api.markable) return null;
+      const cue = api.markable(), at = g.role.indexOf('mode');
+      if (!cue || at < 0) return null;
+      const free = [];
+      for (let i = at - 1; i >= 0 && free.length < 2; i--) if (g.role[i] !== 'all' && g.role[i] !== 'give') free.push(i);
+      return free.length === 2 ? [free[1], free[0], cue] : null;
     }
 
     // ─── Presses (a real deck's, or the page's keys): down, then up ───
@@ -134,6 +145,7 @@ var PlayoutDeck = (function () {
         else if (k.kind === 'all') b.presses.set(i, { all: true, ids: api.fadeAll(fadeSecs() * 1000) });
         else if (k.kind === 'give') { if (b.deck && timerFree() && performance.now() - b.at > HANDOVER_MS) { giveBack(b.deck.id); return; } }
         else if (k.kind === 'mode') { if (cueMode(model)) api.store.del(XLMODE); else api.store.set(XLMODE, 'cue'); }
+        else if (k.kind === 'markin' || k.kind === 'markout') api.mark(k.cue, k.kind === 'markin' ? 'start' : 'end');
         else {
           const id = s[k.slot], x = extraOf(id) || (cueMode(model) && onSheet().has(id) && !api.cueLocked(id) ? api.cuesOf(id)[0] : null);
           const others = xfadeOn() && api.playingAll().length > 0;   // (crossfade on release: the rest fade when it's let go)
@@ -210,6 +222,7 @@ var PlayoutDeck = (function () {
         if (k.kind === 'prev') return { bg: COLOURS.page, fg: '#fff', rs: { cap: 'page', body: '◀', foot: (page + 1) + ' / ' + g.pages }, press: page > 0 };
         if (k.kind === 'next') return { bg: COLOURS.page, fg: '#fff', rs: { cap: 'page', body: '▶', foot: (page + 1) + ' / ' + g.pages }, press: g.wrap ? g.pages > 1 : page < g.pages - 1 };
         if (k.kind === 'give') { const ok = timerFree(); return { bg: ok ? '#2a2200' : '#0d0d0d', fg: ok ? '#ffcc33' : '#444', rs: { cap: 'deck', body: '→ timer', foot: ok ? '' : timer.open ? 'it has one' : 'no timer page' }, press: false, a: 'empty', give: true }; }   // (on a deck only: not the page's keys)
+        if (k.kind === 'markin' || k.kind === 'markout') return { bg: COLOURS.mark, fg: '#fff', rs: { cap: 'mark', body: k.kind === 'markin' ? 'Start' : 'End', foot: api.cueName(k.cue) }, press: true };
         if (k.kind === 'mode') { const cm = cueMode(model); return { bg: cm ? COLOURS.cue : COLOURS.page, fg: '#fff', rs: { cap: 'keys play', body: cm ? 'Cue 1' : 'Item', foot: cm ? 'tap: items' : 'tap: cue 1' }, press: true }; }
         const x = extraOf(s[k.slot]);
         return x ? extraFace(s[k.slot], x) : itemFace(s[k.slot], items, cueMode(model));
@@ -249,6 +262,25 @@ var PlayoutDeck = (function () {
     const timerFree = () => timer.open && !api.store.get('deck_timer');
     // A soundboard (the owner, 13 Nov 2026): → timer only while a timer page here has no deck (its key goes to the items otherwise)
     function giveShown() { return !api.soundboard || timerFree(); }
+    // Disconnect (the owner, 13 Nov 2026): set aside, Elgato's screen; neither page drives it until Use here (or the
+    // timer's Connect). Forget: the site's permission revoked (WebHID's forget()), for the timer page too
+    function setAside(id) {
+      const b = decks.get(id);
+      if (b) b.deck.reset();
+      DeckHID.setOwner(id, 'none');
+      letGo(id);
+    }
+    async function forget(id) {
+      if (!confirm('Forget this Stream Deck? This browser won’t use it (here or on the timer page) until it’s connected again with Connect a deck…')) return;
+      const list = await DeckHID.granted();
+      let hid = null;
+      for (const h of list) if (await DeckHID.idOf(h, list) === id) hid = h;
+      const b = decks.get(id);
+      if (b) { b.deck.reset(); letGo(id); }
+      DeckHID.setOwner(id, 'timer');                   // (no claim left behind)
+      if (hid && typeof hid.forget === 'function') { try { await hid.forget(); } catch (err) { console.warn('Playout: forget failed', err); } }
+      renderDecks();
+    }
     function giveBack(id) {
       const b = decks.get(id);
       if (b) b.deck.reset();
@@ -289,16 +321,19 @@ var PlayoutDeck = (function () {
       const list = navigator.hid ? await DeckHID.granted() : [];
       for (const hid of list) {
         const id = await DeckHID.idOf(hid, list), b = decks.get(id);
-        rows.push({ id, name: DeckHID.info(hid).name, serial: id.startsWith('sn:') ? id.slice(-4) : '', mine: DeckHID.ownerOf(id) === 'playout', on: !!b, busy: busyNote.has(id) });
+        const who = DeckHID.ownerOf(id);
+        rows.push({ id, name: DeckHID.info(hid).name, serial: id.startsWith('sn:') ? id.slice(-4) : '', mine: who === 'playout', off: who === 'none', on: !!b, busy: busyNote.has(id) });
       }
       if (seq !== listSeq) return;                     // (a newer one is on its way)
       listed = rows;
       box.innerHTML = !navigator.hid ? '<p class="hint">This browser has no WebHID: use Chrome or Edge for a Stream Deck. The keys below still work with the mouse.</p>'
         : !owner ? '<p class="hint">Another playout tab is using the decks: use that one (this tab takes over when it closes).</p>'
         : listed.map(x => `<div class="dk-row" data-deck="${esc(x.id)}"><span class="dk-name">${esc(x.name)}${x.serial ? ' <span class="hint">…' + esc(x.serial) + '</span>' : ''}</span>` +
-          `<span class="dk-state${x.on ? ' ok' : x.busy ? ' bad' : ''}">${x.on ? 'Used here' : x.mine ? (x.busy ? 'Busy: quit the Elgato Stream Deck app' : 'Connecting…') : api.soundboard ? 'Not used here' : 'The timer’s'}</span>` +
+          `<span class="dk-state${x.on ? ' ok' : x.busy ? ' bad' : ''}">${x.on ? 'Used here' : x.mine ? (x.busy ? 'Busy: quit the Elgato Stream Deck app' : 'Connecting…') : x.off ? 'Disconnected' : api.soundboard ? 'Not used here' : 'The timer’s'}</span>` +
           (x.mine && api.soundboard && !timer.open ? '' :   // (a soundboard: no timer talk unless a timer page is open here)
-          `<button class="small" data-dk="${x.mine ? 'timer' : 'playout'}" title="${x.mine ? 'The timer page on this computer uses it again' : api.soundboard ? 'Use it here' : 'Use it here as a soundboard (the timer page on this computer lets go of it)'}">${x.mine ? 'Give to the timer' : 'Use here'}</button>`) + '</div>').join('')
+          `<button class="small" data-dk="${x.mine ? 'timer' : 'playout'}" title="${x.mine ? 'The timer page on this computer uses it again' : api.soundboard ? 'Use it here' : 'Use it here as a soundboard (the timer page on this computer lets go of it)'}">${x.mine ? 'Give to the timer' : 'Use here'}</button>`) +
+          (x.mine ? '<button class="small" data-dk="off" title="Stop using it: Elgato’s own screen, and nothing here (or on a timer page) uses it until Use here">Disconnect</button>' : '') +
+          '<button class="small" data-dk="forget" title="This browser forgets it: neither this page nor the timer page can use it until it’s connected again with Connect a deck…">Forget</button>' + '</div>').join('')
           || '<p class="hint">No Stream Deck yet. Quit the Elgato Stream Deck app, plug one in and click <b>Connect a deck…</b></p>';
     }
 
@@ -707,7 +742,9 @@ var PlayoutDeck = (function () {
     if ($('decklist')) $('decklist').addEventListener('click', e => {
       const btn = e.target.closest('button[data-dk]'), row = btn && btn.closest('[data-deck]');
       if (!row) return;
-      if (btn.dataset.dk === 'timer') giveBack(row.dataset.deck); else DeckHID.setOwner(row.dataset.deck, 'playout');
+      const dk = btn.dataset.dk, id = row.dataset.deck;
+      if (dk === 'forget') return forget(id);
+      if (dk === 'timer') giveBack(id); else if (dk === 'off') setAside(id); else DeckHID.setOwner(id, 'playout');
       look();
     });
     window.addEventListener('pagehide', () => { for (const b of decks.values()) b.deck.reset(); });

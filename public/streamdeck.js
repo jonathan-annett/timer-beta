@@ -1138,7 +1138,10 @@
         else { pausedDevice = hid; _showDeckStatus('Disconnected — click Connect to use it again', 'idle'); }
         return;
       }
-      if (list.length && !device && !pausedDevice) _showDeckStatus(PLAYOUT_HAS_IT, 'idle');
+      if (list.length && !device && !pausedDevice) {
+        const owners = await Promise.all(list.map(async h => DeckHID.ownerOf(await DeckHID.idOf(h, list))));
+        _showDeckStatus(owners.includes('playout') ? PLAYOUT_HAS_IT : 'Not connected: the deck was disconnected on the playout page (click Connect to use it here)', 'idle');
+      }
     } finally { looking = false; }
   }
   const PLAYOUT_HAS_IT = 'Not connected: the playout page on this computer has the deck (its Stream Deck box can give it back)';
@@ -1181,7 +1184,7 @@
     navigator.hid.addEventListener('disconnect', onHidDisconnect);
     let was = DeckHID.claims();
     DeckHID.onClaims(() => {
-      const now = DeckHID.claims(), back = Object.keys(was).some(id => was[id] === 'playout' && now[id] !== 'playout');
+      const now = DeckHID.claims(), back = Object.keys(was).some(id => was[id] === 'playout' && now[id] == null);   // (not when set aside there: Disconnect)
       was = now;
       if (deck && DeckHID.ownerOf(deck.id) !== 'timer') return letGo();
       if (back && !device) localStorage.removeItem(AUTOCONNECT_KEY);   // given back (Give to the timer): a deliberate hand-over

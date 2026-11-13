@@ -28,15 +28,17 @@ FAKE_HID = """(() => {
       async sendReport(id, data) { if (!this.opened) throw shut(); if (data[0] === 0x07 && data[2] === 1) this.images[data[1]] = (this.images[data[1]] || 0) + 1; },
       async sendFeatureReport(id, b) { if (!this.opened) throw shut(); this.features.push([id, b[0]]); },
       async receiveFeatureReport(id) { if (!this.opened) throw shut(); await wait(5); const b = new Uint8Array(32); b[0] = id; b[1] = serial.length; for (let i = 0; i < serial.length; i++) b[2 + i] = serial.charCodeAt(i); return new DataView(b.buffer); },
-      addEventListener(t, fn) { ls[t] = fn; }, removeEventListener(t) { delete ls[t]; } };
+      addEventListener(t, fn) { ls[t] = fn; }, removeEventListener(t) { delete ls[t]; },
+      async forget() { granted = granted.filter(x => x !== this); this.opened = false; } };
     // a key down (v = 1) or up (0): a gen2 input report, key states from byte 3
     d.key = (i, v) => { if (!d.opened) return; const b = new Uint8Array(3 + keys); b[3 + i] = v; if (ls.inputreport) ls.inputreport({ reportId: 1, data: new DataView(b.buffer) }); };
     return d;
   };
   const mk2 = mk(0x0080, 'MK2SERIAL01', 15, 'Fake MK.2'), xl = mk(0x008f, 'XLSERIAL002', 32, 'Fake XL');
+  let granted = [mk2, xl];                             // (forget() takes a deck off: WebHID's permission revoked)
   window.__decks = { mk2, xl };
   Object.defineProperty(navigator, 'hid', { configurable: true, value: {
-    getDevices: async () => [mk2, xl], requestDevice: async () => [xl], addEventListener() {}, removeEventListener() {} } });
+    getDevices: async () => granted.slice(), requestDevice: async () => [xl], addEventListener() {}, removeEventListener() {} } });
 })();"""
 SETUP = """async () => {                     // seven speakers with a 10 s tone each (a start cue), files in the store (longer than a 5 s fade)
   const wav = sec => { const sr = 16000, n = sr * sec, b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
@@ -296,6 +298,15 @@ with sync_playwright() as p:
     check("… a hold fades it (orange)", playing() == ["c3"] and bg(2) == "#9a5200", [playing(), bg(2)])
     xk(2, 0); po.wait_for_timeout(200)
     check("… let go: stopped there", playing() == [])
+    before = xf()[26:29]
+    xk(2, 1); xk(2, 0); po.wait_for_timeout(600)
+    check("a cue playing from its key: Mark start and Mark end on the two keys before Item / Cue 1 (standing in for what's there)", xf()[27:30] == ["Start | mark", "End | mark", "Cue 1 | keys play"] and po.evaluate("window.__playoutDeck.face('xl', 0, 27).rs.foot") == "Tone 3", [xf()[26:30], po.evaluate("window.__playoutDeck.face('xl', 0, 27).rs")])
+    po.wait_for_timeout(900); xk(28, 1); xk(28, 0)
+    po.wait_for_function("document.querySelector('.sc-wrap') && document.querySelector('.sc-msg').textContent === ''", timeout=20000); po.wait_for_timeout(300)
+    m, x = po.input_value(".sc-t[data-k=end]").split(":"); en = int(m) * 60 + float(x)
+    check("… Mark end: the cue stops, the clip editor opens with the end where it was", playing() == [] and 1.2 < en < 2.2 and po.text_content(".sc-zlabel").startswith("Close up on the end"), [playing(), en])
+    po.click(".sc-cancel"); po.wait_for_timeout(300)
+    check("… and the keys are what they were", xf()[26:29] == before, [xf()[26:29], before])
     po.click('#items li[data-id="demo-3"] .ihead button[data-act=run]'); po.wait_for_timeout(500)
     xk(2, 1); po.wait_for_timeout(80); xk(2, 0); po.wait_for_timeout(300)
     check("its item run from ▶ Start item: the key is locked, as the cue's ▶ ■", playing() == ["c3"] and (local() or {}).get("item") == "demo-3" and not po.evaluate("window.__playoutDeck.face('xl', 0, 2).press"), [playing(), local()])
@@ -339,9 +350,25 @@ with sync_playwright() as p:
     t.evaluate("__decks.mk2.key(4, 1); __decks.mk2.key(4, 0)"); t.wait_for_timeout(1500)
     check("… and on the timer's again: the playout's", po.evaluate("__decks.mk2.opened") and not t.evaluate("__decks.mk2.opened"))
 
+    # Disconnect (the owner, 13 Nov 2026): set aside, Elgato's screen; neither page uses it until Use here
+    row = lambda sn: po.text_content('#decklist [data-deck="sn:%s"]' % sn)
+    po.evaluate("__decks.mk2.features = []")
+    po.click('#decklist [data-deck="sn:MK2SERIAL01"] button[data-dk=off]'); po.wait_for_timeout(1500)
+    check("Disconnect: Elgato's screen, let go, set aside (listed as Disconnected)", not po.evaluate("__decks.mk2.opened") and [3, 2] in po.evaluate("__decks.mk2.features")
+          and po.evaluate("JSON.parse(localStorage.deck_claims)['sn:MK2SERIAL01']") == "none" and "Disconnected" in row("MK2SERIAL01") and "Use here" in row("MK2SERIAL01"), [po.evaluate("__decks.mk2.features"), row("MK2SERIAL01")])
+    check("… and the timer page (open, no deck) leaves it alone too", not t.evaluate("__decks.mk2.opened"), t.text_content("#deck-status"))
+    po.click('#decklist [data-deck="sn:MK2SERIAL01"] button[data-dk=playout]'); po.wait_for_timeout(1500)
+    check("… Use here: driven here again", po.evaluate("__decks.mk2.opened") and "Used here" in row("MK2SERIAL01"), row("MK2SERIAL01"))
+
     # leaving: the decks back to Elgato's idle screen
     po.evaluate("__decks.mk2.features = []; __decks.xl.features = []; dispatchEvent(new Event('pagehide'))")
     check("the playout page leaving: its decks reset", po.evaluate("__decks.mk2.features") == [[3, 2]] and po.evaluate("__decks.xl.features") == [[3, 2]], [po.evaluate("__decks.mk2.features"), po.evaluate("__decks.xl.features")])
+    # Forget: this browser's permission revoked (here a timer page could use it neither)
+    said = []; po.on("dialog", lambda d: (said.append(d.message), d.accept()))
+    po.click('#decklist [data-deck="sn:XLSERIAL002"] button[data-dk=forget]'); po.wait_for_timeout(1500)
+    check("Forget: asked, then the XL let go and forgotten (off the list, no claim left)", said[-1:] and said[-1].startswith("Forget this Stream Deck?") and not po.evaluate("__decks.xl.opened")
+          and po.locator('#decklist [data-deck="sn:XLSERIAL002"]').count() == 0 and "sn:XLSERIAL002" not in po.evaluate("JSON.parse(localStorage.deck_claims || '{}')")
+          and [d["id"] for d in po.evaluate("window.__playoutDeck.decks()")] == ["sn:MK2SERIAL01"], [said[-1:], po.locator("#decklist .dk-row").all_text_contents()])
     po.close(); t.wait_for_timeout(2000)
     tf = t.evaluate("StreamDeck.faces('mk2')[4]")
     check("no playout page open: the timer's Give deck to playout dim", tf["bg"] == "#0d0d0d", tf)
