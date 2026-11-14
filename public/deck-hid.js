@@ -138,13 +138,15 @@ var DeckHID = (function () {
     if (f) return Object.assign({}, f.claims);
     try { const v = JSON.parse(localStorage.getItem(CLAIMS) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; }
   }
-  // 'playout': the playout page's; 'none': set aside there (Disconnect: neither page drives it); else the timer's
-  const ownerOf = id => { const v = claims()[id]; return v === 'playout' || v === 'none' ? v : 'timer'; };
+  // 'playout': the playout page's; 'none': set aside there (Disconnect: neither page drives it); another app's name
+  // ('clever': another of the owner's sites on the same domain; lowercase, short); else (not listed) the timer's
+  const OWNER = /^[a-z][a-z0-9-]{0,23}$/;
+  const ownerOf = id => { const v = claims()[id]; return typeof v === 'string' && OWNER.test(v) && v !== 'timer' ? v : 'timer'; };
   function setOwner(id, who) {
     const f = viaFrame();
     if (f) { f.claim(id, who); return; }
     const c = claims();
-    if (who === 'playout' || who === 'none') c[id] = who; else delete c[id];
+    if (typeof who === 'string' && OWNER.test(who) && who !== 'timer') c[id] = who; else delete c[id];
     try { localStorage.setItem(CLAIMS, JSON.stringify(c)); } catch (_) { /* private mode */ }
   }
   const onClaims = fn => {
@@ -173,8 +175,14 @@ var DeckHID = (function () {
     return out;
   }
   // gen2: report 0x02, 1024 bytes incl. report ID, 8-byte header, 1016-byte payload.
+  // A key's image is several reports; a device that can (RemoteHID through the webhid frame) takes them as one batch,
+  // so another page's reports never land between them (one image at a time per deck, whoever sends it)
+  async function sendAll(hid, id, list) {
+    if (hid.sendReports) return hid.sendReports(id, list);
+    for (const d of list) await hid.sendReport(id, d);
+  }
   async function sendGen2(hid, keyIndex, bytes) {
-    const DATA_LEN = 1023, HEADER = 7, PAYLOAD = DATA_LEN - HEADER;
+    const DATA_LEN = 1023, HEADER = 7, PAYLOAD = DATA_LEN - HEADER, list = [];
     for (let page = 0, pos = 0; pos < bytes.length; page++, pos += PAYLOAD) {
       const chunk = bytes.subarray(pos, pos + PAYLOAD);
       const isLast = pos + PAYLOAD >= bytes.length;
@@ -183,20 +191,22 @@ var DeckHID = (function () {
                 chunk.length & 0xff, chunk.length >> 8,
                 page & 0xff, page >> 8]);
       data.set(chunk, HEADER);
-      await hid.sendReport(0x02, data);
+      list.push(data);
     }
+    await sendAll(hid, 0x02, list);
   }
   // gen1 (Mini, original v1): report 0x02, 16-byte header, BMP payload.
   async function sendGen1(hid, inf, keyIndex, bytes) {
-    const DATA_LEN = inf.reportSize - 1, HEADER = 15, PAYLOAD = DATA_LEN - HEADER;
+    const DATA_LEN = inf.reportSize - 1, HEADER = 15, PAYLOAD = DATA_LEN - HEADER, list = [];
     for (let page = 0, pos = 0; pos < bytes.length; page++, pos += PAYLOAD) {
       const chunk = bytes.subarray(pos, pos + PAYLOAD);
       const isLast = pos + PAYLOAD >= bytes.length;
       const data = new Uint8Array(DATA_LEN);
       data.set([0x01, page + inf.pageBase, 0x00, isLast ? 1 : 0, keyIndex + 1]);
       data.set(chunk, HEADER);
-      await hid.sendReport(0x02, data);
+      list.push(data);
     }
+    await sendAll(hid, 0x02, list);
   }
   // 24-bit bottom-up BMP, as gen1 devices expect.
   function toBMP(canvas) {
@@ -247,6 +257,7 @@ var DeckHID = (function () {
     const resetReport = () => (inf.protocol === 'gen2' ? [0x03, Uint8Array.of(0x02, ...new Array(30).fill(0))] : [0x0b, Uint8Array.of(0x63, ...new Array(15).fill(0))]);
     if (hid.leaveReport) hid.leaveReport(...resetReport());
     let queue = Promise.resolve();
+    const waitingKey = new Map();                      // key → {canvas, p}: an image not yet started (setKey)
     async function write(i, canvas) {
       if (!hid.opened) return;
       const img = orient(canvas, kind), k = physical(i);
@@ -263,7 +274,18 @@ var DeckHID = (function () {
     const deck = {
       hid, info: inf, model: inf.model, keys: m.keyCount, keySize: m.keySize, cols: m.cols, rows: m.rows, id,
       serial: id.startsWith('sn:') ? id.slice(3) : null,
-      setKey(i, canvas) { const p = queue.then(() => write(i, canvas)); queue = p; return p; },
+      // Latest image wins (14 Nov 2026: a level meter or video on the keys): a key whose last image hasn't started
+      // going yet takes the new one instead of queueing behind it, so a key redrawn faster than the deck takes
+      // images never falls behind
+      setKey(i, canvas) {
+        const w = waitingKey.get(i);
+        if (w) { w.canvas = canvas; return w.p; }
+        const e = { canvas, p: null };
+        waitingKey.set(i, e);
+        e.p = queue.then(() => { waitingKey.delete(i); return write(i, e.canvas); });
+        queue = e.p;
+        return e.p;
+      },
       async brightness(pct) {
         pct = Math.max(1, Math.min(100, pct | 0));
         try {
@@ -286,7 +308,7 @@ var DeckHID = (function () {
         for (let i = 0; i < m.keyCount; i++) await deck.setKey(i, c);
       },
       detach() { hid.removeEventListener('inputreport', onReport); },   // (stops hearing it; leaves it open)
-      async close() { deck.detach(); inUse.delete(hid); if (hid.leaveReport) hid.leaveReport(0, null); await queue.catch(() => {}); try { await serially(hid, () => (hid.opened ? hid.close() : null)); } catch (_) { /* gone */ } },
+      async close() { deck.detach(); inUse.delete(hid); if (hid.leaveReport) hid.leaveReport(0, null); await queue.catch(() => {}); try { await serially(hid, () => (hid.opened && !inUse.has(hid) ? hid.close() : null)); } catch (_) { /* gone */ } },   // (opened again meanwhile, e.g. let go and taken straight back: left open for it)
     };
     return deck;
   }

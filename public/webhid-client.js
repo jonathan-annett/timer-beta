@@ -75,6 +75,7 @@ var WebHIDFrame = (function () {
       async close() { const d = await call('close', { key: this.key }); this.opened = d.opened; }
       async forget() { await call('forget', { key: this.key }); this.opened = false; proxies.delete(this.key); }
       sendReport(id, data) { const b = toBuf(data); return call('send', { key: this.key, id, data: b }, [b]); }
+      sendReports(id, list) { const bs = list.map(toBuf); return call('sendmany', { key: this.key, id, data: bs }, bs); }   // (one batch: a key's image)
       sendFeatureReport(id, data) { const b = toBuf(data); return call('fset', { key: this.key, id, data: b }, [b]); }
       async receiveFeatureReport(id) { return new DataView(await call('fget', { key: this.key, id })); }
       leaveReport(id, data) { const b = data ? toBuf(data) : null; return call('leave', { key: this.key, id, data: b }, b ? [b] : []).catch(() => {}); }
@@ -123,7 +124,7 @@ var WebHIDFrame = (function () {
     src.claims = {};
     src.claim = async (id, who) => {               // (this page's copy at once; the frame's table after)
       const c = Object.assign({}, src.claims);
-      if (who === 'playout' || who === 'none') c[id] = who; else delete c[id];
+      if (typeof who === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(who) && who !== 'timer') c[id] = who; else delete c[id];
       src.claims = c;
       try { src.claims = await call('claim', { id, who }); } catch (_) { /* the frame's gone: this page's copy */ }
     };
