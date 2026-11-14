@@ -23,7 +23,8 @@
  *
  * Which page drives which deck (one computer may run the timer and a playout computer side by side; both
  * see every deck the site may use, and two pages driving one deck mix up its images and both act on every
- * press): localStorage deck_claims = {deck id: 'playout'}; a deck not listed is the timer's.
+ * press): deck_claims = {deck id: 'playout' | 'none'}, in the webhid frame's storage when it's live (one table per site),
+ * else this page's localStorage; a deck not listed is the timer's.
  *   DeckHID.ownerOf(id), DeckHID.setOwner(id, 'timer' | 'playout'), DeckHID.onClaims(fn)
  *
  * USB device IDs and report layouts follow Julian Waller's node-elgato-stream-deck
@@ -128,16 +129,28 @@ var DeckHID = (function () {
   }
 
   // ─── Claims: which page drives a deck on this computer ───
+  // Through the webhid frame (live), the frame's table (one per site: alpha, beta, the timer and playout share it; each
+  // change applied there); else this page's localStorage deck_claims, as before
   const CLAIMS = 'deck_claims';
-  function claims() { try { const v = JSON.parse(localStorage.getItem(CLAIMS) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; } }
+  const viaFrame = () => { const s = hidApi(); return s && s.frame && s.live ? s : null; };
+  function claims() {
+    const f = viaFrame();
+    if (f) return Object.assign({}, f.claims);
+    try { const v = JSON.parse(localStorage.getItem(CLAIMS) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (_) { return {}; }
+  }
   // 'playout': the playout page's; 'none': set aside there (Disconnect: neither page drives it); else the timer's
   const ownerOf = id => { const v = claims()[id]; return v === 'playout' || v === 'none' ? v : 'timer'; };
   function setOwner(id, who) {
+    const f = viaFrame();
+    if (f) { f.claim(id, who); return; }
     const c = claims();
     if (who === 'playout' || who === 'none') c[id] = who; else delete c[id];
     try { localStorage.setItem(CLAIMS, JSON.stringify(c)); } catch (_) { /* private mode */ }
   }
-  const onClaims = fn => window.addEventListener('storage', e => { if (e.key === CLAIMS) fn(); });
+  const onClaims = fn => {
+    window.addEventListener('storage', e => { if (e.key === CLAIMS && !viaFrame()) fn(); });
+    const s = hidApi(); if (s && s.frame) s.addEventListener('claims', () => fn());
+  };
 
   // ─── Images ───
   function orient(src, kind) {                         // rotated/mirrored into the orientation the device expects

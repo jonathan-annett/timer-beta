@@ -15,7 +15,7 @@ WEBHID = os.environ.get('WEBHID_PUBLIC') or os.path.normpath(os.path.join(HERE, 
 if not os.path.isfile(os.path.join(WEBHID, 'frame.html')):
     print("(skipped: no webhid frame at " + WEBHID + ")"); print("errors: []"); sys.exit(0)
 FAKE_HID = re.search(r'FAKE_HID = """(.*?)"""', open(os.path.join(HERE, 'playout_deck.py'), encoding='utf-8').read(), re.S).group(1)
-SITES = {"https://alpha.timed-show.com/": PUBLIC, "https://webhid-alpha.timed-show.com/": WEBHID}
+SITES = {"https://alpha.timed-show.com/": PUBLIC, "https://beta.timed-show.com/": PUBLIC, "https://webhid-alpha.timed-show.com/": WEBHID}
 def h(route, req):
     for base, root in SITES.items():
         if req.url.startswith(base):
@@ -30,8 +30,20 @@ def check(name, ok, got=None):
     print(("ok   " if ok else "FAIL ") + name + ("" if ok else "  got: %r" % (got,)))
     if not ok: errs.append(name)
 
+# Storage partitioned as for users (Playwright turns ThirdPartyStoragePartitioning off: issue #32230), so the frame's
+# table being shared by alpha and beta pages is real
+def disabled_features(p):
+    import subprocess
+    probe = p.chromium.launch()
+    try:
+        out = subprocess.run(["ps", "-axo", "args"], capture_output=True, text=True).stdout
+        return next((w for l in out.splitlines() if "--disable-features=" in l and "chrom" in l.lower() for w in l.split() if w.startswith("--disable-features=")), None)
+    finally: probe.close()
+
 with sync_playwright() as p:
-    b = p.chromium.launch(args=["--no-proxy-server", "--autoplay-policy=no-user-gesture-required"])
+    df = disabled_features(p)
+    keep = ",".join(f for f in df.split("=", 1)[1].split(",") if f != "ThirdPartyStoragePartitioning") if df else ""
+    b = p.chromium.launch(args=["--no-proxy-server", "--autoplay-policy=no-user-gesture-required"] + (["--disable-features=" + keep] if keep else []), ignore_default_args=[df] if df else None)
     c = b.new_context(viewport={"width": 1200, "height": 900})
     c.add_init_script("if (location.hostname.startsWith('webhid')) {" + FAKE_HID + "}")   # (the decks: the frame's)
     c.route("**/*", h)
@@ -66,6 +78,23 @@ with sync_playwright() as p:
     po.evaluate("localStorage.deck_claims = JSON.stringify({ 'sn:MK2SERIAL01': 'playout' })"); po.reload(); po.wait_for_timeout(3500)
     check("the playout page drives its deck through the frame", po.evaluate("window.__playoutDeck.decks()") == [{"id": "sn:MK2SERIAL01", "model": "mk2", "page": 0}] and fr(po).evaluate("Object.keys(__decks.mk2.images).length") == 15,
           [po.evaluate("window.__playoutDeck.decks()"), fr(po).evaluate("Object.keys(__decks.mk2.images).length")])
+    check("claims: the table is the frame's (the page's old one copied in once)", "MK2SERIAL01" in (fr(po).evaluate("localStorage.deck_claims") or "") and po.evaluate("DeckHID.ownerOf('sn:MK2SERIAL01')") == "playout",
+          fr(po).evaluate("localStorage.deck_claims"))
+
+    # a claim made on one page reaches the other: the timer takes the MK.2 back, the playout page lets go of it
+    tm = c.new_page(); tm.on("pageerror", lambda e: errs.append("timer 2: " + str(e)))
+    tm.goto("https://alpha.timed-show.com/timer.html"); tm.wait_for_timeout(3000)
+    check("the timer leaves the playout's deck alone (the frame's claims)", tm.evaluate("DeckHID.ownerOf('sn:MK2SERIAL01')") == "playout" and po.evaluate("window.__playoutDeck.decks().length") == 1)
+    tm.evaluate("DeckHID.setOwner('sn:MK2SERIAL01', 'timer')"); po.wait_for_timeout(1500)
+    check("… a claim on the timer page: the playout page hears it and lets go", po.evaluate("window.__playoutDeck.decks()") == [] and po.evaluate("DeckHID.ownerOf('sn:MK2SERIAL01')") == "timer", po.evaluate("window.__playoutDeck.decks()"))
+
+    # a beta page's frame: the same table (one per site)
+    bt = c.new_page(); bt.on("pageerror", lambda e: errs.append("beta: " + str(e)))
+    bt.add_init_script("window.TimerFeatures = { playout: true, webhid: true };")
+    po.evaluate("DeckHID.setOwner('sn:XLSERIAL002', 'none')"); po.wait_for_timeout(300)
+    bt.goto("https://beta.timed-show.com/playout.html?demo&webhid=https://webhid-alpha.timed-show.com/frame.html"); bt.wait_for_timeout(3000)
+    check("a beta page through the same frame: the same claims (one table per site)", bt.evaluate("DeckHID.ownerOf('sn:XLSERIAL002')") == "none" and bt.evaluate("DeckHID.hid().live"), bt.evaluate("DeckHID.claims()"))
+    bt.close(); tm.close()
     po.close()
 
     # a frame that doesn't answer: the page's own WebHID, as before

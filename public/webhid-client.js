@@ -11,6 +11,8 @@
  *
  *   WebHIDFrame.source()   null (off: use navigator.hid), or {getDevices(), requestDevice({filters}),
  *                          addEventListener('connect' | 'disconnect', fn) (ev.device), frame: true, ready: Promise<bool>}
+ *                          claims: {deck id: 'playout' | 'none'} (the frame's table, one per site; loaded before ready),
+ *                          claim(id, who) (applied in the frame), and a 'claims' event when another page changes them
  *   RemoteHID extras       leaveReport(id, data | null): a feature report the frame sends as this page goes (a reset)
  *
  * The first grant needs a click inside the frame: requestDevice() shows it in a dialog with its own Connect a deck…
@@ -88,12 +90,22 @@ var WebHIDFrame = (function () {
       else if (m.t === 'connect') { const ev = new Event('connect'); ev.device = proxyOf(m.device); src.dispatchEvent(ev); }
       else if (m.t === 'disconnect') { const p = proxies.get(m.key); if (p) { p.opened = false; const ev = new Event('disconnect'); ev.device = p; src.dispatchEvent(ev); } }
       else if (m.t === 'granted' && asking) { const a = asking; asking = null; a(m.list.map(proxyOf)); }
+      else if (m.t === 'claims') { src.claims = m.value || {}; src.dispatchEvent(new Event('claims')); }
     });
     // Ready once the frame answers; if it doesn't (blocked, offline), this page's own WebHID as before
     const ready = new Promise(res => {
       const t = setTimeout(() => res(false), READY_MS);
-      frame.addEventListener('load', () => call('list', {}).then(() => { clearTimeout(t); res(true); }, () => res(false)), { once: true });
+      // (the claims table too, before anything asks who owns a deck; claims this page kept before the frame join it once)
+      frame.addEventListener('load', () => call('list', {}).then(() => call('claims', {})).then(c => {
+        src.claims = c || {};
+        let mine = null;
+        try { mine = JSON.parse(localStorage.getItem('deck_claims') || 'null'); } catch (_) { /* none */ }
+        return mine && Object.keys(mine).length && !localStorage.getItem('deck_claims_moved')
+          ? call('claims-merge', { value: mine }).then(v => { src.claims = v; try { localStorage.setItem('deck_claims_moved', '1'); } catch (_) { /* private */ } }) : null;
+      }).then(() => { clearTimeout(t); res(true); }, () => res(false)), { once: true });
     }).then(ok => {
+      src.live = ok;
+      if (ok) src.dispatchEvent(new Event('claims'));   // (pages that read claims before: the frame's table now)
       if (!ok && navigator.hid) {
         fallback = true;
         console.warn('webhid: the frame at ' + url + ' didn\'t answer: this page\'s own WebHID instead');
@@ -108,6 +120,13 @@ var WebHIDFrame = (function () {
 
     src.frame = true;
     src.ready = ready;
+    src.claims = {};
+    src.claim = async (id, who) => {               // (this page's copy at once; the frame's table after)
+      const c = Object.assign({}, src.claims);
+      if (who === 'playout' || who === 'none') c[id] = who; else delete c[id];
+      src.claims = c;
+      try { src.claims = await call('claim', { id, who }); } catch (_) { /* the frame's gone: this page's copy */ }
+    };
     src.getDevices = async () => ((await ready) ? (await call('list', {})).map(proxyOf) : navigator.hid ? navigator.hid.getDevices() : []);
     src.requestDevice = async opts => {
       if (!(await ready)) return navigator.hid ? navigator.hid.requestDevice(opts) : [];
