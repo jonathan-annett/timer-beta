@@ -115,7 +115,7 @@ with sync_playwright() as p:
     check("… the playout page drives the XL through it: its images in the driving frame's deck", p3.evaluate("window.__playoutDeck.decks().map(d => d.id)") == ["sn:XLSERIAL002"]
           and fr(t3).evaluate("Object.keys(__decks.xl.images).length") == 32 and fr(p3).evaluate("Object.keys(__decks.xl.images).length") == 0,
           [p3.evaluate("window.__playoutDeck.decks()"), fr(t3).evaluate("Object.keys(__decks.xl.images).length"), fr(p3).evaluate("Object.keys(__decks.xl.images).length"),
-           p3.evaluate("DeckHID.claims()"), p3.evaluate("window.__playoutDeck.listed && window.__playoutDeck.listed()"), fr(p3).evaluate("({known: window.__frame.list(), counts: window.__frame.counts()})"), p3.evaluate("window.__wlog || null")])
+           p3.evaluate("DeckHID.claims()"), p3.evaluate("window.__playoutDeck.listed && window.__playoutDeck.listed()"), fr(p3).evaluate("({known: window.__frame.list(), counts: window.__frame.counts()})"), p3.evaluate("DeckHID.hid().events"), p3.evaluate("window.__playoutDeck.log()")])
     check("… and the timer its MK.2, directly", fr(t3).evaluate("Object.keys(__decks.mk2.images).length") == 15)
     fr(t3).evaluate("__decks.xl.key(0, 1); __decks.xl.key(0, 0)"); p3.wait_for_timeout(800)
     check("a press on the XL (in the driving frame) reaches the playout page: its first item starts", (p3.evaluate("window.__playout.local()") or {}).get("item") == "demo-1", p3.evaluate("window.__playout.local()"))

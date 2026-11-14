@@ -150,11 +150,25 @@ var PlayoutDeck = (function () {
       const ed = editNow(), t = !ed && b.edOnly ? tpNow() : null;
       if ((ed || b.edOnly) && !(!down && b.presses.has(i))) { if (down) { if (t) transportPress(b, i, t); else editPress(b.model(), i, ed); } return changed(); }
       const model = b.model(), s = slots(model), g = geometry(model, s.length), k = keyAt(model, s.length, Math.min(b.page, g.pages - 1), i);
+      // → timer is held (the owner, 14 Nov 2026): a countdown on the deck's top row, let go early to cancel, at the end let
+      // go and it goes (DeckHID.holdHandover); the deck's other keys do nothing meanwhile
+      if (b.ho) { if (!down && i === b.ho.key) b.ho.ctrl.up(); return; }
+      if (down && k.kind === 'give') {
+        if (!b.deck || !timerFree() || performance.now() - b.at <= HANDOVER_MS) return;
+        const ho = b.ho = { key: i, phase: 'count', left: 3, ctrl: null };
+        ho.ctrl = DeckHID.holdHandover({
+          seconds: 3,
+          show: (phase, left) => { if (b.ho !== ho) return; ho.phase = phase; ho.left = left; draw(); },
+          cancel: () => { if (b.ho === ho) { b.ho = null; draw(); } },
+          give: () => { if (b.ho === ho) { b.ho = null; if (timerFree()) giveBack(b.deck.id); else draw(); } },
+        });
+        return;
+      }
       if (down) {
         if (k.kind === 'prev') b.page = Math.max(0, Math.min(b.page, g.pages - 1) - 1);
         else if (k.kind === 'next') b.page = g.wrap ? (Math.min(b.page, g.pages - 1) + 1) % g.pages : Math.min(g.pages - 1, b.page + 1);
         else if (k.kind === 'all') b.presses.set(i, { all: true, ids: api.fadeAll(fadeSecs() * 1000) });
-        else if (k.kind === 'give') { if (b.deck && timerFree() && performance.now() - b.at > HANDOVER_MS) { giveBack(b.deck.id); return; } }
+        else if (k.kind === 'give') return;            // (held: above)
         else if (k.kind === 'mode') { if (cueMode(model)) api.store.del(XLMODE); else api.store.set(XLMODE, 'cue'); }
         else if (k.kind === 'markin' || k.kind === 'markout') api.mark(k.cue, k.kind === 'markin' ? 'start' : 'end');
         else {
@@ -357,9 +371,12 @@ var PlayoutDeck = (function () {
       if (!api.store.get(MODEL)) setScreenModel(d.model);
       changed(); renderDecks();
     }
+    const dlog = [];                                   // (diagnostics: decks let go here, and from where)
     function letGo(id) {                               // given back to the timer (or unplugged): the timer draws it
       const b = decks.get(id);
       if (!b) return;
+      dlog.push(id + ' ← ' + String(new Error().stack).split('\n').slice(2, 4).map(l => l.trim().replace(/\(.*\//, '(')).join(' | '));
+      if (b.ho) { const c = b.ho.ctrl; b.ho = null; c.cancel(); }
       decks.delete(id); boards.delete(b);
       b.deck.close();
       renderDecks();
@@ -405,13 +422,18 @@ var PlayoutDeck = (function () {
         if (open !== timer.open) { timer.open = open; if (api.soundboard) renderDecks(); }   // (a soundboard lists Give to the timer only then)
       }).catch(() => {});
     }
+    let lookAgain = false;                             // (asked while looking: once more at the end, a deck that came meanwhile isn't missed)
     async function look() {                            // drive every deck that's the playout's, and list them all
-      if (!owner || looking) return;
+      if (!owner) return;
+      if (looking) { lookAgain = true; return; }
       looking = true;
       try {
-        const list = await DeckHID.granted();
-        for (const hid of list) await drive(hid, list);
-        for (const [id, b] of decks) if (DeckHID.ownerOf(id) !== 'playout' || !list.includes(b.deck.hid)) letGo(id);
+        do {
+          lookAgain = false;
+          const list = await DeckHID.granted();
+          for (const hid of list) await drive(hid, list);
+          for (const [id, b] of decks) if (DeckHID.ownerOf(id) !== 'playout' || !list.includes(b.deck.hid)) letGo(id);
+        } while (lookAgain);
       } finally { looking = false; }
       renderDecks();
     }
@@ -457,7 +479,7 @@ var PlayoutDeck = (function () {
         do {
           again = false;
           for (const b of decks.values()) {
-            const f = faces(b.deck.model, b.page);
+            const f = b.ho ? DeckFace.handover(b.deck.cols, b.deck.keys, 'timer', b.ho.phase, b.ho.left) : faces(b.deck.model, b.page);
             for (let i = 0; i < f.length && decks.has(b.deck.id); i++) {
               const j = JSON.stringify(f[i]);
               if (b.sent[i] === j) continue;
@@ -905,6 +927,7 @@ var PlayoutDeck = (function () {
     // Test hooks
     window.__playoutDeck = {
       decks: () => [...decks.values()].map(b => ({ id: b.deck.id, model: b.deck.model, page: b.page })),
+      log: () => dlog.slice(),
       faces: (model, page) => faces(model || screenModel, page || 0).map(f => (f.rs ? f.rs.body : '') + (f.rs && f.rs.cap ? ' | ' + f.rs.cap : '')),
       bgs: (model, page) => faces(model || screenModel, page || 0).map(f => f.bg),
       face: (model, page, i) => faces(model, page)[i],

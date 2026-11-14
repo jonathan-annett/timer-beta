@@ -317,5 +317,22 @@ var DeckHID = (function () {
     return deck;
   }
 
-  return { MODELS, DEVICE_IDS, isDeck, info, filters, hid: hidApi, granted, idOf, open, orientation, orientKind, ownerOf, setOwner, onClaims, claims };
+  // Hold to hand a deck over (the owner, 14 Nov 2026): the key held for `seconds` (show('count', left) each second, a
+  // banner on the deck: DeckFace.handover), then show('release', 0): let go and give() runs; let go before the end and
+  // cancel() does. Handing over only once every key is up means the page taking the deck never starts with one held.
+  // Ticked by a worker (a minimized page's timers slow to once a minute). → {up(), cancel()}
+  function holdHandover(o) {
+    let left = o.seconds || 3, phase = 'count', worker = null, t = 0;
+    const stop = () => { if (worker) worker.terminate(); worker = null; clearInterval(t); };
+    const tick = () => { left--; if (left > 0) o.show('count', left); else { stop(); phase = 'release'; o.show('release', 0); } };
+    try { worker = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 1000)'], { type: 'text/javascript' }))); worker.onmessage = tick; }
+    catch (_) { t = setInterval(tick, 1000); }
+    o.show('count', left);
+    return {
+      up() { stop(); if (phase === 'release') o.give(); else o.cancel(); phase = 'done'; },
+      cancel() { if (phase === 'done') return; stop(); phase = 'done'; o.cancel(); },
+    };
+  }
+
+  return { MODELS, DEVICE_IDS, isDeck, info, filters, hid: hidApi, granted, idOf, open, holdHandover, orientation, orientKind, ownerOf, setOwner, onClaims, claims };
 })();

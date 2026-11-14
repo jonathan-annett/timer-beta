@@ -123,5 +123,14 @@
     }
   }
 
-  root.DeckFace = { paint, fitFont, wrapLines };
+  // A deck being handed to another page (the owner, 14 Nov 2026: hold the key, see what's about to happen): the top
+  // row says so, every other key blank. phase 'count' (in 3, 2, 1: let go to cancel), then 'release' (let go: it goes)
+  function handover(cols, count, to, phase, left) {
+    const when = phase === 'release' ? 'let go' : 'in ' + left;
+    const words = cols >= 3 ? [['deck', 'switching'], ['', 'to ' + to], ['', when]] : cols === 2 ? [['', '→ ' + to], ['', when]] : [['', when]];
+    const bg = phase === 'release' ? '#13602a' : '#7a5c00';
+    return Array.from({ length: count }, (_, i) => (i < words.length ? { bg, fg: '#fff', rs: { cap: words[i][0], body: words[i][1], foot: '' }, press: true } : { bg: '#000', fg: '#000', press: false }));
+  }
+
+  root.DeckFace = { paint, fitFont, wrapLines, handover };
 })(typeof window !== 'undefined' ? window : globalThis);

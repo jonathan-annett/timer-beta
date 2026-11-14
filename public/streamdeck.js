@@ -197,7 +197,7 @@
     sting_fade:       { label: 'Fade\nsting',   group: 'Video', toggleState: 'sting_playing', cmd: () => _sendCmd({ cmd: 'stingfade' }) },   // lit while a walk-up sting plays
     // This deck to the playout page on this computer (its soundboard; deck-hid.js claims). Dim and inert
     // while no playout page is open here; the playout's deck has Give to the timer on the same key.
-    deck_to_playout:  { label: 'Give deck\nto playout', group: 'Other', cmd: () => giveToPlayout() },
+    deck_to_playout:  { label: 'Deck →\nplayout', group: 'Other', cmd: () => giveToPlayout() },   // (on the deck: deck / → soundboard or → playout, the page that's open: faceFor)
     empty:            { label: '',          group: 'Other',     cmd: null },
   };
 
@@ -447,7 +447,7 @@
   async function attach(hid) {
     let d;
     try {
-      d = await DeckHID.open(hid, { down: onKeyPress });
+      d = await DeckHID.open(hid, { down: onKeyPress, up: onKeyUp });
     } catch (err) {
       console.warn('StreamDeck: open failed', err);
       _showDeckStatus('Device is busy — quit the Elgato Stream Deck app, then Connect again', 'error');
@@ -505,12 +505,29 @@
     }
   }
 
+  // Give deck to playout is held (the owner, 14 Nov 2026): a countdown on the top row (switching / to playout / in 3),
+  // let go early to cancel; at the end, let go and it goes (DeckHID.holdHandover). Other keys do nothing meanwhile.
+  let handing = null;                                // {index, phase, left, ctrl}
+  const playoutName = () => { try { return localStorage.getItem('playout_page_mode') === 'soundboard' ? 'soundboard' : 'playout'; } catch (_) { return 'playout'; } };   // (the playout page says which it is)
+  function startHandover(index) {
+    if (!deck || !playoutOpen || performance.now() - attachedAt < HANDOVER_MS) return;
+    const h = handing = { index, phase: 'count', left: 3, ctrl: null };
+    h.ctrl = DeckHID.holdHandover({
+      seconds: 3,
+      show: (phase, left) => { if (handing !== h) return; h.phase = phase; h.left = left; scheduleRedrawAll(); },
+      cancel: () => { if (handing === h) { handing = null; scheduleRedrawAll(); } },
+      give: () => { if (handing === h) { handing = null; giveToPlayout(); } },
+    });
+  }
+  function onKeyUp(index) { if (handing && index === handing.index) handing.ctrl.up(); }
   function onKeyPress(index) {
+    if (handing) return;
     if (picking) { pickPress(index, modelKey); return; }
     const layout = activeLayout(modelKey);
     if (!layout) return;
     const actionKey = layout[index];
     if (!actionKey || actionKey === 'empty') return;
+    if (actionKey === 'deck_to_playout') { startHandover(index); return; }
     const action = ACTIONS[actionKey];
     if (action && action.cmd) action.cmd(index, modelKey);
   }
@@ -652,6 +669,7 @@
   }
 
   function faceFor(m, index, actionKey) {
+    if (handing && m === modelKey && deck) return DeckFace.handover(deck.cols, deck.keys, playoutName(), handing.phase, handing.left)[index];
     const action = ACTIONS[actionKey] || ACTIONS['empty'];
     if (picking) {                                   // Update preset: only the presets, in blue
       if (!action.presetMs) return { bg: '#000000', fg: '#000000' };
@@ -694,9 +712,10 @@
       else if (actionKey === 'video_stop') { bg = override.bg || '#3a0d0d'; fg = override.fg || '#ff7777'; }
       else { bg = override.bg || '#0b3d5c'; fg = override.fg || '#7fd4ff'; }
     }
-    if (actionKey === 'deck_to_playout') {
+    if (actionKey === 'deck_to_playout') {             // (as the playout's → timer: deck / → soundboard, or → playout; the owner, 14 Nov 2026)
       bg = playoutOpen ? (override.bg || '#2a2200') : '#0d0d0d';
       fg = playoutOpen ? (override.fg || '#ffcc33') : '#444444';
+      if (!override.label) return { bg, fg, rs: { cap: 'deck', body: '→ ' + playoutName(), foot: playoutOpen ? 'hold' : 'not open' } };
     }
     if (action.rsKey) {
       const on = rs.active && (action.rsKey === 'prev' ? rs.canBack : action.rsKey === 'next' ? !!rs.next : action.rsKey === 'now' ? !!rs.now : true);
@@ -1126,9 +1145,10 @@
   // one is plugged back in. (No user gesture needed for devices already granted to this site.) Only a
   // deck that's the timer's on this computer: one given to the playout page (its Stream Deck box,
   // deck_claims) is left to it, and let go of the moment it's given.
-  let looking = false;
+  let looking = false, lookAgain = false;          // (asked while looking: once more at the end, a deck that came meanwhile isn't missed)
   async function findDeck() {
-    if (device || looking) return;
+    if (device) return;
+    if (looking) { lookAgain = true; return; }
     looking = true;
     try {
       const list = await DeckHID.granted();
@@ -1144,9 +1164,11 @@
         _showDeckStatus(owners.includes('playout') ? PLAYOUT_HAS_IT : 'Not connected: the deck was disconnected on the playout page (click Connect to use it here)', 'idle');
       }
     } finally { looking = false; }
+    if (lookAgain && !device) { lookAgain = false; findDeck(); }
   }
   const PLAYOUT_HAS_IT = 'Not connected: the playout page on this computer has the deck (its Stream Deck box can give it back)';
   function letGo() {                                   // given to the playout page: its keys are the playout's to draw
+    if (handing) { handing.ctrl.cancel(); handing = null; }
     const d = deck;
     deck = null; device = null; deviceInfo = null;
     noteDeck();

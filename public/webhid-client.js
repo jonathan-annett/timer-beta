@@ -91,7 +91,7 @@ var WebHIDFrame = (function () {
       if (m.t === 're') { const w = waiting.get(m.req); if (!w) return; waiting.delete(m.req); if (m.ok) w.res(m.value); else w.rej(new Error(m.error)); }
       else if (m.t === 'input') { const p = proxies.get(m.key); if (!p) return; const ev = new Event('inputreport'); ev.reportId = m.id; ev.data = new DataView(m.data); ev.device = p; p.dispatchEvent(ev); }
       else if (m.t === 'connect') { const ev = new Event('connect'); ev.device = proxyOf(m.device); src.dispatchEvent(ev); }
-      else if (m.t === 'disconnect') { const p = proxies.get(m.key); if (p) { p.opened = false; const ev = new Event('disconnect'); ev.device = p; src.dispatchEvent(ev); } }
+      else if (m.t === 'disconnect') { src.events.push('disconnect ' + m.key); const p = proxies.get(m.key); if (p) { p.opened = false; const ev = new Event('disconnect'); ev.device = p; src.dispatchEvent(ev); } }
       else if (m.t === 'granted' && asking) { const a = asking; asking = null; a(m.list.map(proxyOf)); }
       else if (m.t === 'claims') { src.claims = m.value || {}; src.dispatchEvent(new Event('claims')); }
     });
@@ -122,6 +122,7 @@ var WebHIDFrame = (function () {
     box.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); hide(); } }, true);
 
     src.frame = true;
+    src.events = [];                                 // (diagnostics: disconnects heard)
     src.ready = ready;
     src.claims = {};
     src.splits = () => call('splits', {});           // {deck id: [{id, x, y, w, h}]}: decks split into virtual decks
