@@ -388,7 +388,7 @@
 
   // Must be called from a user gesture (click) — WebHID requires it for the permission prompt.
   async function connectDeck() {
-    if (!navigator.hid) {
+    if (!DeckHID.hid()) {
       _showDeckStatus('WebHID unavailable — use desktop Chrome or Edge over HTTPS', 'error');
       return;
     }
@@ -402,7 +402,7 @@
     }
     let hid;
     try {
-      [hid] = await navigator.hid.requestDevice({ filters: DeckHID.filters() });
+      [hid] = await DeckHID.hid().requestDevice({ filters: DeckHID.filters() });
     } catch (err) {
       _showDeckStatus('Could not open the device picker: ' + err.message, 'error');
       return;
@@ -1099,14 +1099,14 @@
   // ─── Boot ─────────────────────────────────────────────────────────────────
 
   function init() {
-    if (!navigator.hid) {
+    if (!DeckHID.hid()) {
       console.log('StreamDeck: WebHID unavailable — editor still functional for layout prep');
     }
     loadLayouts();
     _installTimerAPI();
     initEditorEvents();
 
-    if (!navigator.hid) {
+    if (!DeckHID.hid()) {
       _showDeckStatus('WebHID unavailable here — layouts can still be edited', 'idle');
       return;
     }
@@ -1180,8 +1180,8 @@
   }
   function autoAttach() {
     findDeck();
-    navigator.hid.addEventListener('connect', ev => { if (DeckHID.isDeck(ev.device)) findDeck(); });
-    navigator.hid.addEventListener('disconnect', onHidDisconnect);
+    DeckHID.hid().addEventListener('connect', ev => { if (DeckHID.isDeck(ev.device)) findDeck(); });
+    DeckHID.hid().addEventListener('disconnect', onHidDisconnect);
     let was = DeckHID.claims();
     DeckHID.onClaims(() => {
       const now = DeckHID.claims(), back = Object.keys(was).some(id => was[id] === 'playout' && now[id] == null);   // (not when set aside there: Disconnect)

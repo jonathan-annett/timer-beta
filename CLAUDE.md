@@ -40,7 +40,7 @@ Each row: the main files, the tests (`tests/e2e/`), and the section of `docs/arc
 | Clock | `inettime.js`, `clock-panel.js` | `clock_badge`, `clock_online` | *Time Provider* |
 | Operator screen, notices | `timer.css`, `notices.js`, `notice-panel.js`, `whats-new.js`, `changelog.html` | `whats_new` | *Operator screen*, *What's new* |
 | Help | `help-overlay.js`, `markdown-lite.js` (renders `README.md`) | | *Help overlay* |
-| Stream Deck | `streamdeck.js`, `deck-hid.js`, `deck-face.js`, `virtual-deck.js`, `deck.html` | `streamdeck_*`, `virtual_deck` | *Stream Deck WebHID* |
+| Stream Deck | `streamdeck.js`, `deck-hid.js`, `deck-face.js`, `virtual-deck.js`, `deck.html`, `webhid-client.js` (the webhid frame: its site is the `../webhid` repo) | `streamdeck_*`, `virtual_deck`, `webhid_frame` | *Stream Deck WebHID* |
 | Run sheet | `runsheet-core.js`, `runsheet.js`, `runsheet.html`, `runsheet-editor.js`, `runsheet-dock.js` | `runsheet_*`, `editor_clock` | *Run Sheet* |
 | Sharing: pairing, phones, displays | `remote-control.js`, `remote-peer.js`, `remote-clock.js`, `remote.html`, `remote-phone.js`, `display.html`, `control.html`, `back-guard.js`; server `remote-server.js` | `control_pair`, `devices`, `relink`, `clock_sync`, `phone_runsheet_edit` | *Phone Remote Control* |
 | Overlay | `overlay.html`, `overlay.js`, `overlay-view.js`, `local-overlay.js`, `key-focus.js` | `overlay_pair`, `local_overlay` | *Phone Remote Control* (overlay paragraphs) |

@@ -415,9 +415,9 @@ var PlayoutDeck = (function () {
       renderDecks();
     }
     async function connect() {                         // (a click: the browser's picker) the chosen deck is the playout's
-      if (!navigator.hid) return;
+      if (!DeckHID.hid()) return;
       let hid;
-      try { [hid] = await navigator.hid.requestDevice({ filters: DeckHID.filters() }); } catch (_) { return; }
+      try { [hid] = await DeckHID.hid().requestDevice({ filters: DeckHID.filters() }); } catch (_) { return; }
       if (!hid) return;
       const list = await DeckHID.granted();
       DeckHID.setOwner(await DeckHID.idOf(hid, list), 'playout');
@@ -428,7 +428,7 @@ var PlayoutDeck = (function () {
       const box = $('decklist');
       if (!box) return;
       const seq = ++listSeq, rows = [];
-      const list = navigator.hid ? await DeckHID.granted() : [];
+      const list = DeckHID.hid() ? await DeckHID.granted() : [];
       for (const hid of list) {
         const id = await DeckHID.idOf(hid, list), b = decks.get(id);
         const who = DeckHID.ownerOf(id);
@@ -436,7 +436,7 @@ var PlayoutDeck = (function () {
       }
       if (seq !== listSeq) return;                     // (a newer one is on its way)
       listed = rows;
-      box.innerHTML = !navigator.hid ? '<p class="hint">This browser has no WebHID: use Chrome or Edge for a Stream Deck. The keys below still work with the mouse.</p>'
+      box.innerHTML = !DeckHID.hid() ? '<p class="hint">This browser has no WebHID: use Chrome or Edge for a Stream Deck. The keys below still work with the mouse.</p>'
         : !owner ? '<p class="hint">Another playout tab is using the decks: use that one (this tab takes over when it closes).</p>'
         : listed.map(x => `<div class="dk-row" data-deck="${esc(x.id)}"><span class="dk-name">${esc(x.name)}${x.serial ? ' <span class="hint">…' + esc(x.serial) + '</span>' : ''}</span>` +
           `<span class="dk-state${x.on ? ' ok' : x.busy ? ' bad' : ''}">${x.on ? 'Used here' : x.mine ? (x.busy ? 'Busy: quit the Elgato Stream Deck app' : 'Connecting…') : x.off ? 'Disconnected' : api.soundboard ? 'Not used here' : 'The timer’s'}</span>` +
@@ -886,12 +886,12 @@ var PlayoutDeck = (function () {
       catch (_) { setInterval(fn, ms); }
     })(250);
 
-    if (navigator.hid) {
+    if (DeckHID.hid()) {
       const own = () => {
         owner = true;
         look();
-        navigator.hid.addEventListener('connect', ev => { if (DeckHID.isDeck(ev.device)) look(); });
-        navigator.hid.addEventListener('disconnect', ev => { for (const [id, b] of decks) if (b.deck.hid === ev.device) letGo(id); renderDecks(); });
+        DeckHID.hid().addEventListener('connect', ev => { if (DeckHID.isDeck(ev.device)) look(); });
+        DeckHID.hid().addEventListener('disconnect', ev => { for (const [id, b] of decks) if (b.deck.hid === ev.device) letGo(id); renderDecks(); });
         DeckHID.onClaims(look);
       };
       // Held until this page closes; without Web Locks every playout tab drives them

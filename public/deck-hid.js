@@ -7,7 +7,10 @@
  *
  *   DeckHID.MODELS                       {mini, mk2, xl}: name, cols, rows, keySize, keyCount
  *   DeckHID.isDeck(hid), DeckHID.info(hid)   a HIDDevice that's a deck; its model and protocol
- *   DeckHID.filters()                    for navigator.hid.requestDevice
+ *   DeckHID.hid()                        the WebHID decks come through: the webhid site's frame (webhid-client.js,
+ *                                        a trial: alpha) where it's on, else navigator.hid; undefined: none. Pages ask
+ *                                        it for requestDevice and the connect / disconnect events
+ *   DeckHID.filters()                    for DeckHID.hid().requestDevice
  *   DeckHID.granted()                    the decks this site may use (Promise of HIDDevices)
  *   DeckHID.idOf(hid, others)            Promise of the deck's id: 'sn:<serial>' from its feature report
  *                                        (opens it if need be), else 'pid:<product id>:<n>' (n = its place
@@ -72,19 +75,26 @@ var DeckHID = (function () {
   const info = hid => DEVICE_IDS.find(d => d.vendorId === hid.vendorId && d.productId === hid.productId)
     || { model: 'mk2', protocol: 'gen2', name: 'Stream Deck (unknown model)' };
   const filters = () => DEVICE_IDS.map(d => ({ vendorId: d.vendorId, productId: d.productId }));
-  const granted = () => (navigator.hid ? navigator.hid.getDevices().then(l => l.filter(isDeck)) : Promise.resolve([]));
+  let source = null;                                   // (worked out once: the frame, or this page's own WebHID)
+  const hidApi = () => { if (source === null) source = (window.WebHIDFrame && WebHIDFrame.source()) || navigator.hid; return source; };
+  const granted = () => (hidApi() ? hidApi().getDevices().then(l => l.filter(isDeck)) : Promise.resolve([]));
 
   // The serial number, from a feature report (WebHID has no serialNumber): gen2 report 0x06 from byte 2,
   // gen1 report 0x03 from byte 5 (the report id is byte 0, as node-elgato-stream-deck reads them). Needs
-  // the deck open. UNVERIFIED on hardware: if it can't be read, decks are told apart by model.
-  async function readSerial(hid, inf) {
+  // the deck open. Read from the owner's XL (14 Nov 2026: through WebHID and through the webhid frame); the gen1
+  // layout is still unverified. If it can't be read (another tab had the deck: once, in that test), it's asked
+  // again a moment later before the decks are told apart by model.
+  async function readSerial(hid, inf, again = true) {
     try {
       const v = await hid.receiveFeatureReport(inf.protocol === 'gen2' ? 0x06 : 0x03);
       const b = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
       let s = '';
       for (let i = inf.protocol === 'gen2' ? 2 : 5; i < b.length && b[i] > 0x20 && b[i] < 0x7f; i++) s += String.fromCharCode(b[i]);
-      return s.length >= 4 ? s : null;
-    } catch (_) { return null; }
+      if (s.length >= 4) return s;
+    } catch (_) { /* below */ }
+    if (!again) return null;
+    await new Promise(r => setTimeout(r, 200));
+    return readSerial(hid, inf, false);
   }
   // One open or close at a time per deck. A page asks a deck's id from more than one place at once (the
   // playout page drives its decks while it lists them): reading the serial opened the deck and closed it
@@ -220,6 +230,9 @@ var DeckHID = (function () {
       }
     }
     hid.addEventListener('inputreport', onReport);
+    // Through the webhid frame, this page's reset as it goes would die with it: the frame sends it instead
+    const resetReport = () => (inf.protocol === 'gen2' ? [0x03, Uint8Array.of(0x02, ...new Array(30).fill(0))] : [0x0b, Uint8Array.of(0x63, ...new Array(15).fill(0))]);
+    if (hid.leaveReport) hid.leaveReport(...resetReport());
     let queue = Promise.resolve();
     async function write(i, canvas) {
       if (!hid.opened) return;
@@ -250,8 +263,7 @@ var DeckHID = (function () {
       reset() {
         if (!hid.opened) return;
         try {
-          if (inf.protocol === 'gen2') { const d = new Uint8Array(31); d[0] = 0x02; hid.sendFeatureReport(0x03, d).catch(() => {}); }
-          else { const d = new Uint8Array(16); d[0] = 0x63; hid.sendFeatureReport(0x0b, d).catch(() => {}); }
+          const [rid, d] = resetReport(); hid.sendFeatureReport(rid, d).catch(() => {});
         } catch (_) { /* gone already */ }
       },
       async blank() {
@@ -261,10 +273,10 @@ var DeckHID = (function () {
         for (let i = 0; i < m.keyCount; i++) await deck.setKey(i, c);
       },
       detach() { hid.removeEventListener('inputreport', onReport); },   // (stops hearing it; leaves it open)
-      async close() { deck.detach(); inUse.delete(hid); await queue.catch(() => {}); try { await serially(hid, () => (hid.opened ? hid.close() : null)); } catch (_) { /* gone */ } },
+      async close() { deck.detach(); inUse.delete(hid); if (hid.leaveReport) hid.leaveReport(0, null); await queue.catch(() => {}); try { await serially(hid, () => (hid.opened ? hid.close() : null)); } catch (_) { /* gone */ } },
     };
     return deck;
   }
 
-  return { MODELS, DEVICE_IDS, isDeck, info, filters, granted, idOf, open, orientation, orientKind, ownerOf, setOwner, onClaims, claims };
+  return { MODELS, DEVICE_IDS, isDeck, info, filters, hid: hidApi, granted, idOf, open, orientation, orientKind, ownerOf, setOwner, onClaims, claims };
 })();
