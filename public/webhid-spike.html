@@ -37,6 +37,11 @@
       <button id="direct" type="button">Directly (this page)</button>
       <button id="stop" type="button">Let go</button>
     </p>
+    <p>
+      <button id="note" type="button">Write a note in the frame</button>
+      <button id="hello" type="button">Say hello on the channel</button>
+      <span class="hint">then see check.html: the note there, and its hello logged here</span>
+    </p>
     <div id="log"></div>
   </main>
   <script src="deck-hid.js?v=90c43672"></script>
@@ -77,6 +82,7 @@
       if (m.t === 're') { const w = waiting.get(m.req); if (!w) return; waiting.delete(m.req); if (m.ok) w.res(m.value); else w.rej(new Error(m.error)); }
       else if (m.t === 'input') { const p = proxies.get(m.key); if (!p) return; const ev = new Event('inputreport'); ev.reportId = m.id; ev.data = new DataView(m.data); ev.device = p; p.dispatchEvent(ev); }
       else if (m.t === 'devices') log('frame: decks allowed:', m.list.map(d => d.productName).join(', ') || 'none');
+      else if (m.t === 'bc') log('frame heard on the channel:', JSON.stringify(m.value));
     });
 
     // ─── Driving a deck: every key drawn, timed; presses logged ───
@@ -123,6 +129,8 @@
       } catch (err) { log('directly failed:', err.message); }
     });
     $('stop').addEventListener('click', letGo);
+    $('note').addEventListener('click', async () => { await call('note-set', { value: 'written from ' + location.host + ' at ' + new Date().toLocaleTimeString() }); log('note written:', JSON.stringify(await call('note-get', {}))); });
+    $('hello').addEventListener('click', async () => { await call('bc-post', { value: 'hello from ' + location.host }); log('said hello on the channel'); });
     window.addEventListener('pagehide', () => { if (deck) deck.reset(); });
     window.__spike = { call, proxyOf, deck: () => deck, log: () => $('log').textContent };
   })();
