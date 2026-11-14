@@ -13,7 +13,9 @@
  *                          addEventListener('connect' | 'disconnect', fn) (ev.device), frame: true, ready: Promise<bool>}
  *                          claims: {deck id: 'playout' | 'none'} (the frame's table, one per site; loaded before ready),
  *                          claim(id, who) (applied in the frame), and a 'claims' event when another page changes them
- *   RemoteHID extras       leaveReport(id, data | null): a feature report the frame sends as this page goes (a reset)
+ *                          splits() / split(deck id, product id, regions | null): a deck as virtual decks (see frame.js)
+ *   RemoteHID extras       leaveReport(id, data | null): a feature report the frame sends as this page goes (a reset);
+ *                          virtual {parent, region, cols, rows, keySize, protocol, model} on a split deck's region
  *
  * The first grant needs a click inside the frame: requestDevice() shows it in a dialog with its own Connect a deck…
  * button (Cancel closes it). Tested with real decks through webhid-alpha (Nov 2026): 3–4 ms a key against 3 directly.
@@ -70,7 +72,7 @@ var WebHIDFrame = (function () {
     }
     const toBuf = d => (d instanceof ArrayBuffer ? d.slice(0) : d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
     class RemoteHID extends EventTarget {
-      constructor(d) { super(); this.key = d.key; this.vendorId = d.vendorId; this.productId = d.productId; this.productName = d.productName; this.opened = d.opened; this.collections = []; }
+      constructor(d) { super(); this.key = d.key; this.vendorId = d.vendorId; this.productId = d.productId; this.productName = d.productName; this.opened = d.opened; this.collections = []; if (d.virtual) this.virtual = d.virtual; }
       async open() { const d = await call('open', { key: this.key }); this.opened = d.opened; }
       async close() { const d = await call('close', { key: this.key }); this.opened = d.opened; }
       async forget() { await call('forget', { key: this.key }); this.opened = false; proxies.delete(this.key); }
@@ -122,6 +124,8 @@ var WebHIDFrame = (function () {
     src.frame = true;
     src.ready = ready;
     src.claims = {};
+    src.splits = () => call('splits', {});           // {deck id: [{id, x, y, w, h}]}: decks split into virtual decks
+    src.split = (gid, pid, regions) => call('split', { gid, pid, regions });   // (null: whole again)
     src.claim = async (id, who) => {               // (this page's copy at once; the frame's table after)
       const c = Object.assign({}, src.claims);
       if (typeof who === 'string' && /^[a-z][a-z0-9-]{0,23}$/.test(who) && who !== 'timer') c[id] = who; else delete c[id];

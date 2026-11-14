@@ -6,7 +6,9 @@
  * both use it.
  *
  *   DeckHID.MODELS                       {mini, mk2, xl}: name, cols, rows, keySize, keyCount
- *   DeckHID.isDeck(hid), DeckHID.info(hid)   a HIDDevice that's a deck; its model and protocol
+ *   DeckHID.isDeck(hid), DeckHID.info(hid)   a HIDDevice that's a deck; its model and protocol (a virtual deck, a region
+ *                                        of a split deck through the webhid frame: its own model, 'c<w>x<h>' for shapes no
+ *                                        real deck has, and dims {cols, rows, keySize, keyCount}, drawn the physical way)
  *   DeckHID.hid()                        the WebHID decks come through: the webhid site's frame (webhid-client.js,
  *                                        a trial: alpha) where it's on, else navigator.hid; undefined: none. Pages ask
  *                                        it for requestDevice and the connect / disconnect events
@@ -73,8 +75,10 @@ var DeckHID = (function () {
   }
 
   const isDeck = hid => !!hid && DEVICE_IDS.some(d => d.vendorId === hid.vendorId && d.productId === hid.productId);
-  const info = hid => DEVICE_IDS.find(d => d.vendorId === hid.vendorId && d.productId === hid.productId)
-    || { model: 'mk2', protocol: 'gen2', name: 'Stream Deck (unknown model)' };
+  // A virtual deck (a region of a split deck, through the webhid frame) is its own shape, drawn the physical deck's way
+  const info = hid => (hid.virtual ? { model: hid.virtual.model, protocol: hid.virtual.protocol, name: hid.productName, virtual: true,
+      dims: { cols: hid.virtual.cols, rows: hid.virtual.rows, keySize: hid.virtual.keySize, keyCount: hid.virtual.cols * hid.virtual.rows } }
+    : DEVICE_IDS.find(d => d.vendorId === hid.vendorId && d.productId === hid.productId) || { model: 'mk2', protocol: 'gen2', name: 'Stream Deck (unknown model)' });
   const filters = () => DEVICE_IDS.map(d => ({ vendorId: d.vendorId, productId: d.productId }));
   let source = null;                                   // (worked out once: the frame, or this page's own WebHID)
   const hidApi = () => { if (source === null) source = (window.WebHIDFrame && WebHIDFrame.source()) || navigator.hid; return source; };
@@ -155,14 +159,14 @@ var DeckHID = (function () {
   };
 
   // ─── Images ───
-  function orient(src, kind) {                         // rotated/mirrored into the orientation the device expects
-    const o = orientation(kind), size = src.width;
+  function orient(src, kind, to) {                     // rotated/mirrored into the orientation the device expects (to: its key size)
+    const o = orientation(kind), size = to || src.width;
     const c = document.createElement('canvas'); c.width = c.height = size;
     const ctx = c.getContext('2d');
     ctx.translate(size / 2, size / 2);
     ctx.rotate(o.rotate * Math.PI / 180);
     if (o.mirror) ctx.scale(-1, 1);
-    ctx.drawImage(src, -size / 2, -size / 2);
+    ctx.drawImage(src, -size / 2, -size / 2, size, size);   // (scaled: a page that drew at its model's size on a deck of keys another size)
     return c;
   }
   // A key image as JPEG, encoded now (toDataURL), not with toBlob: Chrome encodes toBlob's in idle time, which a
@@ -235,7 +239,7 @@ var DeckHID = (function () {
     inUse.add(hid);
     try { await serially(hid, () => (hid.opened ? null : hid.open())); }
     catch (err) { inUse.delete(hid); throw err; }
-    const inf = info(hid), m = MODELS[inf.model], kind = orientKind(inf);
+    const inf = info(hid), m = inf.dims || MODELS[inf.model], kind = orientKind(inf);
     const id = await idOf(hid);
     // The original (v1) deck reports and addresses keys right-to-left within each row
     const physical = i => { if (!inf.mirrorCols) return i; const col = i % m.cols; return i - col + (m.cols - 1 - col); };
@@ -260,7 +264,7 @@ var DeckHID = (function () {
     const waitingKey = new Map();                      // key → {canvas, p}: an image not yet started (setKey)
     async function write(i, canvas) {
       if (!hid.opened) return;
-      const img = orient(canvas, kind), k = physical(i);
+      const img = orient(canvas, kind, m.keySize), k = physical(i);
       try {
         if (inf.protocol === 'gen2') {
           await sendGen2(hid, k, jpeg(img));

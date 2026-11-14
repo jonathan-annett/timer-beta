@@ -401,8 +401,8 @@
       if (await attach(hid)) return;
     }
     let hid;
-    try {
-      [hid] = await DeckHID.hid().requestDevice({ filters: DeckHID.filters() });
+    try {   // (a split deck offers its virtual decks: the first of a model the timer knows, a Mini, MK.2 or XL)
+      hid = (await DeckHID.hid().requestDevice({ filters: DeckHID.filters() })).find(h => MODELS[DeckHID.info(h).model]);
     } catch (err) {
       _showDeckStatus('Could not open the device picker: ' + err.message, 'error');
       return;
@@ -554,7 +554,7 @@
         for (const index of batch) {
           if (!device || index >= model.keyCount) continue;
           const actionKey = layout ? layout[index] : 'empty';
-          await deck.setKey(index, renderKey(index, actionKey, model.keySize));
+          await deck.setKey(index, renderKey(index, actionKey, deck.keySize || model.keySize));   // (a virtual deck on an XL: the XL's key size)
         }
       }
     } finally {
@@ -1133,6 +1133,7 @@
     try {
       const list = await DeckHID.granted();
       for (const hid of list) {
+        if (!MODELS[DeckHID.info(hid).model]) continue;   // (a virtual deck of another shape: not the timer's to drive)
         if (DeckHID.ownerOf(await DeckHID.idOf(hid, list)) !== 'timer' || device) continue;
         if (autoConnectAllowed()) await attach(hid);
         else { pausedDevice = hid; _showDeckStatus('Disconnected — click Connect to use it again', 'idle'); }

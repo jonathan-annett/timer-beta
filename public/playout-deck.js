@@ -344,6 +344,7 @@ var PlayoutDeck = (function () {
     let owner = false, looking = false;
     const busyNote = new Set();                        // decks that wouldn't open (the Elgato app)
     async function drive(hid, list) {
+      if (!modelOf(DeckHID.info(hid).model)) return;   // (a virtual deck of a shape these keys can't be laid out on yet: a strip)
       const id = await DeckHID.idOf(hid, list);
       if (decks.has(id) || DeckHID.ownerOf(id) !== 'playout') return;
       let d, b = null;
