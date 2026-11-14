@@ -101,5 +101,37 @@ with sync_playwright() as p:
     names = po.evaluate("DeckHID.granted().then(l => l.map(d => d.productName))")
     check("the split removed: the XL offered whole again", "Fake XL" in names and not any("·" in n for n in names), names)
     check("… the playout page let go of B and C (gone)", not any("#" in d["id"] for d in po.evaluate("window.__playoutDeck.decks()")), po.evaluate("window.__playoutDeck.decks()"))
+
+    # The split editor (split.html on the webhid site; the owner: drag the parts into place, the strip on top if you like)
+    tm2 = c.new_page(); tm2.on("pageerror", lambda e: errs.append("timer 2: " + str(e)))
+    tm2.goto("https://alpha.timed-show.com/timer.html"); tm2.wait_for_timeout(3000)
+    ed = c.new_page(); ed.on("pageerror", lambda e: errs.append("editor: " + str(e)))
+    ed.set_viewport_size({"width": 1000, "height": 900})
+    ed.goto("https://webhid-alpha.timed-show.com/split.html"); ed.wait_for_timeout(2500)
+    check("the editor lists the decks in reach (from the frames driving them)", sorted(ed.evaluate("window.__split.decks()")) == ["sn:MK2SERIAL01", XL], ed.evaluate("window.__split.decks()"))
+    ed.select_option("#deck", XL); ed.wait_for_timeout(200)
+    ed.select_option("#preset", "strip-mk2-minis"); ed.wait_for_timeout(200)
+    cur = ed.evaluate("window.__split.cur()")
+    check("Start from: a strip on top, MK.2 and two Minis (the MK.2 the timer's, the Minis the soundboard's, the strip unused)",
+          [(r["id"], r["x"], r["y"], r["w"], r["h"]) for r in cur["regions"]] == [("D", 0, 0, 5, 1), ("A", 0, 1, 5, 3), ("B", 5, 0, 3, 2), ("C", 5, 2, 3, 2)]
+          and cur["owners"] == {"D": "none", "A": "timer", "B": "playout", "C": "playout"}, cur)
+    ed.click('.vd[data-id="D"] .x'); ed.wait_for_timeout(100)
+    cell = lambda x, y: ed.locator('.cell[data-x="%d"][data-y="%d"]' % (x, y)).bounding_box()
+    a0, a4 = cell(0, 0), cell(4, 0)
+    ed.mouse.move(a0["x"] + 10, a0["y"] + 10); ed.mouse.down(); ed.mouse.move(a4["x"] + 10, a4["y"] + 10, steps=6); ed.mouse.up(); ed.wait_for_timeout(150)
+    cur = ed.evaluate("window.__split.cur()")
+    check("✕ removes the strip; dragged across the top row's empty keys: a new 5 × 1 part (unused)", any((r["x"], r["y"], r["w"], r["h"]) == (0, 0, 5, 1) for r in cur["regions"]) and len(cur["regions"]) == 4, cur["regions"])
+    bx, tgt = ed.locator('.vd[data-id="B"] b').bounding_box(), cell(1, 2)
+    ed.mouse.move(bx["x"] + 5, bx["y"] + 5); ed.mouse.down(); ed.mouse.move(tgt["x"] + 10, tgt["y"] + 10, steps=6); ed.mouse.up(); ed.wait_for_timeout(150)
+    cur = ed.evaluate("window.__split.cur()")
+    check("a part dragged onto another: refused (it stays where it was)", next(r for r in cur["regions"] if r["id"] == "B")["x"] == 5, cur["regions"])
+    ed.click("#save"); ed.wait_for_timeout(3000)
+    check("Save: the timer has the MK.2 part, the soundboard the two Minis", tm2.evaluate("localStorage.deck_timer") == XL + "#A"
+          and sorted(d["id"] for d in po.evaluate("window.__playoutDeck.decks()")) == [XL + "#B", XL + "#C"], [tm2.evaluate("localStorage.deck_timer"), po.evaluate("window.__playoutDeck.decks()")])
+    drv = [pg for pg in (tm2, po) if XL in fr(pg).evaluate("window.__frame.leading()")][0]
+    rowsA = [(1 + j) * 8 + i for j in range(3) for i in range(5)]
+    im3 = fr(drv).evaluate("__decks.xl.images")
+    check("… the timer's MK.2 drawn on rows 2–4 (the strip's row above it left alone)", all(str(k) in im3 for k in rowsA), sorted(int(k) for k in im3))
+    ed.screenshot(path=os.path.join(OUTDIR, "webhid_split_editor.png"))
     b.close()
 print("errors:", errs)

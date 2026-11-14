@@ -791,6 +791,8 @@
     if (status) { status.textContent = text; status.dataset.kind = kind; }
     const connectBtn = document.getElementById('deck-connect-btn');
     if (connectBtn) connectBtn.textContent = device ? 'Disconnect' : 'Connect deck';
+    const split = document.getElementById('deck-split-link'), sp = window.WebHIDFrame && WebHIDFrame.splitPage && WebHIDFrame.splitPage();
+    if (split) { split.hidden = !sp || PRESENTER; if (sp) split.href = sp; }   // (decks through the webhid frame: one may be split)
     const forgetBtn = document.getElementById('deck-forget-btn');
     if (forgetBtn) forgetBtn.style.display = (device || pausedDevice) ? '' : 'none';
     const btn = document.getElementById('btndeck');

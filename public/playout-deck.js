@@ -468,6 +468,8 @@ var PlayoutDeck = (function () {
           (x.mine ? '<button class="small" data-dk="off" title="Stop using it: Elgato’s own screen, and nothing here (or on a timer page) uses it until Use here">Disconnect</button>' : '') +
           '<button class="small" data-dk="forget" title="This browser forgets it: neither this page nor the timer page can use it until it’s connected again with Connect a deck…">Forget</button>' + '</div>').join('')
           || '<p class="hint">No Stream Deck yet. Quit the Elgato Stream Deck app, plug one in and click <b>Connect a deck…</b></p>';
+      if (window.WebHIDFrame && WebHIDFrame.splitPage && DeckHID.hid() && DeckHID.hid().live && listed.length)   // (decks through the webhid frame: one may be split into several)
+        box.insertAdjacentHTML('beforeend', `<p class="hint"><a href="${WebHIDFrame.splitPage()}" target="_blank" rel="noopener">Split a deck into several…</a> (an XL as an MK.2 for the timer and Minis here, say)</p>`);
     }
 
     // ─── Drawing: only keys whose face changed ───

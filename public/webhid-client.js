@@ -144,5 +144,7 @@ var WebHIDFrame = (function () {
     src.__proxies = proxies;
     return src;
   }
-  return { source, frameUrl, FRAMES };
+  // The webhid site's split editor (split.html: a deck as several virtual decks), for the frame in use
+  const splitPage = () => { const s = made && made.live && frameUrl(); return s ? new URL('split.html', s).href : null; };
+  return { source, frameUrl, FRAMES, splitPage };
 })();
