@@ -818,7 +818,7 @@ var PlayoutDeck = (function () {
         if (e.target.value !== 'custom') return setScreenModel(e.target.value);
         const g = modelOf(screenModel), ask = prompt('Keys across × down (2 × 2 to 20 × 11):', g && g.custom ? g.cols + ' × ' + g.rows : '8 × 6');
         const x = /^\s*(\d{1,2})\s*[x×*,]\s*(\d{1,2})\s*$/i.exec(ask || ''), m = x && 'c' + Number(x[1]) + 'x' + Number(x[2]);
-        if (m && modelOf(m)) setScreenModel(m);
+        if (m && modelOf(m) && Number(x[1]) >= 2 && Number(x[2]) >= 2) setScreenModel(m);   // (on screen from 2 × 2; a part of a split deck may be smaller)
         else { if (ask) alert('That isn’t a size I can make: from 2 × 2 up to 20 across and 11 down.'); e.target.value = screenModel; }
       });
     }

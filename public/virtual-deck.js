@@ -24,7 +24,7 @@ var VirtualDeck = (function () {
   function shape(m) {
     if (MODELS[m]) return MODELS[m];
     const x = /^c(\d{1,2})x(\d{1,2})$/.exec(typeof m === 'string' ? m : ''), cols = x ? +x[1] : 0, rows = x ? +x[2] : 0;
-    return cols >= 2 && cols <= 20 && rows >= 2 && rows <= 11 ? { cols, rows, custom: true } : null;
+    return cols >= 1 && cols <= 20 && rows >= 1 && rows <= 11 ? { cols, rows, custom: true } : null;   // (from 1 × 1: a part of a split deck may be a strip or one key; on-screen sizes from 2 × 2, their own rule)
   }
   // Display keys (they don't do anything, but aren't "off" either)
   const SHOW_ONLY = new Set(['countdown', 'countdown_major', 'countdown_minor', 'rs_now', 'rs_status', 'empty', 'kp_pv_h', 'kp_pv_m', 'kp_pv_s', 'kp_pv_typed']);

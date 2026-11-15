@@ -77,6 +77,20 @@ with sync_playwright() as p:
     po.evaluate("document.getElementById('stopall').click()")
     check("… and the timer didn't hear it", tm.evaluate("document.documentElement.classList.contains('showbar')") != bar)
 
+    # a custom shape (2d): the 5 × 1 strip given to playout: four items and ■ All on it, its presses its own
+    tm.evaluate("DeckHID.setOwner('%s#D', 'playout')" % XL); po.wait_for_timeout(2500)   # (claimed elsewhere, as the split editor does: playout hears it)
+    ds = {d["id"]: d["model"] for d in po.evaluate("window.__playoutDeck.decks()")}
+    check("the strip given to playout: driven there as a 5 × 1 deck", ds.get(XL + "#D") == "c5x1", ds)
+    fs = [x.split(" | ")[0] for x in po.evaluate("window.__playoutDeck.faces('c5x1', 0)")]
+    names7 = [x["n"] for x in po.evaluate("window.__playout.show().items")]
+    check("… seven items on five keys: two items, ◀ ▶ (pages) and ■ All", fs == names7[:2] + ["◀", "▶", "■ All"], fs)
+    im = img(lead())
+    check("… drawn on the XL's bottom-left keys (D)", all(str(k) in im for k in D), sorted(int(k) for k in im))
+    fr(lead()).evaluate("__decks.xl.key(25, 1); __decks.xl.key(25, 0)"); po.wait_for_timeout(800)   # (D's key 1: its second item)
+    check("… the XL's key 25 (D's key 1): playout starts its second item", (po.evaluate("window.__playout.local()") or {}).get("item") == "demo-2", po.evaluate("window.__playout.local()"))
+    po.evaluate("document.getElementById('stopall').click()"); po.wait_for_timeout(300)
+    tm.evaluate("DeckHID.setOwner('%s#D', 'none')" % XL); po.wait_for_timeout(1500)
+
     # the backlight: the timer's while its deck is open
     feats = lambda: fr(lead()).evaluate("__decks.xl.features.filter(f => f[0] === 3 && f[1] === 8).length")
     BRIGHT = "(async () => { const d = (await DeckHID.hid().getDevices()).find(x => x.key === '%s'); await d.sendFeatureReport(3, Uint8Array.of(8, 40, ...new Array(29).fill(0))); })()" % (XL + "#B")
