@@ -1,6 +1,6 @@
 # Management console for multi-room events (plan)
 
-Status (15 Nov 2026): **designed; step 1 (cancelled items) built on alpha**, the rest not yet. The owner's design, agreed 13–15 Nov 2026. Alpha only
+Status (15 Nov 2026): **steps 1 (cancelled items) and 2 (adding rooms, the grid) built on alpha**, see *Management console* in `docs/architecture.md`; steps 3–6 not yet. Decided while building step 2: the admin phone is its own page (`manage-phone.html`), not a mode of `remote.html`; the timer's side stays in `remote-control.js` for now (`manage-room.js` comes with the toasts and chat). The owner's design, agreed 13–15 Nov 2026. Alpha only
 (`TimerFeatures.manage`) until it is fully tested. When it's built, the facts move into `docs/architecture.md`
 (*Management console*) and the user guide into `docs/manage.md`; this file then keeps only what's still open.
 

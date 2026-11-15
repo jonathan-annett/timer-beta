@@ -221,6 +221,7 @@
   const ASSIST = !!(window.TimerFeatures && TimerFeatures.assist);
   const STINGS = !!(window.TimerFeatures && TimerFeatures.stings);   // walk-up stings: an alpha-only trial (features.js)
   const PLAYOUT = !!(window.TimerFeatures && TimerFeatures.playout); // playout computers (playout.html): a trial, alpha and beta   // the assist station: an alpha-only trial (features.js)
+  const MANAGE = !!(window.TimerFeatures && TimerFeatures.manage);   // the management console (manage.html): alpha only until fully tested
   const gl = { code: '', token: '', note: '', bad: false };
   const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
@@ -341,6 +342,14 @@
     if (m.t === 'hello' && m.client === 'g2') { e.client = 'g2'; e.wants = m.mode === 'operator' ? 'operator' : 'presenter'; }
     if (m.t === 'hello' && m.client === 'playout' && PLAYOUT) e.client = 'playout';   // a playout computer (playout.html): a view-only device that gets the run sheet
     if (m.t === 'hello' && m.client === 'assist' && ASSIST) e.client = 'assist';   // the assist station (assist.html); without the trial, a plain view-only device
+    if (m.t === 'hello' && m.client === 'mgr-phone' && MANAGE) e.client = 'mgr-phone';   // an admin phone of a management console, asking to add this timer (manageAsk)
+    // A management console comes back only with the token a grant gave it (answerManage), never through
+    // the proximity check: without one it's told it was revoked, and gets nothing
+    if (!e.approved && m.t === 'hello' && (m.client === 'manage' || (typeof m.token === 'string' && (approvedEntry(m.token) || {}).manage))) {
+      const known = typeof m.token === 'string' ? approvedEntry(m.token) : null;
+      if (!MANAGE || !known || !known.manage) { e.rejected = true; e.peer.send({ t: 'mg-revoked' }); setTimeout(() => sendServer({ type: 'kick', id: e.id }), 400); return; }
+      e.client = 'manage';
+    }
     if (!e.approved) {
       const known = m.t === 'hello' && typeof m.token === 'string' ? approvedEntry(m.token) : null;
       if (known) {
@@ -348,6 +357,7 @@
         e.edit = known.edit ? 'yes' : 'no';      // allowed to edit the run sheet (kept with its approval)
         if (e.client === 'g2') e.g2 = known.g2 === 'operator' ? 'operator' : 'presenter';
         e.assist = known.assist ? 'yes' : 'no';   // may move the start (assist station; kept with its approval)
+        if (known.manage) e.manage = Object.assign({}, known.manage);   // a management console: the room's name and the event
         updateApproved(m.token, { seen: Date.now(), role: e.role });
       } else if (m.t === 'hello') {
         e.peer.send({ t: 'pin-required' });
@@ -367,6 +377,10 @@
       if (e.peer.mode === 'server' && now - (e.relinkAt || 0) > 5000) { e.relinkAt = now; e.peer.restart(); }
       return;
     }
+    if (e.client === 'mgr-phone') {            // only ever asks to add this timer to a console
+      if (m.t === 'manage-ask') manageAsk(e, m);
+      return;
+    }
     if (m.t === 'hello' || m.t === 'deck') deckFaces = null;   // outside a push: work them out afresh
     if (m.t === 'hello') {
       e.sent = {}; e.faces = []; e.varsSent = {};
@@ -375,10 +389,14 @@
       if (e.client === 'g2') sendGlassesRole(e);
       else if (e.client === 'assist') { e.peer.send({ t: 'assist', state: e.assist || 'no' }); e.startSent = e.rsSent = undefined; sendAssistStart(e); }
       else if (e.client === 'playout') { e.poSent = undefined; playoutWatch(); playoutPush(e); }
+      else if (e.client === 'manage') e.peer.send({ t: 'mg-room', name: e.manage.name });
       else if (e.role === 'control' || e.role === 'admin') e.peer.send({ t: 'rs-edit', state: e.edit || 'no' });
       panelConnected();
     } else if (e.client === 'assist') {
       assistMessage(e, m);                     // only its own messages, whatever key it holds
+      return;
+    } else if (e.client === 'manage') {
+      manageMessage(e, m);                     // its own allow-list (MANAGE_ALLOWED), whatever key it holds
       return;
     } else if (e.client === 'g2') {
       // Glasses: an Operator's may work the show (three taps = Next; the glasses' menu: Back, Pause /
@@ -927,6 +945,70 @@
     el.querySelector('.an-cancel').addEventListener('click', () => { clearInterval(t); el.remove(); onCancel(); });
   }
 
+  // ─── The management console (manage.html; TimerFeatures.manage, alpha only) ───
+  // A console for big events watches several rooms' timers (docs/manage-plan.md). Its admin phone scans
+  // this timer's share code, passes the proximity check as any device, and asks (manageAsk). The
+  // operator must allow it explicitly and type a name for the room (the owner, 15 Nov 2026: no "what
+  // was room 3 again?"). The phone may edit the name; the console checks it's unique and sends back
+  // the one it kept (mg-name). The grant is an approval of its own (remote_approved .manage {name,
+  // event}): the console joins with the view-only key and that token, and the room shows its name on
+  // the operator's screen. Revoke (Stop management) takes it away. The admin phone's own approval
+  // isn't kept: it only ever asks.
+  const mgClean = (v, max) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f]/g, '').trim().slice(0, max) : '');
+  function manageAsk(e, m) {
+    if (e.mgAsk) return;
+    e.mgAsk = { event: mgClean(m.event, 80) || 'an event' };
+    e.peer.send({ t: 'manage-asked' });
+    openPanel();
+    renderPanel();
+  }
+  function answerManage(e, yes, name) {
+    if (!e || !e.mgAsk) return;
+    if (!yes) { e.mgAsk = null; e.peer.send({ t: 'manage-refused' }); renderPanel(); return; }
+    name = cleanName(name);
+    if (!name) return;                           // (Allow waits for a name)
+    const token = randomString(24, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'), now = Date.now();
+    saveApproved(approvedList().concat({ t: token, name: 'Management console', role: 'view', added: now, seen: now, manage: { name, event: e.mgAsk.event } }));
+    e.peer.send({ t: 'manage-grant', frag: shareFragment('countdown'), token, name });
+    e.mgAsk = null;
+    renderPanel();
+  }
+  // From a console: its name for the room (kept unique there), or leaving (Remove on the console)
+  const MANAGE_ALLOWED = new Set(['mg-name', 'mg-leave']);
+  function manageMessage(e, m) {
+    if (!MANAGE_ALLOWED.has(m.t)) return;
+    if (m.t === 'mg-name') {
+      const name = cleanName(m.name);
+      if (!name || !e.token) return;
+      e.manage.name = name;
+      updateApproved(e.token, { manage: Object.assign({}, e.manage) });
+      e.peer.send({ t: 'mg-room', name });
+      renderPanel();
+    } else if (m.t === 'mg-leave') {
+      saveApproved(approvedList().filter(x => x.t !== e.token));
+      e.rejected = true; e.approved = false;
+      setTimeout(() => sendServer({ type: 'kick', id: e.id }), 400);
+      renderPanel();
+    }
+  }
+  // "Monitored as …" in the button bar (the operator's screen only: the presenter window doesn't run this)
+  function renderManageTag() {
+    const names = [...new Set(approvedList().filter(x => x.manage && x.manage.name).map(x => x.manage.name))];
+    const html = document.documentElement;
+    let tag = document.getElementById('manage-tag');
+    if (!names.length) { if (window.clearHtmlClass) clearHtmlClass('manage-on'); else html.classList.remove('manage-on'); return; }
+    if (!tag) {
+      const bar = document.querySelector('div.buttons');
+      if (!bar) return;
+      tag = document.createElement('span');
+      tag.id = 'manage-tag';
+      tag.title = 'A management console watches this timer under this name (share panel: Stop management)';
+      bar.appendChild(tag);
+    }
+    tag.textContent = 'Monitored as ' + names.join(' · ') + (enabled ? '' : ' (sharing is off)');
+    if (window.setHtmlClass) setHtmlClass('manage-on'); else html.classList.add('manage-on');
+  }
+
   // ─── State for phones (from the timerAPI bus) ────────────────────────────
 
   const truthy = v => v === true || v === 'true' || v === '1' || v === 1;
@@ -1094,6 +1176,9 @@
 #phone-panel.pp-touch .pp-pin { font-size: 14px; margin: 8px 0 4px; }
 #phone-panel.pp-touch .pp-ask { font-size: 15px; }
 #phone-panel.pp-touch .pp-askrow input { font-size: 24px; width: 4.2em; }
+/* A management console's request: the room's name, not a number (answerManage) */
+#phone-panel .pp-mgask .pp-askrow { flex-wrap: wrap; }
+#phone-panel .pp-mgask .pp-askrow input.pp-mgname { flex: 1 1 100%; width: auto; font-size: 15px; letter-spacing: normal; text-align: left; }
 /* On a phone/tablet: a bottom sheet (the button bar isn't shown there) */
 #phone-panel.pp-touch { top: auto; right: 0; left: 0; bottom: 0; width: auto; max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px);
   border-radius: 16px 16px 0 0; padding: 14px 16px calc(16px + env(safe-area-inset-bottom)); font-size: 15px; z-index: 2147481500; }
@@ -1205,15 +1290,22 @@
       const e = peers.get(row.dataset.id);
       if (b.dataset.act === 'edit-ok' || b.dataset.act === 'edit-no') answerEdit(e, b.dataset.act === 'edit-ok');
       else if (b.dataset.act === 'assist-ok' || b.dataset.act === 'assist-no') answerAssist(e, b.dataset.act === 'assist-ok');
+      else if (b.dataset.act === 'mg-ok' || b.dataset.act === 'mg-no') answerManage(e, b.dataset.act === 'mg-ok', row.querySelector('input').value);
       else if (b.dataset.act === 'ok') approvePeer(e, row.querySelector('input').value.trim(), row.querySelector('input[type=radio]:checked')?.value);
       else rejectPeer(e);
     });
     const glGo = () => takeGlasses(el.querySelector('.pp-glcode').value);
     el.querySelector('.pp-glgo')?.addEventListener('click', glGo);
     el.querySelector('.pp-glcode')?.addEventListener('keydown', ev => { if (ev.key === 'Enter') glGo(); });
+    // Allow waits for the room's name
+    el.querySelector('.pp-pending').addEventListener('input', ev => {
+      if (!ev.target.classList.contains('pp-mgname')) return;
+      ev.target.closest('[data-id]').querySelector('button[data-act=mg-ok]').disabled = !ev.target.value.trim();
+    });
     el.querySelector('.pp-pending').addEventListener('keydown', ev => {
       if (ev.key !== 'Enter' || ev.target.tagName !== 'INPUT' || ev.target.type === 'radio') return;
       const row = ev.target.closest('[data-id]');
+      if (row.dataset.kind === 'mg') { if (ev.target.value.trim()) answerManage(peers.get(row.dataset.id), true, ev.target.value); return; }
       if (!row.querySelector('input')) return;
       approvePeer(peers.get(row.dataset.id), ev.target.value.trim(), row.querySelector('input[type=radio]:checked')?.value);
     });
@@ -1317,6 +1409,7 @@
     const btn = document.getElementById('btnshare');
     const lanCount = [...peers.values()].filter(e => e.peer.mode !== 'server').length;   // direct, either way
     if (btn) { btn.textContent = !enabled ? 'share' : peers.size ? `share ${peers.size}` : 'share ·'; btn.classList.toggle('on', enabled); }
+    if (MANAGE) renderManageTag();
     if (!el) return;
     const st = el.querySelector('.pp-status');
     st.textContent = statusText; st.dataset.kind = statusKind;
@@ -1347,7 +1440,8 @@
     // unless someone is typing in another field.
     const asks = [...peers.values()].filter(e => e.approved && !e.rejected && e.edit === 'asked');   // want to edit the run sheet
     const assists = [...peers.values()].filter(e => e.approved && !e.rejected && e.assist === 'asked');   // want to move the start (assist station)
-    const sig = rows.map(e => e.id + '|' + (e.suggest || '') + '|' + e.role + '|' + (e.client || '')).join(',') + '/' + asks.map(e => e.id + '|' + deviceLabel(e)).join(',') + '/' + assists.map(e => e.id + '|' + deviceLabel(e)).join(',');
+    const mgAsks = [...peers.values()].filter(e => e.approved && !e.rejected && e.mgAsk);   // a management console's admin phone (manageAsk)
+    const sig = rows.map(e => e.id + '|' + (e.suggest || '') + '|' + e.role + '|' + (e.client || '')).join(',') + '/' + asks.map(e => e.id + '|' + deviceLabel(e)).join(',') + '/' + assists.map(e => e.id + '|' + deviceLabel(e)).join(',') + '/' + mgAsks.map(e => e.id + '|' + e.mgAsk.event).join(',');
     const opened = !el.hidden && el.dataset.shown !== '1';
     el.dataset.shown = el.hidden ? '' : '1';
     const changed = pend.dataset.sig !== sig;
@@ -1361,11 +1455,14 @@
         asks.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${esc(deviceLabel(e))} wants to edit the run sheet.</b> You can stop it later (Stop editing, below).
         <span class="pp-askrow"><button data-act="edit-ok">Allow</button><button data-act="edit-no">Refuse</button></span></div>`).join('') +
         assists.map(e => `<div class="pp-ask" data-id="${e.id}"><b>${esc(deviceLabel(e))} wants to move the start time</b> when it hears the speaker begin. Every move shows here with Undo; you can stop it later (Stop moving starts, below).
-        <span class="pp-askrow"><button data-act="assist-ok">Allow</button><button data-act="assist-no">Refuse</button></span></div>`).join('');
+        <span class="pp-askrow"><button data-act="assist-ok">Allow</button><button data-act="assist-no">Refuse</button></span></div>`).join('') +
+        mgAsks.map(e => `<div class="pp-ask pp-mgask" data-id="${e.id}" data-kind="mg"><b>A management console (“${esc(e.mgAsk.event)}”) wants to monitor this timer.</b> It will see the run sheet and the countdown, can chat with you, and can change items after the next one (you're told of each change). It can't control the timer. Name this room so they know which it is:
+        <span class="pp-askrow"><input class="pp-mgname" maxlength="40" autocomplete="off" placeholder="Room name, e.g. Room 104" value="${esc(keep[e.id] || '')}">
+        <button data-act="mg-ok"${keep[e.id] && keep[e.id].trim() ? '' : ' disabled'}>Allow</button><button data-act="mg-no">Refuse</button></span></div>`).join('');
       const back = had && pend.querySelector(`[data-id="${had}"] input`);
       if (back) { back.focus(); back.setSelectionRange(back.value.length, back.value.length); }
     }
-    if (rows.length && !el.hidden && (changed || opened) && !pend.contains(document.activeElement)) {
+    if ((rows.length || mgAsks.length) && !el.hidden && (changed || opened) && !pend.contains(document.activeElement)) {
       const a = document.activeElement, typing = a && a !== document.body && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || (a && a.isContentEditable);
       const box = [...pend.querySelectorAll('input')].find(i => !i.value) || pend.querySelector('input');
       if (!typing && box) box.focus();
@@ -1378,16 +1475,18 @@
     el.querySelector('.pp-peers').innerHTML = (!peers.size ? (enabled ? '<i>No devices connected</i>' : '') :
       live.map(e => `<div class="pp-dev"><span><b>${esc(deviceLabel(e))}</b> · ` +
         (!e.approved ? '<span class="pp-warn">waiting for its number</span> · ' : '') +
-        (e.client === 'g2' && e.approved ? `<span class="${e.g2 === 'operator' ? 'pp-admin' : 'pp-view'}">glasses · ${e.g2 === 'operator' ? 'operator' : 'presenter'}</span> · `
+        (e.client === 'manage' && e.approved ? `<span class="pp-admin">monitors this room as “${esc(e.manage.name)}”</span> · `
+          : e.client === 'mgr-phone' ? '<span class="pp-view">a management console’s phone</span> · '
+          : e.client === 'g2' && e.approved ? `<span class="${e.g2 === 'operator' ? 'pp-admin' : 'pp-view'}">glasses · ${e.g2 === 'operator' ? 'operator' : 'presenter'}</span> · `
           : e.client === 'assist' && e.approved ? (e.assist === 'yes' ? '<span class="pp-admin">assist · moves starts</span> · ' : '<span class="pp-view">assist</span> · ')
           : e.role === 'view' ? '<span class="pp-view">view only</span> · ' : e.role === 'admin' ? '<span class="pp-admin">admin</span> · ' : e.role === 'companion' ? 'Companion · ' : '') +
         (e.edit === 'yes' ? '<span class="pp-admin">editing</span> · ' : '') +
         `${e.peer.mode === 'lan' ? '<b class="pp-lan">LAN direct</b>' : e.peer.mode === 'p2p' ? '<b class="pp-lan" title="A direct link over the internet: not the same network">direct</b>' : '<b class="pp-srv">via server</b>'}</span>` +
-        (e.approved && e.token ? deviceButtons(e.token, e.edit === 'yes', e.client === 'g2' ? e.g2 : null, e.assist === 'yes') : '') + '</div>').join('') +
+        (e.approved && e.token && e.client !== 'mgr-phone' ? deviceButtons(e.token, e.edit === 'yes', e.client === 'g2' ? e.g2 : null, e.assist === 'yes', e.client === 'manage') : '') + '</div>').join('') +
       (lanCount < peers.size ? '<div class="pp-hint">"via server": no direct link could be made (a network in between blocks it).</div>' : '') +
       (shareNote ? `<div class="pp-hint">${shareNote}</div>` : '')) +
       (away.length ? `<details class="pp-known"${knownOpen ? ' open' : ''}><summary>Known devices, not connected (${away.length})</summary>` +
-        away.map(x => `<div class="pp-dev"><span><b>${esc(x.name || 'Unnamed device')}</b>${x.role ? ' · ' + esc(deviceKind(x.role)) : ''}${x.edit ? ' · can edit' : ''}${x.assist ? ' · moves starts' : ''}${x.g2 ? ' · glasses, ' + esc(x.g2) : ''}${x.seen ? ' · last seen ' + when(x.seen) : ''}</span>${deviceButtons(x.t, !!x.edit, x.g2 || null, !!x.assist)}</div>`).join('') +
+        away.map(x => `<div class="pp-dev"><span><b>${esc(x.name || 'Unnamed device')}</b>${x.manage ? ' · monitors this room as “' + esc(x.manage.name) + '”' : x.role ? ' · ' + esc(deviceKind(x.role)) : ''}${x.edit ? ' · can edit' : ''}${x.assist ? ' · moves starts' : ''}${x.g2 ? ' · glasses, ' + esc(x.g2) : ''}${x.seen ? ' · last seen ' + when(x.seen) : ''}</span>${deviceButtons(x.t, !!x.edit, x.g2 || null, !!x.assist, !!x.manage)}</div>`).join('') +
         '</details>' : '');
   }
 
@@ -1486,14 +1585,14 @@
     const d = new Date(t), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     return d.toDateString() === new Date().toDateString() ? hm : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' + hm;
   }
-  function deviceButtons(token, editing, g2, assist) {
+  function deviceButtons(token, editing, g2, assist, mg) {
     return `<span class="pp-devbtns">` +
       (g2 ? `<button data-dev="g2role" data-role="${g2 === 'operator' ? 'presenter' : 'operator'}" data-token="${esc(token)}" title="${g2 === 'operator'
         ? 'Countdown only, in a corner; it can no longer fire Next' : 'Messages and times too, and three taps fire Next'}">${g2 === 'operator' ? 'Make presenter' : 'Make operator'}</button>` : '') +
       (assist ? `<button data-dev="noassist" data-token="${esc(token)}" title="It keeps listening, but can't move the start until you allow it again">Stop moving starts</button>` : '') +
       (editing ? `<button data-dev="noedit" data-token="${esc(token)}" title="It can still see the run sheet; to edit again it has to ask">Stop editing</button>` : '') +
-      `<button data-dev="rename" data-token="${esc(token)}" title="Give this device a name">Rename</button>` +
-      `<button data-dev="revoke" data-token="${esc(token)}" title="Disconnect this device and remove its approval (click twice)"${armed(token) ? ' class="pp-armed"' : ''}>${armed(token) ? 'Sure?' : 'Revoke'}</button></span>`;
+      (mg ? '' : `<button data-dev="rename" data-token="${esc(token)}" title="Give this device a name">Rename</button>`) +
+      `<button data-dev="revoke" data-token="${esc(token)}" title="${mg ? 'The console stops seeing this timer and can no longer chat or change items (click twice)' : 'Disconnect this device and remove its approval (click twice)'}"${armed(token) ? ' class="pp-armed"' : ''}>${armed(token) ? 'Sure?' : mg ? 'Stop management' : 'Revoke'}</button></span>`;
   }
   const pending = () => [...peers.values()].filter(e => !e.approved && e.pin && !e.rejected);
   function approvePeer(e, entered, g2) {
@@ -1503,7 +1602,7 @@
     const now = Date.now();
     const entry = { t: token, name: e.suggest || '', role: e.role, added: now, seen: now };
     if (e.client === 'g2') entry.g2 = e.g2 = g2 === 'operator' ? 'operator' : 'presenter';   // Presenter unless the operator picked otherwise
-    saveApproved(approvedList().concat(entry));
+    if (e.client !== 'mgr-phone') saveApproved(approvedList().concat(entry));   // (an admin phone only asks, once: not kept)
     e.approved = true; e.pin = null; e.token = token; e.name = e.suggest || ''; e.edit = 'no'; e.assist = 'no';
     e.peer.send({ t: 'pin-ok', token });       // the phone says hello again and gets its state
     renderPanel();

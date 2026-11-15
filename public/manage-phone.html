@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Admin phone</title>
+  <!--
+    A management console's admin phone (manage-phone.js; a trial: TimerFeatures.manage, alpha only): adds
+    rooms to the console. docs/manage-plan.md.
+    MIT Licensed
+  -->
+  <style>
+    :root { --bg: #0b0b0b; --panel: #151515; --line: #2a2a2a; --text: #ddd; --dim: #888; --accent: #4aa8ff; --ok: #7fdc7f; --warn: #ffcc33; --bad: #ff8080; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font: 17px/1.45 "Helvetica Neue", Arial, sans-serif; }
+    [hidden] { display: none !important; }
+    main { max-width: 520px; margin: 0 auto; padding: 18px 16px 40px; }
+    h1 { font-size: 20px; margin: 0 0 2px; color: #fff; }
+    .sub { color: var(--dim); margin: 0 0 16px; font-size: 14px; }
+    button { font: inherit; color: var(--text); background: #222; border: 1px solid #444; border-radius: 8px; padding: 10px 16px; cursor: pointer; }
+    button.primary { background: #0b3d5c; border-color: #2a6a9a; color: #fff; }
+    button.big { width: 100%; font-size: 19px; padding: 14px; }
+    button:disabled { opacity: .4; }
+    input { font: inherit; color: var(--text); background: #111; border: 1px solid #333; border-radius: 6px; padding: 9px 10px; width: 100%; }
+    input:focus { outline: none; border-color: var(--accent); }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+    .num { font: bold 56px/1 "Helvetica Neue", Arial, sans-serif; letter-spacing: .12em; text-align: center; color: #fff; margin: 10px 0; font-variant-numeric: tabular-nums; }
+    .msg { min-height: 1.4em; margin: 8px 0; }
+    .bad { color: var(--bad); } .ok { color: var(--ok); } .warn { color: var(--warn); } .dim { color: var(--dim); }
+    #status { font-size: 13px; color: var(--dim); }
+    #status.ok { color: var(--ok); } #status.warn { color: var(--warn); }
+    video { width: 100%; border-radius: 10px; background: #000; margin-top: 10px; }
+    details { margin-top: 12px; color: var(--dim); font-size: 14px; }
+    .row { display: flex; gap: 8px; margin-top: 10px; }
+    .row > * { flex: 1; }
+    #added { font-size: 14px; color: var(--dim); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 id="title">Admin phone</h1>
+    <p class="sub" id="sub"></p>
+
+    <div class="card" id="nolink" hidden>
+      Scan the code on the management console (<b>Add a room</b>) to make this phone its admin phone.
+    </div>
+
+    <!-- The proximity check (with the console, or with a room's timer) -->
+    <div class="card" id="pin" hidden>
+      <div id="pinwhat"></div>
+      <div class="num" id="pincode"></div>
+      <div class="dim" id="pinhint"></div>
+    </div>
+
+    <!-- Ready: scan a room -->
+    <div class="card" id="ready" hidden>
+      <button class="big primary" id="scan">Scan a room’s share code</button>
+      <video id="video" playsinline muted hidden></video>
+      <div class="msg" id="scanmsg"></div>
+      <details><summary>No camera? Paste the room’s link</summary>
+        <div class="row"><input id="paste" placeholder="https://…/remote.html#r=…" spellcheck="false" autocomplete="off"><button id="pastego" style="flex:0">Go</button></div>
+      </details>
+      <div id="added"></div>
+    </div>
+
+    <!-- In a room: asking, waiting, naming -->
+    <div class="card" id="room" hidden>
+      <div id="roommsg" class="msg"></div>
+      <div id="naming" hidden>
+        <label for="rname">The room’s name (change it if you like):</label>
+        <input id="rname" maxlength="40" autocomplete="off">
+        <div class="msg" id="namemsg"></div>
+        <button class="big primary" id="addroom">Add this room to the console</button>
+      </div>
+      <p><button id="roomcancel">Cancel</button></p>
+    </div>
+
+    <div id="status"></div>
+  </main>
+  <script src="features.js?v=dd7bd993"></script>
+  <script src="remote-peer.js?v=fd06de67"></script>
+  <script src="manage-phone.js?v=022a8b01"></script>
+</body>
+</html>

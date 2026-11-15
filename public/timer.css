@@ -745,6 +745,10 @@ div.buttons #preset_arm:hover { color: var(--ui-text); border-color: var(--ui-fa
 html.presetarm #preset_arm .pa-on { display: inline; }
 html.presetarm div.buttons #preset_arm { background: #ffd400; border-color: #ffd400; color: #000; font-weight: 700; }
 html.presetarm.runsheet .btn-presets > #preset_arm { visibility: visible; }   /* the deck's presets still arm: keep the warning in sight */
+/* The room's name when a management console watches this timer (remote-control.js renderManageTag; html.manage-on) */
+#manage-tag { display: none; }
+html.manage-on div.buttons #manage-tag { display: inline-block; margin-left: 10px; padding: 2px 8px; border: 1px solid var(--ui-line2); border-radius: 9px;
+   font-size: 12px; color: var(--ui-text); white-space: nowrap; max-width: 24em; overflow: hidden; text-overflow: ellipsis; }
 
 /* Flex instead of inline-block: no stray whitespace gaps, so the row fits narrower screens */
 html.showbuttons div.buttons {
