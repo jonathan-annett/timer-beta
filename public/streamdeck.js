@@ -508,7 +508,12 @@
   // Give deck to playout is held (the owner, 14 Nov 2026): a countdown on the top row (switching / to playout / in 3),
   // let go early to cancel; at the end, let go and it goes (DeckHID.holdHandover). Other keys do nothing meanwhile.
   let handing = null;                                // {index, phase, left, ctrl}
-  const playoutName = () => { try { return localStorage.getItem('playout_page_mode') === 'soundboard' ? 'soundboard' : 'playout'; } catch (_) { return 'playout'; } };   // (the playout page says which it is)
+  // Where the deck → key gives the deck: the one playout page open, or with both open the one that last had this deck
+  const playoutName = () => {
+    if (playoutsOpen.length === 1) return playoutsOpen[0];
+    try { const l = JSON.parse(localStorage.getItem('deck_last_playout') || '{}')[deck && deck.id]; if (l === 'soundboard' || l === 'playout') return l; } catch (_) { /* none */ }
+    return 'playout';
+  };
   function startHandover(index) {
     if (!deck || !playoutOpen || performance.now() - attachedAt < HANDOVER_MS) return;
     const h = handing = { index, phase: 'count', left: 3, ctrl: null };
@@ -1191,15 +1196,19 @@
     if (!deck || performance.now() - attachedAt < HANDOVER_MS) return;
     await watchPlayout();                              // (asked now, not as last checked: a page in the background may be behind)
     if (!deck || !playoutOpen) return;
-    DeckHID.setOwner(deck.id, 'playout');
+    DeckHID.setOwner(deck.id, playoutName());
     letGo();
   }
-  function watchPlayout() {                            // is a playout page open here? (it holds playout-streamdeck)
+  // Which playout pages are open here (each holds playout-streamdeck:<soundboard | playout>; the owner, 15 Nov 2026:
+  // they may run side by side, each with its own decks)
+  var playoutsOpen = [];                            // (var: faceFor, above, may ask first)
+  function watchPlayout() {
     if (!navigator.locks || !navigator.locks.query) return Promise.resolve();
     return navigator.locks.query().then(q => {
-      const open = (q.held || []).some(l => l.name === 'playout-streamdeck');
-      if (open === playoutOpen) return;
-      playoutOpen = open;
+      const held = (q.held || []).map(l => l.name), now = ['soundboard', 'playout'].filter(w => held.includes('playout-streamdeck:' + w));
+      const open = now.length > 0;
+      if (open === playoutOpen && now.join() === playoutsOpen.join()) return;
+      playoutOpen = open; playoutsOpen = now;
       if (device) (activeLayout(modelKey) || []).forEach((a, i) => { if (a === 'deck_to_playout') scheduleRedrawKey(i); });
     }).catch(() => {});
   }

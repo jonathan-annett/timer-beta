@@ -220,13 +220,17 @@ with sync_playwright() as p:
     check("Playlist flow off: an item plays alone; the cues shown again", now() == [ca] and fl() is None and po.get_attribute("#sb-flow", "aria-pressed") == "false" and shown(), [now(), fl()])
     po.click("#stopall"); po.wait_for_timeout(200)
 
-    # one playout page per browser
+    # one page per browser and mode (the owner, 15 Nov 2026: a soundboard and playout side by side, each with its own decks)
+    pd = c.new_page(); pd.on("pageerror", lambda e: errs.append("demo tab: " + str(e)))
+    pd.goto(BASE + "playout.html?demo"); pd.wait_for_timeout(1000)
+    check("playout (the demo) beside the soundboard: it runs too, not covered", pd.is_hidden("#othertab") and pd.is_visible("#demobar") and po.is_hidden("#othertab"))
+    pd.close()
     p2 = c.new_page(); p2.on("pageerror", lambda e: errs.append("second tab: " + str(e)))
-    p2.goto(BASE + "playout.html?demo"); p2.wait_for_timeout(1000)
-    check("a second playout tab: covered, saying what runs in the other", p2.is_visible("#othertab") and "Soundboard is running in another tab" in p2.text_content("#othertabtext") and p2.is_hidden("#paired"), p2.text_content("#othertabtext"))
+    p2.goto(BASE + "playout.html?soundboard"); p2.wait_for_timeout(1000)
+    check("a second soundboard tab: covered, saying what runs in the other", p2.is_visible("#othertab") and "Soundboard is running in another tab" in p2.text_content("#othertabtext") and p2.is_hidden("#paired"), p2.text_content("#othertabtext"))
     p2.click("#othertake"); p2.wait_for_timeout(1500)
-    check("Use this tab instead: it runs (the demo)", p2.is_hidden("#othertab") and p2.is_visible("#demobar"))
-    check("… and the first tab steps down: covered", po.is_visible("#othertab") and "The playout demo is running" in po.text_content("#othertabtext"), po.text_content("#othertabtext"))
+    check("Use this tab instead: it runs", p2.is_hidden("#othertab") and p2.is_visible("#sbbar"))
+    check("… and the first tab steps down: covered", po.is_visible("#othertab") and "Soundboard is running" in po.text_content("#othertabtext"), po.text_content("#othertabtext"))
     p2.close(); po.wait_for_timeout(1500)
     check("the other tab closed: the first takes over by itself", po.is_hidden("#othertab") and po.is_visible("#sbbar") and len(items()) == 3)   # (the playlist flow's three)
 

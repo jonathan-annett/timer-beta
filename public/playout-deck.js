@@ -60,6 +60,9 @@ var PlayoutDeck = (function () {
 
   function create(api) {
     const LAYOUT = api.prefix + 'deck_layout', FADE = 'playout_deck_fade', MODEL = 'playout_deck_model', XLMODE = 'playout_deck_xl_mode';
+    // Whose decks these are (claims, deck-hid.js): the soundboard's and playout's apart (the owner, 15 Nov 2026: an operator
+    // may run both, a Mini of a split XL each); the demo counts as playout
+    const OWN = api.soundboard ? 'soundboard' : 'playout';
     const MODELS = DeckHID.MODELS;
     // A deck's shape: a real model's, or a custom size for the page's keys and phones ('c<cols>x<rows>': 2–20
     // across, 2–11 down; the owner, 13 Nov 2026: tablets and big screens). Its own arrangement, no → timer.
@@ -360,7 +363,7 @@ var PlayoutDeck = (function () {
     async function drive(hid, list) {
       if (!modelOf(DeckHID.info(hid).model)) return;   // (a virtual deck of a shape these keys can't be laid out on yet: a strip)
       const id = await DeckHID.idOf(hid, list);
-      if (decks.has(id) || DeckHID.ownerOf(id) !== 'playout') return;
+      if (decks.has(id) || DeckHID.ownerOf(id) !== OWN) return;
       let d, b = null;
       try { d = await DeckHID.open(hid, { down: i => b && handle(b, i, true), up: i => b && handle(b, i, false) }); }
       catch (_) { busyNote.add(id); renderDecks(); return; }
@@ -412,6 +415,7 @@ var PlayoutDeck = (function () {
     function giveBack(id) {
       const b = decks.get(id);
       if (b) b.deck.reset();
+      try { const l = JSON.parse(localStorage.getItem('deck_last_playout') || '{}'); l[id] = OWN; localStorage.setItem('deck_last_playout', JSON.stringify(l)); } catch (_) { /* private mode */ }   // (the timer's key gives it back here)
       DeckHID.setOwner(id, 'timer');
       letGo(id);
     }
@@ -432,7 +436,7 @@ var PlayoutDeck = (function () {
           lookAgain = false;
           const list = await DeckHID.granted();
           for (const hid of list) await drive(hid, list);
-          for (const [id, b] of decks) if (DeckHID.ownerOf(id) !== 'playout' || !list.includes(b.deck.hid)) letGo(id);
+          for (const [id, b] of decks) if (DeckHID.ownerOf(id) !== OWN || !list.includes(b.deck.hid)) letGo(id);
         } while (lookAgain);
       } finally { looking = false; }
       renderDecks();
@@ -443,7 +447,7 @@ var PlayoutDeck = (function () {
       try { [hid] = await DeckHID.hid().requestDevice({ filters: DeckHID.filters() }); } catch (_) { return; }
       if (!hid) return;
       const list = await DeckHID.granted();
-      DeckHID.setOwner(await DeckHID.idOf(hid, list), 'playout');
+      DeckHID.setOwner(await DeckHID.idOf(hid, list), OWN);
       look();
     }
     let listed = [], listSeq = 0;                      // [{id, name, serial, mine, on, busy}] for the list
@@ -455,14 +459,14 @@ var PlayoutDeck = (function () {
       for (const hid of list) {
         const id = await DeckHID.idOf(hid, list), b = decks.get(id);
         const who = DeckHID.ownerOf(id);
-        rows.push({ id, name: DeckHID.info(hid).name, serial: id.startsWith('sn:') ? id.slice(-4) : '', mine: who === 'playout', off: who === 'none', on: !!b, busy: busyNote.has(id) });
+        rows.push({ id, name: DeckHID.info(hid).name, serial: id.startsWith('sn:') ? id.slice(-4) : '', mine: who === OWN, off: who === 'none', who, on: !!b, busy: busyNote.has(id) });
       }
       if (seq !== listSeq) return;                     // (a newer one is on its way)
       listed = rows;
       box.innerHTML = !DeckHID.hid() ? '<p class="hint">This browser has no WebHID: use Chrome or Edge for a Stream Deck. The keys below still work with the mouse.</p>'
         : !owner ? '<p class="hint">Another playout tab is using the decks: use that one (this tab takes over when it closes).</p>'
         : listed.map(x => `<div class="dk-row" data-deck="${esc(x.id)}"><span class="dk-name">${esc(x.name)}${x.serial ? ' <span class="hint">…' + esc(x.serial) + '</span>' : ''}</span>` +
-          `<span class="dk-state${x.on ? ' ok' : x.busy ? ' bad' : ''}">${x.on ? 'Used here' : x.mine ? (x.busy ? 'Busy: quit the Elgato Stream Deck app' : 'Connecting…') : x.off ? 'Disconnected' : api.soundboard ? 'Not used here' : 'The timer’s'}</span>` +
+          `<span class="dk-state${x.on ? ' ok' : x.busy ? ' bad' : ''}">${x.on ? 'Used here' : x.mine ? (x.busy ? 'Busy: quit the Elgato Stream Deck app' : 'Connecting…') : x.off ? 'Disconnected' : x.who === 'soundboard' ? 'The soundboard’s' : x.who === 'playout' ? 'Playout’s' : api.soundboard ? 'Not used here' : 'The timer’s'}</span>` +
           (x.mine && api.soundboard && !timer.open ? '' :   // (a soundboard: no timer talk unless a timer page is open here)
           `<button class="small" data-dk="${x.mine ? 'timer' : 'playout'}" title="${x.mine ? 'The timer page on this computer uses it again' : api.soundboard ? 'Use it here' : 'Use it here as a soundboard (the timer page on this computer lets go of it)'}">${x.mine ? 'Give to the timer' : 'Use here'}</button>`) +
           (x.mine ? '<button class="small" data-dk="off" title="Stop using it: Elgato’s own screen, and nothing here (or on a timer page) uses it until Use here">Disconnect</button>' : '') +
@@ -900,7 +904,7 @@ var PlayoutDeck = (function () {
       if (!row) return;
       const dk = btn.dataset.dk, id = row.dataset.deck;
       if (dk === 'forget') return forget(id);
-      if (dk === 'timer') giveBack(id); else if (dk === 'off') setAside(id); else DeckHID.setOwner(id, 'playout');
+      if (dk === 'timer') giveBack(id); else if (dk === 'off') setAside(id); else DeckHID.setOwner(id, OWN);
       look();
     });
     window.addEventListener('pagehide', () => { for (const b of decks.values()) b.deck.reset(); });
@@ -912,15 +916,27 @@ var PlayoutDeck = (function () {
     })(250);
 
     if (DeckHID.hid()) {
-      const own = () => {
+      const own = async () => {
         owner = true;
+        // (decks claimed 'playout' before soundboard and playout had claims of their own: the soundboard's, once, unless
+        // a playout tab is running here)
+        if (OWN === 'soundboard' && navigator.locks && navigator.locks.query && !api.store.get('playout_claims_split')) {
+          try {
+            const q = await navigator.locks.query();
+            if (!(q.held || []).some(l => l.name === 'playout-streamdeck:playout' || l.name === 'playout-streamdeck')) {
+              await DeckHID.hid().ready;
+              for (const [id, who] of Object.entries(DeckHID.claims())) if (who === 'playout') DeckHID.setOwner(id, 'soundboard');
+            }
+            api.store.set('playout_claims_split', '1');
+          } catch (_) { /* below */ }
+        }
         look();
         DeckHID.hid().addEventListener('connect', ev => { if (DeckHID.isDeck(ev.device)) look(); });
         DeckHID.hid().addEventListener('disconnect', ev => { for (const [id, b] of decks) if (b.deck.hid === ev.device) letGo(id); renderDecks(); });
         DeckHID.onClaims(look);
       };
       // Held until this page closes; without Web Locks every playout tab drives them
-      if (navigator.locks) navigator.locks.request('playout-streamdeck', () => { own(); return new Promise(() => {}); });
+      if (navigator.locks) navigator.locks.request('playout-streamdeck:' + OWN, () => { own(); return new Promise(() => {}); });
       else own();
     }
     renderDecks();

@@ -112,9 +112,9 @@ with sync_playwright() as p:
     ed.select_option("#deck", XL); ed.wait_for_timeout(200)
     ed.select_option("#preset", "strip-mk2-minis"); ed.wait_for_timeout(200)
     cur = ed.evaluate("window.__split.cur()")
-    check("Start from: a strip on top, MK.2 and two Minis (the MK.2 the timer's, the Minis the soundboard's, the strip unused)",
+    check("Start from: a strip on top, MK.2 and two Minis (the MK.2 the timer's, a Mini each for the soundboard and playout, the strip unused)",
           [(r["id"], r["x"], r["y"], r["w"], r["h"]) for r in cur["regions"]] == [("D", 0, 0, 5, 1), ("A", 0, 1, 5, 3), ("B", 5, 0, 3, 2), ("C", 5, 2, 3, 2)]
-          and cur["owners"] == {"D": "none", "A": "timer", "B": "playout", "C": "playout"}, cur)
+          and cur["owners"] == {"D": "none", "A": "timer", "B": "soundboard", "C": "playout"}, cur)
     ed.click('.vd[data-id="D"] .x'); ed.wait_for_timeout(100)
     cell = lambda x, y: ed.locator('.cell[data-x="%d"][data-y="%d"]' % (x, y)).bounding_box()
     a0, a4 = cell(0, 0), cell(4, 0)
@@ -125,10 +125,13 @@ with sync_playwright() as p:
     ed.mouse.move(bx["x"] + 5, bx["y"] + 5); ed.mouse.down(); ed.mouse.move(tgt["x"] + 10, tgt["y"] + 10, steps=6); ed.mouse.up(); ed.wait_for_timeout(150)
     cur = ed.evaluate("window.__split.cur()")
     check("a part dragged onto another: refused (it stays where it was)", next(r for r in cur["regions"] if r["id"] == "B")["x"] == 5, cur["regions"])
-    ed.click("#save"); ed.wait_for_timeout(3000)
-    check("Save: the timer has the MK.2 part, the soundboard the two Minis", tm2.evaluate("localStorage.deck_timer") == XL + "#A"
-          and sorted(d["id"] for d in po.evaluate("window.__playoutDeck.decks()")) == [XL + "#B", XL + "#C"], [tm2.evaluate("localStorage.deck_timer"), po.evaluate("window.__playoutDeck.decks()")])
-    drv = [pg for pg in (tm2, po) if XL in fr(pg).evaluate("window.__frame.leading()")][0]
+    sb = c.new_page(); sb.on("pageerror", lambda e: errs.append("soundboard: " + str(e)))   # (a soundboard beside the playout page)
+    sb.goto("https://alpha.timed-show.com/playout.html?soundboard"); sb.wait_for_timeout(2500)
+    ed.click("#save"); ed.wait_for_timeout(3500)
+    check("Save: the timer has the MK.2 part, playout one Mini, the soundboard (beside it) the other", tm2.evaluate("localStorage.deck_timer") == XL + "#A"
+          and [d["id"] for d in po.evaluate("window.__playoutDeck.decks()")] == [XL + "#C"] and [d["id"] for d in sb.evaluate("window.__playoutDeck.decks()")] == [XL + "#B"],
+          [tm2.evaluate("localStorage.deck_timer"), po.evaluate("window.__playoutDeck.decks()"), sb.evaluate("window.__playoutDeck.decks()")])
+    drv = [pg for pg in (tm2, po, sb) if XL in fr(pg).evaluate("window.__frame.leading()")][0]
     rowsA = [(1 + j) * 8 + i for j in range(3) for i in range(5)]
     im3 = fr(drv).evaluate("__decks.xl.images")
     check("… the timer's MK.2 drawn on rows 2–4 (the strip's row above it left alone)", all(str(k) in im3 for k in rowsA), sorted(int(k) for k in im3))

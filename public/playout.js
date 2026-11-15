@@ -2066,21 +2066,24 @@
     if (r.top < b.top || r.bottom > b.bottom) box.scrollTop += r.top - b.top - 8;
   }
 
-  // ─── One playout page per browser (the owner, 13 Nov 2026) ───
-  // Playout, its demo and the soundboard share this browser's sound cards and decks, so one tab runs at a
-  // time: the Web Lock playout-page, held as long as the page lives. Another tab finds it taken and shows
-  // #othertab (saying what the other runs: playout_page_mode) with Use this tab instead (steal: the other
-  // tab's lock is cancelled, so it reloads and finds it taken); it takes over by itself when the other closes.
+  // ─── One playout page per browser and mode (the owner, 13 Nov 2026; per mode since 15 Nov: an operator may run a
+  // soundboard and playout side by side, each with its own decks, say two Minis of a split XL) ───
+  // Two tabs of one mode would fight over its decks and cues, so one runs at a time: the Web Lock
+  // playout-page:<family> (playout, its demo included, or soundboard), held as long as the page lives. Another tab of
+  // that family finds it taken and shows #othertab (saying what the other runs: playout_page_mode_<family>) with Use
+  // this tab instead (steal: the other tab's lock is cancelled, so it reloads and finds it taken); it takes over by
+  // itself when the other closes.
   const MODE = SOUNDBOARD ? 'soundboard' : DEMO ? 'demo' : 'playout';
+  const FAMILY = SOUNDBOARD ? 'soundboard' : 'playout', MODE_KEY = 'playout_page_mode_' + FAMILY;
   const MODE_NAME = { soundboard: 'Soundboard', demo: 'The playout demo', playout: 'Playout' };
   function oneTab(run) {
     if (!navigator.locks || !navigator.locks.request) return run();
     let started = false;
-    const go = () => { if (started) return; started = true; $('othertab').hidden = true; store.set('playout_page_mode', MODE); run(); };
-    const ask = opts => navigator.locks.request('playout-page', opts, lock => { if (!lock) return; go(); return new Promise(() => {}); });   // (held until the page goes)
+    const go = () => { if (started) return; started = true; $('othertab').hidden = true; store.set(MODE_KEY, MODE); run(); };
+    const ask = opts => navigator.locks.request('playout-page:' + FAMILY, opts, lock => { if (!lock) return; go(); return new Promise(() => {}); });   // (held until the page goes)
     const stolen = err => { if (started && err && err.name === 'AbortError') { stopAll(); location.reload(); } };   // (another tab took over)
-    const say = () => { $('othertabtext').textContent = (MODE_NAME[store.get('playout_page_mode')] || 'Playout') + ' is running in another tab of this browser.'; };
-    addEventListener('storage', e => { if (e.key === 'playout_page_mode' && !started) say(); });   // (a tab that just took over may write its mode after we read it)
+    const say = () => { $('othertabtext').textContent = (MODE_NAME[store.get(MODE_KEY)] || 'Playout') + ' is running in another tab of this browser.'; };
+    addEventListener('storage', e => { if (e.key === MODE_KEY && !started) say(); });   // (a tab that just took over may write its mode after we read it)
     ask({ ifAvailable: true }).then(() => {
       if (started) return;
       say();
