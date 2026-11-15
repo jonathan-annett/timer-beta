@@ -80,7 +80,7 @@ The same keys are on the page, under the list of decks, and work with the mouse 
 
 **On a phone:** **Show on a phone…** shows a QR code: scan it with the phone's camera and the same keys open on the phone, as the size of deck shown on the page (the phone's menu changes it). The phone shows a 3-digit number: type it in the box that appears here, and it's in (one wrong try and that phone is out). The code disappears from the screen once a phone has picked it up; **Show the code again** brings it back for another phone. On the phone a tap and a hold work as on a deck, and its screen stays on. A phone let in comes straight back after a reload; **Revoke** takes the keys away from it, **New code** signs every phone out, and **Stop sharing** ends it (phones get the keys back with **Show on a phone…** again). Phones need the playout page open: it hosts them, through the pairing server.
 
-**Soundboard and playout side by side:** one browser can run a playout page and a soundboard at once (one of each), each with its own Stream Deck or part of one; a second tab of the same kind says the other is running.
+**Soundboard and playout side by side:** one browser can run a playout page and a soundboard at once (one of each), each with its own Stream Deck or part of one, and each with its own **Sound outputs** (until you choose them, both use the timer's); a second tab of the same kind says the other is running.
 
 **One deck as several (alpha):** **Split a deck into several…** under the deck list opens the Stream Deck site's editor: drag the parts of the deck into place (an XL as a 15-key MK.2 for the timer, two Minis for here and a strip, say), choose which page uses each, and Save. Each part then shows up as a deck of its own.
 

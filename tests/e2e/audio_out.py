@@ -98,6 +98,24 @@ with sync_playwright() as p:
     e.select_option("#ao-pick select[data-role=show]", ""); t.wait_for_timeout(600)
     check("show output back to the default: the timer plays on the computer's default", t.evaluate("AudioOut.state()") == "default" and ctx(t) == ["default"], sinks(t))
     t.evaluate("stingPlayer.stop()")
+
+    # The soundboard and playout pages: their own choices (the owner, 15 Nov 2026: side by side, never sharing a card by
+    # accident); the timer keeps the site's shared one
+    def pp(q):
+        pg = c.new_page(); pg.on("pageerror", lambda x: errs.append(q + ": " + str(x)))
+        pg.add_init_script("window.TimerFeatures = { playout: true };")
+        pg.goto(BASE + "playout.html?" + q); pg.wait_for_function("AudioOut.state() !== undefined", timeout=10000); pg.wait_for_timeout(800)
+        return pg
+    sb, pd = pp("soundboard"), pp("demo")
+    pick = lambda pg, label: pg.select_option("#ao-pick select[data-role=show]", {d["label"]: d["id"] for d in pg.evaluate("AudioOut.devices()")}[label])
+    shown = lambda pg: pg.evaluate("(s => s.options[s.selectedIndex].textContent)(document.querySelector('#ao-pick select[data-role=show]'))")
+    pick(sb, OUT1); sb.wait_for_timeout(400); pick(pd, OUT2); pd.wait_for_timeout(600)
+    keys = sb.evaluate("['audio_out_soundboard_show', 'audio_out_playout_show', 'audio_out_show'].map(k => (JSON.parse(localStorage.getItem(k) || 'null') || {}).label || null)")
+    check("the soundboard's Show and playout's (the demo) kept apart; the site's shared choice untouched", keys == [OUT1, OUT2, None], keys)
+    check("… playout's change didn't move the soundboard's", OUT1 in shown(sb) and OUT2 in shown(pd), [shown(sb), shown(pd)])
+    check("… nor the timer's (the shared one: the computer's default)", t.evaluate("AudioOut.state()") == "default", t.evaluate("AudioOut.state()"))
+    sb.evaluate("localStorage.removeItem('audio_out_soundboard_show')"); e.select_option("#ao-pick select[data-role=show]", edevs[OUT2]); sb.wait_for_timeout(800)
+    check("a page with no choice of its own follows the shared one (the soundboard after its choice is cleared)", OUT2 in shown(sb), shown(sb))
     b.close()
 
 print("errors:", errs)

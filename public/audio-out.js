@@ -42,9 +42,14 @@
  */
 var AudioOut = (function () {
   'use strict';
-  const KEYS = { show: 'audio_out_show', preview: 'audio_out_preview' };
-  const WHAT = { show: 'Show: stings, videos, the line-up tone', preview: 'Previews and editing' };
   const script = document.currentScript, pageRole = script && script.dataset.role;
+  // data-scope="playout" (playout.html): the soundboard's and playout's own choices (the demo is playout's), so the two side by
+  // side never share a card by accident (the owner, 15 Nov 2026); until one is chosen there, the site's shared choice
+  const scope = script && script.dataset.scope === 'playout'
+    ? (/\/s\/?$/.test(location.pathname) || new URLSearchParams(location.search).has('soundboard') ? 'soundboard' : 'playout') : null;
+  const SHARED = { show: 'audio_out_show', preview: 'audio_out_preview' };
+  const KEYS = scope ? { show: 'audio_out_' + scope + '_show', preview: 'audio_out_' + scope + '_preview' } : SHARED;
+  const WHAT = { show: 'Show: stings, videos, the line-up tone', preview: 'Previews and editing' };
   // A page with both (data-role="both": a playout computer) routes to Previews whatever doesn't say
   // (the + sting dialog, the clip editor, the library), so nothing reaches the show by mistake; its
   // cues ask for 'show'.
@@ -57,7 +62,7 @@ var AudioOut = (function () {
 
   function get(r) {
     try {
-      const v = JSON.parse(localStorage.getItem(KEYS[r || role]) || 'null');
+      const k = r || role, v = JSON.parse(localStorage.getItem(KEYS[k]) || localStorage.getItem(SHARED[k]) || 'null');   // (scoped: the shared choice until its own)
       return v && typeof v.id === 'string' && v.id ? { id: v.id, label: String(v.label || '') } : null;
     } catch (_) { return null; }
   }
@@ -321,8 +326,9 @@ html.reduced #ao-warn { display: none; }
   if (supported) {
     md.addEventListener('devicechange', () => { checkAll(); changed(); });
     addEventListener('storage', e => {
-      if (e.key !== KEYS.show && e.key !== KEYS.preview) return;
-      for (const r of roles) if (e.key === KEYS[r]) check(r);
+      const mine = roles.filter(r => e.key === KEYS[r] || (e.key === SHARED[r] && localStorage.getItem(KEYS[r]) == null));   // (scoped and not chosen yet: the shared one's changes too)
+      if (!mine.length) return;
+      for (const r of mine) check(r);
       changed();
     });
     checkAll();
