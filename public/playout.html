@@ -81,6 +81,9 @@
     #items > li { border-top: 1px solid var(--line); padding: 8px 4px; }
     #items > li.now { background: #10243a; border-radius: 6px; }
     #items > li.done .iname { color: var(--dim); }
+    #items > li.cancelled { opacity: .45; }        /* cancelled on the timer's run sheet: never runs (its cues stay, for a reinstate) */
+    #items > li.cancelled .iname { text-decoration: line-through; }
+    .itag.icancel { color: var(--dim); }
     #items > li.here { box-shadow: inset 3px 0 0 var(--warn); }   /* an item run here (Follow off: ▶ Start item) */
     /* Where the operator is (the owner, 14 Nov 2026): the item under the mouse, and the one last clicked (or opened in
        the clip editor) outlined, so it's easy to come back to; over the other colours, never instead of them */
@@ -419,6 +422,6 @@
   <script src="deck-hid.js?v=aba32720"></script>
   <script src="panels.js?v=407fa75f"></script>
   <script src="playout-deck.js?v=c615ab56"></script>
-  <script src="playout.js?v=ddbd0aa4"></script>
+  <script src="playout.js?v=e972629b"></script>
 </body>
 </html>

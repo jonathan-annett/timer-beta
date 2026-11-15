@@ -187,6 +187,8 @@
     .rl .t.early { color: #8be28b; }
     .rl .d { color: var(--dim); font-size: 0.85em; text-align: right; white-space: nowrap; }
     .rl.done { opacity: .45; }
+    .rl.cancelled { opacity: .45; }                 /* cancelled on the run sheet: kept, never run */
+    .rl.cancelled .n { text-decoration: line-through; }
     .rl.now { background: #0e2a12; border-left: 0.25em solid #5fd35f; font-weight: bold; }
     .rl.now .t { color: #9cf59c; }
     .rl.now .t.late { color: #ff8a80; } .rl.now .t.early { color: #8be28b; }
@@ -415,6 +417,6 @@
   <script src="remote-peer.js?v=fd06de67"></script>
   <script src="notices.js?v=7f9aa52c"></script>
   <script src="remote-clock.js?v=4358371f"></script>
-  <script src="remote-phone.js?v=aae9de6c"></script>
+  <script src="remote-phone.js?v=4eff6b8e"></script>
 </body>
 </html>

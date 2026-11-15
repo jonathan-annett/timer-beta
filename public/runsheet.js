@@ -50,9 +50,10 @@
     return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   }
 
-  // First item to run after index `from` (skips the finish marker); -1 if none.
+  // First item to run after index `from` (skips the finish marker and cancelled items); -1 if none.
+  const runs = j => j !== norm.endIdx && !norm.items[j].hidden && !norm.items[j].cancelled;
   function nextIndex(from) {
-    for (let j = from + 1; j < norm.items.length; j++) if (j !== norm.endIdx && !norm.items[j].hidden) return j;
+    for (let j = from + 1; j < norm.items.length; j++) if (runs(j)) return j;
     return -1;
   }
 
@@ -211,7 +212,7 @@
   function goTo(id) {
     if (!isActive()) return false;
     const i = idxOf(id);
-    if (i < 0 || i === norm.endIdx || norm.items[i].hidden) return false;
+    if (i < 0 || !runs(i)) return false;          // a cancelled item is reinstated first
     pushHistory();
     startItem(i);
     commit();
@@ -322,7 +323,7 @@
     const t = now(), nx = nextIndex(state.index);
     for (let j = state.index + 1; j < norm.items.length; j++) {
       const it = norm.items[j];
-      if (!it.auto || it.hidden || it.startDerived || j === norm.endIdx) continue;
+      if (!it.auto || !runs(j) || it.startDerived) continue;
       const p = plannedStartMs(j);
       if (p == null) continue;
       if (t < p) { armedAt.set(it.id, p); continue; }
@@ -427,7 +428,7 @@
     bumpTimer(bump);
     const sec = Math.max(1, Math.round((allottedMs(s) + bump) / 1000));
     const ni = nextId ? sheet.items.findIndex(x => x.id === nextId) : -1;
-    if (ni > sheet.items.indexOf(src) && !sheet.items[ni].hidden) {
+    if (ni > sheet.items.indexOf(src) && !sheet.items[ni].hidden && !sheet.items[ni].cancelled) {
       const oldStart = norm.items[ni].planned;
       setLiveDuration(src, sec, false);
       sheet.items[ni].start = endClock % 86400;
@@ -856,7 +857,7 @@
 
   // The schedule as compact JSON, for display-only phones (e.g. a green room screen):
   // rows {n: name, p: planned clock, d: duration, s: 'done'|'now'|'next', a: actual start, e: 1 = finish row,
-  // x: estimated clock for rows still to come, when it isn't the planned one}.
+  // x: estimated clock for rows still to come, when it isn't the planned one, c: 1 = cancelled (its own length)}.
   // A few rows before the current one and up to 40 after, so a message stays small.
   function scheduleList() {
     if (!isActive()) return '';
@@ -870,7 +871,8 @@
       const isEnd = i === norm.endIdx;
       const p = isEnd ? plannedFinishMs() : plannedStartMs(i) ?? provisionalMs(it.planned);   // (provisional: before a sheet without times starts)
       const r = { n: String(it.name || '').slice(0, 80), p: p != null ? clockOf(p) : '' };
-      if (isEnd) r.e = 1; else r.d = C.formatDuration(it.eff);
+      if (isEnd) r.e = 1; else r.d = C.formatDuration(it.len);
+      if (it.cancelled) r.c = 1;
       if (i === cur) r.s = 'now';
       else if (i === nj) r.s = 'next';
       else if (startedAt.has(it.id) || (isEnd && endLog)) r.s = 'done';

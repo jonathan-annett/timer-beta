@@ -960,7 +960,7 @@
   const rolledOf = id => (cues[id] || []).find(c => c.rolled);
   const ownStart = id => (cues[id] || []).some(c => c.trigger === 'start' && !c.rolled);
   function rollable(it, o, sheetRoll) {
-    if (!it || it.e) return false;
+    if (!it || it.e || it.c) return false;           // (a cancelled item never runs)
     const i = show.items.indexOf(it), cur = following() ? show.items.findIndex(x => x.id === show.cur) : -1;
     if ((cur >= 0 && i <= cur) || (local && local.item === it.id)) return false;
     return !sheetRoll || (!ownStart(it.id) && (it.d || 0) >= o.min * 60);
@@ -1312,11 +1312,11 @@
       const list = cues[it.id] || [], here = local && local.item === it.id, locked = here && !cueControl();
       const flash = active.has(it.id) && active.size > 1 && it.id !== lastRun;   // (rebuilt together, so they flash in step)
       const done = c => (i === curIdx && fired.has(c.id)) || (here && local.fired.has(c.id));
-      const runBtn = !manual || it.e || !list.length ? ''
+      const runBtn = !manual || it.e || it.c || !list.length ? ''
         : active.has(it.id) ? `<button class="small runon${flash ? ' superseded' : ''}${hold && hold.item === it.id ? ' fading' : ''}" data-act="endrun" title="${flash ? 'Still playing after another item started: stop it here, or let it play to its end' : here ? 'Stop this item’s cues, and the rest of them won’t play (hold: they fade, and stop where you let go)' : 'Stop this item’s cues still playing (hold: they fade, and stop where you let go)'}">■ Stop item</button>`
         : `<button class="small" data-act="run" title="Its cues as if it started now: start cues at once, the others timed from now${it.d ? ' (its length: ' + mmss(it.d) + ')' : ''}">▶ Start item</button>`;
-      return `<li data-id="${esc(it.id)}" class="${i === curIdx ? 'now' : curIdx >= 0 && i < curIdx ? 'done' : ''}${here ? ' here' : ''}">` +
-        `<div class="ihead">${(st => (st ? `<span class="istart${st.late ? ' late' : ''}" title="${it.a != null ? 'Started' : st.late ? 'Expected to start (planned ' + (it.s != null ? clockOf(it.s) : 'no time') + ')' : 'Planned to start'}">${st.t}</span>` : ''))(startOf(it))}${nameHtml(it)}${i === curIdx ? '<span class="itag">now</span>' : ''}${here ? '<span class="itag ilocal"></span>' : ''}` +
+      return `<li data-id="${esc(it.id)}" class="${i === curIdx ? 'now' : curIdx >= 0 && i < curIdx ? 'done' : ''}${here ? ' here' : ''}${it.c ? ' cancelled' : ''}">` +
+        `<div class="ihead">${(st => (st ? `<span class="istart${st.late ? ' late' : ''}" title="${it.a != null ? 'Started' : st.late ? 'Expected to start (planned ' + (it.s != null ? clockOf(it.s) : 'no time') + ')' : 'Planned to start'}">${st.t}</span>` : ''))(startOf(it))}${nameHtml(it)}${i === curIdx ? '<span class="itag">now</span>' : ''}${it.c ? '<span class="itag icancel">cancelled</span>' : ''}${here ? '<span class="itag ilocal"></span>' : ''}` +
         `<span class="iclock" title="When its audio ends (from its start; counting down while it runs)"></span><span class="idur">${it.e ? 'finish' : it.d ? mmss(it.d) : ''}</span>` +
         `<button class="small" data-act="name" title="${SOUNDBOARD ? 'Rename it, change its length, or add notes' : 'Your own text for this item, on this computer: replace its name, or add notes'}">✎</button>${runBtn}` +
         (rollable(it, ro, false) ? `<button class="small" data-act="roll"${rolling ? ' disabled' : ''} title="${rolledOf(it.id) ? 'Another walk-up sting at random (when and where it plays stay)' : 'A walk-up sting at random, at its start (Random stings, under the run sheet, says from where)'}">🎲</button>` : '') +

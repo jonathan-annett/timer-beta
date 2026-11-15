@@ -964,7 +964,7 @@
         more(list.before, 'earlier');
         for (const r of rows) {
           const d = document.createElement('div');
-          d.className = 'rl' + (r.s ? ' ' + r.s : '') + (r.e ? ' end' : '');
+          d.className = 'rl' + (r.s ? ' ' + r.s : '') + (r.e ? ' end' : '') + (r.c ? ' cancelled' : '');
           // Started rows (the live one and those done) show when they actually started, as the editor does;
           // the rows to come, the estimate once the show is under way
           const a = (r.s === 'now' || r.s === 'done') && r.a, off = a ? (r.p && a !== r.p) : !!r.x;
@@ -972,7 +972,7 @@
           if (off) t.title = 'Planned ' + r.p;
           const n = document.createElement('span'); n.className = 'n'; n.textContent = r.n || '';
           const x = document.createElement('span'); x.className = 'd';
-          x.textContent = r.e ? 'finish' : (r.d || '');
+          x.textContent = r.e ? 'finish' : r.c ? 'cancelled' : (r.d || '');
           d.append(t, n, x);
           box.appendChild(d);
         }

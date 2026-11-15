@@ -8,6 +8,7 @@
  *   { title: string, perItem: minutes, items: [{ id, name, start, duration }] }
  *   start    — seconds since midnight (local clock), or null
  *   duration — seconds, or null
+ *   cancelled — true: kept on the sheet, dimmed everywhere, never run, takes no time (see normalise)
  * Anything left null is derived by normalise().
  */
 
@@ -121,6 +122,10 @@ var RunsheetCore = (function () {
   //     `planned` is seconds since midnight; otherwise `planned` is seconds from
   //     the show's start (item 0 = 0), which the controller pins to the moment
   //     the first item is started.
+  //   - A cancelled item takes no time (eff 0): rows after it without a start time move up; on an
+  //     anchored sheet a row's own start stays, so the cancelled slot becomes a gap (the owner, 15 Nov
+  //     2026: the operator starts the next item early or edits the times). `len` keeps its own length
+  //     (what it would take), for showing, exporting and reinstating it. The finish marker can't be.
   function normalise(sheet) {
     const items = (sheet && sheet.items) || [];
     const perItem = Math.round(((sheet && sheet.perItem) || 20) * 60);
@@ -141,10 +146,15 @@ var RunsheetCore = (function () {
     const endIdx = (n > 1 && starts[n - 1] != null && items[n - 1].duration == null) ? n - 1 : -1;
     const firstStart = starts.findIndex(v => v != null);
     const anchored = firstStart >= 0;
-    const planned = new Array(n), eff = new Array(n), source = new Array(n);
+    const planned = new Array(n), eff = new Array(n), source = new Array(n), len = new Array(n);
     const hasDur = i => items[i].duration != null && isFinite(items[i].duration);
+    const off = i => !!items[i].cancelled && i !== endIdx;
 
     const effectiveDuration = (i, plannedI) => {
+      len[i] = ownDuration(i, plannedI);
+      return off(i) ? 0 : len[i];
+    };
+    const ownDuration = (i, plannedI) => {
       if (i === endIdx) { source[i] = 'end'; return 0; }
       if (hasDur(i)) { source[i] = 'set'; return items[i].duration; }
       if (i + 1 < n && starts[i + 1] != null && plannedI != null && starts[i + 1] > plannedI) {
@@ -157,7 +167,8 @@ var RunsheetCore = (function () {
       // Rows before the first start time are placed backwards from it
       let t = starts[firstStart];
       for (let i = firstStart - 1; i >= 0; i--) {
-        eff[i] = hasDur(i) ? items[i].duration : perItem;
+        len[i] = hasDur(i) ? items[i].duration : perItem;
+        eff[i] = off(i) ? 0 : len[i];
         source[i] = hasDur(i) ? 'set' : 'default';
         t -= eff[i];
         planned[i] = t;
@@ -178,8 +189,10 @@ var RunsheetCore = (function () {
       sting: it.sting || null,                  // {src, media, name, duration, key?, url?, size?} (walk-up stings, sting-player.js)
       hidden: !!it.hidden,                      // a completed item "deleted" in the editor: kept for the record, not shown or run
       auto: !!it.auto,                          // starts by itself at its own (typed) start time: a hard start (runsheet.js)
+      cancelled: off(i),                        // kept, dimmed, skipped; takes no time (eff 0, len its own)
       planned: planned[i],
       eff: eff[i],
+      len: len[i],
       isEnd: i === endIdx,
       startDerived: starts[i] == null,
       durSource: source[i],
@@ -210,7 +223,7 @@ var RunsheetCore = (function () {
     const last = to == null ? sheet.items.length - 1 : Math.min(to, sheet.items.length - 1);
     for (let j = from + 1; j <= last; j++) {
       const x = sheet.items[j];
-      if (x.auto && x.start != null && !x.hidden) break;      // a hard start doesn't move, and nothing after it does
+      if (x.auto && x.start != null && !x.hidden && !x.cancelled) break;   // a hard start doesn't move, and nothing after it does
       if (x.start != null && isFinite(x.start) && !x.hidden) x.start = ((x.start + delta) % DAY + DAY) % DAY;
     }
   }
@@ -224,13 +237,13 @@ var RunsheetCore = (function () {
   // Once the show is under way: when each row after `cur` should start, given when row `cur`
   // ends (ms). Each follows on from the one before; a row with its own start time waits for it if
   // that's later (a gap). plannedMsOf turns normalise()'s planned seconds into a timestamp.
-  // Returns a Map row index → ms (hidden rows skipped), with .finish.
+  // Returns a Map row index → ms (hidden and cancelled rows skipped), with .finish.
   function project(norm, cur, endMs, plannedMsOf) {
     const out = new Map();
     let t = endMs;
     for (let j = cur + 1; j < norm.items.length; j++) {
       const it = norm.items[j];
-      if (it.hidden) continue;
+      if (it.hidden || it.cancelled) continue;
       const own = it.start != null ? plannedMsOf(it.planned) : null;
       const s = own != null && own > t ? own : t;
       out.set(j, s);
@@ -247,11 +260,12 @@ var RunsheetCore = (function () {
         id: it.id,
         name: it.name,
         start: norm.anchored ? it.planned % DAY : null,
-        duration: it.isEnd ? null : it.eff,
+        duration: it.isEnd ? null : it.len,
         ...(it.video ? { video: it.video, videoIdle: it.videoIdle } : {}),
         ...(it.sting ? { sting: it.sting } : {}),
         ...(it.hidden ? { hidden: true } : {}),
         ...(it.auto ? { auto: true } : {}),
+        ...(it.cancelled ? { cancelled: true } : {}),
       })),
     });
   }
@@ -277,6 +291,7 @@ var RunsheetCore = (function () {
 
   const HEADER = {
     id:       /^(id|item ?id)$/i,                 // (before name: "Item id" isn't the name column)
+    cancelled: /^cancel+ed$/i,                    // toCSV's: "yes" in a cancelled item's row
     duration: /^(dur|duration|length|len|mins?|minutes|allocated|allowed|time ?allowed|run ?time|slot)/i,
     start:    /^(start|time|begins?|from|at|when|start ?time|sched)/i,
     name:     /^(name|item|title|session|speaker|segment|who|what|desc|description|topic|event|act|presenter|program)/i,
@@ -338,7 +353,7 @@ var RunsheetCore = (function () {
     // Header row?
     let cols = null;
     const head = rows[0];
-    const headerHits = head.map(c => HEADER.id.test(c) ? 'id' : HEADER.duration.test(c) ? 'duration' : HEADER.start.test(c) ? 'start' : HEADER.name.test(c) ? 'name' : null);
+    const headerHits = head.map(c => HEADER.id.test(c) ? 'id' : HEADER.cancelled.test(c) ? 'cancelled' : HEADER.duration.test(c) ? 'duration' : HEADER.start.test(c) ? 'start' : HEADER.name.test(c) ? 'name' : null);
     if (headerHits.some(Boolean) && head.every(c => !isFinite(parseDuration(c)) || c === '')) {
       cols = headerHits;
       rows = rows.slice(1);
@@ -370,7 +385,9 @@ var RunsheetCore = (function () {
       const given = idx('id') >= 0 ? r[idx('id')] : '';
       const id = isId(given) && !fileIds.has(given) ? given : newId();
       if (id === given) fileIds.add(id);
-      items.push({ id, name: name || '(untitled)', start, duration });
+      const item = { id, name: name || '(untitled)', start, duration };
+      if (idx('cancelled') >= 0 && /^(y|yes|true|1|x|✕|cancel+ed)$/i.test(r[idx('cancelled')])) item.cancelled = true;
+      items.push(item);
     });
     return { items, warnings, columns: cols, fileIds };
   }
@@ -423,17 +440,19 @@ var RunsheetCore = (function () {
 
   const csvCell = v => /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
 
-  // Standardised CSV: Start, Name, Duration (derived values filled in), Id (read back by parseText).
+  // Standardised CSV: Start, Name, Duration (derived values filled in), Id (read back by parseText),
+  // and Cancelled ("yes") only when an item is: a cancelled item's duration is its own (len).
   function toCSV(sheet) {
     const norm = normalise(sheet);
-    const rows = [['Start', 'Name', 'Duration', 'Id']];
+    const anyOff = norm.items.some(it => it.cancelled);
+    const rows = [['Start', 'Name', 'Duration', 'Id'].concat(anyOff ? ['Cancelled'] : [])];
     for (const it of norm.items) {
       rows.push([
         norm.anchored ? formatClock(it.planned) : '',
         it.name,
-        it.isEnd ? '' : formatHMS(it.eff),
+        it.isEnd ? '' : formatHMS(it.len),
         it.id || '',
-      ]);
+      ].concat(anyOff ? [it.cancelled ? 'yes' : ''] : []));
     }
     return rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
   }

@@ -624,7 +624,7 @@
   }
   // ─── Playout computers (playout.html; a trial: TimerFeatures.playout) ───────
   // View-only devices that say client:'playout'. Besides the countdown (like any device) they get the
-  // run sheet with its ids, {t:'playout', items:[{id, n, d | e}], cur, run, at, on, fin, now} (run =
+  // run sheet with its ids, {t:'playout', items:[{id, n, d | e, c}], cur, run, at, on, fin, now} (c: 1 = cancelled; run =
   // the log's length: Next adds one, Back takes one off; at = the live item's actual start; now = this
   // clock as it's sent, so they can tell how long ago that was). Sent when it changes: at once for
   // Next and Back (the run sheet's bus variables), and on a slow poll for edits. What they do with it
@@ -637,7 +637,7 @@
     const tm = window.runsheet && window.runsheet.times ? window.runsheet.times() : {};   // its start: planned s, expected x, actual a (ms)
     const items = norm.items.filter(it => !it.hidden).map(it => it.isEnd
       ? { id: it.id, n: String(it.name || '').slice(0, 120), e: 1 }
-      : Object.assign({ id: it.id, n: String(it.name || '').slice(0, 120), d: it.eff }, tm[it.id]));
+      : Object.assign({ id: it.id, n: String(it.name || '').slice(0, 120), d: it.len }, it.cancelled ? { c: 1 } : tm[it.id]));
     const log = Array.isArray(st.log) ? st.log : [], last = log[log.length - 1];
     const cur = st.active && !st.finished && typeof st.currentId === 'string' ? st.currentId : null;
     return { items, cur, run: log.length, at: cur && last && last.id === cur ? last.actual : null, on: !!st.active, fin: !!st.finished };
@@ -684,6 +684,7 @@
         start: secs(it.start, 2 * 86400), duration: secs(it.duration, 86400) };
       if (it.hidden === true) out.hidden = true;    // deleted after it ran: kept for the log
       if (it.auto === true) out.auto = true;        // a hard start (starts by itself at its start time)
+      if (it.cancelled === true) out.cancelled = true;   // kept, dimmed, never run (runsheet-core.js)
       // A video can stay (or move to another row), never be made up: only keys already on the sheet
       if (it.video && typeof it.video === 'object' && known.has(it.video.key)) {
         out.video = known.get(it.video.key);

@@ -134,7 +134,7 @@
     #rs-table tr.vdrop td { background: #0b2a3d !important; }
     #rs-table td.status { width: 9rem; font-size: 0.857rem; color: var(--dim); }   /* wraps: long notes mustn't squeeze the Item column */
     #rs-table td.name { min-width: 9rem; }
-    #rs-table td.acts { width: 6.6rem; white-space: nowrap; text-align: right; }
+    #rs-table td.acts { width: 7.8rem; white-space: nowrap; text-align: right; }
     #rs-table td.acts button { padding: 0.143rem 0.3rem; font-size: 0.857rem; background: transparent; border-color: transparent; color: var(--dim); }
     #rs-table td.acts button:hover { border-color: var(--line2); color: var(--text); }
     #rs-table td.acts button.go { color: var(--now-text); }
@@ -200,6 +200,12 @@
     tr.locked input:hover { border-color: transparent; }
     tr.hiddenrow td { opacity: 0.45; font-style: italic; }
     tr.hiddenrow td.acts { opacity: 1; font-style: normal; }
+    /* Cancelled (runsheet-core.js): dimmed, its name struck through; its buttons stay usable (↺ reinstates it) */
+    tr.cancelledrow td:not(.acts):not(.status) { opacity: 0.45; }
+    tr.cancelledrow td.name input { text-decoration: line-through; }
+    .st-cancel { color: var(--dim); }
+    #rs-table td.acts button.cancel { font-size: 1.1rem; line-height: 1; }   /* ⊘ / ↺ draw small beside the arrows */
+    #rs-table td.acts button.cancel.on { color: var(--warn); }
     input.conflict, input.conflict:hover { border-color: var(--behind); background: #3a1414; color: #ffb3b3; }
     .st-conflict { color: var(--behind); font-weight: bold; white-space: normal; }
     .show-hidden { margin: 0.4rem 0 0 0.6rem; background: transparent; border-color: transparent; color: var(--dim); font-size: 0.857rem; text-decoration: underline; }
@@ -407,7 +413,7 @@
   <script src="sting-styles.js?v=c0abef32"></script>
   <script src="sting-roll.js?v=7b3db39a"></script>
   <script src="video-store.js?v=069f77d9"></script>
-  <script src="runsheet-core.js?v=7c76e7fa"></script>
-  <script src="runsheet-editor.js?v=3a8839de"></script>
+  <script src="runsheet-core.js?v=b3c9b365"></script>
+  <script src="runsheet-editor.js?v=bc82e49a"></script>
 </body>
 </html>

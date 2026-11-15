@@ -171,7 +171,7 @@
     if (sec == null) return null;
     if (n.anchored) return dayBase() + sec * 1000;
     if (provisional(n)) {                              // not started: as if it started now
-      const f = n.items.find(x => !x.hidden);
+      const f = n.items.find(x => !x.hidden && !x.cancelled);
       return f ? editorNow() + (sec - f.planned) * 1000 : null;
     }
     const log = state.log || [];
@@ -255,6 +255,7 @@
       tr.dataset.id = it.id;
       if (it.isEnd) tr.classList.add('endrow');
       if (src.hidden) tr.classList.add('hiddenrow');
+      if (it.cancelled) tr.classList.add('cancelledrow');
       tr.innerHTML =
         `<td class="num">${it.isEnd ? 'End' : i + 1}</td>` +
         `<td class="start"><input type="checkbox" class="hard" tabindex="-1" aria-label="Start automatically at this time"><input data-field="start" aria-label="Start time"></td>` +
@@ -266,6 +267,7 @@
           // tabindex -1: Tab moves between the cells (start → name → duration → next row)
           (it.isEnd ? '' : `<button class="go" data-act="go" tabindex="-1" title="Start this item now">▶</button>`) +
           `<button data-act="up" tabindex="-1" title="Move up">↑</button><button data-act="down" tabindex="-1" title="Move down">↓</button>` +
+          (it.isEnd || src.hidden ? '' : `<button data-act="cancel" class="cancel${it.cancelled ? ' on' : ''}" tabindex="-1">${it.cancelled ? '↺' : '⊘'}</button>`) +
           (src.hidden ? `<button data-act="unhide" tabindex="-1" title="Show it in the run sheet again">↺</button>`
                       : `<button data-act="del" tabindex="-1" title="Delete">✕</button>`) + `</td>`;
       const [start, name, dur] = FIELDS.map(f => tr.querySelector(`[data-field=${f}]`));
@@ -278,7 +280,7 @@
       name.placeholder = 'Item name';
       if (!it.isEnd) renderVideoCell(tr.querySelector('td.vid'), src);
       dur.placeholder = it.isEnd ? 'finish' :
-        C.formatDuration(it.eff) + (it.durSource === 'times' ? ' (from times)' : it.durSource === 'default' ? ' (default)' : '');
+        C.formatDuration(it.len) + (it.durSource === 'times' ? ' (from times)' : it.durSource === 'default' ? ' (default)' : '');
       tbody.appendChild(tr);
     });
     $('empty').style.display = norm.items.length ? 'none' : '';
@@ -304,7 +306,7 @@
     let nextId = null;
     if (active && !state.finished) {
       for (let j = (state.index == null ? -1 : state.index) + 1; j < norm.items.length; j++) {
-        if (j !== norm.endIdx) { nextId = norm.items[j].id; break; }
+        if (j !== norm.endIdx && !norm.items[j].hidden && !norm.items[j].cancelled) { nextId = norm.items[j].id; break; }
       }
     }
 
@@ -350,6 +352,7 @@
         show(endIn, '', p == null ? '' : clockOf(p + it.eff * 1000));
       }
 
+      if (it.cancelled) show(endIn, '', '');           // never runs, so it never ends
       const done = k != null && it.id !== curId;
       tr.classList.toggle('current', it.id === curId);
       tr.classList.toggle('done', done);
@@ -371,12 +374,12 @@
       // the others only once the show is under way, for items still to come. Otherwise dimmed.
       const hard = tr.querySelector('input.hard');
       if (hard) {
-        const firstIdx = norm.items.findIndex((x, j) => !x.hidden && j !== norm.endIdx);
+        const firstIdx = norm.items.findIndex((x, j) => !x.hidden && !x.cancelled && j !== norm.endIdx);
         const started = active && !state.finished && curIdx >= 0;
         const armedNow = i === firstIdx ? active && !started && !state.finished : started && i > curIdx;
         // An item without a typed start gets the one it shows when ticked, so it needs a clock time
         const noClock = it.startDerived && !it.auto && (provisional() || plannedMs(it.planned) == null);
-        hard.disabled = role === 'done' || role === 'now' || it.hidden || scaling || noClock || !canEdit;
+        hard.disabled = role === 'done' || role === 'now' || it.hidden || it.cancelled || scaling || noClock || !canEdit;
         hard.classList.toggle('idle', !armedNow);
         hard.title = noClock && !(role === 'done' || role === 'now' || it.hidden || scaling)
           ? 'Hard start: needs a clock time. Type a start time, or start the show first'
@@ -386,6 +389,14 @@
       tr.classList.toggle('hardmiss', (live.hardMiss || []).includes(it.id));
       const del = tr.querySelector('button[data-act=del]');
       if (del) del.title = role === 'done' ? 'Delete (hidden from the run sheet; it stays in the log)' : 'Delete';
+      // Cancelled (the owner, 15 Nov 2026): kept, dimmed, skipped by Next; reinstated with ↺. Not an item
+      // that has run or is running (to stop one, Next or delete it)
+      const cancel = tr.querySelector('button[data-act=cancel]');
+      if (cancel) {
+        cancel.disabled = role === 'done' || role === 'now' || scaling || !canEdit;
+        cancel.title = role === 'done' ? 'Already run' : role === 'now' ? 'Running now: Next moves on from it'
+          : it.cancelled ? 'Cancelled: Next skips it. Click to reinstate it' : 'Cancel: kept in the run sheet, dimmed, and Next skips it (click again to reinstate it)';
+      }
       startIn.classList.toggle('conflict', overlap >= 1);
 
       const status = tr.querySelector('.status');
@@ -403,6 +414,8 @@
         const e = log[log.length - 1];
         const v = e && e.planned != null ? signed((e.actual - e.planned) / 1000) : '';
         status.innerHTML = `■ ${clockOf(e && e.actual)} ` + (v ? `<span class="${v[0] === '+' ? 'st-late' : 'st-early'}">${v}</span>` : '');
+      } else if (it.cancelled) {
+        status.innerHTML = `<span class="st-cancel">✕ cancelled</span>`;
       } else {
         const gap = it.gapAfter > 59 || it.gapAfter < -59
           ? `<span class="st-gap">${it.gapAfter > 0 ? 'gap' : 'overlaps'} ${C.formatDuration(Math.abs(it.gapAfter))}</span>` : '';
@@ -411,7 +424,7 @@
         const clash = overlap >= 1 ? `<span class="st-conflict" title="${esc(norm.items[curIdx] ? norm.items[curIdx].name : '')} is due to end at ${clockOf(curEnd)}">starts ${C.formatSpan(overlap)} before the current item ends</span>` : '';
         status.innerHTML = [clash, ahead, gap].filter(Boolean).join(' · ');
       }
-      tr.querySelectorAll('button.go').forEach(b => { b.disabled = !active || it.hidden; });
+      tr.querySelectorAll('button.go').forEach(b => { b.disabled = !active || it.hidden || it.cancelled; if (it.cancelled) b.title = 'Cancelled: reinstate it first'; });
       tr.querySelectorAll('td.acts button:not(.go)').forEach(b => { if (scaling) b.disabled = true; });
       // Order is fixed up to and including the item running now, and nothing moves above it:
       // the dashboard, the phones and the log all follow the live order. To stop an item,
@@ -452,7 +465,7 @@
     return norm.items.findIndex(x => x.id === state.currentId);
   }
   function nextRow(cur) {
-    for (let j = cur + 1; j < norm.items.length; j++) if (!norm.items[j].hidden) return j;
+    for (let j = cur + 1; j < norm.items.length; j++) if (!norm.items[j].hidden && !norm.items[j].cancelled) return j;
     return -1;
   }
   function rowRole(i) {
@@ -886,7 +899,7 @@
   // Can item i have a rolled sting? (sheetRoll: and does the sheet's 🎲 roll it: long enough, not chosen by hand)
   function rollable(i, o, sheetRoll) {
     const it = sheet.items[i], n = norm && norm.items[i];
-    if (!it || !n || it.hidden || n.isEnd || it.video) return false;
+    if (!it || !n || it.hidden || n.cancelled || n.isEnd || it.video) return false;
     const role = rowRole(i);
     if (role === 'done' || role === 'now') return false;
     return !sheetRoll || ((!it.sting || it.sting.rolled) && (n.eff || 0) >= o.min * 60);
@@ -1148,7 +1161,7 @@
 
   function canPick(i) {
     const it = norm.items[i];
-    if (!it || it.isEnd || it.hidden || it.video || state.finished || !canEdit) return false;
+    if (!it || it.isEnd || it.hidden || it.cancelled || it.video || state.finished || !canEdit) return false;
     const role = rowRole(i);
     return role !== 'done' && role !== 'now';
   }
@@ -1513,6 +1526,11 @@
         break;
       case 'unhide':
         delete sheet.items[i].hidden;
+        saveSheet();
+        break;
+      case 'cancel':
+        if (['done', 'now'].includes(rowRole(i)) || (norm.items[i] && norm.items[i].isEnd)) return;
+        if (sheet.items[i].cancelled) delete sheet.items[i].cancelled; else sheet.items[i].cancelled = true;
         saveSheet();
         break;
       case 'del':
