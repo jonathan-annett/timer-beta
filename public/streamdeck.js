@@ -332,6 +332,8 @@
             remainSec = parseRemain(v.remain);
             if (device && !changed) scheduleCountdownKeys();
           }
+          if (typeof v.custommsg === 'string') shownMsg = v.custommsg;   // (the message on screen: the strip's message)
+          if (strip) drawStrip();
         }
       }
     };
@@ -454,6 +456,7 @@
       return false;
     }
     deck = d; device = hid; deviceInfo = d.info; modelKey = d.model;
+    setTimeout(findStrip, 0);                          // (and a display strip of the timer's, if there is one)
     attachedAt = performance.now();
     noteDeck();
     _showDeckStatus('Connected: ' + deviceInfo.name, 'ok');
@@ -464,7 +467,82 @@
     return true;
   }
 
+  // ─── A display strip (the owner, 14 Nov 2026: a row of a split XL as a countdown / message / clock) ───
+  // A deck one key high (a part of a split deck, through the webhid frame) claimed for the timer: a second deck beside
+  // the main one, drawn as one display. What it shows (a tap on it: the next; kept in streamdeck_strip_mode): the
+  // countdown (one character a key when it fits, so a key's edge never cuts a digit; right-aligned, so 10:00 → 9:59
+  // doesn't jump; in the timer's colours), the message on screen (fitted, scrolled when too long), the time of day.
+  // Only keys whose picture changed are sent; a worker tick moves the clock and the scroll (a hidden page's timers slow).
+  const STRIP_MODES = ['countdown', 'message', 'clock'], STRIP_NAMES = { countdown: 'countdown', message: 'message', clock: 'clock' };
+  let strip = null, stripLooking = false, shownMsg = '';
+  const isStrip = hid => { const i = DeckHID.info(hid); return !!(i.dims && i.dims.rows === 1 && i.dims.cols >= 2); };
+  async function findStrip() {
+    if (strip || stripLooking || !owner || PRESENTER) return;
+    stripLooking = true;
+    try {
+      const list = await DeckHID.granted();
+      for (const hid of list) {
+        if (!isStrip(hid) || DeckHID.ownerOf(await DeckHID.idOf(hid, list)) !== 'timer' || strip) continue;
+        const d = await DeckHID.open(hid, { down: () => stripNext() });
+        let mode = localStorage.getItem('streamdeck_strip_mode');
+        strip = { deck: d, sent: [], mode: STRIP_MODES.includes(mode) ? mode : 'countdown', flash: 0, scroll: 0, tick: null };
+        strip.tick = everySecondish(() => { if (strip) { strip.scroll++; drawStrip(); } });
+        drawStrip();
+        return;
+      }
+    } catch (err) { console.warn('StreamDeck: strip', err); }
+    finally { stripLooking = false; }
+  }
+  function dropStrip(close) { if (!strip) return; const s = strip; strip = null; if (s.tick) s.tick(); if (close) s.deck.close(); }
+  function everySecondish(fn) {                       // (4 a second: the scroll; the clock moves on whole seconds anyway)
+    try { const w = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 250)'], { type: 'text/javascript' }))); w.onmessage = fn; return () => w.terminate(); }
+    catch (_) { const t = setInterval(fn, 250); return () => clearInterval(t); }
+  }
+  function stripNext() {
+    if (!strip) return;
+    strip.mode = STRIP_MODES[(STRIP_MODES.indexOf(strip.mode) + 1) % STRIP_MODES.length];
+    try { localStorage.setItem('streamdeck_strip_mode', strip.mode); } catch (_) { /* private mode */ }
+    strip.flash = performance.now() + 900; strip.scroll = 0;
+    drawStrip();
+  }
+  function stripText() {                              // → {text, bg, fg, snap: one character a key if it fits}
+    const s = strip, colours = deckState.expired ? ['#2d0000', '#ff4444'] : deckState.impending ? ['#2d1a00', '#ff9900'] : deckState.pausing ? ['#151515', '#ffcc33'] : ['#000000', '#ffffff'];
+    if (performance.now() < s.flash) return { text: STRIP_NAMES[s.mode], bg: '#0b3d5c', fg: '#ffffff', snap: false };
+    if (s.mode === 'clock') { const d = window.timeProvider ? timeProvider.date() : new Date(); return { text: pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()), bg: '#000000', fg: '#9fd0ff', snap: true }; }
+    if (s.mode === 'message') return shownMsg ? { text: shownMsg, bg: '#0b1f33', fg: '#ffffff', snap: false, scroll: true } : { text: 'no message', bg: '#000000', fg: '#555555', snap: false };
+    return { text: countdownText('full'), bg: colours[0], fg: colours[1], snap: true };
+  }
+  function drawStrip() {
+    if (!strip) return;
+    const s = strip, d = s.deck, n = d.keys, ks = d.keySize, t = stripText(), chars = [...t.text];
+    const faces = [];
+    if (t.snap && chars.length <= n) {               // one character a key, right-aligned
+      for (let i = 0; i < n; i++) { const ch = chars[i - (n - chars.length)] || ''; faces.push({ sig: [ch, t.bg, t.fg].join('|'), draw: c => DeckFace.paint(c.getContext('2d'), ch ? { bg: t.bg, fg: t.fg, big: { text: ch, scale: 0.8 } } : { bg: t.bg, fg: t.bg }, ks) }); }
+    } else {                                         // one picture across the strip (scrolled when the text won't fit at a fair size)
+      const W = n * ks, wide = document.createElement('canvas'); wide.width = W; wide.height = ks;
+      const g = wide.getContext('2d');
+      g.fillStyle = t.bg; g.fillRect(0, 0, W, ks);
+      g.fillStyle = t.fg; g.textBaseline = 'middle';
+      DeckFace.fitFont(g, t.text, W - ks * 0.2, Math.round(ks * 0.7));
+      const px = parseInt(g.font.match(/(\d+)px/)[1], 10), width = g.measureText(t.text).width, scroll = t.scroll && px < ks * 0.45;
+      let x;
+      if (scroll) { g.font = 'bold ' + Math.round(ks * 0.5) + 'px "Helvetica Neue", Arial, sans-serif'; const w = g.measureText(t.text).width + ks; x = W - ((s.scroll * ks * 0.18) % (w + W)); }
+      else { g.textAlign = 'center'; x = W / 2; }
+      g.fillText(t.text, x, ks / 2);
+      const pos = scroll ? Math.round(x) : 0;
+      for (let i = 0; i < n; i++) faces.push({ sig: [t.text, t.bg, t.fg, px, pos, i].join('|'), draw: c => c.getContext('2d').drawImage(wide, i * ks, 0, ks, ks, 0, 0, ks, ks) });
+    }
+    faces.forEach((f, i) => {
+      if (s.sent[i] === f.sig) return;
+      s.sent[i] = f.sig;
+      const c = document.createElement('canvas'); c.width = c.height = ks;
+      f.draw(c);
+      d.setKey(i, c);
+    });
+  }
+
   function onHidDisconnect(ev) {
+    if (strip && ev.device === strip.deck.hid) dropStrip(false);
     if (pausedDevice && ev.device === pausedDevice) { pausedDevice = null; _showDeckStatus('Not connected', 'idle'); }
     if (device && ev.device === device) {
       deck.detach();
@@ -1171,6 +1249,7 @@
         _showDeckStatus(owners.includes('playout') ? PLAYOUT_HAS_IT : 'Not connected: the deck was disconnected on the playout page (click Connect to use it here)', 'idle');
       }
     } finally { looking = false; }
+    findStrip();                                       // (a display strip claimed for the timer, beside the main deck)
     if (lookAgain && !device) { lookAgain = false; findDeck(); }
   }
   const PLAYOUT_HAS_IT = 'Not connected: the playout page on this computer has the deck (its Stream Deck box can give it back)';
@@ -1214,12 +1293,14 @@
   }
   function autoAttach() {
     findDeck();
-    DeckHID.hid().addEventListener('connect', ev => { if (DeckHID.isDeck(ev.device)) findDeck(); });
+    DeckHID.hid().addEventListener('connect', ev => { if (DeckHID.isDeck(ev.device)) { findDeck(); findStrip(); } });
     DeckHID.hid().addEventListener('disconnect', onHidDisconnect);
     let was = DeckHID.claims();
     DeckHID.onClaims(() => {
-      const now = DeckHID.claims(), back = Object.keys(was).some(id => was[id] === 'playout' && now[id] == null);   // (not when set aside there: Disconnect)
+      const now = DeckHID.claims(), back = Object.keys(was).some(id => (was[id] === 'playout' || was[id] === 'soundboard') && now[id] == null);   // (not when set aside there: Disconnect)
       was = now;
+      if (strip && DeckHID.ownerOf(strip.deck.id) !== 'timer') dropStrip(true);
+      findStrip();
       if (deck && DeckHID.ownerOf(deck.id) !== 'timer') return letGo();
       if (back && !device) localStorage.removeItem(AUTOCONNECT_KEY);   // given back (Give to the timer): a deliberate hand-over
       findDeck();
@@ -1252,6 +1333,7 @@
   const LOCAL_NO_PRESS = new Set(['toggle_presenter', 'deck_to_playout', 'empty']);   // the pop-up: Type message works (it's this computer)
 
   window.StreamDeck = {
+    strip: () => strip && { id: strip.deck.id, mode: strip.mode, text: stripText().text, keys: strip.deck.keys },   // (tests)
     model: m => MODELS[m],
     editing: () => editorShown(),
     // Every key's face, with `a` (its action) and `press` (whether pressing does anything); opts {editing, local}
